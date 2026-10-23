@@ -117,16 +117,12 @@
                     Padding="16,10">
                 <Grid ColumnDefinitions="Auto,*,Auto">
                     <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                        <Border Width="30"
-                                Height="30"
-                                CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
-                                Background="{arc:ArcDesignTokenResource Accent}">
-                            <TextBlock Text="P"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       FontWeight="SemiBold"
-                                       Foreground="{arc:ArcDesignTokenResource AccentForeground}" />
-                        </Border>
+                        <Image Width="42"
+                               Height="42"
+                               Source="avares://PostSharp/Assets/logo.png"
+                               Stretch="Uniform"
+                               RenderOptions.BitmapInterpolationMode="HighQuality"
+                               VerticalAlignment="Center" />
                         <TextBlock Text="PostSharp"
                                    FontSize="{arc:ArcDesignTokenResource TypeLG}"
                                    FontWeight="SemiBold"
