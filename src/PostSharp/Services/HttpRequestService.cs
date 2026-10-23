@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Xml.Linq;
 using PostSharp.Models;
 
 namespace PostSharp.Services;
@@ -17,42 +19,67 @@ public sealed record HttpResult(
     long ElapsedMs,
     long SizeBytes,
     IReadOnlyList<ResponseHeaderView> Headers,
-    string? Error);
+    string? Error,
+    bool IsSse = false,
+    string SseThinking = "",
+    string SseContent = "",
+    int SseEventCount = 0,
+    string SseRaw = "");
 
 public sealed class HttpRequestService
 {
+    private const int MaxFormatLength = 256 * 1024;
+
     private static readonly HttpClient Client = CreateClient();
 
-    private static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions PrettyJson = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 
-    public async Task<HttpResult> SendAsync(
-        RequestItem request,
-        EnvironmentModel? environment,
-        CancellationToken cancellationToken)
+    public int TimeoutSeconds { get; set; } = 60;
+
+    public bool AutoFormatResponse { get; set; } = true;
+
+    public async Task<HttpResult> SendAsync(ComposedRequest composed, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            var url = BuildUrl(request, environment);
-            using var message = new HttpRequestMessage(new HttpMethod(request.Method.ToUpperInvariant()), url);
-
-            var headers = CollectHeaders(request, environment);
-            var body = VariableResolver.Resolve(request.Body, environment);
-            var hasUserContentType = headers.Any(pair =>
-                pair.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase));
+            using var message = new HttpRequestMessage(new HttpMethod(composed.Method), composed.Url);
 
             HttpContent? content = null;
-            if (!string.Equals(request.BodyMode, "None", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrEmpty(body))
+            if (composed.IsMultipart)
             {
-                content = new ByteArrayContent(Encoding.UTF8.GetBytes(body));
-                if (!hasUserContentType)
+                var multipart = new MultipartFormDataContent();
+                foreach (var field in composed.FormFields ?? Array.Empty<KeyValuePair<string, string>>())
                 {
-                    content.Headers.ContentType = new MediaTypeHeaderValue(
-                        string.Equals(request.BodyMode, "Json", StringComparison.OrdinalIgnoreCase)
-                            ? "application/json"
-                            : "text/plain")
+                    multipart.Add(new StringContent(field.Value, Encoding.UTF8), field.Key);
+                }
+
+                if (!string.IsNullOrWhiteSpace(composed.UploadFilePath))
+                {
+                    var fileStream = File.OpenRead(composed.UploadFilePath);
+                    var fileContent = new StreamContent(fileStream);
+                    fileContent.Headers.ContentType =
+                        new MediaTypeHeaderValue(GuessContentType(composed.UploadFilePath));
+                    multipart.Add(
+                        fileContent,
+                        composed.UploadFieldName ?? "file",
+                        Path.GetFileName(composed.UploadFilePath));
+                }
+
+                content = multipart;
+                message.Content = content;
+            }
+            else if (composed.Body is not null)
+            {
+                content = new ByteArrayContent(Encoding.UTF8.GetBytes(composed.Body));
+                if (composed.ContentType is not null)
+                {
+                    content.Headers.ContentType = new MediaTypeHeaderValue(composed.ContentType)
                     {
                         CharSet = "utf-8"
                     };
@@ -61,25 +88,32 @@ public sealed class HttpRequestService
                 message.Content = content;
             }
 
-            foreach (var (key, value) in headers)
+            foreach (var (key, value) in composed.Headers)
             {
+                if (composed.IsMultipart
+                    && (key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)
+                        || key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
                 if (!message.Headers.TryAddWithoutValidation(key, value))
                 {
                     message.Content?.Headers.TryAddWithoutValidation(key, value);
                 }
             }
 
-            if (!headers.Any(pair => pair.Key.Equals("Accept", StringComparison.OrdinalIgnoreCase)))
+            if (!composed.Headers.Any(pair => pair.Key.Equals("Accept", StringComparison.OrdinalIgnoreCase)))
             {
                 message.Headers.TryAddWithoutValidation("Accept", "*/*");
             }
 
-            if (!headers.Any(pair => pair.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)))
+            if (!composed.Headers.Any(pair => pair.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)))
             {
                 message.Headers.TryAddWithoutValidation("User-Agent", "PostSharp/0.1");
             }
 
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(TimeoutSeconds));
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
 
             using var response = await Client.SendAsync(
@@ -87,24 +121,46 @@ public sealed class HttpRequestService
                 HttpCompletionOption.ResponseHeadersRead,
                 linked.Token).ConfigureAwait(false);
 
-            var bytes = await response.Content.ReadAsByteArrayAsync(linked.Token).ConfigureAwait(false);
-            stopwatch.Stop();
-
-            var text = Decode(bytes, response.Content.Headers.ContentType?.CharSet);
             var mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
-            var isJson = TryFormatJson(text, out var pretty);
-
             var responseHeaders = response.Headers
                 .Concat(response.Content.Headers)
                 .SelectMany(pair => pair.Value.Select(value => new ResponseHeaderView(pair.Key, value)))
                 .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+            if (mediaType.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase))
+            {
+                var sse = await ReadSseAsync(response, linked.Token).ConfigureAwait(false);
+                stopwatch.Stop();
+                return new HttpResult(
+                    HasResponse: true,
+                    StatusCode: (int)response.StatusCode,
+                    ReasonPhrase: response.ReasonPhrase ?? string.Empty,
+                    Body: sse.Raw,
+                    IsJson: false,
+                    MediaType: mediaType,
+                    ElapsedMs: stopwatch.ElapsedMilliseconds,
+                    SizeBytes: Encoding.UTF8.GetByteCount(sse.Raw),
+                    Headers: responseHeaders,
+                    Error: null,
+                    IsSse: true,
+                    SseThinking: sse.Thinking,
+                    SseContent: sse.Content,
+                    SseEventCount: sse.Count,
+                    SseRaw: sse.Raw);
+            }
+
+            var bytes = await response.Content.ReadAsByteArrayAsync(linked.Token).ConfigureAwait(false);
+            stopwatch.Stop();
+
+            var text = Decode(bytes, response.Content.Headers.ContentType?.CharSet);
+            var (formatted, isJson) = FormatDocument(text, mediaType);
+
             return new HttpResult(
                 HasResponse: true,
                 StatusCode: (int)response.StatusCode,
                 ReasonPhrase: response.ReasonPhrase ?? string.Empty,
-                Body: isJson ? pretty : text,
+                Body: formatted,
                 IsJson: isJson,
                 MediaType: mediaType,
                 ElapsedMs: stopwatch.ElapsedMilliseconds,
@@ -120,26 +176,26 @@ public sealed class HttpRequestService
         catch (OperationCanceledException)
         {
             stopwatch.Stop();
-            return Failure("请求超时，60 秒内没有收到响应。");
+            return Failure($"请求超时，{TimeoutSeconds} 秒内没有收到响应。");
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
             return Failure($"无法完成请求：{ex.Message}");
         }
-
-        static HttpResult Failure(string message) => new(
-            HasResponse: false,
-            StatusCode: 0,
-            ReasonPhrase: string.Empty,
-            Body: string.Empty,
-            IsJson: false,
-            MediaType: string.Empty,
-            ElapsedMs: 0,
-            SizeBytes: 0,
-            Headers: Array.Empty<ResponseHeaderView>(),
-            Error: message);
     }
+
+    public static HttpResult Failure(string message) => new(
+        HasResponse: false,
+        StatusCode: 0,
+        ReasonPhrase: string.Empty,
+        Body: string.Empty,
+        IsJson: false,
+        MediaType: string.Empty,
+        ElapsedMs: 0,
+        SizeBytes: 0,
+        Headers: Array.Empty<ResponseHeaderView>(),
+        Error: message);
 
     private static HttpClient CreateClient()
     {
@@ -156,59 +212,27 @@ public sealed class HttpRequestService
         };
     }
 
-    private static string BuildUrl(RequestItem request, EnvironmentModel? environment)
+    private static string GuessContentType(string path)
     {
-        var raw = VariableResolver.Resolve(request.Url, environment).Trim();
-        if (string.IsNullOrWhiteSpace(raw))
+        return Path.GetExtension(path).ToLowerInvariant() switch
         {
-            throw new InvalidOperationException("请输入请求地址。");
-        }
-
-        if (!raw.Contains("://", StringComparison.Ordinal))
-        {
-            raw = "http://" + raw;
-        }
-
-        if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        {
-            throw new InvalidOperationException("请求地址无效，请使用 http:// 或 https:// 开头的完整地址。");
-        }
-
-        var query = uri.Query.TrimStart('?');
-        var additions = request.Params.ActiveRows
-            .Select(row => $"{Uri.EscapeDataString(row.Key.Trim())}={Uri.EscapeDataString(VariableResolver.Resolve(row.Value, environment))}")
-            .ToList();
-
-        if (additions.Count == 0)
-        {
-            return uri.ToString();
-        }
-
-        var builder = new UriBuilder(uri)
-        {
-            Query = string.IsNullOrEmpty(query)
-                ? string.Join("&", additions)
-                : query + "&" + string.Join("&", additions)
+            ".json" => "application/json",
+            ".txt" or ".log" or ".md" => "text/plain",
+            ".html" or ".htm" => "text/html",
+            ".xml" => "application/xml",
+            ".csv" => "text/csv",
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".gif" => "image/gif",
+            ".webp" => "image/webp",
+            ".pdf" => "application/pdf",
+            ".zip" => "application/zip",
+            _ => "application/octet-stream"
         };
-
-        return builder.Uri.ToString();
-    }
-
-    private static List<KeyValuePair<string, string>> CollectHeaders(
-        RequestItem request,
-        EnvironmentModel? environment)
-    {
-        return request.Headers.ActiveRows
-            .Select(row => new KeyValuePair<string, string>(
-                row.Key.Trim(),
-                VariableResolver.Resolve(row.Value, environment)))
-            .ToList();
     }
 
     private static string Decode(byte[] bytes, string? charset)
-    {
-        if (bytes.Length == 0)
+    {        if (bytes.Length == 0)
         {
             return string.Empty;
         }
@@ -229,24 +253,369 @@ public sealed class HttpRequestService
         return Encoding.UTF8.GetString(bytes);
     }
 
-    private static bool TryFormatJson(string text, out string pretty)
+    private (string Body, bool IsJson) FormatDocument(string text, string mediaType)
     {
-        pretty = text;
-        var trimmed = text.TrimStart();
-        if (string.IsNullOrEmpty(trimmed) || (trimmed[0] is not ('{' or '[')))
+        if (text.Length > MaxFormatLength)
         {
-            return false;
+            return (text, false);
+        }
+
+        var trimmed = text.TrimStart();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return (text, false);
+        }
+
+        if (!AutoFormatResponse)
+        {
+            var isJson = false;
+            if (trimmed[0] is '{' or '[')
+            {
+                try
+                {
+                    using var document = JsonDocument.Parse(text);
+                    isJson = true;
+                }
+                catch (JsonException)
+                {
+                    // Keep raw text.
+                }
+            }
+
+            return (text, isJson);
+        }
+
+        if (trimmed[0] is '{' or '[')
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(text);
+                return (JsonSerializer.Serialize(document.RootElement, PrettyJson), true);
+            }
+            catch (JsonException)
+            {
+                return (text, false);
+            }
+        }
+
+        if (trimmed[0] == '<'
+            && (mediaType.Contains("xml", StringComparison.OrdinalIgnoreCase)
+                || trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase)))
+        {
+            try
+            {
+                return (XDocument.Parse(text).ToString(), false);
+            }
+            catch
+            {
+                return (text, false);
+            }
+        }
+
+        return (text, false);
+    }
+
+    private static async Task<SseReadResult> ReadSseAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var raw = new StringBuilder();
+        var thinking = new StringBuilder();
+        var content = new StringBuilder();
+        var dataLines = new List<string>();
+        var eventCount = 0;
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+
+        while (true)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (line is null)
+            {
+                break;
+            }
+
+            raw.Append(line).Append('\n');
+
+            if (line.Length == 0)
+            {
+                if (dataLines.Count > 0)
+                {
+                    var payload = string.Join("\n", dataLines);
+                    eventCount++;
+                    AppendSsePayload(payload, thinking, content);
+                    dataLines.Clear();
+                    if (payload.Trim() == "[DONE]")
+                    {
+                        break;
+                    }
+                }
+
+                continue;
+            }
+
+            if (line[0] == ':')
+            {
+                continue;
+            }
+
+            var separator = line.IndexOf(':');
+            var field = separator < 0 ? line : line[..separator];
+            var value = separator < 0 ? string.Empty : line[(separator + 1)..];
+            if (value.StartsWith(' '))
+            {
+                value = value[1..];
+            }
+
+            if (field == "data")
+            {
+                dataLines.Add(value);
+            }
+        }
+
+        if (dataLines.Count > 0)
+        {
+            eventCount++;
+            AppendSsePayload(string.Join("\n", dataLines), thinking, content);
+        }
+        return new SseReadResult(raw.ToString(), thinking.ToString(), content.ToString(), eventCount);
+    }
+
+    private static void AppendSsePayload(string data, StringBuilder thinking, StringBuilder content)
+    {
+        if (string.IsNullOrWhiteSpace(data) || data.Trim() == "[DONE]")
+        {
+            return;
         }
 
         try
         {
-            using var document = JsonDocument.Parse(text);
-            pretty = JsonSerializer.Serialize(document.RootElement, PrettyJson);
-            return true;
+            using var document = JsonDocument.Parse(data);
+            AppendSseElement(document.RootElement, thinking, content);
         }
         catch (JsonException)
         {
-            return false;
+            // Some servers send plain text SSE events; keep them in the raw stream only.
         }
     }
+
+    private static void AppendSseElement(JsonElement root, StringBuilder thinking, StringBuilder content)
+    {
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in root.EnumerateArray())
+            {
+                AppendSseElement(item, thinking, content);
+            }
+
+            return;
+        }
+
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        // OpenAI-compatible streams.
+        if (root.TryGetProperty("choices", out var choices)
+            && choices.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var choice in choices.EnumerateArray())
+            {
+                if (choice.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (TryGetObject(choice, "delta", out var delta))
+                {
+                    AppendThinking(delta, thinking);
+                    AppendContent(delta, content);
+                }
+
+                if (TryGetObject(choice, "message", out var message))
+                {
+                    AppendThinking(message, thinking);
+                    AppendContent(message, content);
+                }
+
+                AppendString(choice, "text", content);
+            }
+
+            return;
+        }
+
+        // Anthropic-compatible streams.
+        if (TryGetObject(root, "delta", out var anthropicDelta))
+        {
+            var deltaType = GetString(anthropicDelta, "type") ?? string.Empty;
+            if (deltaType.Contains("thinking", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!AppendString(anthropicDelta, "thinking", thinking))
+                {
+                    AppendString(anthropicDelta, "text", thinking);
+                }
+            }
+            else if (deltaType.Contains("text", StringComparison.OrdinalIgnoreCase))
+            {
+                AppendString(anthropicDelta, "text", content);
+            }
+            else
+            {
+                AppendThinking(anthropicDelta, thinking);
+                AppendContent(anthropicDelta, content);
+            }
+
+            return;
+        }
+
+        if (TryGetObject(root, "content_block", out var contentBlock))
+        {
+            var blockType = GetString(contentBlock, "type") ?? string.Empty;
+            if (blockType.Contains("thinking", StringComparison.OrdinalIgnoreCase))
+            {
+                AppendString(contentBlock, "thinking", thinking);
+                AppendString(contentBlock, "text", thinking);
+            }
+            else
+            {
+                AppendString(contentBlock, "text", content);
+            }
+
+            return;
+        }
+
+        if (TryGetObject(root, "message", out var rootMessage))
+        {
+            AppendThinking(rootMessage, thinking);
+            AppendContent(rootMessage, content);
+            return;
+        }
+
+        // Gemini/other providers expose candidate content as parts.
+        if (root.TryGetProperty("candidates", out var candidates)
+            && candidates.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var candidate in candidates.EnumerateArray())
+            {
+                if (TryGetObject(candidate, "content", out var candidateContent)
+                    && candidateContent.TryGetProperty("parts", out var parts)
+                    && parts.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var part in parts.EnumerateArray())
+                    {
+                        if (part.ValueKind != JsonValueKind.Object)
+                        {
+                            continue;
+                        }
+
+                        if (part.TryGetProperty("thought", out var thought)
+                            && thought.ValueKind == JsonValueKind.True)
+                        {
+                            AppendString(part, "text", thinking);
+                        }
+                        else
+                        {
+                            AppendString(part, "text", content);
+                        }
+                    }
+                }
+            }
+
+            return;
+        }
+
+        AppendThinking(root, thinking);
+        if (!AppendString(root, "content", content))
+        {
+            AppendString(root, "text", content);
+        }
+
+        AppendString(root, "response", content);
+    }
+
+    private static void AppendThinking(JsonElement element, StringBuilder target)
+    {
+        if (!AppendString(element, "reasoning_content", target)
+            && !AppendString(element, "reasoning", target))
+        {
+            AppendString(element, "thinking", target);
+        }
+    }
+
+    private static void AppendContent(JsonElement element, StringBuilder target)
+    {
+        if (element.TryGetProperty("content", out var content))
+        {
+            AppendContentValue(content, target);
+            return;
+        }
+
+        AppendString(element, "text", target);
+    }
+
+    private static void AppendContentValue(JsonElement value, StringBuilder target)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.String:
+                target.Append(value.GetString());
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in value.EnumerateArray())
+                {
+                    AppendContentValue(item, target);
+                }
+
+                break;
+            case JsonValueKind.Object:
+                AppendString(value, "text", target);
+                AppendString(value, "content", target);
+                break;
+        }
+    }
+
+    private static bool AppendString(JsonElement element, string property, StringBuilder target)
+    {
+        if (element.ValueKind != JsonValueKind.Object
+            || !element.TryGetProperty(property, out var value)
+            || value.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var text = value.GetString();
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        target.Append(text);
+        return true;
+    }
+
+    private static bool TryGetObject(JsonElement element, string property, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(property, out value)
+            && value.ValueKind == JsonValueKind.Object)
+        {
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? GetString(JsonElement element, string property)
+    {
+        return element.ValueKind == JsonValueKind.Object
+               && element.TryGetProperty(property, out var value)
+               && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+    }
+
+    private sealed record SseReadResult(string Raw, string Thinking, string Content, int Count);
 }

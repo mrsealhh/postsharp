@@ -28,6 +28,8 @@ public sealed class HistoryEntry
 
     public string DisplayTime => Timestamp.LocalDateTime.ToString("HH:mm:ss");
 
+    public string TimestampText => Timestamp.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
+
     public string StatusLabel => StatusCode > 0 ? StatusCode.ToString() : "失败";
 
     public RequestItem ToRequest()

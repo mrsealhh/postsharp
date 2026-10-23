@@ -31,11 +31,19 @@ public partial class RequestItem : ObservableObject
     [ObservableProperty]
     private string _body = string.Empty;
 
+    [ObservableProperty]
+    private string _uploadFilePath = string.Empty;
+
+    [ObservableProperty]
+    private string _uploadFieldName = "file";
+
     public Guid Id { get; set; } = Guid.NewGuid();
 
     public EditableRowCollection Params { get; } = new();
 
     public EditableRowCollection Headers { get; } = new();
+
+    public EditableRowCollection FormFields { get; } = new();
 
     public RequestCollection? Owner { get; set; }
 
@@ -47,7 +55,9 @@ public partial class RequestItem : ObservableObject
             Method = Method,
             Url = Url,
             BodyMode = BodyMode,
-            Body = Body
+            Body = Body,
+            UploadFilePath = UploadFilePath,
+            UploadFieldName = UploadFieldName
         };
 
         foreach (var row in Params.Where(r => !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)))
@@ -60,8 +70,14 @@ public partial class RequestItem : ObservableObject
             clone.Headers.AddRow(row.Key, row.Value, row.IsEnabled);
         }
 
+        foreach (var row in FormFields.Where(r => !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)))
+        {
+            clone.FormFields.AddRow(row.Key, row.Value, row.IsEnabled);
+        }
+
         clone.Params.EnsureTrailingRow();
         clone.Headers.EnsureTrailingRow();
+        clone.FormFields.EnsureTrailingRow();
         return clone;
     }
 }
