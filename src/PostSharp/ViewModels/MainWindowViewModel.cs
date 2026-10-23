@@ -328,6 +328,7 @@ public partial class MainWindowViewModel : ObservableObject
     private string _responseContentType = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResponseStatusIcon))]
     private BadgeTone _responseTone = BadgeTone.Neutral;
 
     [ObservableProperty]
@@ -537,6 +538,18 @@ public partial class MainWindowViewModel : ObservableObject
     public string SseSummary => IsSseResponse
         ? $"SSE 流 · {SseEventCount} 个事件 · 内容 {SseContent.Length} 字 · 思考 {SseThinking.Length} 字"
         : "当前响应不是 SSE 流";
+
+    public object ResponseStatusIcon => new ArcGlyph
+    {
+        Data = ResponseTone switch
+        {
+            BadgeTone.Success => ArcIcons.CircleCheck,
+            BadgeTone.Warning => ArcIcons.TriangleAlert,
+            BadgeTone.Danger => ArcIcons.CircleX,
+            _ => ArcIcons.Info
+        },
+        Size = 12
+    };
 
     public string DetailPageSizeText => $"{DetailPageSize / 1024} KB/页";
 
