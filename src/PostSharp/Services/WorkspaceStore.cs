@@ -88,12 +88,22 @@ public sealed class WorkspaceStore
                 LastSummary = suite.LastSummary,
                 Steps = suite.Steps.Select(step => new SuiteStepDto
                 {
+                    Id = step.Id,
                     RequestId = step.RequestId,
                     RequestName = step.RequestName,
                     Method = step.Method,
                     Url = step.Url,
+                    DelayMs = step.DelayMs,
                     ExpectedStatus = step.ExpectedStatus,
-                    BodyContains = step.BodyContains
+                    BodyContains = step.BodyContains,
+                    InputMappings = step.InputMappings.Select(mapping => new SuiteMappingDto
+                    {
+                        SourceStepId = mapping.SourceStepId,
+                        SourcePath = mapping.SourcePath,
+                        TargetKind = mapping.TargetKind,
+                        TargetPath = mapping.TargetPath,
+                        Template = mapping.Template
+                    }).ToList()
                 }).ToList()
             }).ToList(),
             ActiveEnvironmentId = activeEnvironmentId
@@ -304,6 +314,8 @@ public sealed class SuiteDto
 
 public sealed class SuiteStepDto
 {
+    public Guid Id { get; set; }
+
     public Guid RequestId { get; set; }
 
     public string RequestName { get; set; } = string.Empty;
@@ -312,7 +324,24 @@ public sealed class SuiteStepDto
 
     public string Url { get; set; } = string.Empty;
 
+    public int DelayMs { get; set; } = 200;
+
     public int? ExpectedStatus { get; set; }
 
     public string? BodyContains { get; set; }
+
+    public List<SuiteMappingDto> InputMappings { get; set; } = new();
+}
+
+public sealed class SuiteMappingDto
+{
+    public Guid SourceStepId { get; set; }
+
+    public string SourcePath { get; set; } = string.Empty;
+
+    public string TargetKind { get; set; } = "Body";
+
+    public string TargetPath { get; set; } = string.Empty;
+
+    public string Template { get; set; } = "{value}";
 }

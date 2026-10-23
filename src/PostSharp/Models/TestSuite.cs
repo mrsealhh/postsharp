@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using TKCode.Arc;
 
@@ -23,6 +24,8 @@ public partial class TestSuite : ObservableObject
 
 public sealed class TestStep
 {
+    public Guid Id { get; set; } = Guid.NewGuid();
+
     public Guid RequestId { get; set; }
 
     public string RequestName { get; set; } = string.Empty;
@@ -30,6 +33,11 @@ public sealed class TestStep
     public string Method { get; set; } = "GET";
 
     public string Url { get; set; } = string.Empty;
+
+    /// <summary>Delay before the following step, in milliseconds.</summary>
+    public int DelayMs { get; set; } = 200;
+
+    public List<InputMapping> InputMappings { get; } = new();
 
     public int? ExpectedStatus { get; set; }
 
@@ -51,6 +59,24 @@ public sealed class TestStep
             ExpectedStatus is null ? null : $"状态 {ExpectedStatus}",
             string.IsNullOrWhiteSpace(BodyContains) ? null : $"包含 {BodyContains}"
         }.Where(value => value is not null));
+}
+
+/// <summary>A custom mapping from a previous step's response into this request's input.</summary>
+public sealed class InputMapping
+{
+    public Guid SourceStepId { get; set; }
+
+    /// <summary>Dotted JSON path, for example <c>data.token</c> or <c>items[0].id</c>.</summary>
+    public string SourcePath { get; set; } = string.Empty;
+
+    /// <summary>Body, Header, Query or Path.</summary>
+    public string TargetKind { get; set; } = "Body";
+
+    /// <summary>Target body path, header name, query name, or URL placeholder name.</summary>
+    public string TargetPath { get; set; } = string.Empty;
+
+    /// <summary>Optional template; <c>{value}</c> is replaced with the extracted value.</summary>
+    public string Template { get; set; } = "{value}";
 }
 
 public sealed class TestStepResult
@@ -77,6 +103,7 @@ public sealed class TestStepResult
 
     public BadgeTone ResultTone => Passed ? BadgeTone.Success : BadgeTone.Danger;
 
+    [JsonIgnore]
     public object ResultIcon => new ArcGlyph
     {
         Data = Passed ? ArcIcons.CircleCheck : ArcIcons.CircleX,
