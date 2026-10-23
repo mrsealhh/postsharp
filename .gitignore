@@ -1,0 +1,12 @@
+# Build output
+**/bin/
+**/obj/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# Local workspace snapshots
+workspace.json
