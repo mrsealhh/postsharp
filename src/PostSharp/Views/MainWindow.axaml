@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+        xmlns:controls="using:PostSharp.Controls"
         xmlns:models="using:PostSharp.Models"
         xmlns:vm="using:PostSharp.ViewModels"
         x:Class="PostSharp.Views.MainWindow"
@@ -55,7 +56,7 @@
                     <Grid ColumnDefinitions="56,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="2">
                         <arc:Badge Grid.RowSpan="2"
                                    Content="{Binding Method}"
-                                   Tone="Neutral"
+                                   Tone="{Binding MethodTone}"
                                    Size="Small"
                                    HorizontalAlignment="Left"
                                    VerticalAlignment="Center"
@@ -67,10 +68,11 @@
                                    Foreground="{arc:ArcDesignTokenResource Foreground}"
                                    TextTrimming="CharacterEllipsis"
                                    ToolTip.Tip="{Binding Name}" />
-                        <TextBlock Grid.Column="2"
-                                   Text="{Binding StatusLabel}"
-                                   FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                   Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                        <arc:Badge Grid.Column="2"
+                                   Content="{Binding StatusLabel}"
+                                   Icon="{Binding StatusIcon}"
+                                   Tone="{Binding StatusTone}"
+                                   Size="Small"
                                    VerticalAlignment="Center"
                                    Margin="6,0,0,0" />
                         <TextBlock Grid.Column="1"
@@ -100,9 +102,9 @@
                             Command="{Binding DeleteCommand}"
                             ToolTip.Tip="移入回收站"
                             AutomationProperties.Name="删除历史记录">
-                    <TextBlock Text="×"
-                               FontSize="16"
-                               Foreground="{arc:ArcDesignTokenResource Danger}" />
+                    <arc:ArcGlyph Data="{x:Static arc:ArcIcons.Trash2}"
+                                  Size="14"
+                                  Foreground="{arc:ArcDesignTokenResource Danger}" />
                 </arc:Button>
             </Grid>
         </DataTemplate>
@@ -141,6 +143,7 @@
 
     <Panel x:Name="RootPanel">
         <VisualLayerManager EnableOverlayLayer="True">
+            <Panel>
             <DockPanel LastChildFill="True">
             <!-- Product bar -->
             <Border DockPanel.Dock="Top"
@@ -176,15 +179,18 @@
                                     SelectedItem="{Binding ActiveEnvironment, Mode=TwoWay}"
                                     Placeholder="选择环境"
                                     AutomationProperties.Name="当前环境" />
-                        <arc:Button Content="环境变量"
-                                    Variant="Secondary"
-                                    Command="{Binding OpenEnvironmentDialogCommand}" />
-                        <arc:Button Content="MCP 接入"
-                                    Variant="Secondary"
-                                    Command="{Binding #McpDialog.OpenCommand}" />
-                        <arc:Button Content="管理层"
-                                    Variant="Secondary"
-                                    Command="{Binding OpenManagementCommand}" />
+                        <arc:Button Variant="Secondary"
+                                    Command="{Binding OpenEnvironmentDialogCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Globe}" Text="环境变量" />
+                        </arc:Button>
+                        <arc:Button Variant="Secondary"
+                                    Command="{Binding #McpDialog.OpenCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Terminal}" Text="MCP 接入" />
+                        </arc:Button>
+                        <arc:Button Variant="Secondary"
+                                    Command="{Binding OpenManagementCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.SlidersHorizontal}" Text="管理层" />
+                        </arc:Button>
                         <arc:ThemeSwitcher Variant="Rise" IsIconOnly="True" />
                     </StackPanel>
                 </Grid>
@@ -204,11 +210,12 @@
                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                    VerticalAlignment="Center" />
                         <arc:Button Grid.Column="1"
-                                    Content="新建集合"
                                     Variant="Ghost"
                                     Size="Small"
                                     Padding="8,0"
-                                    Command="{Binding AddCollectionCommand}" />
+                                    Command="{Binding AddCollectionCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Plus}" Text="新建集合" />
+                        </arc:Button>
                     </Grid>
 
                     <arc:SearchField Grid.Row="1"
@@ -234,18 +241,21 @@
                     </Grid>
 
                     <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6" Margin="0,0,0,10">
-                        <arc:Button Content="新建请求"
-                                    Variant="Secondary"
+                        <arc:Button Variant="Secondary"
                                     Size="Small"
-                                    Command="{Binding AddRequestCommand}" />
-                        <arc:Button Content="重命名"
-                                    Variant="Ghost"
+                                    Command="{Binding AddRequestCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Plus}" Text="新建请求" />
+                        </arc:Button>
+                        <arc:Button Variant="Ghost"
                                     Size="Small"
-                                    Command="{Binding RenameSelectedCommand}" />
-                        <arc:Button Content="删除"
-                                    Variant="Danger"
+                                    Command="{Binding RenameSelectedCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Pencil}" Text="重命名" />
+                        </arc:Button>
+                        <arc:Button Variant="Danger"
                                     Size="Small"
-                                    Command="{Binding DeleteSelectedCommand}" />
+                                    Command="{Binding DeleteSelectedCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}" Text="删除" />
+                        </arc:Button>
                     </StackPanel>
 
                     <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4" Margin="0,0,0,6">
@@ -255,17 +265,19 @@
                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                    VerticalAlignment="Center" />
                         <arc:Button Grid.Column="1"
-                                    Content="{Binding RecycleBinLabel}"
                                     Variant="Ghost"
                                     Size="Small"
                                     Padding="6,0"
-                                    Command="{Binding OpenHistoryTrashCommand}" />
+                                    Command="{Binding OpenHistoryTrashCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Archive}" Text="{Binding RecycleBinLabel}" IconSize="13" />
+                        </arc:Button>
                         <arc:Button Grid.Column="2"
-                                    Content="清空"
                                     Variant="Ghost"
                                     Size="Small"
                                     Padding="6,0"
-                                    Command="{Binding ClearHistoryCommand}" />
+                                    Command="{Binding ClearHistoryCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Eraser}" Text="清空" IconSize="13" />
+                        </arc:Button>
                     </Grid>
 
                     <arc:ScrollArea Grid.Row="5" Margin="0,0,0,10" MinHeight="110">
@@ -326,11 +338,12 @@
                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                    VerticalAlignment="Center" />
                     </StackPanel>
-                    <arc:Button Grid.Column="1"
-                                Content="保存"
-                                Variant="Secondary"
-                                Size="Small"
-                                Command="{Binding SaveCommand}" />
+                        <arc:Button Grid.Column="1"
+                                    Variant="Secondary"
+                                    Size="Small"
+                                    Command="{Binding SaveCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Check}" Text="保存" />
+                        </arc:Button>
                 </Grid>
 
                 <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,12">
@@ -351,16 +364,18 @@
                                FontFamily="{DynamicResource PostSharpCodeFont}"
                                AutomationProperties.Name="请求地址" />
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-                        <arc:Button Content="发送"
-                                    Variant="Primary"
+                        <arc:Button Variant="Primary"
                                     IsDefault="True"
-                                    MinWidth="80"
+                                    MinWidth="88"
                                     IsLoading="{Binding IsSending}"
-                                    Command="{Binding SendCommand}" />
-                        <arc:Button Content="取消"
-                                    Variant="Secondary"
+                                    Command="{Binding SendCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.SendHorizontal}" Text="发送" />
+                        </arc:Button>
+                        <arc:Button Variant="Secondary"
                                     IsVisible="{Binding IsSending}"
-                                    Command="{Binding CancelSendCommand}" />
+                                    Command="{Binding CancelSendCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.X}" Text="取消" />
+                        </arc:Button>
                     </StackPanel>
                 </Grid>
 
@@ -394,18 +409,21 @@
                     <arc:TabItem Header="请求头">
                         <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="0,6,0,0" RowSpacing="8">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <arc:Button Content="JSON 类型"
-                                            Variant="Ghost"
+                                <arc:Button Variant="Ghost"
                                             Size="Small"
-                                            Command="{Binding AddJsonContentTypeCommand}" />
-                                <arc:Button Content="Accept JSON"
-                                            Variant="Ghost"
+                                            Command="{Binding AddJsonContentTypeCommand}">
+                                    <controls:IconLabel Icon="{x:Static arc:ArcIcons.Code}" Text="JSON 类型" IconSize="13" />
+                                </arc:Button>
+                                <arc:Button Variant="Ghost"
                                             Size="Small"
-                                            Command="{Binding AddAcceptJsonCommand}" />
-                                <arc:Button Content="Bearer Token"
-                                            Variant="Ghost"
+                                            Command="{Binding AddAcceptJsonCommand}">
+                                    <controls:IconLabel Icon="{x:Static arc:ArcIcons.CircleCheck}" Text="Accept JSON" IconSize="13" />
+                                </arc:Button>
+                                <arc:Button Variant="Ghost"
                                             Size="Small"
-                                            Command="{Binding AddBearerTokenCommand}" />
+                                            Command="{Binding AddBearerTokenCommand}">
+                                    <controls:IconLabel Icon="{x:Static arc:ArcIcons.Key}" Text="Bearer Token" IconSize="13" />
+                                </arc:Button>
                             </StackPanel>
                             <StackPanel Grid.Row="1" Spacing="3">
                                 <TextBlock Text="{Binding HeaderWarningText}"
@@ -449,14 +467,16 @@
                                 </arc:SegmentedControl>
                                 <arc:Switch Content="单行"
                                             IsChecked="{Binding IsBodySingleLine, Mode=TwoWay}" />
-                                <arc:Button Content="格式化"
-                                            Variant="Ghost"
+                                <arc:Button Variant="Ghost"
                                             Size="Small"
-                                            Command="{Binding FormatBodyCommand}" />
-                                <arc:Button Content="压缩"
-                                            Variant="Ghost"
+                                            Command="{Binding FormatBodyCommand}">
+                                    <controls:IconLabel Icon="{x:Static arc:ArcIcons.Code}" Text="格式化" IconSize="13" />
+                                </arc:Button>
+                                <arc:Button Variant="Ghost"
                                             Size="Small"
-                                            Command="{Binding MinifyBodyCommand}" />
+                                            Command="{Binding MinifyBodyCommand}">
+                                    <controls:IconLabel Icon="{x:Static arc:ArcIcons.Shrink}" Text="压缩" IconSize="13" />
+                                </arc:Button>
                                 <TextBlock Text="请求体中同样可以使用 {{变量}}。"
                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
@@ -503,15 +523,17 @@
                                                    Placeholder="file"
                                                    AutomationProperties.Name="上传文件字段名" />
                                         <arc:Button Grid.Column="2"
-                                                    Content="选择文件"
                                                     Variant="Secondary"
                                                     Size="Small"
-                                                    Click="OnPickUploadFileClick" />
+                                                    Click="OnPickUploadFileClick">
+                                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Upload}" Text="选择文件" IconSize="13" />
+                                        </arc:Button>
                                         <arc:Button Grid.Column="3"
-                                                    Content="清除"
                                                     Variant="Ghost"
                                                     Size="Small"
-                                                    Click="OnClearUploadFileClick" />
+                                                    Click="OnClearUploadFileClick">
+                                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.X}" Text="清除" IconSize="13" />
+                                        </arc:Button>
                                     </Grid>
                                     <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                         <arc:Input Text="{Binding Editing.UploadFilePath, Mode=TwoWay}"
@@ -582,6 +604,7 @@
                     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
                         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                             <arc:Badge Content="{Binding ResponseStatusText}"
+                                       Icon="{Binding ResponseStatusIcon}"
                                        Tone="{Binding ResponseTone}"
                                        Size="Small"
                                        IsVisible="{Binding HasResponse}" />
@@ -649,11 +672,12 @@
                                                    TextWrapping="Wrap"
                                                    VerticalAlignment="Center" />
                                         <arc:Button Grid.Column="1"
-                                                    Content="查看完整响应"
                                                     Variant="Secondary"
                                                     Size="Small"
                                                     Margin="12,0,0,0"
-                                                    Click="OnOpenResponseDetailClick" />
+                                                    Click="OnOpenResponseDetailClick">
+                                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Expand}" Text="查看完整响应" IconSize="13" />
+                                        </arc:Button>
                                     </Grid>
                                 </Border>
                                 <Grid Grid.Row="1">
@@ -767,8 +791,6 @@
                 </Grid>
             </Grid>
         </DockPanel>
-        </VisualLayerManager>
-
         <!-- In-window context menu for the collection tree; keeps the Arc styling and never leaves the window. -->
         <Panel x:Name="TreeMenuOverlay" IsVisible="False">
             <Border Background="Transparent" PointerPressed="OnTreeMenuDismiss" />
@@ -857,9 +879,10 @@
                                        Foreground="{arc:ArcDesignTokenResource TextMuted}" />
                         </StackPanel>
                         <arc:Button Grid.Column="1"
-                                    Content="关闭"
                                     Variant="Secondary"
-                                    Command="{Binding CloseManagementCommand}" />
+                                    Command="{Binding CloseManagementCommand}">
+                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.X}" Text="关闭" IconSize="13" />
+                        </arc:Button>
                     </Grid>
 
                     <Grid Grid.Row="1" RowDefinitions="Auto,*" RowSpacing="10">
@@ -886,10 +909,12 @@
                                         <arc:SegmentedOption Value="MCP" Label="MCP" />
                                     </arc:SegmentedControl>
                                     <arc:Button Grid.Column="2"
-                                                Content="清空审计"
                                                 Variant="Ghost"
                                                 Size="Small"
-                                                Command="{Binding ClearAuditCommand}" />
+                                                VerticalAlignment="Center"
+                                                Command="{Binding ClearAuditCommand}">
+                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Eraser}" Text="清空审计" IconSize="13" />
+                                    </arc:Button>
                                 </Grid>
 
                                 <Grid Grid.Row="1" ColumnDefinitions="1.05*,0.95*" ColumnSpacing="14">
@@ -898,32 +923,40 @@
                                             BorderThickness="1"
                                             CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                             Padding="4">
-                                        <arc:ScrollArea>
-                                            <ItemsControl ItemsSource="{Binding VisibleAudit}">
+                                        <arc:ScrollArea x:Name="AuditScrollArea"
+                                                        HorizontalContentAlignment="Stretch">
+                                            <ItemsControl ItemsSource="{Binding VisibleAudit}"
+                                                          HorizontalAlignment="Stretch"
+                                                          Width="{Binding #AuditScrollArea.Bounds.Width}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="models:AuditEntry">
                                                         <arc:Button Variant="Ghost"
                                                                     Size="Small"
+                                                                    Width="{Binding $parent[arc:ScrollArea].Bounds.Width}"
                                                                     HorizontalAlignment="Stretch"
                                                                     HorizontalContentAlignment="Stretch"
                                                                     Padding="0"
                                                                     Margin="0,0,0,4"
+                                                                    AutomationProperties.Name="{Binding RequestName}"
                                                                     Click="OnAuditRowClick">
                                                             <Border Background="{arc:ArcDesignTokenResource Surface}"
+                                                                    HorizontalAlignment="Stretch"
+                                                                    Width="{Binding $parent[arc:Button].Bounds.Width}"
                                                                     CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
                                                                     Padding="10,8">
-                                                                <Grid ColumnDefinitions="82,*,Auto,Auto"
+                                                                <Grid ColumnDefinitions="88,*,Auto,Auto"
                                                                       RowDefinitions="Auto,Auto"
                                                                       ColumnSpacing="8"
-                                                                      RowSpacing="2">
+                                                                      RowSpacing="3">
                                                                     <arc:Badge Grid.RowSpan="2"
                                                                                Content="{Binding SourceLabel}"
+                                                                               Icon="{Binding SourceIcon}"
                                                                                Tone="{Binding SourceTone}"
                                                                                Size="Small"
-                                                                               Width="82"
+                                                                               Width="88"
                                                                                HorizontalAlignment="Left"
                                                                                VerticalAlignment="Center"
-                                                                               ToolTip.Tip="{Binding SourceLabel}" />
+                                                                               ToolTip.Tip="{Binding SourceTooltip}" />
                                                                     <TextBlock Grid.Column="1"
                                                                                Text="{Binding RequestName}"
                                                                                FontSize="{arc:ArcDesignTokenResource TypeSM}"
@@ -932,6 +965,7 @@
                                                                                ToolTip.Tip="{Binding RequestName}" />
                                                                     <arc:Badge Grid.Column="2"
                                                                                Content="{Binding StatusShortLabel}"
+                                                                               Icon="{Binding StatusIcon}"
                                                                                Tone="{Binding StatusTone}"
                                                                                Size="Small"
                                                                                VerticalAlignment="Center"
@@ -943,14 +977,23 @@
                                                                                VerticalAlignment="Center"
                                                                                Margin="6,0,0,0"
                                                                                ToolTip.Tip="{Binding TimeTooltip}" />
-                                                                    <TextBlock Grid.Row="1"
-                                                                               Grid.Column="1"
-                                                                               Grid.ColumnSpan="3"
-                                                                               Text="{Binding RequestLine}"
-                                                                               FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                                               Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                                               TextTrimming="CharacterEllipsis"
-                                                                               ToolTip.Tip="{Binding Url}" />
+                                                                    <Grid Grid.Row="1"
+                                                                          Grid.Column="1"
+                                                                          Grid.ColumnSpan="3"
+                                                                          ColumnDefinitions="Auto,*"
+                                                                          ColumnSpacing="6">
+                                                                        <arc:Badge Content="{Binding Method}"
+                                                                                   Tone="{Binding MethodTone}"
+                                                                                   Size="Small"
+                                                                                   ToolTip.Tip="{Binding RequestLine}" />
+                                                                        <TextBlock Grid.Column="1"
+                                                                                   Text="{Binding Url}"
+                                                                                   FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                   Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                                   VerticalAlignment="Center"
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   ToolTip.Tip="{Binding Url}" />
+                                                                    </Grid>
                                                                 </Grid>
                                                             </Border>
                                                         </arc:Button>
@@ -982,18 +1025,25 @@
                                                                                  TextWrapping="Wrap" />
                                                         </StackPanel>
                                                         <arc:Button Grid.Column="1"
-                                                                    Content="打开请求"
                                                                     Variant="Secondary"
                                                                     Size="Small"
-                                                                    Command="{Binding OpenSelectedAuditRequestCommand}" />
+                                                                    Command="{Binding OpenSelectedAuditRequestCommand}">
+                                                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.ArrowUpRight}" Text="打开请求" IconSize="13" />
+                                                        </arc:Button>
                                                     </Grid>
 
                                                     <WrapPanel ItemSpacing="8" LineSpacing="6">
                                                         <arc:Badge Content="{Binding SelectedAuditEntry.SourceLabel}"
+                                                                   Icon="{Binding SelectedAuditEntry.SourceIcon}"
                                                                    Tone="{Binding SelectedAuditEntry.SourceTone}"
-                                                                   Size="Small" />
+                                                                   Size="Small"
+                                                                   ToolTip.Tip="{Binding SelectedAuditEntry.SourceTooltip}" />
                                                         <arc:Badge Content="{Binding SelectedAuditEntry.StatusLabel}"
+                                                                   Icon="{Binding SelectedAuditEntry.StatusIcon}"
                                                                    Tone="{Binding SelectedAuditEntry.StatusTone}"
+                                                                   Size="Small" />
+                                                        <arc:Badge Content="{Binding SelectedAuditEntry.Method}"
+                                                                   Tone="{Binding SelectedAuditEntry.MethodTone}"
                                                                    Size="Small" />
                                                         <TextBlock Text="{Binding SelectedAuditEntry.DurationText}"
                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -1029,16 +1079,21 @@
                                                                TextWrapping="Wrap" />
 
                                                     <StackPanel IsVisible="{Binding SelectedAuditEntry.HasAiOutput}" Spacing="6">
-                                                        <TextBlock Text="AI 聚合输出"
-                                                                   FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                                   FontWeight="Medium"
-                                                                   Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Sparkles}"
+                                                                            Text="AI 聚合输出"
+                                                                            IconSize="12"
+                                                                            TextFontSize="12"
+                                                                            TextForeground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                            IconForeground="{arc:ArcDesignTokenResource TextSecondary}" />
                                                         <TextBlock Text="{Binding SelectedAuditEntry.AiSummary}"
                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-                                                        <TextBlock Text="Content"
-                                                                   FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                                   Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.FileText}"
+                                                                            Text="Content"
+                                                                            IconSize="12"
+                                                                            TextFontSize="12"
+                                                                            TextForeground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                            IconForeground="{arc:ArcDesignTokenResource TextSecondary}" />
                                                         <arc:CodeBlock Code="{Binding SelectedAuditEntry.AiContent}"
                                                                        Language="text"
                                                                        FileName="ai-content.md"
@@ -1047,9 +1102,12 @@
                                                                        CopyLabel="复制内容"
                                                                        ShowAllLinesFormat="展开全部 {0} 行"
                                                                        ShowFewerLinesLabel="收起" />
-                                                        <TextBlock Text="Thinking"
-                                                                   FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                                   Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Brain}"
+                                                                            Text="Thinking"
+                                                                            IconSize="12"
+                                                                            TextFontSize="12"
+                                                                            TextForeground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                            IconForeground="{arc:ArcDesignTokenResource TextSecondary}" />
                                                         <arc:CodeBlock Code="{Binding SelectedAuditEntry.AiThinking}"
                                                                        Language="text"
                                                                        FileName="ai-thinking.txt"
@@ -1059,10 +1117,12 @@
                                                                        ShowAllLinesFormat="展开全部 {0} 行"
                                                                        ShowFewerLinesLabel="收起" />
                                                     </StackPanel>
-                                                    <TextBlock Text="cURL"
-                                                               FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                               FontWeight="Medium"
-                                                               Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                                    <controls:IconLabel Icon="{x:Static arc:ArcIcons.Terminal}"
+                                                                        Text="cURL"
+                                                                        IconSize="12"
+                                                                        TextFontSize="12"
+                                                                        TextForeground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                        IconForeground="{arc:ArcDesignTokenResource TextSecondary}" />
                                                     <arc:CodeBlock Code="{Binding SelectedAuditEntry.Curl}"
                                                                    Language="bash"
                                                                    FileName="request.sh"
@@ -1070,10 +1130,12 @@
                                                                    MaxLines="8"
                                                                    CopyLabel="复制 cURL" />
 
-                                                    <TextBlock Text="请求头"
-                                                               FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                               FontWeight="Medium"
-                                                               Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                                    <controls:IconLabel Icon="{x:Static arc:ArcIcons.List}"
+                                                                        Text="请求头"
+                                                                        IconSize="12"
+                                                                        TextFontSize="12"
+                                                                        TextForeground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                        IconForeground="{arc:ArcDesignTokenResource TextSecondary}" />
                                                     <arc:CodeBlock Code="{Binding SelectedAuditEntry.RequestHeaders}"
                                                                    Language="text"
                                                                    FileName="headers.txt"
@@ -1083,10 +1145,12 @@
                                                                    ShowAllLinesFormat="展开全部 {0} 行"
                                                                    ShowFewerLinesLabel="收起" />
 
-                                                    <TextBlock Text="请求体预览"
-                                                               FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                               FontWeight="Medium"
-                                                               Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                                    <controls:IconLabel Icon="{x:Static arc:ArcIcons.FileText}"
+                                                                        Text="请求体预览"
+                                                                        IconSize="12"
+                                                                        TextFontSize="12"
+                                                                        TextForeground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                        IconForeground="{arc:ArcDesignTokenResource TextSecondary}" />
                                                     <arc:CodeBlock Code="{Binding SelectedAuditEntry.RequestBodyPreview}"
                                                                    Language="text"
                                                                    FileName="request.txt"
@@ -1096,10 +1160,12 @@
                                                                    ShowAllLinesFormat="展开全部 {0} 行"
                                                                    ShowFewerLinesLabel="收起" />
 
-                                                    <TextBlock Text="响应体预览"
-                                                               FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                               FontWeight="Medium"
-                                                               Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                                    <controls:IconLabel Icon="{x:Static arc:ArcIcons.FileText}"
+                                                                        Text="响应体预览"
+                                                                        IconSize="12"
+                                                                        TextFontSize="12"
+                                                                        TextForeground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                        IconForeground="{arc:ArcDesignTokenResource TextSecondary}" />
                                                     <arc:CodeBlock Code="{Binding SelectedAuditEntry.ResponseBodyPreview}"
                                                                    Language="text"
                                                                    FileName="response.txt"
@@ -1124,14 +1190,16 @@
                             <Grid IsVisible="{Binding IsAutomationTab}" ColumnDefinitions="0.85*,1.15*" ColumnSpacing="14">
                                 <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <arc:Button Content="从当前集合创建"
-                                                    Variant="Secondary"
+                                        <arc:Button Variant="Secondary"
                                                     Size="Small"
-                                                    Command="{Binding CreateSuiteFromCollectionCommand}" />
-                                        <arc:Button Content="删除套件"
-                                                    Variant="Danger"
+                                                    Command="{Binding CreateSuiteFromCollectionCommand}">
+                                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Plus}" Text="从当前集合创建" IconSize="13" />
+                                        </arc:Button>
+                                        <arc:Button Variant="Danger"
                                                     Size="Small"
-                                                    Command="{Binding DeleteSelectedSuiteCommand}" />
+                                                    Command="{Binding DeleteSelectedSuiteCommand}">
+                                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}" Text="删除套件" IconSize="13" />
+                                        </arc:Button>
                                     </StackPanel>
                                     <Border Grid.Row="1"
                                             Background="{arc:ArcDesignTokenResource SurfaceMuted}"
@@ -1145,12 +1213,16 @@
                                                     <DataTemplate x:DataType="models:TestSuite">
                                                         <arc:Button Variant="Ghost"
                                                                     Size="Small"
+                                                                    Width="{Binding $parent[arc:ScrollArea].Bounds.Width}"
                                                                     HorizontalAlignment="Stretch"
                                                                     HorizontalContentAlignment="Stretch"
                                                                     Padding="0"
                                                                     Margin="0,0,0,4"
+                                                                    AutomationProperties.Name="{Binding Name}"
                                                                     Click="OnSuiteRowClick">
                                                             <Border Background="{arc:ArcDesignTokenResource Surface}"
+                                                                    Width="{Binding $parent[arc:Button].Bounds.Width}"
+                                                                    HorizontalAlignment="Stretch"
                                                                     CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
                                                                     Padding="10,8">
                                                                 <StackPanel Spacing="2">
@@ -1218,14 +1290,18 @@
                                                                                Foreground="{arc:ArcDesignTokenResource Foreground}"
                                                                                TextTrimming="CharacterEllipsis"
                                                                                ToolTip.Tip="{Binding RequestName}" />
-                                                                    <TextBlock Text="{Binding Method}"
-                                                                               FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                                               Foreground="{arc:ArcDesignTokenResource TextMuted}" />
-                                                                    <TextBlock Text="{Binding Url}"
-                                                                               FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                                               Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                                               TextTrimming="CharacterEllipsis"
-                                                                               ToolTip.Tip="{Binding Url}" />
+                                                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                                                                        <arc:Badge Content="{Binding Method}"
+                                                                                   Tone="{Binding MethodTone}"
+                                                                                   Size="Small" />
+                                                                        <TextBlock Grid.Column="1"
+                                                                                   Text="{Binding Url}"
+                                                                                   FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                   Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                                   VerticalAlignment="Center"
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   ToolTip.Tip="{Binding Url}" />
+                                                                    </Grid>
                                                                     <TextBlock Text="{Binding ExpectationText}"
                                                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
@@ -1262,6 +1338,7 @@
                                                                               ColumnSpacing="8"
                                                                               RowSpacing="2">
                                                                             <arc:Badge Content="{Binding ResultLabel}"
+                                                                                       Icon="{Binding ResultIcon}"
                                                                                        Tone="{Binding ResultTone}"
                                                                                        Size="Small" />
                                                                             <TextBlock Grid.Column="1"
@@ -1296,11 +1373,12 @@
                                     </Grid>
 
                                     <arc:Button Grid.Row="3"
-                                                Content="运行套件"
                                                 Variant="Primary"
                                                 HorizontalAlignment="Right"
                                                 IsLoading="{Binding IsRunningSuite}"
-                                                Command="{Binding RunSelectedSuiteCommand}" />
+                                                Command="{Binding RunSelectedSuiteCommand}">
+                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Play}" Text="运行套件" />
+                                    </arc:Button>
                                 </Grid>
                             </Grid>
 
@@ -1321,7 +1399,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,220" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
                                                 <arc:Badge Content="1"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1341,15 +1419,17 @@
                                                             Spacing="6"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center">
-                                                    <arc:Button Content="载入健康检查"
-                                                                Variant="Secondary"
+                                                    <arc:Button Variant="Secondary"
                                                                 Size="Small"
                                                                 Command="{Binding LoadGuideRequestCommand}"
-                                                                CommandParameter="health" />
-                                                    <arc:Button Content="清空审计"
-                                                                Variant="Ghost"
+                                                                CommandParameter="health">
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Play}" Text="载入健康检查" IconSize="13" />
+                                                    </arc:Button>
+                                                    <arc:Button Variant="Ghost"
                                                                 Size="Small"
-                                                                Command="{Binding ClearAuditCommand}" />
+                                                                Command="{Binding ClearAuditCommand}">
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Eraser}" Text="清空审计" IconSize="13" />
+                                                    </arc:Button>
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -1359,7 +1439,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,220" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
                                                 <arc:Badge Content="2"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1379,15 +1459,17 @@
                                                             Spacing="6"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center">
-                                                    <arc:Button Content="打开环境变量"
-                                                                Variant="Secondary"
+                                                    <arc:Button Variant="Secondary"
                                                                 Size="Small"
-                                                                Command="{Binding OpenEnvironmentFromGuideCommand}" />
-                                                    <arc:Button Content="载入 SSE 示例"
-                                                                Variant="Ghost"
+                                                                Command="{Binding OpenEnvironmentFromGuideCommand}">
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Globe}" Text="打开环境变量" IconSize="13" />
+                                                    </arc:Button>
+                                                    <arc:Button Variant="Ghost"
                                                                 Size="Small"
                                                                 Command="{Binding LoadGuideRequestCommand}"
-                                                                CommandParameter="sse" />
+                                                                CommandParameter="sse">
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Terminal}" Text="载入 SSE 示例" IconSize="13" />
+                                                    </arc:Button>
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -1397,7 +1479,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,220" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
                                                 <arc:Badge Content="3"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1417,16 +1499,18 @@
                                                             Spacing="6"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center">
-                                                    <arc:Button Content="查看审计"
-                                                                Variant="Secondary"
+                                                    <arc:Button Variant="Secondary"
                                                                 Size="Small"
                                                                 Command="{Binding SetManagementTabCommand}"
-                                                                CommandParameter="审计" />
-                                                    <arc:Button Content="查看自动化"
-                                                                Variant="Ghost"
+                                                                CommandParameter="审计">
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.ListChecks}" Text="查看审计" IconSize="13" />
+                                                    </arc:Button>
+                                                    <arc:Button Variant="Ghost"
                                                                 Size="Small"
                                                                 Command="{Binding SetManagementTabCommand}"
-                                                                CommandParameter="自动化" />
+                                                                CommandParameter="自动化">
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Play}" Text="查看自动化" IconSize="13" />
+                                                    </arc:Button>
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -1436,7 +1520,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,220" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
                                                 <arc:Badge Content="4"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1456,16 +1540,18 @@
                                                             Spacing="6"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center">
-                                                    <arc:Button Content="载入 SSE 示例"
-                                                                Variant="Secondary"
+                                                    <arc:Button Variant="Secondary"
                                                                 Size="Small"
                                                                 Command="{Binding LoadGuideRequestCommand}"
-                                                                CommandParameter="sse" />
-                                                    <arc:Button Content="载入上传示例"
-                                                                Variant="Ghost"
+                                                                CommandParameter="sse">
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Sparkles}" Text="载入 SSE 示例" IconSize="13" />
+                                                    </arc:Button>
+                                                    <arc:Button Variant="Ghost"
                                                                 Size="Small"
                                                                 Command="{Binding LoadGuideRequestCommand}"
-                                                                CommandParameter="upload" />
+                                                                CommandParameter="upload">
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Upload}" Text="载入上传示例" IconSize="13" />
+                                                    </arc:Button>
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -1475,7 +1561,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,220" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
                                                 <arc:Badge Content="5"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1505,10 +1591,11 @@
                                                             Spacing="6"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center">
-                                                    <arc:Button Content="打开 MCP 接入说明"
-                                                                Variant="Secondary"
+                                                    <arc:Button Variant="Secondary"
                                                                 Size="Small"
-                                                                Command="{Binding OpenMcpFromGuideCommand}" />
+                                                                Command="{Binding OpenMcpFromGuideCommand}">
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.ExternalLink}" Text="打开 MCP 接入说明" IconSize="13" />
+                                                    </arc:Button>
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -1518,7 +1605,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,220" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
                                                 <arc:Badge Content="6"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1538,16 +1625,18 @@
                                                             Spacing="6"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center">
-                                                    <arc:Button Content="打开设置"
-                                                                Variant="Secondary"
+                                                    <arc:Button Variant="Secondary"
                                                                 Size="Small"
                                                                 Command="{Binding SetManagementTabCommand}"
-                                                                CommandParameter="设置" />
-                                                    <arc:Button Content="载入上传示例"
-                                                                Variant="Ghost"
+                                                                CommandParameter="设置">
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Settings}" Text="打开设置" IconSize="13" />
+                                                    </arc:Button>
+                                                    <arc:Button Variant="Ghost"
                                                                 Size="Small"
                                                                 Command="{Binding LoadGuideRequestCommand}"
-                                                                CommandParameter="upload" />
+                                                                CommandParameter="upload">
+                                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Upload}" Text="载入上传示例" IconSize="13" />
+                                                    </arc:Button>
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -1630,9 +1719,10 @@
                                 </arc:ScrollArea>
 
                                 <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                                    <arc:Button Content="恢复默认设置"
-                                                Variant="Secondary"
-                                                Command="{Binding ResetSettingsCommand}" />
+                                    <arc:Button Variant="Secondary"
+                                                Command="{Binding ResetSettingsCommand}">
+                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.RotateCcw}" Text="恢复默认设置" IconSize="13" />
+                                    </arc:Button>
                                 </StackPanel>
                             </Grid>
                         </Grid>
@@ -1752,9 +1842,10 @@
                     <arc:Button Content="取消"
                                 Variant="Secondary"
                                 Command="{Binding CancelHistoryTrashCommand}" />
-                    <arc:Button Content="移入回收站"
-                                Variant="Danger"
-                                Command="{Binding ConfirmHistoryTrashCommand}" />
+                    <arc:Button Variant="Danger"
+                                Command="{Binding ConfirmHistoryTrashCommand}">
+                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Archive}" Text="移入回收站" />
+                    </arc:Button>
                 </StackPanel>
             </arc:Dialog.Actions>
         </arc:Dialog>
@@ -1778,7 +1869,7 @@
                                           RowSpacing="2">
                                         <arc:Badge Grid.RowSpan="2"
                                                    Content="{Binding Method}"
-                                                   Tone="Neutral"
+                                                   Tone="{Binding MethodTone}"
                                                    Size="Small"
                                                    HorizontalAlignment="Left"
                                                    VerticalAlignment="Center" />
@@ -1788,10 +1879,11 @@
                                                    Foreground="{arc:ArcDesignTokenResource Foreground}"
                                                    TextTrimming="CharacterEllipsis"
                                                    ToolTip.Tip="{Binding Name}" />
-                                        <TextBlock Grid.Column="2"
-                                                   Text="{Binding StatusLabel}"
-                                                   FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                   Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                        <arc:Badge Grid.Column="2"
+                                                   Content="{Binding StatusLabel}"
+                                                   Icon="{Binding StatusIcon}"
+                                                   Tone="{Binding StatusTone}"
+                                                   Size="Small"
                                                    VerticalAlignment="Center"
                                                    Margin="6,0,0,0" />
                                         <TextBlock Grid.Column="3"
@@ -1815,14 +1907,16 @@
                                                     Orientation="Horizontal"
                                                     Spacing="4"
                                                     HorizontalAlignment="Right">
-                                            <arc:Button Content="恢复"
-                                                        Variant="Secondary"
+                                            <arc:Button Variant="Secondary"
                                                         Size="Small"
-                                                        Command="{Binding RestoreCommand}" />
-                                            <arc:Button Content="永久删除"
-                                                        Variant="Danger"
+                                                        Command="{Binding RestoreCommand}">
+                                                <controls:IconLabel Icon="{x:Static arc:ArcIcons.RotateCcw}" Text="恢复" IconSize="13" />
+                                            </arc:Button>
+                                            <arc:Button Variant="Danger"
                                                         Size="Small"
-                                                        Command="{Binding PurgeCommand}" />
+                                                        Command="{Binding PurgeCommand}">
+                                                <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}" Text="永久删除" IconSize="13" />
+                                            </arc:Button>
                                         </StackPanel>
                                     </Grid>
                                 </Border>
@@ -1838,13 +1932,15 @@
 
             <arc:Dialog.Actions>
                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                    <arc:Button Content="清空回收站"
-                                Variant="Danger"
+                    <arc:Button Variant="Danger"
                                 IsVisible="{Binding HasRecycledHistory}"
-                                Command="{Binding EmptyHistoryTrashCommand}" />
-                    <arc:Button Content="关闭"
-                                Variant="Primary"
-                                Command="{Binding CloseHistoryTrashCommand}" />
+                                Command="{Binding EmptyHistoryTrashCommand}">
+                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}" Text="清空回收站" />
+                    </arc:Button>
+                    <arc:Button Variant="Primary"
+                                Command="{Binding CloseHistoryTrashCommand}">
+                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.X}" Text="关闭" />
+                    </arc:Button>
                 </StackPanel>
             </arc:Dialog.Actions>
         </arc:Dialog>
@@ -1858,9 +1954,10 @@
                     <arc:Button Content="取消"
                                 Variant="Secondary"
                                 Command="{Binding CancelHistoryPurgeCommand}" />
-                    <arc:Button Content="永久删除"
-                                Variant="Danger"
-                                Command="{Binding ConfirmHistoryPurgeCommand}" />
+                    <arc:Button Variant="Danger"
+                                Command="{Binding ConfirmHistoryPurgeCommand}">
+                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}" Text="永久删除" />
+                    </arc:Button>
                 </StackPanel>
             </arc:Dialog.Actions>
         </arc:Dialog>
@@ -1911,11 +2008,15 @@
 
             <arc:Dialog.Actions>
                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                    <arc:Button Content="关闭"
-                                Variant="Secondary"
-                                Command="{Binding CloseMcpDialogCommand}" />
+                    <arc:Button Variant="Secondary"
+                                Command="{Binding CloseMcpDialogCommand}">
+                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.X}" Text="关闭" />
+                    </arc:Button>
                 </StackPanel>
             </arc:Dialog.Actions>
         </arc:Dialog>
+            </Panel>
+        </VisualLayerManager>
+
     </Panel>
 </Window>

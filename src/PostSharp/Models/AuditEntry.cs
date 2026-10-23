@@ -72,6 +72,16 @@ public sealed class AuditEntry
     public string SourceLabel => Source == "MCP" ? "AI · MCP" : "UI";
 
     [JsonIgnore]
+    public string SourceTooltip => Source == "MCP" ? "AI 通过 MCP 发起" : "界面手动发送";
+
+    [JsonIgnore]
+    public object SourceIcon => new ArcGlyph
+    {
+        Data = Source == "MCP" ? ArcIcons.Sparkles : ArcIcons.Monitor,
+        Size = 12
+    };
+
+    [JsonIgnore]
     public string StatusLabel => StatusCode > 0
         ? (string.IsNullOrWhiteSpace(StatusText) ? StatusCode.ToString() : $"{StatusCode} {StatusText}")
         : "失败";
@@ -104,6 +114,29 @@ public sealed class AuditEntry
 
     [JsonIgnore]
     public BadgeTone SourceTone => Source == "MCP" ? BadgeTone.Info : BadgeTone.Neutral;
+
+    [JsonIgnore]
+    public object StatusIcon => new ArcGlyph
+    {
+        Data = StatusCode switch
+        {
+            >= 200 and < 300 => ArcIcons.CircleCheck,
+            >= 300 and < 400 => ArcIcons.Info,
+            >= 400 and < 500 => ArcIcons.TriangleAlert,
+            _ => ArcIcons.CircleX
+        },
+        Size = 12
+    };
+
+    [JsonIgnore]
+    public BadgeTone MethodTone => Method.ToUpperInvariant() switch
+    {
+        "GET" => BadgeTone.Info,
+        "POST" => BadgeTone.Success,
+        "PUT" or "PATCH" => BadgeTone.Warning,
+        "DELETE" => BadgeTone.Danger,
+        _ => BadgeTone.Neutral
+    };
 
     [JsonIgnore]
     public BadgeTone StatusTone => StatusCode switch
