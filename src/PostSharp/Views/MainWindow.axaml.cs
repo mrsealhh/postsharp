@@ -18,7 +18,6 @@ namespace PostSharp.Views;
 public partial class MainWindow : Window
 {
     private MainWindowViewModel? _viewModel;
-    private object? _treeActionTarget;
     private TreeDisplayNode? _dragCandidate;
     private Point _dragStart;
     private bool _dragging;
@@ -49,11 +48,6 @@ public partial class MainWindow : Window
             if (TreeMenuOverlay.IsVisible)
             {
                 HideTreeMenu();
-            }
-
-            if (TreeActionMenuOverlay.IsVisible)
-            {
-                HideTreeActionMenu();
             }
         };
         Opened += (_, _) =>
@@ -93,13 +87,6 @@ public partial class MainWindow : Window
         if (_viewModel?.IsManagementOpen == true)
         {
             _viewModel.CloseManagementCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
-
-        if (TreeActionMenuOverlay.IsVisible)
-        {
-            HideTreeActionMenu();
             e.Handled = true;
             return;
         }
@@ -296,12 +283,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        _treeActionTarget = target;
         SelectTreeNode(control);
-        var isCollection = target is RequestCollection;
-        TreeActionCollectionSection.IsVisible = isCollection;
-        TreeActionFavoriteLabel.Text = IsFavorite(target) ? "取消收藏" : "收藏";
-        ShowTreeActionMenu(control);
+        var point = control.TranslatePoint(
+                        new Point(control.Bounds.Width - 190, control.Bounds.Height + 2),
+                        RootPanel)
+                    ?? new Point(24, 200);
+        ShowTreeMenu(point);
         e.Handled = true;
     }
 
@@ -311,93 +298,6 @@ public partial class MainWindow : Window
         RequestCollection collection => collection.IsFavorite,
         _ => false
     };
-
-    private void ShowTreeActionMenu(Control anchor)
-    {
-        HideTreeMenu();
-        TreeActionMenuOverlay.IsVisible = true;
-        TreeActionMenuCard.Measure(Size.Infinity);
-
-        var desired = TreeActionMenuCard.DesiredSize;
-        var area = RootPanel.Bounds.Size;
-        var position = anchor.TranslatePoint(
-                           new Point(anchor.Bounds.Width - desired.Width, anchor.Bounds.Height + 2),
-                           RootPanel)
-                       ?? new Point(24, 200);
-        var left = Math.Clamp(position.X, 8, Math.Max(8, area.Width - desired.Width - 8));
-        var top = Math.Clamp(position.Y, 8, Math.Max(8, area.Height - desired.Height - 8));
-
-        Canvas.SetLeft(TreeActionMenuCard, left);
-        Canvas.SetTop(TreeActionMenuCard, top);
-        TreeActionFavoriteButton.Focus();
-    }
-
-    private void HideTreeActionMenu()
-    {
-        TreeActionMenuOverlay.IsVisible = false;
-        _treeActionTarget = null;
-    }
-
-    private void OnTreeActionMenuDismiss(object? sender, PointerPressedEventArgs e)
-    {
-        HideTreeActionMenu();
-        e.Handled = true;
-    }
-
-    private void OnTreeActionFavoriteClick(object? sender, RoutedEventArgs e)
-    {
-        var target = _treeActionTarget;
-        HideTreeActionMenu();
-
-        if (_viewModel is not null && target is not null)
-        {
-            _viewModel.ToggleFavoriteNode(target);
-        }
-    }
-
-    private void OnTreeActionNewRequestClick(object? sender, RoutedEventArgs e)
-    {
-        var target = _treeActionTarget as RequestCollection;
-        HideTreeActionMenu();
-
-        if (_viewModel is not null && target is not null)
-        {
-            _viewModel.AddRequestToCollection(target);
-        }
-    }
-
-    private void OnTreeActionNewSubcollectionClick(object? sender, RoutedEventArgs e)
-    {
-        var target = _treeActionTarget as RequestCollection;
-        HideTreeActionMenu();
-
-        if (_viewModel is not null && target is not null)
-        {
-            _viewModel.AddSubcollection(target);
-        }
-    }
-
-    private void OnTreeActionRenameClick(object? sender, RoutedEventArgs e)
-    {
-        var target = _treeActionTarget;
-        HideTreeActionMenu();
-
-        if (_viewModel is not null && target is not null)
-        {
-            _viewModel.RequestRenameNode(target);
-        }
-    }
-
-    private void OnTreeActionDeleteClick(object? sender, RoutedEventArgs e)
-    {
-        var target = _treeActionTarget;
-        HideTreeActionMenu();
-
-        if (_viewModel is not null && target is not null)
-        {
-            _viewModel.RequestDeleteNode(target);
-        }
-    }
 
     private void OnWindowPointerMoved(object? sender, PointerEventArgs e)
     {
@@ -495,8 +395,12 @@ public partial class MainWindow : Window
 
     private void ShowTreeMenu(Point position)
     {
-        HideTreeActionMenu();
         var favoriteTarget = _viewModel?.SelectedRequest ?? (object?)_viewModel?.SelectedCollection;
+        var isCollectionNode = _viewModel?.SelectedRequest is null
+                               && _viewModel?.SelectedCollection is not null;
+        var isRequestNode = _viewModel?.SelectedRequest is not null;
+        TreeMenuCollectionSection.IsVisible = isCollectionNode;
+        TreeMenuRequestSection.IsVisible = isRequestNode;
         TreeMenuFavoriteButton.IsVisible = favoriteTarget is not null;
         TreeMenuFavoriteLabel.Text = favoriteTarget is not null && IsFavorite(favoriteTarget)
             ? "取消收藏"
@@ -511,7 +415,14 @@ public partial class MainWindow : Window
 
         Canvas.SetLeft(TreeMenuCard, left);
         Canvas.SetTop(TreeMenuCard, top);
-        TreeMenuAddButton.Focus();
+        if (isCollectionNode)
+        {
+            TreeMenuNewRequestButton.Focus();
+        }
+        else
+        {
+            TreeMenuFavoriteButton.Focus();
+        }
     }
 
     private void HideTreeMenu()
@@ -529,6 +440,28 @@ public partial class MainWindow : Window
         if (_viewModel is not null && target is not null)
         {
             _viewModel.ToggleFavoriteNode(target);
+        }
+    }
+
+    private void OnTreeMenuNewRequestClick(object? sender, RoutedEventArgs e)
+    {
+        var collection = _viewModel?.SelectedCollection;
+        HideTreeMenu();
+
+        if (_viewModel is not null && collection is not null)
+        {
+            _viewModel.AddRequestToCollection(collection);
+        }
+    }
+
+    private void OnTreeMenuNewSubcollectionClick(object? sender, RoutedEventArgs e)
+    {
+        var collection = _viewModel?.SelectedCollection;
+        HideTreeMenu();
+
+        if (_viewModel is not null && collection is not null)
+        {
+            _viewModel.AddSubcollection(collection);
         }
     }
 

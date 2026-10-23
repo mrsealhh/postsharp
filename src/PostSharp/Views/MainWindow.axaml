@@ -959,37 +959,63 @@
                         CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                         BoxShadow="{arc:ArcDesignTokenResource ShadowFloating}"
                         Padding="6">
-                    <StackPanel Width="196" Spacing="2">
-                        <arc:Button x:Name="TreeMenuAddButton"
-                                    Content="新建请求"
-                                    Variant="Ghost"
-                                    Size="Small"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Left"
-                                    Padding="12,0"
-                                    Command="{Binding AddRequestCommand}"
-                                    Click="OnTreeMenuItemClick" />
-                        <arc:Button Content="复制请求"
-                                    Variant="Ghost"
-                                    Size="Small"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Left"
-                                    Padding="12,0"
-                                    IsVisible="{Binding IsRequestSelected}"
-                                    Command="{Binding DuplicateSelectedRequestCommand}"
-                                    Click="OnTreeMenuItemClick" />
-                        <arc:Button Content="复制 URL"
-                                    Variant="Ghost"
-                                    Size="Small"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Left"
-                                    Padding="12,0"
-                                    IsVisible="{Binding IsRequestSelected}"
-                                    Command="{Binding CopySelectedUrlCommand}"
-                                    Click="OnTreeMenuItemClick" />
-                        <Border Height="1"
-                                Margin="6,4"
-                                Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+                    <StackPanel Width="190" Spacing="2">
+                        <StackPanel x:Name="TreeMenuCollectionSection" Spacing="2">
+                            <arc:Button x:Name="TreeMenuNewRequestButton"
+                                        Variant="Ghost"
+                                        Size="Small"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Left"
+                                        Padding="12,0"
+                                        Click="OnTreeMenuNewRequestClick">
+                                <controls:IconLabel Icon="{x:Static arc:ArcIcons.FilePlus}"
+                                                    Text="新建请求"
+                                                    IconSize="13" />
+                            </arc:Button>
+                            <arc:Button x:Name="TreeMenuNewSubcollectionButton"
+                                        Variant="Ghost"
+                                        Size="Small"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Left"
+                                        Padding="12,0"
+                                        Click="OnTreeMenuNewSubcollectionClick">
+                                <controls:IconLabel Icon="{x:Static arc:ArcIcons.Folder}"
+                                                    Text="新建二级集合"
+                                                    IconSize="13" />
+                            </arc:Button>
+                            <Border Height="1"
+                                    Margin="6,4"
+                                    Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+                        </StackPanel>
+                        <StackPanel x:Name="TreeMenuRequestSection" Spacing="2">
+                            <arc:Button Variant="Ghost"
+                                        Size="Small"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Left"
+                                        Padding="12,0"
+                                        IsVisible="{Binding IsRequestSelected}"
+                                        Command="{Binding DuplicateSelectedRequestCommand}"
+                                        Click="OnTreeMenuItemClick">
+                                <controls:IconLabel Icon="{x:Static arc:ArcIcons.Copy}"
+                                                    Text="复制请求"
+                                                    IconSize="13" />
+                            </arc:Button>
+                            <arc:Button Variant="Ghost"
+                                        Size="Small"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Left"
+                                        Padding="12,0"
+                                        IsVisible="{Binding IsRequestSelected}"
+                                        Command="{Binding CopySelectedUrlCommand}"
+                                        Click="OnTreeMenuItemClick">
+                                <controls:IconLabel Icon="{x:Static arc:ArcIcons.Link2}"
+                                                    Text="复制 URL"
+                                                    IconSize="13" />
+                            </arc:Button>
+                            <Border Height="1"
+                                    Margin="6,4"
+                                    Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+                        </StackPanel>
                         <arc:Button x:Name="TreeMenuFavoriteButton"
                                     Variant="Ghost"
                                     Size="Small"
@@ -1002,87 +1028,14 @@
                                                 Text="收藏"
                                                 IconSize="13" />
                         </arc:Button>
-                        <arc:Button Content="重命名"
-                                    Variant="Ghost"
+                        <arc:Button Variant="Ghost"
                                     Size="Small"
                                     HorizontalAlignment="Stretch"
                                     HorizontalContentAlignment="Left"
                                     Padding="12,0"
                                     IsVisible="{Binding HasSelection}"
                                     Command="{Binding RenameSelectedCommand}"
-                                    Click="OnTreeMenuItemClick" />
-                        <arc:Button Variant="Ghost"
-                                    Size="Small"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Left"
-                                    Padding="12,0"
-                                    IsVisible="{Binding HasSelection}"
-                                    Command="{Binding DeleteSelectedCommand}"
                                     Click="OnTreeMenuItemClick">
-                            <TextBlock Text="删除" Foreground="{arc:ArcDesignTokenResource Danger}" />
-                        </arc:Button>
-                    </StackPanel>
-                </Border>
-            </Canvas>
-        </Panel>
-
-        <!-- Hover row actions: favorite, rename, delete. -->
-        <Panel x:Name="TreeActionMenuOverlay" IsVisible="False">
-            <Border Background="Transparent" PointerPressed="OnTreeActionMenuDismiss" />
-            <Canvas HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                <Border x:Name="TreeActionMenuCard"
-                        Background="{arc:ArcDesignTokenResource SurfaceRaised}"
-                        BorderBrush="{arc:ArcDesignTokenResource Border}"
-                        BorderThickness="1"
-                        CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
-                        BoxShadow="{arc:ArcDesignTokenResource ShadowFloating}"
-                        Padding="6">
-                    <StackPanel Width="190" Spacing="2">
-                        <StackPanel x:Name="TreeActionCollectionSection" Spacing="2">
-                            <arc:Button x:Name="TreeActionNewRequestButton"
-                                    Variant="Ghost"
-                                    Size="Small"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Left"
-                                    Padding="12,0"
-                                    Click="OnTreeActionNewRequestClick">
-                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.FilePlus}"
-                                                Text="新建请求"
-                                                IconSize="13" />
-                        </arc:Button>
-                        <arc:Button x:Name="TreeActionNewSubcollectionButton"
-                                    Variant="Ghost"
-                                    Size="Small"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Left"
-                                    Padding="12,0"
-                                    Click="OnTreeActionNewSubcollectionClick">
-                            <controls:IconLabel Icon="{x:Static arc:ArcIcons.Folder}"
-                                                Text="新建二级集合"
-                                                IconSize="13" />
-                        </arc:Button>
-                        <Border Height="1"
-                                Margin="6,4"
-                                Background="{arc:ArcDesignTokenResource BorderSubtle}" />
-                        </StackPanel>
-                        <arc:Button x:Name="TreeActionFavoriteButton"
-                                    Variant="Ghost"
-                                    Size="Small"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Left"
-                                    Padding="12,0"
-                                    Click="OnTreeActionFavoriteClick">
-                            <controls:IconLabel x:Name="TreeActionFavoriteLabel"
-                                                Icon="{x:Static arc:ArcIcons.Star}"
-                                                Text="收藏"
-                                                IconSize="13" />
-                        </arc:Button>
-                        <arc:Button Variant="Ghost"
-                                    Size="Small"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Left"
-                                    Padding="12,0"
-                                    Click="OnTreeActionRenameClick">
                             <controls:IconLabel Icon="{x:Static arc:ArcIcons.Pencil}"
                                                 Text="重命名"
                                                 IconSize="13" />
@@ -1092,7 +1045,9 @@
                                     HorizontalAlignment="Stretch"
                                     HorizontalContentAlignment="Left"
                                     Padding="12,0"
-                                    Click="OnTreeActionDeleteClick">
+                                    IsVisible="{Binding HasSelection}"
+                                    Command="{Binding DeleteSelectedCommand}"
+                                    Click="OnTreeMenuItemClick">
                             <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}"
                                                 Text="删除"
                                                 IconSize="13"
@@ -1144,7 +1099,7 @@
 
                         <Grid Grid.Row="1">
                             <Grid IsVisible="{Binding IsAuditTab}" RowDefinitions="Auto,*" RowSpacing="10">
-                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
                                     <arc:SearchField Placeholder="搜索请求、URL、工具或客户端"
                                                      Text="{Binding AuditFilterText, Mode=TwoWay}"
                                                      AutomationProperties.Name="搜索审计" />
@@ -1156,6 +1111,13 @@
                                         <arc:SegmentedOption Value="MCP" Label="MCP" />
                                     </arc:SegmentedControl>
                                     <arc:Button Grid.Column="2"
+                                                Variant="Ghost"
+                                                Size="Small"
+                                                VerticalAlignment="Center"
+                                                Command="{Binding OpenAuditTrashCommand}">
+                                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Archive}" Text="{Binding AuditTrashLabel}" IconSize="13" />
+                                    </arc:Button>
+                                    <arc:Button Grid.Column="3"
                                                 Variant="Ghost"
                                                 Size="Small"
                                                 VerticalAlignment="Center"
@@ -2204,6 +2166,145 @@
                                 Command="{Binding CancelHistoryPurgeCommand}" />
                     <arc:Button Variant="Danger"
                                 Command="{Binding ConfirmHistoryPurgeCommand}">
+                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}" Text="永久删除" />
+                    </arc:Button>
+                </StackPanel>
+            </arc:Dialog.Actions>
+        </arc:Dialog>
+
+        <arc:Dialog IsOpen="{Binding IsAuditTrashConfirmOpen, Mode=TwoWay}"
+                    Title="{Binding AuditTrashConfirmTitle}"
+                    Description="{Binding AuditTrashConfirmDescription}"
+                    Size="Small">
+            <arc:Dialog.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <arc:Button Content="取消"
+                                Variant="Secondary"
+                                Command="{Binding CancelAuditTrashCommand}" />
+                    <arc:Button Variant="Danger"
+                                Command="{Binding ConfirmAuditTrashCommand}">
+                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Archive}" Text="移入回收站" />
+                    </arc:Button>
+                </StackPanel>
+            </arc:Dialog.Actions>
+        </arc:Dialog>
+
+        <arc:Dialog IsOpen="{Binding IsAuditTrashOpen, Mode=TwoWay}"
+                    Title="审计回收站"
+                    Description="清空的审计记录会先进入这里；恢复后回到审计列表，永久删除后无法恢复。"
+                    Size="Large">
+            <Grid MinHeight="260">
+                <arc:ScrollArea MaxHeight="360">
+                    <ItemsControl ItemsSource="{Binding AuditTrash}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:AuditEntry">
+                                <Border Background="{arc:ArcDesignTokenResource Surface}"
+                                        CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
+                                        Padding="8"
+                                        Margin="0,0,0,4">
+                                    <Grid ColumnDefinitions="88,*,54,56,160"
+                                          RowDefinitions="Auto,Auto"
+                                          ColumnSpacing="6"
+                                          RowSpacing="2">
+                                        <arc:Badge Grid.RowSpan="2"
+                                                   Content="{Binding SourceLabel}"
+                                                   Icon="{Binding SourceIcon}"
+                                                   Tone="{Binding SourceTone}"
+                                                   Size="Small"
+                                                   Width="88"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center"
+                                                   ToolTip.Tip="{Binding SourceTooltip}" />
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding RequestName}"
+                                                   FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                   Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding RequestName}" />
+                                        <arc:Badge Grid.Column="2"
+                                                   Content="{Binding StatusShortLabel}"
+                                                   Icon="{Binding StatusIcon}"
+                                                   Tone="{Binding StatusTone}"
+                                                   Size="Small"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center"
+                                                   ToolTip.Tip="{Binding StatusLabel}" />
+                                        <TextBlock Grid.Column="3"
+                                                   Text="{Binding TimeText}"
+                                                   FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                   Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                   HorizontalAlignment="Right"
+                                                   VerticalAlignment="Center"
+                                                   ToolTip.Tip="{Binding TimeTooltip}" />
+                                        <Grid Grid.Row="1"
+                                              Grid.Column="1"
+                                              Grid.ColumnSpan="3"
+                                              ColumnDefinitions="Auto,*"
+                                              ColumnSpacing="6">
+                                            <arc:Badge Content="{Binding Method}"
+                                                       Tone="{Binding MethodTone}"
+                                                       Size="Small" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Url}"
+                                                       FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                       Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding Url}" />
+                                        </Grid>
+                                        <StackPanel Grid.Row="1"
+                                                    Grid.Column="4"
+                                                    Orientation="Horizontal"
+                                                    Spacing="4"
+                                                    HorizontalAlignment="Right">
+                                            <arc:Button Variant="Secondary"
+                                                        Size="Small"
+                                                        Command="{Binding RestoreCommand}">
+                                                <controls:IconLabel Icon="{x:Static arc:ArcIcons.RotateCcw}" Text="恢复" IconSize="13" />
+                                            </arc:Button>
+                                            <arc:Button Variant="Danger"
+                                                        Size="Small"
+                                                        Command="{Binding PurgeCommand}">
+                                                <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}" Text="永久删除" IconSize="13" />
+                                            </arc:Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </arc:ScrollArea>
+                <arc:EmptyState IsVisible="{Binding !HasAuditTrash}"
+                                Title="审计回收站为空"
+                                Description="清空审计记录后，会先出现在这里。"
+                                Label="审计回收站" />
+            </Grid>
+
+            <arc:Dialog.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <arc:Button Variant="Danger"
+                                IsVisible="{Binding HasAuditTrash}"
+                                Command="{Binding EmptyAuditTrashCommand}">
+                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}" Text="清空回收站" />
+                    </arc:Button>
+                    <arc:Button Content="关闭"
+                                Variant="Primary"
+                                Command="{Binding CloseAuditTrashCommand}" />
+                </StackPanel>
+            </arc:Dialog.Actions>
+        </arc:Dialog>
+
+        <arc:Dialog IsOpen="{Binding IsAuditPurgeConfirmOpen, Mode=TwoWay}"
+                    Title="{Binding AuditPurgeTitle}"
+                    Description="{Binding AuditPurgeDescription}"
+                    Size="Small">
+            <arc:Dialog.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <arc:Button Content="取消"
+                                Variant="Secondary"
+                                Command="{Binding CancelAuditPurgeCommand}" />
+                    <arc:Button Variant="Danger"
+                                Command="{Binding ConfirmAuditPurgeCommand}">
                         <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}" Text="永久删除" />
                     </arc:Button>
                 </StackPanel>
