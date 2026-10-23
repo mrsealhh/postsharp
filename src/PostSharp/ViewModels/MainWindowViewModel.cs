@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
@@ -28,6 +29,12 @@ public partial class MainWindowViewModel : ObservableObject
     private const int DetailPageSize = 16 * 1024;
     private const int MaxCollectionDepth = 5;
 
+    private static readonly JsonSerializerOptions MappingJsonOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     private int _auditLimit = 500;
     private int _largeResponseThreshold = 64 * 1024;
 
@@ -40,6 +47,7 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
     private bool _initializing = true;
+    private IReadOnlyList<SuiteStepOption> _mappingSourceOptions = Array.Empty<SuiteStepOption>();
 
     public MainWindowViewModel()
     {
@@ -141,6 +149,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<SuiteSourceCollection> SuiteSources { get; } = new();
 
+    public ObservableCollection<SuiteBuilderStep> SuiteBuilderSteps { get; } = new();
+
+    public ObservableCollection<InputMappingEditor> MappingEditors { get; } = new();
+
     public ObservableCollection<ResponseHeaderView> ResponseHeaders { get; } = new();
 
     public IReadOnlyList<string> Methods { get; } = new[]
@@ -207,6 +219,15 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string _suiteBuilderName = string.Empty;
+
+    [ObservableProperty]
+    private bool _isMappingEditorOpen;
+
+    [ObservableProperty]
+    private SuiteBuilderStep? _mappingStep;
+
+    [ObservableProperty]
+    private string _mappingTitle = string.Empty;
 
     [ObservableProperty]
     private bool _isBodySingleLine;
@@ -952,6 +973,117 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         return false;
+    }
+
+    public bool CanMoveNode(object node, int delta)
+    {
+        return node switch
+        {
+            RequestItem request when request.Owner is { } owner =>
+                owner.Requests.IndexOf(request) + delta is var index
+                && index >= 0 && index < owner.Requests.Count,
+            RequestCollection collection => CanMoveCollection(collection, delta),
+            _ => false
+        };
+    }
+
+    public void MoveNode(object node, int delta)
+    {
+        if (node is RequestItem request && request.Owner is { } owner)
+        {
+            var index = owner.Requests.IndexOf(request);
+            var target = index + delta;
+            if (index < 0 || target < 0 || target >= owner.Requests.Count)
+            {
+                return;
+            }
+
+            owner.Requests.Move(index, target);
+        }
+        else if (node is RequestCollection collection)
+        {
+            MoveCollection(collection, delta);
+        }
+        else
+        {
+            return;
+        }
+
+        Persist();
+        NotifyTreeChanged();
+    }
+
+    private bool CanMoveCollection(RequestCollection collection, int delta)
+    {
+        IList<RequestCollection> siblings = collection.Parent is { } parent
+            ? parent.Children
+            : Collections.Where(candidate => candidate.Parent is null).ToList();
+        var index = siblings.IndexOf(collection);
+        var target = index + delta;
+        return index >= 0 && target >= 0 && target < siblings.Count;
+    }
+
+    private void MoveCollection(RequestCollection collection, int delta)
+    {
+        if (collection.Parent is { } parent)
+        {
+            var index = parent.Children.IndexOf(collection);
+            var target = index + delta;
+            if (index >= 0 && target >= 0 && target < parent.Children.Count)
+            {
+                parent.Children.Move(index, target);
+            }
+        }
+        else
+        {
+            var roots = Collections
+                .Where(candidate => candidate.Parent is null)
+                .ToList();
+            var index = roots.IndexOf(collection);
+            var target = index + delta;
+            if (index >= 0 && target >= 0 && target < roots.Count)
+            {
+                var item = roots[index];
+                roots.RemoveAt(index);
+                roots.Insert(target, item);
+            }
+        }
+
+        var rootOrder = Collections
+            .Where(candidate => candidate.Parent is null)
+            .ToList();
+        SyncFlatCollectionOrder(rootOrder);
+    }
+
+    private void SyncFlatCollectionOrder(IReadOnlyList<RequestCollection> roots)
+    {
+        var ordered = new List<RequestCollection>();
+        foreach (var root in roots)
+        {
+            AddCollectionInTreeOrder(root, ordered);
+        }
+
+        if (ordered.Count != Collections.Count)
+        {
+            return;
+        }
+
+        Collections.Clear();
+        foreach (var collection in ordered)
+        {
+            Collections.Add(collection);
+        }
+    }
+
+    private static void AddCollectionInTreeOrder(
+        RequestCollection collection,
+        ICollection<RequestCollection> target)
+    {
+        target.Add(collection);
+        foreach (var child in collection.Children)
+        {
+            AddCollectionInTreeOrder(child, target);
+        }
     }
 
     public bool MoveTreeNode(TreeDisplayNode source, RequestCollection target)
@@ -1701,12 +1833,20 @@ public partial class MainWindowViewModel : ObservableObject
     private void OpenSuiteBuilder()
     {
         SuiteSources.Clear();
+        SuiteBuilderSteps.Clear();
+        MappingEditors.Clear();
         var defaultCollection = SelectedCollection ?? Editing.Owner;
         foreach (var collection in Collections.Where(collection => collection.Parent is null))
         {
             AddSuiteSourceRows(collection, 0, defaultCollection);
         }
 
+        foreach (var source in SuiteSources)
+        {
+            source.PropertyChanged += OnSuiteSourceChanged;
+        }
+
+        RebuildSuiteBuilderSteps();
         SuiteBuilderName = $"组装套件 {Suites.Count + 1}";
         IsSuiteBuilderOpen = true;
     }
@@ -1730,23 +1870,179 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    private void OnSuiteSourceChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SuiteSourceCollection.IsSelected)
+            && IsSuiteBuilderOpen)
+        {
+            RebuildSuiteBuilderSteps();
+        }
+    }
+
+    private void RebuildSuiteBuilderSteps()
+    {
+        var selectedRequests = SuiteSources
+            .Where(source => source.IsSelected)
+            .SelectMany(source => source.Collection.Requests)
+            .ToList();
+        var existing = SuiteBuilderSteps.ToDictionary(wrapper => wrapper.Step.RequestId);
+        var next = new List<SuiteBuilderStep>();
+
+        foreach (var request in selectedRequests)
+        {
+            if (!existing.TryGetValue(request.Id, out var wrapper))
+            {
+                wrapper = new SuiteBuilderStep
+                {
+                    Step = new TestStep
+                    {
+                        RequestId = request.Id,
+                        RequestName = request.Name,
+                        Method = request.Method,
+                        Url = request.Url,
+                        DelayMs = 200
+                    },
+                    DelayText = "200"
+                };
+            }
+
+            wrapper.EditMappingsCommand = new RelayCommand(() => OpenMappingEditor(wrapper));
+            next.Add(wrapper);
+        }
+
+        SuiteBuilderSteps.Clear();
+        foreach (var wrapper in next)
+        {
+            SuiteBuilderSteps.Add(wrapper);
+        }
+    }
+
     [RelayCommand]
-    private void CancelSuiteBuilder() => IsSuiteBuilderOpen = false;
+    private void CancelSuiteBuilder()
+    {
+        IsSuiteBuilderOpen = false;
+        IsMappingEditorOpen = false;
+    }
+
+    [RelayCommand]
+    private void AddMappingRule()
+    {
+        var editor = CreateMappingEditor(new InputMapping());
+        MappingEditors.Add(editor);
+    }
+
+    private InputMappingEditor CreateMappingEditor(InputMapping source)
+    {
+        var editor = new InputMappingEditor
+        {
+            SourceOptions = _mappingSourceOptions,
+            SelectedSource = _mappingSourceOptions.FirstOrDefault(option =>
+                option.Id == source.SourceStepId),
+            SourcePath = source.SourcePath,
+            TargetKind = string.IsNullOrWhiteSpace(source.TargetKind) ? "Body" : source.TargetKind,
+            TargetPath = source.TargetPath,
+            Template = string.IsNullOrWhiteSpace(source.Template) ? "{value}" : source.Template
+        };
+        editor.RemoveCommand = new RelayCommand(() => MappingEditors.Remove(editor));
+        return editor;
+    }
+
+    private void OpenMappingEditor(SuiteBuilderStep step)
+    {
+        var index = SuiteBuilderSteps.IndexOf(step);
+        _mappingSourceOptions = SuiteBuilderSteps
+            .Take(Math.Max(0, index))
+            .Select((source, sourceIndex) => new SuiteStepOption(
+                source.Step.Id,
+                $"{sourceIndex + 1}. {source.RequestName}"))
+            .ToList();
+
+        MappingEditors.Clear();
+        foreach (var mapping in step.Step.InputMappings)
+        {
+            MappingEditors.Add(CreateMappingEditor(mapping));
+        }
+
+        if (MappingEditors.Count == 0)
+        {
+            MappingEditors.Add(CreateMappingEditor(new InputMapping()));
+        }
+
+        MappingStep = step;
+        MappingTitle = $"入参映射 · {step.RequestName}";
+        IsMappingEditorOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelMappingEditor() => IsMappingEditorOpen = false;
+
+    [RelayCommand]
+    private void SaveMappingEditor()
+    {
+        if (MappingStep is not { } step)
+        {
+            return;
+        }
+
+        foreach (var editor in MappingEditors)
+        {
+            if (editor.SelectedSource is null)
+            {
+                editor.Error = "请选择来源步骤";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(editor.TargetPath))
+            {
+                editor.Error = "请填写目标字段";
+                return;
+            }
+        }
+
+        step.Step.InputMappings.Clear();
+        foreach (var editor in MappingEditors)
+        {
+            step.Step.InputMappings.Add(new InputMapping
+            {
+                SourceStepId = editor.SelectedSource?.Id ?? Guid.Empty,
+                SourcePath = editor.SourcePath.Trim(),
+                TargetKind = editor.TargetKind,
+                TargetPath = editor.TargetPath.Trim(),
+                Template = string.IsNullOrWhiteSpace(editor.Template)
+                    ? "{value}"
+                    : editor.Template
+            });
+        }
+
+        step.RefreshMappingLabel();
+        IsMappingEditorOpen = false;
+    }
 
     [RelayCommand]
     private void CreateSuiteFromSources()
     {
-        var sources = SuiteSources.Where(source => source.IsSelected).ToList();
-        var steps = sources
-            .SelectMany(source => source.Collection.Requests)
-            .Select(request => new TestStep
+        var steps = new List<TestStep>();
+        var previousStepIds = new HashSet<Guid>();
+        foreach (var wrapper in SuiteBuilderSteps)
+        {
+            if (!int.TryParse(wrapper.DelayText, out var delay))
             {
-                RequestId = request.Id,
-                RequestName = request.Name,
-                Method = request.Method,
-                Url = request.Url
-            })
-            .ToList();
+                delay = 200;
+            }
+
+            foreach (var mapping in wrapper.Step.InputMappings)
+            {
+                if (!previousStepIds.Contains(mapping.SourceStepId))
+                {
+                    ShowToast($"步骤「{wrapper.RequestName}」的映射来源不在前序步骤中");
+                    return;
+                }
+            }
+
+            wrapper.Step.DelayMs = Math.Clamp(delay, 0, 60_000);
+            previousStepIds.Add(wrapper.Step.Id);
+            steps.Add(wrapper.Step);
+        }
 
         if (steps.Count == 0)
         {
@@ -1880,9 +2176,27 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var steps = new List<TestStepResult>();
         var stopped = false;
+        var stepResults = new Dictionary<Guid, HttpResult>();
 
-        foreach (var step in suite.Steps)
+        for (var index = 0; index < suite.Steps.Count; index++)
         {
+            var step = suite.Steps[index];
+
+            if (index > 0 && suite.Steps[index - 1].DelayMs > 0)
+            {
+                try
+                {
+                    await Task.Delay(
+                        Math.Clamp(suite.Steps[index - 1].DelayMs, 0, 60_000),
+                        cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    stopped = true;
+                    break;
+                }
+            }
+
             if (cancellationToken.IsCancellationRequested)
             {
                 stopped = true;
@@ -1913,11 +2227,41 @@ public partial class MainWindowViewModel : ObservableObject
                 continue;
             }
 
+            var effectiveRequest = step.InputMappings.Count > 0 ? request.Clone() : request;
+            var mappingError = step.InputMappings.Count > 0
+                ? ApplyInputMappings(effectiveRequest, step, stepResults)
+                : null;
+
+            if (mappingError is not null)
+            {
+                var failure = HttpRequestService.Failure(mappingError);
+                AddHistory(effectiveRequest, failure);
+                RecordAudit(effectiveRequest, null, failure, source, tool, client);
+                stepResults[step.Id] = failure;
+                steps.Add(new TestStepResult
+                {
+                    RequestId = request.Id,
+                    Name = request.Name,
+                    Method = request.Method,
+                    StatusText = "入参映射失败",
+                    Error = mappingError,
+                    Passed = false
+                });
+
+                if (suite.StopOnError)
+                {
+                    stopped = true;
+                    break;
+                }
+
+                continue;
+            }
+
             ComposedRequest? composed = null;
             HttpResult result;
             try
             {
-                composed = RequestComposer.Compose(request, ActiveEnvironment);
+                composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment);
                 result = await _http.SendAsync(composed, cancellationToken);
             }
             catch (Exception exception)
@@ -1925,8 +2269,9 @@ public partial class MainWindowViewModel : ObservableObject
                 result = HttpRequestService.Failure(exception.Message);
             }
 
-            AddHistory(request, result);
-            RecordAudit(request, composed, result, source, tool, client);
+            stepResults[step.Id] = result;
+            AddHistory(effectiveRequest, result);
+            RecordAudit(effectiveRequest, composed, result, source, tool, client);
 
             var statusMatches = step.ExpectedStatus is null
                 ? result.StatusCode is >= 200 and < 400
@@ -1982,6 +2327,346 @@ public partial class MainWindowViewModel : ObservableObject
 
         Persist();
         return run;
+    }
+
+    private static string? ApplyInputMappings(
+        RequestItem request,
+        TestStep step,
+        IReadOnlyDictionary<Guid, HttpResult> stepResults)
+    {
+        foreach (var mapping in step.InputMappings)
+        {
+            if (string.IsNullOrWhiteSpace(mapping.TargetPath))
+            {
+                return "入参映射的目标字段为空";
+            }
+
+            if (!stepResults.TryGetValue(mapping.SourceStepId, out var source)
+                || !source.HasResponse)
+            {
+                return "入参映射的来源步骤不存在或尚未执行";
+            }
+
+            try
+            {
+                var sourceValue = SelectJsonPath(source.Body, mapping.SourcePath);
+                if (sourceValue is null)
+                {
+                    return $"来源字段不存在：{mapping.SourcePath}";
+                }
+
+                var text = JsonNodeToText(sourceValue);
+                var template = string.IsNullOrWhiteSpace(mapping.Template)
+                    ? "{value}"
+                    : mapping.Template;
+                var rendered = template.Replace("{value}", text, StringComparison.Ordinal);
+
+                var error = ApplyMappingTarget(request, mapping, sourceValue, rendered);
+                if (error is not null)
+                {
+                    return error;
+                }
+            }
+            catch (JsonException)
+            {
+                return $"来源响应不是有效 JSON：{mapping.SourcePath}";
+            }
+            catch (Exception exception)
+            {
+                return $"入参映射失败：{exception.Message}";
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ApplyMappingTarget(
+        RequestItem request,
+        InputMapping mapping,
+        JsonNode sourceValue,
+        string rendered)
+    {
+        switch (mapping.TargetKind.Trim().ToLowerInvariant())
+        {
+            case "header":
+                SetInputRow(request.Headers, mapping.TargetPath.Trim(), rendered);
+                return null;
+
+            case "query":
+                SetInputRow(request.Params, mapping.TargetPath.Trim(), rendered);
+                return null;
+
+            case "path":
+            {
+                var name = mapping.TargetPath.Trim().Trim('{', '}');
+                if (name.StartsWith(':'))
+                {
+                    name = name[1..];
+                }
+
+                var encoded = Uri.EscapeDataString(rendered);
+                var before = request.Url;
+                request.Url = request.Url
+                    .Replace($"{{{name}}}", encoded, StringComparison.Ordinal)
+                    .Replace($":{name}", encoded, StringComparison.Ordinal);
+
+                return string.Equals(before, request.Url, StringComparison.Ordinal)
+                    ? $"URL 中未找到占位符：{mapping.TargetPath}"
+                    : null;
+            }
+
+            case "body":
+            {
+                var template = string.IsNullOrWhiteSpace(mapping.Template)
+                    ? "{value}"
+                    : mapping.Template;
+                JsonNode valueNode;
+                if (string.Equals(template, "{value}", StringComparison.Ordinal))
+                {
+                    valueNode = sourceValue.DeepClone();
+                }
+                else
+                {
+                    try
+                    {
+                        valueNode = JsonNode.Parse(rendered) ?? JsonValue.Create(rendered)!;
+                    }
+                    catch (JsonException)
+                    {
+                        valueNode = JsonValue.Create(rendered)!;
+                    }
+                }
+
+                var body = string.IsNullOrWhiteSpace(request.Body)
+                    ? new JsonObject()
+                    : JsonNode.Parse(request.Body);
+                if (body is null)
+                {
+                    return "请求体不是有效 JSON";
+                }
+
+                var path = mapping.TargetPath.Trim();
+                if (path is "" or "$")
+                {
+                    request.Body = valueNode.ToJsonString(MappingJsonOptions);
+                }
+                else
+                {
+                    if (body is not JsonObject && body is not JsonArray)
+                    {
+                        return "目标请求体不是 JSON 对象/数组";
+                    }
+
+                    var error = SetJsonPath(body, path, valueNode);
+                    if (error is not null)
+                    {
+                        return error;
+                    }
+
+                    request.Body = body.ToJsonString(MappingJsonOptions);
+                }
+
+                if (string.Equals(request.BodyMode, "None", StringComparison.OrdinalIgnoreCase))
+                {
+                    request.BodyMode = "Json";
+                }
+
+                return null;
+            }
+
+            default:
+                return $"不支持的映射目标类型：{mapping.TargetKind}";
+        }
+    }
+
+    private static void SetInputRow(EditableRowCollection rows, string key, string value)
+    {
+        var row = rows.FirstOrDefault(candidate =>
+            candidate.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+        if (row is not null)
+        {
+            row.Value = value;
+            return;
+        }
+
+        rows.AddRow(key, value);
+    }
+
+    private static JsonNode? SelectJsonPath(string body, string path)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        var root = JsonNode.Parse(body);
+        if (root is null)
+        {
+            return null;
+        }
+
+        var segments = ParseJsonPath(path);
+        if (segments.Count == 0)
+        {
+            return root.DeepClone();
+        }
+
+        JsonNode? current = root;
+        foreach (var segment in segments)
+        {
+            if (segment.Property is { } property)
+            {
+                if (current is not JsonObject obj
+                    || !obj.TryGetPropertyValue(property, out var child))
+                {
+                    return null;
+                }
+
+                current = child;
+            }
+            else if (segment.Index is { } index)
+            {
+                if (current is not JsonArray array || index < 0 || index >= array.Count)
+                {
+                    return null;
+                }
+
+                current = array[index];
+            }
+
+            if (current is null)
+            {
+                return null;
+            }
+        }
+
+        return current?.DeepClone();
+    }
+
+    private static string? SetJsonPath(JsonNode root, string path, JsonNode value)
+    {
+        var segments = ParseJsonPath(path);
+        if (segments.Count == 0)
+        {
+            return "目标路径为空";
+        }
+
+        JsonNode? current = root;
+        for (var index = 0; index < segments.Count; index++)
+        {
+            var segment = segments[index];
+            var last = index == segments.Count - 1;
+
+            if (segment.Property is { } property)
+            {
+                if (current is not JsonObject obj)
+                {
+                    return $"目标路径不是对象：{property}";
+                }
+
+                if (last)
+                {
+                    obj[property] = value;
+                }
+                else
+                {
+                    if (obj[property] is not { } child)
+                    {
+                        child = segments[index + 1].Property is not null
+                            ? new JsonObject()
+                            : new JsonArray();
+                        obj[property] = child;
+                    }
+
+                    current = obj[property];
+                }
+            }
+            else if (segment.Index is { } arrayIndex)
+            {
+                if (current is not JsonArray array
+                    || arrayIndex < 0
+                    || arrayIndex >= array.Count)
+                {
+                    return $"目标数组索引不可用：{arrayIndex}";
+                }
+
+                if (last)
+                {
+                    array[arrayIndex] = value;
+                }
+                else
+                {
+                    current = array[arrayIndex];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static List<(string? Property, int? Index)> ParseJsonPath(string path)
+    {
+        var result = new List<(string? Property, int? Index)>();
+        var text = path.Trim();
+        if (text.StartsWith('$'))
+        {
+            text = text[1..];
+        }
+
+        text = text.TrimStart('.');
+        var token = new System.Text.StringBuilder();
+
+        void Flush()
+        {
+            if (token.Length == 0)
+            {
+                return;
+            }
+
+            result.Add((token.ToString(), null));
+            token.Clear();
+        }
+
+        for (var index = 0; index < text.Length; index++)
+        {
+            var character = text[index];
+            if (character == '.')
+            {
+                Flush();
+                continue;
+            }
+
+            if (character == '[')
+            {
+                Flush();
+                var end = text.IndexOf(']', index);
+                if (end < 0
+                    || !int.TryParse(text[(index + 1)..end], out var arrayIndex))
+                {
+                    throw new JsonException($"无效的数组索引：{text}");
+                }
+
+                result.Add((null, arrayIndex));
+                index = end;
+                continue;
+            }
+
+            token.Append(character);
+        }
+
+        Flush();
+        return result;
+    }
+
+    private static string JsonNodeToText(JsonNode node)
+    {
+        if (node is JsonValue value
+            && value.TryGetValue<string>(out var text))
+        {
+            return text ?? string.Empty;
+        }
+
+        return node.ToJsonString(MappingJsonOptions);
     }
 
     [RelayCommand]
@@ -2584,15 +3269,31 @@ public partial class MainWindowViewModel : ObservableObject
 
             foreach (var stepDto in suiteDto.Steps)
             {
-                suite.Steps.Add(new TestStep
+                var step = new TestStep
                 {
+                    Id = stepDto.Id == Guid.Empty ? Guid.NewGuid() : stepDto.Id,
                     RequestId = stepDto.RequestId,
                     RequestName = stepDto.RequestName,
                     Method = stepDto.Method,
                     Url = stepDto.Url,
+                    DelayMs = stepDto.DelayMs,
                     ExpectedStatus = stepDto.ExpectedStatus,
                     BodyContains = stepDto.BodyContains
-                });
+                };
+
+                foreach (var mappingDto in stepDto.InputMappings)
+                {
+                    step.InputMappings.Add(new InputMapping
+                    {
+                        SourceStepId = mappingDto.SourceStepId,
+                        SourcePath = mappingDto.SourcePath,
+                        TargetKind = mappingDto.TargetKind,
+                        TargetPath = mappingDto.TargetPath,
+                        Template = mappingDto.Template
+                    });
+                }
+
+                suite.Steps.Add(step);
             }
 
             Suites.Add(suite);

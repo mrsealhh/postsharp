@@ -401,6 +401,11 @@ public partial class MainWindow : Window
         var isRequestNode = _viewModel?.SelectedRequest is not null;
         TreeMenuCollectionSection.IsVisible = isCollectionNode;
         TreeMenuRequestSection.IsVisible = isRequestNode;
+        var orderTarget = _viewModel?.SelectedRequest ?? (object?)_viewModel?.SelectedCollection;
+        TreeMenuMoveUpButton.IsEnabled = orderTarget is not null
+                                         && _viewModel?.CanMoveNode(orderTarget, -1) == true;
+        TreeMenuMoveDownButton.IsEnabled = orderTarget is not null
+                                           && _viewModel?.CanMoveNode(orderTarget, 1) == true;
         TreeMenuFavoriteButton.IsVisible = favoriteTarget is not null;
         TreeMenuFavoriteLabel.Text = favoriteTarget is not null && IsFavorite(favoriteTarget)
             ? "取消收藏"
@@ -462,6 +467,28 @@ public partial class MainWindow : Window
         if (_viewModel is not null && collection is not null)
         {
             _viewModel.AddSubcollection(collection);
+        }
+    }
+
+    private void OnTreeMenuMoveUpClick(object? sender, RoutedEventArgs e)
+    {
+        var target = _viewModel?.SelectedRequest ?? (object?)_viewModel?.SelectedCollection;
+        HideTreeMenu();
+
+        if (_viewModel is not null && target is not null)
+        {
+            _viewModel.MoveNode(target, -1);
+        }
+    }
+
+    private void OnTreeMenuMoveDownClick(object? sender, RoutedEventArgs e)
+    {
+        var target = _viewModel?.SelectedRequest ?? (object?)_viewModel?.SelectedCollection;
+        HideTreeMenu();
+
+        if (_viewModel is not null && target is not null)
+        {
+            _viewModel.MoveNode(target, 1);
         }
     }
 
