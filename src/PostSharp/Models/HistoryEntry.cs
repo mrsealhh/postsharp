@@ -26,6 +26,12 @@ public sealed class HistoryEntry
 
     public IRelayCommand? OpenCommand { get; set; }
 
+    public IRelayCommand? DeleteCommand { get; set; }
+
+    public IRelayCommand? RestoreCommand { get; set; }
+
+    public IRelayCommand? PurgeCommand { get; set; }
+
     public string DisplayTime => Timestamp.LocalDateTime.ToString("HH:mm:ss");
 
     public string TimestampText => Timestamp.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
