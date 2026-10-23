@@ -12,6 +12,9 @@
         MinWidth="1000"
         MinHeight="660"
         WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="-1"
+        WindowDecorations="BorderOnly"
         Background="{arc:ArcDesignTokenResource Background}">
 
     <Window.Resources>
@@ -152,6 +155,14 @@
             <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Warning}" />
             <Setter Property="BorderThickness" Value="1" />
         </Style>
+        <Style Selector="Border.treeRow.dropBefore">
+            <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Warning}" />
+            <Setter Property="BorderThickness" Value="0,2,0,0" />
+        </Style>
+        <Style Selector="Border.treeRow.dropAfter">
+            <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Warning}" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+        </Style>
         <Style Selector=".rowActions" x:SetterTargetType="Button">
             <Setter Property="Opacity" Value="0" />
             <Setter Property="IsHitTestVisible" Value="False" />
@@ -174,11 +185,13 @@
             <Panel>
             <DockPanel LastChildFill="True">
             <!-- Product bar -->
-            <Border DockPanel.Dock="Top"
+            <Border x:Name="TitleBar"
+                    DockPanel.Dock="Top"
                     Background="{arc:ArcDesignTokenResource Surface}"
                     BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
                     BorderThickness="0,0,0,1"
-                    Padding="16,10">
+                    Padding="16,10"
+                    PointerPressed="OnTitleBarPointerPressed">
                 <Grid ColumnDefinitions="Auto,*,Auto">
                     <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                         <Image Width="42"
@@ -220,6 +233,58 @@
                             <controls:IconLabel Icon="{x:Static arc:ArcIcons.SlidersHorizontal}" Text="管理层" />
                         </arc:Button>
                         <arc:ThemeSwitcher Variant="Rise" IsIconOnly="True" />
+                        <Border Width="1"
+                                Height="22"
+                                Margin="6,0,2,0"
+                                Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+                        <arc:Button Classes="windowControl"
+                                    Variant="Ghost"
+                                    Size="Small"
+                                    Width="34"
+                                    Height="32"
+                                    Padding="0"
+                                    Click="OnMinimizeWindowClick"
+                                    ToolTip.Tip="最小化"
+                                    AutomationProperties.Name="最小化">
+                            <arc:ArcGlyph Data="{x:Static arc:ArcIcons.Minus}"
+                                          Size="15"
+                                          Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                        </arc:Button>
+                        <arc:Button x:Name="WindowMaximizeButton"
+                                    Classes="windowControl"
+                                    Variant="Ghost"
+                                    Size="Small"
+                                    Width="34"
+                                    Height="32"
+                                    Padding="0"
+                                    Click="OnToggleMaximizeWindowClick"
+                                    ToolTip.Tip="最大化 / 还原"
+                                    AutomationProperties.Name="最大化或还原">
+                            <Panel>
+                                <arc:ArcGlyph x:Name="WindowMaximizeGlyph"
+                                              Data="{x:Static arc:ArcIcons.Square}"
+                                              Size="14"
+                                              Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                <arc:ArcGlyph x:Name="WindowRestoreGlyph"
+                                              Data="{x:Static arc:ArcIcons.Minimize2}"
+                                              Size="14"
+                                              Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                              IsVisible="False" />
+                            </Panel>
+                        </arc:Button>
+                        <arc:Button Classes="windowClose"
+                                    Variant="Ghost"
+                                    Size="Small"
+                                    Width="34"
+                                    Height="32"
+                                    Padding="0"
+                                    Click="OnCloseWindowClick"
+                                    ToolTip.Tip="关闭"
+                                    AutomationProperties.Name="关闭">
+                            <arc:ArcGlyph Data="{x:Static arc:ArcIcons.X}"
+                                          Size="15"
+                                          Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                        </arc:Button>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -284,7 +349,7 @@
                                                         Margin="{Binding Indent}"
                                                         PointerPressed="OnTreeRowPointerPressed"
                                                         AutomationProperties.Name="{Binding Collection.Name}">
-                                                    <Grid ColumnDefinitions="24,*,40" ColumnSpacing="2">
+                                                    <Grid ColumnDefinitions="24,*,Auto,40" ColumnSpacing="2">
                                                         <arc:Button Variant="Ghost"
                                                                     Size="Small"
                                                                     Width="24"
@@ -332,7 +397,38 @@
                                                                               IsVisible="{Binding Collection.IsFavorite}" />
                                                             </Grid>
                                                         </Border>
-                                                        <arc:Button Grid.Column="2"
+                                                        <StackPanel Grid.Column="2"
+                                                                    Orientation="Horizontal"
+                                                                    Spacing="2"
+                                                                    VerticalAlignment="Center">
+                                                            <arc:Button Classes="rowActions"
+                                                                        Variant="Ghost"
+                                                                        Size="Small"
+                                                                        Width="24"
+                                                                        Padding="0"
+                                                                        IsTabStop="False"
+                                                                        Click="OnTreeMoveRowUpClick"
+                                                                        ToolTip.Tip="上移"
+                                                                        AutomationProperties.Name="上移">
+                                                                <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ArrowUp}"
+                                                                              Size="13"
+                                                                              Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                                            </arc:Button>
+                                                            <arc:Button Classes="rowActions"
+                                                                        Variant="Ghost"
+                                                                        Size="Small"
+                                                                        Width="24"
+                                                                        Padding="0"
+                                                                        IsTabStop="False"
+                                                                        Click="OnTreeMoveRowDownClick"
+                                                                        ToolTip.Tip="下移"
+                                                                        AutomationProperties.Name="下移">
+                                                                <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ArrowDown}"
+                                                                              Size="13"
+                                                                              Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                                            </arc:Button>
+                                                        </StackPanel>
+                                                        <arc:Button Grid.Column="3"
                                                                     Classes="rowActions"
                                                                     Variant="Ghost"
                                                                     Size="Small"
@@ -354,7 +450,7 @@
                                                         Margin="{Binding RequestIndent}"
                                                         PointerPressed="OnTreeRowPointerPressed"
                                                         AutomationProperties.Name="{Binding Request.Name}">
-                                                    <Grid ColumnDefinitions="*,40" ColumnSpacing="2">
+                                                    <Grid ColumnDefinitions="*,Auto,40" ColumnSpacing="2">
                                                         <Border Grid.Column="0"
                                                                 Background="Transparent"
                                                                 Padding="6,3"
@@ -378,7 +474,38 @@
                                                                               IsVisible="{Binding Request.IsFavorite}" />
                                                             </Grid>
                                                         </Border>
-                                                        <arc:Button Grid.Column="1"
+                                                        <StackPanel Grid.Column="1"
+                                                                    Orientation="Horizontal"
+                                                                    Spacing="2"
+                                                                    VerticalAlignment="Center">
+                                                            <arc:Button Classes="rowActions"
+                                                                        Variant="Ghost"
+                                                                        Size="Small"
+                                                                        Width="24"
+                                                                        Padding="0"
+                                                                        IsTabStop="False"
+                                                                        Click="OnTreeMoveRowUpClick"
+                                                                        ToolTip.Tip="上移"
+                                                                        AutomationProperties.Name="上移">
+                                                                <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ArrowUp}"
+                                                                              Size="13"
+                                                                              Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                                            </arc:Button>
+                                                            <arc:Button Classes="rowActions"
+                                                                        Variant="Ghost"
+                                                                        Size="Small"
+                                                                        Width="24"
+                                                                        Padding="0"
+                                                                        IsTabStop="False"
+                                                                        Click="OnTreeMoveRowDownClick"
+                                                                        ToolTip.Tip="下移"
+                                                                        AutomationProperties.Name="下移">
+                                                                <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ArrowDown}"
+                                                                              Size="13"
+                                                                              Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
+                                                            </arc:Button>
+                                                        </StackPanel>
+                                                        <arc:Button Grid.Column="2"
                                                                     Classes="rowActions"
                                                                     Variant="Ghost"
                                                                     Size="Small"
@@ -1423,7 +1550,7 @@
                                 </Grid>
                             </Grid>
 
-                            <Grid IsVisible="{Binding IsAutomationTab}" ColumnDefinitions="0.85*,1.15*" ColumnSpacing="14">
+                            <Grid IsVisible="{Binding IsAutomationTab}" ColumnDefinitions="0.72*,1.28*" ColumnSpacing="14">
                                 <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <arc:Button Variant="Secondary"
@@ -1507,7 +1634,7 @@
                                                FontWeight="Medium"
                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
 
-                                    <Grid Grid.Row="2" ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                    <Grid Grid.Row="2" ColumnDefinitions="1.15*,0.85*" ColumnSpacing="12">
                                         <Border Background="{arc:ArcDesignTokenResource SurfaceMuted}"
                                                 BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
                                                 BorderThickness="1"
@@ -1807,7 +1934,7 @@
                                                     <TextBlock Text="MCP 接入"
                                                                FontWeight="SemiBold"
                                                                Foreground="{arc:ArcDesignTokenResource Foreground}" />
-                                                    <TextBlock Text="把下面的地址添加到支持 Streamable HTTP 的 MCP 客户端，AI 就可以查询接口、发送请求、获取 cURL、运行回归套件并查看审计。"
+                                                    <TextBlock Text="把下面的地址添加到支持 Streamable HTTP 的 MCP 客户端，AI 就可以自由管理集合与请求、编排带延迟和字段映射的套件、运行回归并查看审计。"
                                                                FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                                                TextWrapping="Wrap" />
@@ -2338,17 +2465,17 @@
             </arc:Dialog.Actions>
         </arc:Dialog>
 
-        <arc:Dialog IsOpen="{Binding IsSuiteBuilderOpen, Mode=TwoWay}"
+        <arc:Dialog x:Name="SuiteBuilderDialog"
+                    IsOpen="{Binding IsSuiteBuilderOpen, Mode=TwoWay}"
                     Title="组装自动化套件"
                     Description="勾选任意集合，把集合中的请求组装成一个可运行的自动化套件；子集合可以单独选择。"
                     Size="Large"
-                    Width="1000"
-                    MaxWidth="1100">
+                    Opened="OnSuiteBuilderDialogOpened">
             <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
                 <arc:Input Label="套件名称"
                            Text="{Binding SuiteBuilderName, Mode=TwoWay}"
                            AutomationProperties.Name="套件名称" />
-                <Grid Grid.Row="1" ColumnDefinitions="0.9*,1.1*" ColumnSpacing="12">
+                <Grid Grid.Row="1" ColumnDefinitions="0.72*,1.28*" ColumnSpacing="12">
                     <Grid RowDefinitions="Auto,*" RowSpacing="6">
                         <TextBlock Text="来源集合"
                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -2360,7 +2487,7 @@
                                 BorderThickness="1"
                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                 Padding="4">
-                            <arc:ScrollArea MaxHeight="360">
+                            <arc:ScrollArea MaxHeight="500">
                                 <ItemsControl ItemsSource="{Binding SuiteSources}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="models:SuiteSourceCollection">
@@ -2406,7 +2533,7 @@
                                 BorderThickness="1"
                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                 Padding="4">
-                            <arc:ScrollArea MaxHeight="360">
+                            <arc:ScrollArea MaxHeight="500">
                                 <ItemsControl ItemsSource="{Binding SuiteBuilderSteps}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="models:SuiteBuilderStep">
@@ -2487,12 +2614,12 @@
             </arc:Dialog.Actions>
         </arc:Dialog>
 
-        <arc:Dialog IsOpen="{Binding IsMappingEditorOpen, Mode=TwoWay}"
+        <arc:Dialog x:Name="MappingDialog"
+                    IsOpen="{Binding IsMappingEditorOpen, Mode=TwoWay}"
                     Title="{Binding MappingTitle}"
                     Description="把前序步骤响应中的字段映射到当前请求的请求体、请求头、查询参数或 URL 占位符。"
                     Size="Large"
-                    Width="900"
-                    MaxWidth="1000">
+                    Opened="OnMappingDialogOpened">
             <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
                 <arc:Button Variant="Secondary"
                             Size="Small"
@@ -2500,27 +2627,29 @@
                             Command="{Binding AddMappingRuleCommand}">
                     <controls:IconLabel Icon="{x:Static arc:ArcIcons.Plus}" Text="添加映射" IconSize="13" />
                 </arc:Button>
-                <arc:ScrollArea Grid.Row="1" MaxHeight="360">
+                <arc:ScrollArea Grid.Row="1" MaxHeight="520">
                     <ItemsControl ItemsSource="{Binding MappingEditors}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="models:InputMappingEditor">
                                 <Border Background="{arc:ArcDesignTokenResource Surface}"
                                         CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
-                                        Padding="10"
+                                        Padding="10,8"
                                         Margin="0,0,0,6">
-                                    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
-                                        <arc:Select Label="来源步骤"
-                                                    Placeholder="选择来源步骤"
-                                                    ItemsSource="{Binding SourceOptions}"
-                                                    SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
-                                                    AutomationProperties.Name="来源步骤" />
-                                        <arc:Input Grid.Row="1"
-                                                   Label="来源字段"
-                                                   Text="{Binding SourcePath, Mode=TwoWay}"
-                                                   Placeholder="data.token 或 items[0].id"
-                                                   AutomationProperties.Name="来源字段" />
-                                        <Grid Grid.Row="2" ColumnDefinitions="1*,1*" ColumnSpacing="8">
-                                            <arc:Select Label="目标类型"
+                                    <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
+                                        <Grid ColumnDefinitions="1.25*,1.1*,0.8*,1.1*,0.9*,Auto"
+                                              ColumnSpacing="8">
+                                            <arc:Select Label="来源步骤"
+                                                        Placeholder="选择来源步骤"
+                                                        ItemsSource="{Binding SourceOptions}"
+                                                        SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+                                                        AutomationProperties.Name="来源步骤" />
+                                            <arc:Input Grid.Column="1"
+                                                       Label="来源字段"
+                                                       Text="{Binding SourcePath, Mode=TwoWay}"
+                                                       Placeholder="data.token 或 items[0].id"
+                                                       AutomationProperties.Name="来源字段" />
+                                            <arc:Select Grid.Column="2"
+                                                        Label="目标类型"
                                                         SelectedValue="{Binding TargetKind, Mode=TwoWay}"
                                                         AutomationProperties.Name="目标类型">
                                                 <arc:SelectItem Content="请求体" Value="Body" />
@@ -2528,33 +2657,34 @@
                                                 <arc:SelectItem Content="查询参数" Value="Query" />
                                                 <arc:SelectItem Content="URL 路径" Value="Path" />
                                             </arc:Select>
-                                            <arc:Input Grid.Column="1"
+                                            <arc:Input Grid.Column="3"
                                                        Label="目标字段"
                                                        Text="{Binding TargetPath, Mode=TwoWay}"
                                                        Placeholder="data.userId / Authorization / id"
                                                        AutomationProperties.Name="目标字段" />
-                                        </Grid>
-                                        <arc:Input Grid.Row="3"
-                                                   Label="值模板"
-                                                   Text="{Binding Template, Mode=TwoWay}"
-                                                   Placeholder="{}{value}"
-                                                   AutomationProperties.Name="值模板" />
-                                        <Grid Grid.Row="4" ColumnDefinitions="*,Auto">
-                                            <TextBlock Text="{Binding Error}"
-                                                       FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                       Foreground="{arc:ArcDesignTokenResource Danger}"
-                                                       TextWrapping="Wrap" />
-                                            <arc:Button Grid.Column="1"
+                                            <arc:Input Grid.Column="4"
+                                                       Label="值模板"
+                                                       Text="{Binding Template, Mode=TwoWay}"
+                                                       Placeholder="{}{value}"
+                                                       AutomationProperties.Name="值模板" />
+                                            <arc:Button Grid.Column="5"
                                                         Variant="Ghost"
                                                         Size="Small"
+                                                        Margin="0,0,0,2"
+                                                        VerticalAlignment="Bottom"
                                                         Command="{Binding RemoveCommand}">
                                                 <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}"
-                                                                    Text="删除映射"
+                                                                    Text="删除"
                                                                     IconSize="13"
                                                                     TextForeground="{arc:ArcDesignTokenResource Danger}"
                                                                     IconForeground="{arc:ArcDesignTokenResource Danger}" />
                                             </arc:Button>
                                         </Grid>
+                                        <TextBlock Grid.Row="1"
+                                                   Text="{Binding Error}"
+                                                   FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                   Foreground="{arc:ArcDesignTokenResource Danger}"
+                                                   TextWrapping="Wrap" />
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -2584,7 +2714,7 @@
         <arc:Dialog x:Name="McpDialog"
                     IsOpen="{Binding IsMcpDialogOpen, Mode=TwoWay}"
                     Title="MCP 接入"
-                    Description="把 PostSharp 作为本地 MCP 服务器，让 AI 客户端管理接口、发送请求并运行自动化。"
+                    Description="把 PostSharp 作为本地 MCP 服务器，让 AI 自由整理集合与请求、设计自动化套件并执行回归。"
                     Size="Large">
             <StackPanel Spacing="12">
                 <arc:Input Label="MCP 端点"
@@ -2619,7 +2749,7 @@
                                IsCollapsible="False"
                                CopyLabel="复制客户端配置" />
 
-                <TextBlock Text="MCP 发送请求同样会写入历史记录；run_sequence 可以按顺序执行多个请求，用于回归检查或定时脚本。"
+                <TextBlock Text="MCP 发送请求同样会写入历史记录；套件支持步骤延迟、上一步响应字段映射、状态码和响应文本断言，AI 可创建后反复 update_suite / run_suite 迭代。"
                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
                            TextWrapping="Wrap" />
