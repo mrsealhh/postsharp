@@ -496,6 +496,11 @@ public partial class MainWindow : Window
     private void ShowTreeMenu(Point position)
     {
         HideTreeActionMenu();
+        var favoriteTarget = _viewModel?.SelectedRequest ?? (object?)_viewModel?.SelectedCollection;
+        TreeMenuFavoriteButton.IsVisible = favoriteTarget is not null;
+        TreeMenuFavoriteLabel.Text = favoriteTarget is not null && IsFavorite(favoriteTarget)
+            ? "取消收藏"
+            : "收藏";
         TreeMenuOverlay.IsVisible = true;
         TreeMenuCard.Measure(Size.Infinity);
 
@@ -515,6 +520,17 @@ public partial class MainWindow : Window
     }
 
     private void OnTreeMenuItemClick(object? sender, RoutedEventArgs e) => HideTreeMenu();
+
+    private void OnTreeMenuFavoriteClick(object? sender, RoutedEventArgs e)
+    {
+        var target = _viewModel?.SelectedRequest ?? (object?)_viewModel?.SelectedCollection;
+        HideTreeMenu();
+
+        if (_viewModel is not null && target is not null)
+        {
+            _viewModel.ToggleFavoriteNode(target);
+        }
+    }
 
     private void OnTreeMenuDismiss(object? sender, PointerPressedEventArgs e)
     {
