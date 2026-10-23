@@ -22,10 +22,12 @@ public partial class MainWindow : Window
     private Point _dragStart;
     private bool _dragging;
     private Border? _dropTargetBorder;
+    private TreeDropPosition _dropPosition;
 
     public MainWindow()
     {
         InitializeComponent();
+        UpdateWindowStateVisuals();
         Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://PostSharp/Assets/logo-icon.png")));
         Application.Current?.Resources["PostSharpBodyFont"] = new FontFamily("Inter");
         Application.Current?.Resources["PostSharpCodeFont"] = new FontFamily("Geist Mono");
@@ -37,6 +39,7 @@ public partial class MainWindow : Window
             handledEventsToo: true);
         AddHandler(InputElement.PointerMovedEvent, OnWindowPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(InputElement.PointerReleasedEvent, OnWindowPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
+        PropertyChanged += OnWindowPropertyChanged;
         ResponseTabs.SizeChanged += (_, _) =>
         {
             JsonResponseViewer.MaxTreeHeight = Math.Max(140, ResponseTabs.Bounds.Height - 150);
@@ -84,6 +87,11 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_viewModel?.HasOpenDialog == true)
+        {
+            return;
+        }
+
         if (_viewModel?.IsManagementOpen == true)
         {
             _viewModel.CloseManagementCommand.Execute(null);
@@ -96,6 +104,74 @@ public partial class MainWindow : Window
             HideTreeMenu();
             e.Handled = true;
         }
+    }
+
+    private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == WindowStateProperty)
+        {
+            UpdateWindowStateVisuals();
+        }
+    }
+
+    private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(this);
+        if (!point.Properties.IsLeftButtonPressed || IsInteractiveTitleBarSource(e.Source))
+        {
+            return;
+        }
+
+        if (e.ClickCount == 2)
+        {
+            ToggleMaximize();
+            e.Handled = true;
+            return;
+        }
+
+        BeginMoveDrag(e);
+        e.Handled = true;
+    }
+
+    private void OnMinimizeWindowClick(object? sender, RoutedEventArgs e) =>
+        WindowState = WindowState.Minimized;
+
+    private void OnToggleMaximizeWindowClick(object? sender, RoutedEventArgs e) =>
+        ToggleMaximize();
+
+    private void OnCloseWindowClick(object? sender, RoutedEventArgs e) => Close();
+
+    private void ToggleMaximize()
+    {
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+    }
+
+    private void UpdateWindowStateVisuals()
+    {
+        var maximized = WindowState == WindowState.Maximized;
+        WindowMaximizeGlyph.IsVisible = !maximized;
+        WindowRestoreGlyph.IsVisible = maximized;
+    }
+
+    private bool IsInteractiveTitleBarSource(object? source)
+    {
+        for (var current = source as Visual; current is not null; current = current.GetVisualParent())
+        {
+            if (ReferenceEquals(current, TitleBar))
+            {
+                return false;
+            }
+
+            if (current is Button or TextBox or ComboBox or CheckBox or Slider
+                || current is Control { Focusable: true })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void OnManagementDismiss(object? sender, PointerPressedEventArgs e)
@@ -152,6 +228,24 @@ public partial class MainWindow : Window
 
         _viewModel.Editing.UploadFilePath = string.Empty;
         _viewModel.NotifyUploadChanged();
+    }
+
+    private void OnSuiteBuilderDialogOpened(object? sender, EventArgs e) =>
+        ApplyWideDialog(SuiteBuilderDialog);
+
+    private void OnMappingDialogOpened(object? sender, EventArgs e) =>
+        ApplyWideDialog(MappingDialog);
+
+    private void ApplyWideDialog(TKCode.Arc.Dialog dialog)
+    {
+        if (dialog.Surface is not { } surface)
+        {
+            return;
+        }
+
+        var width = Math.Clamp(Bounds.Width - 64, 680, 1180);
+        surface.Width = width;
+        surface.MaxWidth = width;
     }
 
     private void OnOpenResponseDetailClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -292,6 +386,38 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private void OnTreeMoveRowUpClick(object? sender, RoutedEventArgs e)
+    {
+        MoveTreeRow(sender, -1);
+        e.Handled = true;
+    }
+
+    private void OnTreeMoveRowDownClick(object? sender, RoutedEventArgs e)
+    {
+        MoveTreeRow(sender, 1);
+        e.Handled = true;
+    }
+
+    private void MoveTreeRow(object? sender, int delta)
+    {
+        if (_viewModel is null || sender is not Control control)
+        {
+            return;
+        }
+
+        var target = control.DataContext switch
+        {
+            TreeDisplayNode { Request: { } request } => (object)request,
+            TreeDisplayNode { Collection: { } collection } => collection,
+            _ => null
+        };
+
+        if (target is not null)
+        {
+            _viewModel.MoveNode(target, delta);
+        }
+    }
+
     private static bool IsFavorite(object target) => target switch
     {
         RequestItem request => request.IsFavorite,
@@ -329,25 +455,30 @@ public partial class MainWindow : Window
 
         var (target, border) = FindDropTarget(e.GetPosition(CollectionScrollArea));
         if (_viewModel is not null
+            && _dragCandidate is { } source
             && target is not null
-            && _viewModel.CanMoveTreeNode(_dragCandidate, target))
+            && border is not null)
         {
-            SetDropTarget(border);
+            var dropPosition = GetDropPosition(target, border, e.GetPosition(border));
+            if (_viewModel.CanMoveTreeNode(source, target, dropPosition))
+            {
+                SetDropTarget(border, dropPosition);
+                return;
+            }
         }
-        else
-        {
-            ClearDropTarget();
-        }
+
+        ClearDropTarget();
     }
 
     private void OnWindowPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (_dragging && _dragCandidate is { } source)
         {
-            var (target, _) = FindDropTarget(e.GetPosition(CollectionScrollArea));
-            if (_viewModel is not null && target is not null)
+            var (target, border) = FindDropTarget(e.GetPosition(CollectionScrollArea));
+            if (_viewModel is not null && target is not null && border is not null)
             {
-                _viewModel.MoveTreeNode(source, target);
+                var dropPosition = GetDropPosition(target, border, e.GetPosition(border));
+                _viewModel.MoveTreeNode(source, target, dropPosition);
             }
         }
 
@@ -356,42 +487,79 @@ public partial class MainWindow : Window
         ClearDropTarget();
     }
 
-    private (RequestCollection? Collection, Border? Border) FindDropTarget(Point position)
+    private (TreeDisplayNode? Node, Border? Border) FindDropTarget(Point position)
     {
         var hit = CollectionScrollArea.InputHitTest(position) as Visual;
         for (var current = hit; current is not null; current = current.GetVisualParent())
         {
             if (current is Border border
                 && border.Classes.Contains("treeRow")
-                && border.DataContext is TreeDisplayNode { Collection: { } collection })
+                && border.DataContext is TreeDisplayNode node
+                && (node.Collection is not null || node.Request is not null))
             {
-                return (collection, border);
-            }
-
-            if (current is Border requestBorder
-                && requestBorder.Classes.Contains("treeRow")
-                && requestBorder.DataContext is TreeDisplayNode { Request: not null })
-            {
-                return (null, null);
+                return (node, border);
             }
         }
 
         return (null, null);
     }
 
-    private void SetDropTarget(Border? border)
+    private static TreeDropPosition GetDropPosition(
+        TreeDisplayNode target,
+        Border border,
+        Point positionInRow)
     {
-        if (ReferenceEquals(_dropTargetBorder, border))
+        var ratio = border.Bounds.Height <= 0
+            ? 0.5
+            : Math.Clamp(positionInRow.Y / border.Bounds.Height, 0, 1);
+
+        if (target.Collection is not null)
+        {
+            return ratio switch
+            {
+                < 0.28 => TreeDropPosition.Before,
+                > 0.72 => TreeDropPosition.After,
+                _ => TreeDropPosition.Inside
+            };
+        }
+
+        return ratio < 0.5
+            ? TreeDropPosition.Before
+            : TreeDropPosition.After;
+    }
+
+    private void SetDropTarget(Border? border, TreeDropPosition position)
+    {
+        if (ReferenceEquals(_dropTargetBorder, border) && _dropPosition == position)
         {
             return;
         }
 
-        _dropTargetBorder?.Classes.Remove("dropTarget");
+        ClearDropTargetClasses();
         _dropTargetBorder = border;
-        border?.Classes.Add("dropTarget");
+        _dropPosition = position;
+
+        if (border is null)
+        {
+            return;
+        }
+
+        border.Classes.Add(position switch
+        {
+            TreeDropPosition.Before => "dropBefore",
+            TreeDropPosition.After => "dropAfter",
+            _ => "dropTarget"
+        });
     }
 
-    private void ClearDropTarget() => SetDropTarget(null);
+    private void ClearDropTarget() => SetDropTarget(null, TreeDropPosition.Inside);
+
+    private void ClearDropTargetClasses()
+    {
+        _dropTargetBorder?.Classes.Remove("dropTarget");
+        _dropTargetBorder?.Classes.Remove("dropBefore");
+        _dropTargetBorder?.Classes.Remove("dropAfter");
+    }
 
     private void ShowTreeMenu(Point position)
     {

@@ -15,6 +15,14 @@ using TKCode.Arc;
 
 namespace PostSharp.ViewModels;
 
+/// <summary>Where a dragged tree row should be inserted relative to the row under the pointer.</summary>
+public enum TreeDropPosition
+{
+    Before,
+    After,
+    Inside
+}
+
 public partial class MainWindowViewModel : ObservableObject
 {
     private readonly WorkspaceStore _store = new();
@@ -563,6 +571,19 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool IsRequestSelected => SelectedRequest is not null;
 
+    public bool HasOpenDialog => IsEnvironmentDialogOpen
+                                 || IsMcpDialogOpen
+                                 || IsSuiteBuilderOpen
+                                 || IsMappingEditorOpen
+                                 || IsRenameDialogOpen
+                                 || IsDeleteDialogOpen
+                                 || IsHistoryTrashConfirmOpen
+                                 || IsHistoryTrashOpen
+                                 || IsHistoryPurgeConfirmOpen
+                                 || IsAuditTrashConfirmOpen
+                                 || IsAuditTrashOpen
+                                 || IsAuditPurgeConfirmOpen;
+
     public bool HasHistory => History.Count > 0;
 
     public string TreeEmptyText => TreeFilterMode == "收藏"
@@ -652,8 +673,10 @@ public partial class MainWindowViewModel : ObservableObject
                                        """;
 
     public string McpToolSummary =>
-        "list_collections · get_request · create_request · update_request · delete_request · "
-        + "send_request · run_sequence · list_history · list_environments · set_variable";
+        "集合/请求：list_collections、create_collection、update_collection、move_collection、delete_collection、"
+        + "get_request、create_request、update_request、move_request、delete_request；"
+        + "套件：list_suites、get_suite、create_suite、create_suite_from_collections、update_suite、run_suite、delete_suite；"
+        + "运行与审计：send_request、run_sequence、get_curl、list_audit、get_audit、list_history、list_environments、set_variable。";
 
     public string EditorHint => IsDraft
         ? "草稿 · 保存后加入集合"
@@ -852,6 +875,248 @@ public partial class MainWindowViewModel : ObservableObject
         ShowToast("已创建二级集合");
     }
 
+    public RequestCollection CreateCollection(string name, Guid? parentId, bool favorite, int? position)
+    {
+        RequestCollection? parent = null;
+        if (parentId is { } requestedParent)
+        {
+            parent = Collections.FirstOrDefault(candidate => candidate.Id == requestedParent)
+                     ?? throw new KeyNotFoundException($"没有找到 id 为 {requestedParent} 的父集合。");
+        }
+
+        if (parent is not null && parent.Depth >= MaxCollectionDepth)
+        {
+            throw new InvalidOperationException($"集合最多支持 {MaxCollectionDepth} 级。");
+        }
+
+        var collection = new RequestCollection
+        {
+            Name = string.IsNullOrWhiteSpace(name) ? "MCP 集合" : name.Trim(),
+            Parent = parent,
+            IsFavorite = favorite
+        };
+
+        Collections.Add(collection);
+        if (parent is not null)
+        {
+            parent.Children.Add(collection);
+            parent.IsExpanded = true;
+            MoveCollectionWithin(parent.Children, collection, position);
+            SyncRootCollections();
+        }
+        else
+        {
+            var roots = Collections.Where(candidate => candidate.Parent is null).ToList();
+            MoveCollectionWithin(roots, collection, position);
+            SyncFlatCollectionOrder(roots);
+        }
+
+        Persist();
+        NotifyTreeChanged();
+        return collection;
+    }
+
+    public RequestCollection UpdateCollection(
+        Guid id,
+        string? name,
+        Guid? parentId,
+        bool changeParent,
+        bool? favorite,
+        int? position)
+    {
+        var collection = Collections.FirstOrDefault(candidate => candidate.Id == id)
+                         ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的集合。");
+
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            collection.Name = name.Trim();
+        }
+
+        if (favorite is { } isFavorite)
+        {
+            collection.IsFavorite = isFavorite;
+        }
+
+        List<RequestCollection>? explicitRootOrder = null;
+        if (changeParent)
+        {
+            RequestCollection? target = null;
+            if (parentId is { } requestedParent)
+            {
+                target = Collections.FirstOrDefault(candidate => candidate.Id == requestedParent)
+                         ?? throw new KeyNotFoundException($"没有找到 id 为 {requestedParent} 的目标集合。");
+            }
+
+            if (ReferenceEquals(target, collection)
+                || (target is not null && IsSelfOrDescendant(target, collection)))
+            {
+                throw new InvalidOperationException("不能把集合移动到自身或后代集合。");
+            }
+
+            if (target is not null
+                && target.Depth + GetCollectionSubtreeHeight(collection) > MaxCollectionDepth)
+            {
+                throw new InvalidOperationException($"集合最多支持 {MaxCollectionDepth} 级。");
+            }
+
+            if (!ReferenceEquals(collection.Parent, target))
+            {
+                collection.Parent?.Children.Remove(collection);
+                collection.Parent = target;
+                target?.Children.Add(collection);
+                if (target is not null)
+                {
+                    target.IsExpanded = true;
+                    MoveCollectionWithin(target.Children, collection, position);
+                }
+                else if (position is not null)
+                {
+                    var roots = Collections.Where(candidate => candidate.Parent is null).ToList();
+                    MoveCollectionWithin(roots, collection, position);
+                    explicitRootOrder = roots;
+                }
+            }
+            else if (target is not null && position is not null)
+            {
+                MoveCollectionWithin(target.Children, collection, position);
+            }
+            else if (target is null && position is not null)
+            {
+                var roots = Collections.Where(candidate => candidate.Parent is null).ToList();
+                MoveCollectionWithin(roots, collection, position);
+                explicitRootOrder = roots;
+            }
+        }
+        else if (position is not null)
+        {
+            if (collection.Parent is { } parent)
+            {
+                MoveCollectionWithin(parent.Children, collection, position);
+            }
+            else
+            {
+                var roots = Collections.Where(candidate => candidate.Parent is null).ToList();
+                MoveCollectionWithin(roots, collection, position);
+                explicitRootOrder = roots;
+            }
+        }
+
+        if (explicitRootOrder is not null)
+        {
+            SyncFlatCollectionOrder(explicitRootOrder);
+        }
+        else
+        {
+            SyncRootCollections();
+        }
+
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
+        return collection;
+    }
+
+    public bool DeleteCollection(Guid id)
+    {
+        var collection = Collections.FirstOrDefault(candidate => candidate.Id == id);
+        if (collection is null)
+        {
+            return false;
+        }
+
+        var editingRemoved = Editing.Owner is not null
+                             && IsSelfOrDescendant(Editing.Owner, collection);
+        var selectedRemoved = SelectedCollection is not null
+                              && IsSelfOrDescendant(SelectedCollection, collection);
+        RemoveCollectionRecursive(collection);
+
+        if (editingRemoved)
+        {
+            SelectedCollection = null;
+            SelectedRequest = null;
+            SelectFirstRequestOrBlank();
+        }
+        else if (selectedRemoved)
+        {
+            SelectedCollection = Editing.Owner;
+            SelectedRequest = Editing.Owner is null ? null : Editing;
+        }
+
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
+        return true;
+    }
+
+    public RequestItem MoveRequest(Guid requestId, Guid targetCollectionId, int? position)
+    {
+        var request = Collections.SelectMany(collection => collection.Requests)
+                          .FirstOrDefault(candidate => candidate.Id == requestId)
+                      ?? throw new KeyNotFoundException($"没有找到 id 为 {requestId} 的请求。");
+        var target = Collections.FirstOrDefault(candidate => candidate.Id == targetCollectionId)
+                     ?? throw new KeyNotFoundException($"没有找到 id 为 {targetCollectionId} 的集合。");
+
+        if (!ReferenceEquals(request.Owner, target))
+        {
+            request.Owner?.Requests.Remove(request);
+            request.Owner = target;
+            target.Requests.Add(request);
+        }
+
+        if (position is { } requestedPosition)
+        {
+            var current = target.Requests.IndexOf(request);
+            var index = Math.Clamp(requestedPosition, 0, target.Requests.Count - 1);
+            if (current >= 0 && current != index)
+            {
+                target.Requests.Move(current, index);
+            }
+        }
+
+        target.IsExpanded = true;
+        if (ReferenceEquals(SelectedRequest, request))
+        {
+            SelectedCollection = target;
+        }
+
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
+        return request;
+    }
+
+    private void SyncRootCollections()
+    {
+        var roots = Collections.Where(candidate => candidate.Parent is null).ToList();
+        SyncFlatCollectionOrder(roots);
+    }
+
+    private static void MoveCollectionWithin(
+        IList<RequestCollection> siblings,
+        RequestCollection collection,
+        int? position)
+    {
+        if (position is not { } requestedPosition)
+        {
+            return;
+        }
+
+        var current = siblings.IndexOf(collection);
+        if (current < 0)
+        {
+            return;
+        }
+
+        var index = Math.Clamp(requestedPosition, 0, siblings.Count - 1);
+        if (index == current)
+        {
+            return;
+        }
+
+        siblings.RemoveAt(current);
+        siblings.Insert(index, collection);
+    }
+
     [RelayCommand]
     private void AddCollection()
     {
@@ -975,6 +1240,44 @@ public partial class MainWindowViewModel : ObservableObject
         return false;
     }
 
+    public bool CanMoveTreeNode(TreeDisplayNode source, TreeDisplayNode target, TreeDropPosition position)
+    {
+        if (ReferenceEquals(source, target) || target.Collection is null && target.Request is null)
+        {
+            return false;
+        }
+
+        if (source.Request is { } request)
+        {
+            if (target.Request is { } targetRequest)
+            {
+                return targetRequest.Owner is not null
+                       && !ReferenceEquals(request, targetRequest);
+            }
+
+            return target.Collection is not null;
+        }
+
+        if (source.Collection is not { } collection || target.Collection is not { } targetCollection)
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(collection, targetCollection)
+            || IsSelfOrDescendant(targetCollection, collection))
+        {
+            return false;
+        }
+
+        var parent = position == TreeDropPosition.Inside
+            ? targetCollection
+            : targetCollection.Parent;
+
+        return parent is null
+               || (!IsSelfOrDescendant(parent, collection)
+                   && parent.Depth + GetCollectionSubtreeHeight(collection) <= MaxCollectionDepth);
+    }
+
     public bool CanMoveNode(object node, int delta)
     {
         return node switch
@@ -1025,6 +1328,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void MoveCollection(RequestCollection collection, int delta)
     {
+        List<RequestCollection> roots;
         if (collection.Parent is { } parent)
         {
             var index = parent.Children.IndexOf(collection);
@@ -1033,10 +1337,14 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 parent.Children.Move(index, target);
             }
+
+            roots = Collections
+                .Where(candidate => candidate.Parent is null)
+                .ToList();
         }
         else
         {
-            var roots = Collections
+            roots = Collections
                 .Where(candidate => candidate.Parent is null)
                 .ToList();
             var index = roots.IndexOf(collection);
@@ -1049,10 +1357,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }
 
-        var rootOrder = Collections
-            .Where(candidate => candidate.Parent is null)
-            .ToList();
-        SyncFlatCollectionOrder(rootOrder);
+        SyncFlatCollectionOrder(roots);
     }
 
     private void SyncFlatCollectionOrder(IReadOnlyList<RequestCollection> roots)
@@ -1115,10 +1420,188 @@ public partial class MainWindowViewModel : ObservableObject
             target.IsExpanded = true;
             ShowToast("已移动集合");
         }
+        else
+        {
+            return false;
+        }
+
+        SyncRootCollections();
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
+        return true;
+    }
+
+    public bool MoveTreeNode(TreeDisplayNode source, TreeDisplayNode target, TreeDropPosition position)
+    {
+        if (!CanMoveTreeNode(source, target, position))
+        {
+            return false;
+        }
+
+        var moved = source switch
+        {
+            { Request: { } request } => MoveRequestNode(request, target, position),
+            { Collection: { } collection } => MoveCollectionNode(collection, target, position),
+            _ => false
+        };
+
+        if (!moved)
+        {
+            return false;
+        }
 
         Persist();
         NotifySelectionChanged();
         NotifyTreeChanged();
+        return true;
+    }
+
+    private bool MoveRequestNode(RequestItem request, TreeDisplayNode target, TreeDropPosition position)
+    {
+        RequestCollection destination;
+        int index;
+
+        if (target.Request is { } targetRequest)
+        {
+            if (targetRequest.Owner is not { } owner)
+            {
+                return false;
+            }
+
+            destination = owner;
+            var targetIndex = destination.Requests.IndexOf(targetRequest);
+            if (targetIndex < 0)
+            {
+                return false;
+            }
+
+            index = targetIndex + (position == TreeDropPosition.After ? 1 : 0);
+        }
+        else if (target.Collection is { } collection)
+        {
+            destination = collection;
+            index = position switch
+            {
+                TreeDropPosition.Before => 0,
+                _ => collection.Requests.Count
+            };
+        }
+        else
+        {
+            return false;
+        }
+
+        var oldOwner = request.Owner;
+        var oldIndex = oldOwner?.Requests.IndexOf(request) ?? -1;
+        if (ReferenceEquals(oldOwner, destination))
+        {
+            if (oldIndex >= 0)
+            {
+                if (index > oldIndex)
+                {
+                    index--;
+                }
+
+                destination.Requests.Move(oldIndex, Math.Clamp(index, 0, destination.Requests.Count - 1));
+            }
+        }
+        else
+        {
+            oldOwner?.Requests.Remove(request);
+            request.Owner = destination;
+            destination.Requests.Insert(Math.Clamp(index, 0, destination.Requests.Count), request);
+        }
+
+        destination.IsExpanded = true;
+        if (ReferenceEquals(SelectedRequest, request))
+        {
+            SelectedCollection = destination;
+        }
+
+        ShowToast(ReferenceEquals(oldOwner, destination) ? "已调整请求顺序" : "已移动请求");
+        return true;
+    }
+
+    private bool MoveCollectionNode(RequestCollection collection, TreeDisplayNode target, TreeDropPosition position)
+    {
+        if (target.Collection is not { } targetCollection)
+        {
+            return false;
+        }
+
+        var oldParent = collection.Parent;
+        RequestCollection? newParent;
+        int index;
+
+        if (position == TreeDropPosition.Inside)
+        {
+            newParent = targetCollection;
+            index = targetCollection.Children.Count;
+        }
+        else
+        {
+            newParent = targetCollection.Parent;
+            var siblings = newParent is null
+                ? Collections.Where(candidate => candidate.Parent is null).ToList()
+                : newParent.Children.ToList();
+            var targetIndex = siblings.IndexOf(targetCollection);
+            if (targetIndex < 0)
+            {
+                return false;
+            }
+
+            index = targetIndex + (position == TreeDropPosition.After ? 1 : 0);
+        }
+
+        if (ReferenceEquals(oldParent, newParent))
+        {
+            var siblings = newParent is null
+                ? Collections.Where(candidate => candidate.Parent is null).ToList()
+                : newParent.Children.ToList();
+            var oldIndex = siblings.IndexOf(collection);
+            if (oldIndex < 0)
+            {
+                return false;
+            }
+
+            if (index > oldIndex)
+            {
+                index--;
+            }
+
+            if (newParent is null)
+            {
+                siblings.RemoveAt(oldIndex);
+                siblings.Insert(Math.Clamp(index, 0, siblings.Count), collection);
+                SyncFlatCollectionOrder(siblings);
+            }
+            else
+            {
+                newParent.Children.Move(oldIndex, Math.Clamp(index, 0, newParent.Children.Count - 1));
+            }
+        }
+        else
+        {
+            oldParent?.Children.Remove(collection);
+            collection.Parent = newParent;
+
+            if (newParent is not null)
+            {
+                newParent.Children.Insert(Math.Clamp(index, 0, newParent.Children.Count), collection);
+                newParent.IsExpanded = true;
+            }
+            else
+            {
+                var roots = Collections.Where(candidate => candidate.Parent is null).ToList();
+                roots.Remove(collection);
+                roots.Insert(Math.Clamp(index, 0, roots.Count), collection);
+                SyncFlatCollectionOrder(roots);
+            }
+        }
+
+        ShowToast(ReferenceEquals(oldParent, newParent) ? "已调整集合顺序" : "已移动集合");
+        SyncRootCollections();
         return true;
     }
 
@@ -2210,9 +2693,11 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 steps.Add(new TestStepResult
                 {
+                    StepId = step.Id,
                     RequestId = step.RequestId,
                     Name = step.RequestName,
                     Method = step.Method,
+                    Url = step.Url,
                     StatusText = "请求已删除",
                     Error = "请求已删除",
                     Passed = false
@@ -2240,9 +2725,11 @@ public partial class MainWindowViewModel : ObservableObject
                 stepResults[step.Id] = failure;
                 steps.Add(new TestStepResult
                 {
+                    StepId = step.Id,
                     RequestId = request.Id,
                     Name = request.Name,
                     Method = request.Method,
+                    Url = request.Url,
                     StatusText = "入参映射失败",
                     Error = mappingError,
                     Passed = false
@@ -2289,9 +2776,11 @@ public partial class MainWindowViewModel : ObservableObject
 
             steps.Add(new TestStepResult
             {
+                StepId = step.Id,
                 RequestId = request.Id,
                 Name = request.Name,
                 Method = request.Method,
+                Url = composed?.Url ?? request.Url,
                 StatusCode = result.StatusCode,
                 StatusText = result.ReasonPhrase,
                 ElapsedMs = result.ElapsedMs,

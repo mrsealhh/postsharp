@@ -16,9 +16,22 @@ public sealed record McpRequestInfo(
     Guid? CollectionId,
     string CollectionName,
     IReadOnlyList<McpRowInfo> Params,
-    IReadOnlyList<McpRowInfo> Headers);
+    IReadOnlyList<McpRowInfo> Headers,
+    int Order,
+    bool IsFavorite,
+    IReadOnlyList<McpRowInfo> FormFields,
+    string UploadFilePath,
+    string UploadFieldName);
 
-public sealed record McpCollectionInfo(Guid Id, string Name, IReadOnlyList<McpRequestInfo> Requests);
+public sealed record McpCollectionInfo(
+    Guid Id,
+    string Name,
+    Guid? ParentId,
+    int Depth,
+    int Order,
+    bool IsFavorite,
+    IReadOnlyList<McpRequestInfo> Requests);
+
 
 public sealed record McpEnvironmentInfo(
     Guid Id,
@@ -71,7 +84,21 @@ public sealed record McpSendResult(
 
 public sealed record McpCallContext(string Tool, string? Client);
 
-public sealed record McpSuiteStepInput(Guid RequestId, int? ExpectedStatus, string? BodyContains);
+public sealed record McpSuiteStepInput(
+    Guid RequestId,
+    int? ExpectedStatus,
+    string? BodyContains,
+    int? DelayMs,
+    IReadOnlyList<McpSuiteMappingInput>? Mappings);
+
+public sealed record McpSuiteMappingInput(
+    Guid? SourceStepId,
+    int? SourceStepIndex,
+    string SourcePath,
+    string TargetKind,
+    string TargetPath,
+    string Template);
+
 
 public sealed record McpSequenceStep(Guid RequestId, string Name, int StatusCode, string StatusText, string? Error);
 
@@ -90,7 +117,12 @@ public sealed record McpRequestDraft(
     string? BodyMode,
     string? Body,
     IReadOnlyList<McpRowInfo>? Params,
-    IReadOnlyList<McpRowInfo>? Headers);
+    IReadOnlyList<McpRowInfo>? Headers,
+    IReadOnlyList<McpRowInfo>? FormFields,
+    string? UploadFilePath,
+    string? UploadFieldName,
+    bool? IsFavorite,
+    int? Position);
 
 /// <summary>
 /// The bridge between MCP tool calls (which run on the local HTTP listener's thread) and the workspace,
@@ -108,10 +140,7 @@ public sealed class McpWorkspaceAdapter
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
             (IReadOnlyList<McpCollectionInfo>)_viewModel.Collections
-                .Select(collection => new McpCollectionInfo(
-                    collection.Id,
-                    collection.Name,
-                    collection.Requests.Select(ToInfo).ToList()))
+                .Select(ToCollectionInfo)
                 .ToList());
     }
 
@@ -124,19 +153,51 @@ public sealed class McpWorkspaceAdapter
         });
     }
 
-    public async Task<McpCollectionInfo> CreateCollectionAsync(string name)
+    public async Task<McpCollectionInfo> CreateCollectionAsync(
+        string name,
+        Guid? parentId,
+        bool favorite,
+        int? position)
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            var collection = new RequestCollection
-            {
-                Name = string.IsNullOrWhiteSpace(name) ? "MCP 集合" : name.Trim()
-            };
+            var collection = _viewModel.CreateCollection(name, parentId, favorite, position);
+            return ToCollectionInfo(collection);
+        });
+    }
 
-            _viewModel.Collections.Add(collection);
-            _viewModel.ToggleCollection(collection, true);
-            _viewModel.NotifyWorkspaceChanged();
-            return new McpCollectionInfo(collection.Id, collection.Name, Array.Empty<McpRequestInfo>());
+    public async Task<McpCollectionInfo> UpdateCollectionAsync(
+        Guid id,
+        string? name,
+        Guid? parentId,
+        bool changeParent,
+        bool? favorite,
+        int? position)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var collection = _viewModel.UpdateCollection(
+                id,
+                name,
+                parentId,
+                changeParent,
+                favorite,
+                position);
+            return ToCollectionInfo(collection);
+        });
+    }
+
+    public async Task<bool> DeleteCollectionAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.DeleteCollection(id));
+    }
+
+    public async Task<McpRequestInfo> MoveRequestAsync(Guid id, Guid collectionId, int? position)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var request = _viewModel.MoveRequest(id, collectionId, position);
+            return ToInfo(request);
         });
     }
 
@@ -144,9 +205,12 @@ public sealed class McpWorkspaceAdapter
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            var collection = draft.CollectionId is { } collectionId
-                ? _viewModel.Collections.FirstOrDefault(candidate => candidate.Id == collectionId)
-                : null;
+            RequestCollection? collection = null;
+            if (draft.CollectionId is { } collectionId)
+            {
+                collection = _viewModel.Collections.FirstOrDefault(candidate => candidate.Id == collectionId)
+                             ?? throw new KeyNotFoundException($"没有找到 id 为 {collectionId} 的集合。");
+            }
 
             collection ??= _viewModel.Collections.FirstOrDefault();
             if (collection is null)
@@ -162,12 +226,21 @@ public sealed class McpWorkspaceAdapter
                 Url = draft.Url ?? string.Empty,
                 BodyMode = NormalizeBodyMode(draft.BodyMode),
                 Body = draft.Body ?? string.Empty,
+                UploadFilePath = draft.UploadFilePath ?? string.Empty,
+                UploadFieldName = string.IsNullOrWhiteSpace(draft.UploadFieldName)
+                    ? "file"
+                    : draft.UploadFieldName.Trim(),
+                IsFavorite = draft.IsFavorite ?? false,
                 Owner = collection
             };
 
             ReplaceRows(request.Params, draft.Params);
             ReplaceRows(request.Headers, draft.Headers);
-            collection.Requests.Add(request);
+            ReplaceRows(request.FormFields, draft.FormFields);
+            var index = draft.Position is { } position
+                ? Math.Clamp(position, 0, collection.Requests.Count)
+                : collection.Requests.Count;
+            collection.Requests.Insert(index, request);
             _viewModel.ToggleCollection(collection, true);
             _viewModel.NotifyWorkspaceChanged();
             return ToInfo(request);
@@ -219,18 +292,32 @@ public sealed class McpWorkspaceAdapter
                 ReplaceRows(request.Headers, draft.Headers);
             }
 
-            if (draft.CollectionId is { } targetCollectionId)
+            if (draft.FormFields is not null)
             {
-                var target = _viewModel.Collections.FirstOrDefault(
-                    candidate => candidate.Id == targetCollectionId);
+                ReplaceRows(request.FormFields, draft.FormFields);
+            }
 
-                if (target is not null && !ReferenceEquals(request.Owner, target))
-                {
-                    request.Owner?.Requests.Remove(request);
-                    request.Owner = target;
-                    target.Requests.Add(request);
-                    _viewModel.ToggleCollection(target, true);
-                }
+            if (draft.UploadFilePath is not null)
+            {
+                request.UploadFilePath = draft.UploadFilePath;
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.UploadFieldName))
+            {
+                request.UploadFieldName = draft.UploadFieldName.Trim();
+            }
+
+            if (draft.IsFavorite is { } favorite)
+            {
+                request.IsFavorite = favorite;
+            }
+
+            if (draft.CollectionId is not null || draft.Position is not null)
+            {
+                var targetId = draft.CollectionId
+                               ?? request.Owner?.Id
+                               ?? throw new InvalidOperationException("请求没有所属集合。");
+                _viewModel.MoveRequest(id, targetId, draft.Position);
             }
 
             _viewModel.NotifyWorkspaceChanged();
@@ -426,6 +513,12 @@ public sealed class McpWorkspaceAdapter
             () => (IReadOnlyList<TestSuite>)_viewModel.Suites.ToList());
     }
 
+    public async Task<TestSuite?> GetSuiteAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(
+            () => _viewModel.Suites.FirstOrDefault(suite => suite.Id == id));
+    }
+
     public async Task<TestSuite> CreateSuiteAsync(
         string name,
         IReadOnlyList<McpSuiteStepInput> steps,
@@ -433,35 +526,94 @@ public sealed class McpWorkspaceAdapter
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (steps.Count == 0)
-            {
-                throw new InvalidOperationException("steps 不能为空。");
-            }
-
             var suite = new TestSuite
             {
                 Name = string.IsNullOrWhiteSpace(name) ? "MCP 测试套件" : name.Trim(),
                 StopOnError = stopOnError
             };
 
-            foreach (var stepInput in steps)
-            {
-                var request = FindRequest(stepInput.RequestId)
-                              ?? throw new KeyNotFoundException(
-                                  $"没有找到 id 为 {stepInput.RequestId} 的请求。");
+            suite.Steps.AddRange(BuildSuiteSteps(steps));
+            _viewModel.Suites.Add(suite);
+            _viewModel.SelectedSuite = suite;
+            _viewModel.NotifyWorkspaceChanged();
+            return suite;
+        });
+    }
 
-                suite.Steps.Add(new TestStep
-                {
-                    RequestId = request.Id,
-                    RequestName = request.Name,
-                    Method = request.Method,
-                    Url = request.Url,
-                    ExpectedStatus = stepInput.ExpectedStatus,
-                    BodyContains = stepInput.BodyContains
-                });
+    public async Task<TestSuite> CreateSuiteFromCollectionsAsync(
+        string name,
+        IReadOnlyList<Guid> collectionIds,
+        int delayMs,
+        bool stopOnError)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var requests = new List<RequestItem>();
+            foreach (var collectionId in collectionIds)
+            {
+                var collection = _viewModel.Collections.FirstOrDefault(
+                                     candidate => candidate.Id == collectionId)
+                                 ?? throw new KeyNotFoundException(
+                                     $"没有找到 id 为 {collectionId} 的集合。");
+                requests.AddRange(collection.Requests);
             }
 
+            if (requests.Count == 0)
+            {
+                throw new InvalidOperationException("所选集合中没有可加入套件的请求。");
+            }
+
+            var stepInputs = requests
+                .Select(request => new McpSuiteStepInput(
+                    request.Id,
+                    null,
+                    null,
+                    delayMs,
+                    Array.Empty<McpSuiteMappingInput>()))
+                .ToList();
+
+            var suite = new TestSuite
+            {
+                Name = string.IsNullOrWhiteSpace(name) ? "MCP 集合套件" : name.Trim(),
+                StopOnError = stopOnError
+            };
+            suite.Steps.AddRange(BuildSuiteSteps(stepInputs));
+
             _viewModel.Suites.Add(suite);
+            _viewModel.SelectedSuite = suite;
+            _viewModel.NotifyWorkspaceChanged();
+            return suite;
+        });
+    }
+
+    public async Task<TestSuite> UpdateSuiteAsync(
+        Guid id,
+        string? name,
+        bool? stopOnError,
+        IReadOnlyList<McpSuiteStepInput>? steps)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var suite = _viewModel.Suites.FirstOrDefault(candidate => candidate.Id == id)
+                        ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的套件。");
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                suite.Name = name.Trim();
+            }
+
+            if (stopOnError is { } shouldStop)
+            {
+                suite.StopOnError = shouldStop;
+            }
+
+            if (steps is not null)
+            {
+                var rebuilt = BuildSuiteSteps(steps);
+                suite.Steps.Clear();
+                suite.Steps.AddRange(rebuilt);
+            }
+
             _viewModel.SelectedSuite = suite;
             _viewModel.NotifyWorkspaceChanged();
             return suite;
@@ -575,6 +727,107 @@ public sealed class McpWorkspaceAdapter
         });
     }
 
+    private List<TestStep> BuildSuiteSteps(IReadOnlyList<McpSuiteStepInput> steps)
+    {
+        if (steps.Count == 0)
+        {
+            throw new InvalidOperationException("steps 不能为空。");
+        }
+
+        var built = new List<TestStep>(steps.Count);
+        foreach (var stepInput in steps)
+        {
+            var request = FindRequest(stepInput.RequestId)
+                          ?? throw new KeyNotFoundException(
+                              $"没有找到 id 为 {stepInput.RequestId} 的请求。");
+
+            built.Add(new TestStep
+            {
+                RequestId = request.Id,
+                RequestName = request.Name,
+                Method = request.Method,
+                Url = request.Url,
+                DelayMs = Math.Clamp(stepInput.DelayMs ?? 200, 0, 60_000),
+                ExpectedStatus = stepInput.ExpectedStatus,
+                BodyContains = string.IsNullOrWhiteSpace(stepInput.BodyContains)
+                    ? null
+                    : stepInput.BodyContains
+            });
+        }
+
+        for (var stepIndex = 0; stepIndex < steps.Count; stepIndex++)
+        {
+            var mappings = steps[stepIndex].Mappings;
+            if (mappings is null || mappings.Count == 0)
+            {
+                continue;
+            }
+
+            var step = built[stepIndex];
+            foreach (var mapping in mappings)
+            {
+                Guid sourceStepId;
+                if (mapping.SourceStepIndex is { } sourceIndex)
+                {
+                    if (sourceIndex < 0 || sourceIndex >= stepIndex)
+                    {
+                        throw new InvalidOperationException(
+                            $"第 {stepIndex + 1} 步的映射只能引用更早的步骤，sourceStepIndex={sourceIndex} 无效。");
+                    }
+
+                    sourceStepId = built[sourceIndex].Id;
+                }
+                else if (mapping.SourceStepId is { } requestedSourceId)
+                {
+                    var resolvedIndex = built.FindIndex(candidate => candidate.Id == requestedSourceId);
+                    if (resolvedIndex < 0 || resolvedIndex >= stepIndex)
+                    {
+                        throw new InvalidOperationException(
+                            $"第 {stepIndex + 1} 步的映射只能引用更早的步骤，sourceStepId={requestedSourceId} 无效。");
+                    }
+
+                    sourceStepId = requestedSourceId;
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"第 {stepIndex + 1} 步的映射缺少 sourceStepIndex 或 sourceStepId。");
+                }
+
+                var targetKind = string.IsNullOrWhiteSpace(mapping.TargetKind)
+                    ? "Body"
+                    : mapping.TargetKind.Trim();
+                if (!targetKind.Equals("Body", StringComparison.OrdinalIgnoreCase)
+                    && !targetKind.Equals("Header", StringComparison.OrdinalIgnoreCase)
+                    && !targetKind.Equals("Query", StringComparison.OrdinalIgnoreCase)
+                    && !targetKind.Equals("Path", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"第 {stepIndex + 1} 步的映射目标类型必须是 Body、Header、Query 或 Path。");
+                }
+
+                if (string.IsNullOrWhiteSpace(mapping.TargetPath))
+                {
+                    throw new InvalidOperationException(
+                        $"第 {stepIndex + 1} 步的映射缺少 targetPath。");
+                }
+
+                step.InputMappings.Add(new InputMapping
+                {
+                    SourceStepId = sourceStepId,
+                    SourcePath = mapping.SourcePath?.Trim() ?? string.Empty,
+                    TargetKind = char.ToUpperInvariant(targetKind[0]) + targetKind[1..].ToLowerInvariant(),
+                    TargetPath = mapping.TargetPath.Trim(),
+                    Template = string.IsNullOrWhiteSpace(mapping.Template)
+                        ? "{value}"
+                        : mapping.Template
+                });
+            }
+        }
+
+        return built;
+    }
+
     private RequestItem? FindRequest(Guid id) =>
         _viewModel.Collections
             .SelectMany(collection => collection.Requests)
@@ -596,7 +849,34 @@ public sealed class McpWorkspaceAdapter
         request.Headers
             .Where(row => !string.IsNullOrWhiteSpace(row.Key))
             .Select(ToInfo)
-            .ToList());
+            .ToList(),
+        request.Owner?.Requests.IndexOf(request) ?? -1,
+        request.IsFavorite,
+        request.FormFields
+            .Where(row => !string.IsNullOrWhiteSpace(row.Key))
+            .Select(ToInfo)
+            .ToList(),
+        request.UploadFilePath,
+        request.UploadFieldName);
+
+    private McpCollectionInfo ToCollectionInfo(RequestCollection collection) => new(
+        collection.Id,
+        collection.Name,
+        collection.Parent?.Id,
+        collection.Depth,
+        CollectionOrder(collection),
+        collection.IsFavorite,
+        collection.Requests.Select(ToInfo).ToList());
+
+    private int CollectionOrder(RequestCollection collection)
+    {
+        IList<RequestCollection> siblings = collection.Parent is { } parent
+            ? parent.Children
+            : (IList<RequestCollection>)_viewModel.Collections
+                .Where(candidate => candidate.Parent is null)
+                .ToList();
+        return siblings.IndexOf(collection);
+    }
 
     private static McpRowInfo ToInfo(KeyValueRow row) => new(row.Key, row.Value, row.IsEnabled);
 
@@ -652,6 +932,7 @@ public sealed class McpWorkspaceAdapter
         {
             "json" => "Json",
             "text" => "Text",
+            "multipart" or "form-data" or "formdata" => "Multipart",
             _ => "None"
         };
     }

@@ -81,11 +81,15 @@ public sealed class InputMapping
 
 public sealed class TestStepResult
 {
+    public Guid StepId { get; set; }
+
     public Guid RequestId { get; set; }
 
     public string Name { get; set; } = string.Empty;
 
     public string Method { get; set; } = "GET";
+
+    public string Url { get; set; } = string.Empty;
 
     public int StatusCode { get; set; }
 

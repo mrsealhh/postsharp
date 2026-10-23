@@ -11,7 +11,7 @@ namespace PostSharp.Services;
 /// </summary>
 public sealed class McpServer
 {
-    private const string ServerVersion = "0.1.0";
+    private const string ServerVersion = "0.2.0";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -150,11 +150,15 @@ public sealed class McpServer
                             ["version"] = ServerVersion
                         },
                         ["instructions"] =
-                            "PostSharp 是本地接口调试和 AI 自动化工作台。用 list_collections / get_request 查看接口，"
-                            + "用 create_request / update_request 管理接口，用 send_request 发请求，"
-                            + "用 get_curl 获取可直接执行的 cURL。用 list_audit / get_audit 查看所有 UI 和 AI 触发的请求审计。"
-                            + "用 create_suite / list_suites / run_suite 管理自动化套件，步骤可设置 expectedStatus 和 bodyContains。"
-                            + "send_request、run_sequence 和 run_suite 都会写入审计记录。"
+                            "PostSharp 是本地接口调试和 AI 自动化工作台。先调用 list_collections 获取集合树、parentId、depth、order 和请求顺序；"
+                            + "集合最多 5 级，可用 create_collection / update_collection / move_collection / delete_collection 自由整理目录。"
+                            + "用 get_request 查看接口，用 create_request / update_request / move_request / delete_request 管理请求，用 send_request 发请求，"
+                            + "用 get_curl 获取可直接执行的 cURL。"
+                            + "自动化优先用 create_suite / create_suite_from_collections 创建套件，再用 update_suite 反复调整。每个步骤按数组顺序执行，"
+                            + "支持 expectedStatus、bodyContains、delayMs（默认 200ms，0-60000）和 mappings。mappings 用 sourceStepIndex（从 0 开始，只能引用更早步骤）"
+                            + "或 sourceStepId 提取上一步 JSON 响应字段（支持 data.token、items[0].id），通过 targetKind=Body/Header/Query/Path 和 targetPath 注入下一步请求，"
+                            + "template 支持 Bearer {value} 这类格式。用 run_suite 运行并读取每步断言，用 list_suites / get_suite 检查规则。"
+                            + "send_request、run_sequence 和 run_suite 都会写入审计记录；list_audit / get_audit 可查所有 UI 和 AI 触发记录。"
                     });
 
                 case "ping":
@@ -200,12 +204,41 @@ public sealed class McpServer
                 "get_request" => await _workspace.GetRequestAsync(RequireGuid(arguments, "id"))
                     .ConfigureAwait(false),
                 "create_collection" => await _workspace.CreateCollectionAsync(
-                        OptionalString(arguments, "name") ?? "MCP 集合")
+                        OptionalString(arguments, "name") ?? "MCP 集合",
+                        OptionalGuid(arguments, "parentId"),
+                        OptionalBool(arguments, "favorite") ?? false,
+                        OptionalInt(arguments, "position"))
                     .ConfigureAwait(false),
+                "update_collection" => await _workspace.UpdateCollectionAsync(
+                        RequireGuid(arguments, "id"),
+                        OptionalString(arguments, "name"),
+                        OptionalGuid(arguments, "parentId"),
+                        arguments.TryGetPropertyValue("parentId", out _),
+                        OptionalBool(arguments, "favorite"),
+                        OptionalInt(arguments, "position"))
+                    .ConfigureAwait(false),
+                "move_collection" => await _workspace.UpdateCollectionAsync(
+                        RequireGuid(arguments, "id"),
+                        null,
+                        OptionalGuid(arguments, "parentId"),
+                        true,
+                        null,
+                        OptionalInt(arguments, "position"))
+                    .ConfigureAwait(false),
+                "delete_collection" => new
+                {
+                    deleted = await _workspace.DeleteCollectionAsync(RequireGuid(arguments, "id"))
+                        .ConfigureAwait(false)
+                },
                 "create_request" => await _workspace.CreateRequestAsync(ReadDraft(arguments))
                     .ConfigureAwait(false),
                 "update_request" => await _workspace.UpdateRequestAsync(
                         RequireGuid(arguments, "id"), ReadDraft(arguments))
+                    .ConfigureAwait(false),
+                "move_request" => await _workspace.MoveRequestAsync(
+                        RequireGuid(arguments, "id"),
+                        RequireGuid(arguments, "collectionId"),
+                        OptionalInt(arguments, "position"))
                     .ConfigureAwait(false),
                 "delete_request" => new
                 {
@@ -229,6 +262,20 @@ public sealed class McpServer
                         OptionalString(arguments, "name") ?? "MCP 测试套件",
                         ReadSuiteSteps(arguments),
                         OptionalBool(arguments, "stopOnError") ?? true)
+                    .ConfigureAwait(false),
+                "create_suite_from_collections" => await _workspace.CreateSuiteFromCollectionsAsync(
+                        OptionalString(arguments, "name") ?? "MCP 集合套件",
+                        ReadGuidArray(arguments, "collectionIds"),
+                        OptionalInt(arguments, "delayMs") ?? 200,
+                        OptionalBool(arguments, "stopOnError") ?? true)
+                    .ConfigureAwait(false),
+                "update_suite" => await _workspace.UpdateSuiteAsync(
+                        RequireGuid(arguments, "id"),
+                        OptionalString(arguments, "name"),
+                        OptionalBool(arguments, "stopOnError"),
+                        ReadOptionalSuiteSteps(arguments))
+                    .ConfigureAwait(false),
+                "get_suite" => await _workspace.GetSuiteAsync(RequireGuid(arguments, "id"))
                     .ConfigureAwait(false),
                 "list_suites" => await _workspace.ListSuitesAsync().ConfigureAwait(false),
                 "run_suite" => await _workspace.RunSuiteAsync(
@@ -333,10 +380,44 @@ public sealed class McpServer
             steps.Add(new McpSuiteStepInput(
                 RequireGuid(step, "requestId"),
                 OptionalInt(step, "expectedStatus"),
-                OptionalString(step, "bodyContains")));
+                OptionalString(step, "bodyContains"),
+                OptionalInt(step, "delayMs"),
+                ReadMappings(step)));
         }
 
         return steps;
+    }
+
+    private static IReadOnlyList<McpSuiteStepInput>? ReadOptionalSuiteSteps(JsonObject arguments)
+    {
+        return arguments.TryGetPropertyValue("steps", out _) ? ReadSuiteSteps(arguments) : null;
+    }
+
+    private static IReadOnlyList<McpSuiteMappingInput>? ReadMappings(JsonObject step)
+    {
+        if (step["mappings"] is not JsonArray array)
+        {
+            return null;
+        }
+
+        var mappings = new List<McpSuiteMappingInput>();
+        foreach (var node in array)
+        {
+            if (node is not JsonObject mapping)
+            {
+                continue;
+            }
+
+            mappings.Add(new McpSuiteMappingInput(
+                OptionalGuid(mapping, "sourceStepId"),
+                OptionalInt(mapping, "sourceStepIndex"),
+                OptionalString(mapping, "sourcePath") ?? string.Empty,
+                OptionalString(mapping, "targetKind") ?? "Body",
+                RequireString(mapping, "targetPath"),
+                OptionalString(mapping, "template") ?? "{value}"));
+        }
+
+        return mappings;
     }
 
     private static JsonNode ToolResult(JsonNode? id, object payload, bool isError)
@@ -385,40 +466,89 @@ public sealed class McpServer
             }, "id")),
         Tool(
             "create_collection",
-            "新建一个集合",
+            "新建集合；parentId 省略时创建根集合，最多 5 级",
             ObjectSchema(new JsonObject
             {
-                ["name"] = StringSchema("集合名称")
+                ["name"] = StringSchema("集合名称"),
+                ["parentId"] = StringSchema("父集合 id；省略表示根集合"),
+                ["favorite"] = BooleanSchema("是否收藏，默认 false"),
+                ["position"] = IntegerSchema("在兄弟集合中的顺序，从 0 开始；省略时追加", 0)
             })),
         Tool(
-            "create_request",
-            "在集合中新建请求（collectionId 省略时使用第一个集合）",
+            "update_collection",
+            "修改集合名称、收藏、父级或同级顺序；parentId 传 null 可移动到根目录",
             ObjectSchema(new JsonObject
             {
-                ["collectionId"] = StringSchema("目标集合 id"),
+                ["id"] = StringSchema("集合 id"),
+                ["name"] = StringSchema("新名称"),
+                ["parentId"] = NullableStringSchema("新父集合 id；传 null 或空字符串移动到根目录；省略则不改父级"),
+                ["favorite"] = BooleanSchema("是否收藏"),
+                ["position"] = IntegerSchema("在目标父级中的顺序，从 0 开始", 0)
+            }, "id")),
+        Tool(
+            "move_collection",
+            "移动集合到指定父级和顺序；parentId 省略或为 null 时移动到根目录",
+            ObjectSchema(new JsonObject
+            {
+                ["id"] = StringSchema("集合 id"),
+                ["parentId"] = NullableStringSchema("目标父集合 id；省略/ null 表示根目录"),
+                ["position"] = IntegerSchema("目标顺序，从 0 开始", 0)
+            }, "id")),
+        Tool(
+            "delete_collection",
+            "删除集合及其所有子集合和请求，不可恢复",
+            ObjectSchema(new JsonObject
+            {
+                ["id"] = StringSchema("集合 id")
+            }, "id")),
+        Tool(
+            "create_request",
+            "在集合中新建请求，可设置查询参数、请求头、JSON/Text/Multipart 请求体、上传文件和排序",
+            ObjectSchema(new JsonObject
+            {
+                ["collectionId"] = StringSchema("目标集合 id；省略时使用第一个集合"),
                 ["name"] = StringSchema("请求名称"),
                 ["method"] = EnumSchema("HTTP 方法", "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"),
                 ["url"] = StringSchema("请求地址，支持 {{变量}}"),
-                ["bodyMode"] = EnumSchema("请求体格式", "None", "Json", "Text"),
+                ["bodyMode"] = EnumSchema("请求体格式", "None", "Json", "Text", "Multipart"),
                 ["body"] = StringSchema("请求体"),
                 ["params"] = RowsSchema("查询参数"),
-                ["headers"] = RowsSchema("请求头")
+                ["headers"] = RowsSchema("请求头"),
+                ["formFields"] = RowsSchema("multipart 表单字段"),
+                ["uploadFilePath"] = StringSchema("multipart 上传文件的绝对路径"),
+                ["uploadFieldName"] = StringSchema("上传文件字段名，默认 file"),
+                ["favorite"] = BooleanSchema("是否收藏"),
+                ["position"] = IntegerSchema("在集合中的顺序，从 0 开始；省略时追加", 0)
             }, "url")),
         Tool(
             "update_request",
-            "修改请求的任意字段；params 或 headers 传入时会整体替换",
+            "修改请求的任意字段；params/headers/formFields 传入时整体替换，可通过 collectionId/position 移动排序",
             ObjectSchema(new JsonObject
             {
                 ["id"] = StringSchema("请求 id"),
                 ["collectionId"] = StringSchema("移动到另一个集合（可选）"),
+                ["position"] = IntegerSchema("在目标集合中的顺序，从 0 开始", 0),
                 ["name"] = StringSchema("请求名称"),
                 ["method"] = EnumSchema("HTTP 方法", "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"),
                 ["url"] = StringSchema("请求地址"),
-                ["bodyMode"] = EnumSchema("请求体格式", "None", "Json", "Text"),
+                ["bodyMode"] = EnumSchema("请求体格式", "None", "Json", "Text", "Multipart"),
                 ["body"] = StringSchema("请求体"),
                 ["params"] = RowsSchema("查询参数"),
-                ["headers"] = RowsSchema("请求头")
+                ["headers"] = RowsSchema("请求头"),
+                ["formFields"] = RowsSchema("multipart 表单字段"),
+                ["uploadFilePath"] = StringSchema("multipart 上传文件的绝对路径"),
+                ["uploadFieldName"] = StringSchema("上传文件字段名"),
+                ["favorite"] = BooleanSchema("是否收藏")
             }, "id")),
+        Tool(
+            "move_request",
+            "把请求移动到另一个集合，并设置它在集合中的顺序",
+            ObjectSchema(new JsonObject
+            {
+                ["id"] = StringSchema("请求 id"),
+                ["collectionId"] = StringSchema("目标集合 id"),
+                ["position"] = IntegerSchema("目标顺序，从 0 开始；省略时追加", 0)
+            }, "id", "collectionId")),
         Tool(
             "delete_request",
             "删除请求",
@@ -512,24 +642,47 @@ public sealed class McpServer
             }, "id")),
         Tool(
             "create_suite",
-            "创建自动化测试套件；每个步骤可设置期望状态和响应体包含文本",
+            "创建自动化套件；步骤按数组顺序执行，支持断言、步骤间延迟和上一步响应字段映射",
             ObjectSchema(new JsonObject
             {
                 ["name"] = StringSchema("套件名称"),
-                ["stopOnError"] = new JsonObject
-                {
-                    ["type"] = "boolean",
-                    ["description"] = "失败后停止，默认 true"
-                },
+                ["stopOnError"] = BooleanSchema("断言或网络失败后停止，默认 true"),
                 ["steps"] = SuiteStepsSchema()
             }, "steps")),
         Tool(
+            "create_suite_from_collections",
+            "按集合/请求的当前顺序快速生成套件（集合按 collectionIds 顺序，集合内按请求顺序）",
+            ObjectSchema(new JsonObject
+            {
+                ["name"] = StringSchema("套件名称"),
+                ["collectionIds"] = GuidArraySchema("按顺序排列的集合 id"),
+                ["delayMs"] = IntegerSchema("每个步骤后的默认延迟毫秒，默认 200，范围 0-60000", 0, 60000),
+                ["stopOnError"] = BooleanSchema("失败后停止，默认 true")
+            }, "collectionIds")),
+        Tool(
             "list_suites",
-            "列出自动化测试套件和步骤",
+            "列出自动化套件、步骤顺序、延迟、断言和输入映射",
             ObjectSchema(new JsonObject())),
         Tool(
+            "get_suite",
+            "读取单个套件的完整定义（步骤 id、延迟、断言、映射）",
+            ObjectSchema(new JsonObject
+            {
+                ["id"] = StringSchema("套件 id")
+            }, "id")),
+        Tool(
+            "update_suite",
+            "修改套件名称/失败策略；传入 steps 时整体替换步骤和顺序，可用于增删步骤或重排工作流",
+            ObjectSchema(new JsonObject
+            {
+                ["id"] = StringSchema("套件 id"),
+                ["name"] = StringSchema("新名称"),
+                ["stopOnError"] = BooleanSchema("失败后停止"),
+                ["steps"] = SuiteStepsSchema("新的完整步骤数组；省略则只改名称/策略")
+            }, "id")),
+        Tool(
             "run_suite",
-            "运行自动化套件并返回每个步骤的断言结果",
+            "运行自动化套件并返回每个步骤的断言、延迟、映射执行结果",
             ObjectSchema(new JsonObject
             {
                 ["id"] = StringSchema("套件 id")
@@ -577,6 +730,46 @@ public sealed class McpServer
         ["description"] = description
     };
 
+    private static JsonObject NullableStringSchema(string description) => new()
+    {
+        ["type"] = new JsonArray("string", "null"),
+        ["description"] = description
+    };
+
+    private static JsonObject BooleanSchema(string description) => new()
+    {
+        ["type"] = "boolean",
+        ["description"] = description
+    };
+
+    private static JsonObject IntegerSchema(string description, int? minimum = null, int? maximum = null)
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "integer",
+            ["description"] = description
+        };
+
+        if (minimum is { } min)
+        {
+            schema["minimum"] = min;
+        }
+
+        if (maximum is { } max)
+        {
+            schema["maximum"] = max;
+        }
+
+        return schema;
+    }
+
+    private static JsonObject GuidArraySchema(string description) => new()
+    {
+        ["type"] = "array",
+        ["description"] = description,
+        ["items"] = new JsonObject { ["type"] = "string" }
+    };
+
     private static JsonObject EnumSchema(string description, params string[] values)
     {
         var array = new JsonArray();
@@ -613,24 +806,45 @@ public sealed class McpServer
         }
     };
 
-    private static JsonObject SuiteStepsSchema() => new()
+    private static JsonObject SuiteStepsSchema(string description = "按执行顺序排列的测试步骤；mappings 只能引用更早的步骤")
+    {
+        return new JsonObject
+        {
+            ["type"] = "array",
+            ["description"] = description,
+            ["items"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["requestId"] = StringSchema("请求 id"),
+                    ["expectedStatus"] = IntegerSchema("期望 HTTP 状态码；省略时接受 2xx/3xx", 100, 599),
+                    ["bodyContains"] = StringSchema("响应体必须包含的文本"),
+                    ["delayMs"] = IntegerSchema("本步骤完成后、下一步骤开始前的延迟毫秒，默认 200，范围 0-60000", 0, 60000),
+                    ["mappings"] = MappingArraySchema()
+                },
+                ["required"] = new JsonArray("requestId")
+            }
+        };
+    }
+
+    private static JsonObject MappingArraySchema() => new()
     {
         ["type"] = "array",
-        ["description"] = "按执行顺序排列的测试步骤",
+        ["description"] = "从更早步骤的 JSON 响应提取字段并写入本步骤请求",
         ["items"] = new JsonObject
         {
             ["type"] = "object",
             ["properties"] = new JsonObject
             {
-                ["requestId"] = StringSchema("请求 id"),
-                ["expectedStatus"] = new JsonObject
-                {
-                    ["type"] = "integer",
-                    ["description"] = "期望 HTTP 状态码；省略时接受 2xx/3xx"
-                },
-                ["bodyContains"] = StringSchema("响应体必须包含的文本")
+                ["sourceStepIndex"] = IntegerSchema("来源步骤的 0 基索引，必须小于当前步骤索引", 0),
+                ["sourceStepId"] = StringSchema("来源步骤 id（也可用 get_suite 返回值）；与 sourceStepIndex 二选一"),
+                ["sourcePath"] = StringSchema("JSON 路径，如 status、data.token、items[0].id；空字符串表示整个响应体"),
+                ["targetKind"] = EnumSchema("写入位置", "Body", "Header", "Query", "Path"),
+                ["targetPath"] = StringSchema("Body JSON 路径、Header 名、Query 参数名或 URL 占位符名"),
+                ["template"] = StringSchema("值模板，{value} 会替换为提取值，默认 {value}，例如 Bearer {value}")
             },
-            ["required"] = new JsonArray("requestId")
+            ["required"] = new JsonArray("targetPath")
         }
     };
 
@@ -642,7 +856,12 @@ public sealed class McpServer
         OptionalString(arguments, "bodyMode"),
         OptionalString(arguments, "body"),
         OptionalRows(arguments, "params"),
-        OptionalRows(arguments, "headers"));
+        OptionalRows(arguments, "headers"),
+        OptionalRows(arguments, "formFields"),
+        OptionalString(arguments, "uploadFilePath"),
+        OptionalString(arguments, "uploadFieldName"),
+        OptionalBool(arguments, "favorite"),
+        OptionalInt(arguments, "position"));
 
     private static IReadOnlyList<McpRowInfo>? OptionalRows(JsonObject arguments, string name)
     {
@@ -678,10 +897,13 @@ public sealed class McpServer
         var result = new List<Guid>();
         foreach (var node in array)
         {
-            if (Guid.TryParse(node?.GetValue<string>(), out var id))
+            var text = node?.GetValue<string>();
+            if (!Guid.TryParse(text, out var id))
             {
-                result.Add(id);
+                throw new InvalidOperationException($"{name} 包含无效的 id：{text}");
             }
+
+            result.Add(id);
         }
 
         return result;
@@ -707,8 +929,21 @@ public sealed class McpServer
 
     private static Guid? OptionalGuid(JsonObject arguments, string name)
     {
-        var text = OptionalString(arguments, name);
-        return Guid.TryParse(text, out var id) ? id : null;
+        var node = arguments[name];
+        if (node is null)
+        {
+            return null;
+        }
+
+        if (node is not JsonValue value || !value.TryGetValue<string>(out var text)
+            || string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        return Guid.TryParse(text, out var id)
+            ? id
+            : throw new InvalidOperationException($"{name} 不是有效的 id。");
     }
 
     private static bool? OptionalBool(JsonObject arguments, string name)
