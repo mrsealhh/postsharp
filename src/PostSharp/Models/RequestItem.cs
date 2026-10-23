@@ -21,6 +21,20 @@ public partial class RequestCollection : ObservableObject
 
     public RequestCollection? Parent { get; set; }
 
+    public int Depth
+    {
+        get
+        {
+            var depth = 1;
+            for (var parent = Parent; parent is not null; parent = parent.Parent)
+            {
+                depth++;
+            }
+
+            return depth;
+        }
+    }
+
     public ObservableCollection<RequestCollection> Children { get; } = new();
 
     public ObservableCollection<RequestItem> Requests { get; } = new();

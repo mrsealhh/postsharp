@@ -21,6 +21,7 @@
                               IsChecked="{Binding IsEnabled}"
                               VerticalAlignment="Center"
                               HorizontalAlignment="Left"
+                              Margin="0,-2,0,2"
                               AutomationProperties.Name="启用该行" />
                 <arc:Input Grid.Column="1"
                            Text="{Binding Key}"
@@ -230,24 +231,27 @@
                     BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
                     BorderThickness="0,0,1,0">
                 <Grid Margin="12" RowDefinitions="Auto,Auto,3*,Auto,2*,Auto">
-                    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="6">
                         <arc:Button Variant="Ghost"
                                     Size="Small"
                                     Padding="8,0"
+                                    HorizontalAlignment="Left"
                                     Command="{Binding AddCollectionCommand}"
                                     ToolTip.Tip="新建集合"
                                     AutomationProperties.Name="新建集合">
                             <controls:IconLabel Icon="{x:Static arc:ArcIcons.Folder}" Text="新建集合" IconSize="14" />
                         </arc:Button>
-                        <arc:Button Variant="Secondary"
+                        <arc:Button Grid.Column="1"
+                                    Variant="Secondary"
                                     Size="Small"
                                     Padding="10,0"
+                                    HorizontalAlignment="Right"
                                     Command="{Binding AddRequestCommand}"
                                     ToolTip.Tip="新建请求"
                                     AutomationProperties.Name="新建请求">
                             <controls:IconLabel Icon="{x:Static arc:ArcIcons.Plus}" Text="新建请求" IconSize="14" />
                         </arc:Button>
-                    </StackPanel>
+                    </Grid>
 
                     <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,8,0,0">
                         <arc:SearchField Placeholder="搜索"
@@ -280,14 +284,14 @@
                                                         Margin="{Binding Indent}"
                                                         PointerPressed="OnTreeRowPointerPressed"
                                                         AutomationProperties.Name="{Binding Collection.Name}">
-                                                    <Grid ColumnDefinitions="24,*,26" ColumnSpacing="2">
+                                                    <Grid ColumnDefinitions="24,*,40" ColumnSpacing="2">
                                                         <arc:Button Variant="Ghost"
                                                                     Size="Small"
                                                                     Width="24"
                                                                     Padding="0"
                                                                     Click="OnTreeCollectionChevronClick"
                                                                     AutomationProperties.Name="展开或折叠集合">
-                                                            <Panel>
+                                                            <Panel VerticalAlignment="Center">
                                                                 <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ChevronRight}"
                                                                               Size="14"
                                                                               Foreground="{arc:ArcDesignTokenResource TextMuted}"
@@ -303,7 +307,7 @@
                                                                 Padding="4,3"
                                                                 Cursor="Hand">
                                                             <Grid ColumnDefinitions="18,*,Auto" ColumnSpacing="6">
-                                                                <Panel>
+                                                                <Panel VerticalAlignment="Center">
                                                                     <arc:ArcGlyph Data="{x:Static arc:ArcIcons.Folder}"
                                                                                   Size="15"
                                                                                   Foreground="{arc:ArcDesignTokenResource TextSecondary}"
@@ -318,6 +322,7 @@
                                                                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                                                            FontWeight="Medium"
                                                                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                                           VerticalAlignment="Center"
                                                                            TextTrimming="CharacterEllipsis" />
                                                                 <arc:ArcGlyph Grid.Column="2"
                                                                               Data="{x:Static arc:ArcIcons.Star}"
@@ -331,13 +336,13 @@
                                                                     Classes="rowActions"
                                                                     Variant="Ghost"
                                                                     Size="Small"
-                                                                    Width="26"
+                                                                    Width="40"
                                                                     Padding="0"
                                                                     IsTabStop="False"
                                                                     Click="OnTreeRowActionsClick"
                                                                     AutomationProperties.Name="更多操作">
-                                                            <arc:ArcGlyph Data="{x:Static arc:ArcIcons.EllipsisVertical}"
-                                                                          Size="14"
+                                                            <arc:ArcGlyph Data="{x:Static arc:ArcIcons.Ellipsis}"
+                                                                          Size="15"
                                                                           Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
                                                         </arc:Button>
                                                     </Grid>
@@ -349,7 +354,7 @@
                                                         Margin="{Binding RequestIndent}"
                                                         PointerPressed="OnTreeRowPointerPressed"
                                                         AutomationProperties.Name="{Binding Request.Name}">
-                                                    <Grid ColumnDefinitions="*,26" ColumnSpacing="2">
+                                                    <Grid ColumnDefinitions="*,40" ColumnSpacing="2">
                                                         <Border Grid.Column="0"
                                                                 Background="Transparent"
                                                                 Padding="6,3"
@@ -363,6 +368,7 @@
                                                                            Text="{Binding Request.Name}"
                                                                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                                                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                                           VerticalAlignment="Center"
                                                                            TextTrimming="CharacterEllipsis" />
                                                                 <arc:ArcGlyph Grid.Column="2"
                                                                               Data="{x:Static arc:ArcIcons.Star}"
@@ -376,13 +382,13 @@
                                                                     Classes="rowActions"
                                                                     Variant="Ghost"
                                                                     Size="Small"
-                                                                    Width="26"
+                                                                    Width="40"
                                                                     Padding="0"
                                                                     IsTabStop="False"
                                                                     Click="OnTreeRowActionsClick"
                                                                     AutomationProperties.Name="更多操作">
-                                                            <arc:ArcGlyph Data="{x:Static arc:ArcIcons.EllipsisVertical}"
-                                                                          Size="14"
+                                                            <arc:ArcGlyph Data="{x:Static arc:ArcIcons.Ellipsis}"
+                                                                          Size="15"
                                                                           Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
                                                         </arc:Button>
                                                     </Grid>
@@ -984,6 +990,18 @@
                         <Border Height="1"
                                 Margin="6,4"
                                 Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+                        <arc:Button x:Name="TreeMenuFavoriteButton"
+                                    Variant="Ghost"
+                                    Size="Small"
+                                    HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Left"
+                                    Padding="12,0"
+                                    Click="OnTreeMenuFavoriteClick">
+                            <controls:IconLabel x:Name="TreeMenuFavoriteLabel"
+                                                Icon="{x:Static arc:ArcIcons.Star}"
+                                                Text="收藏"
+                                                IconSize="13" />
+                        </arc:Button>
                         <arc:Button Content="重命名"
                                     Variant="Ghost"
                                     Size="Small"
@@ -1628,7 +1646,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,200" ColumnSpacing="12">
                                                 <arc:Badge Content="1"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1644,9 +1662,9 @@
                                                                TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2"
-                                                            Orientation="Horizontal"
+                                                            Orientation="Vertical"
                                                             Spacing="6"
-                                                            HorizontalAlignment="Right"
+                                                            HorizontalAlignment="Stretch"
                                                             VerticalAlignment="Center">
                                                     <arc:Button Variant="Secondary"
                                                                 Size="Small"
@@ -1668,7 +1686,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,200" ColumnSpacing="12">
                                                 <arc:Badge Content="2"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1684,9 +1702,9 @@
                                                                TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2"
-                                                            Orientation="Horizontal"
+                                                            Orientation="Vertical"
                                                             Spacing="6"
-                                                            HorizontalAlignment="Right"
+                                                            HorizontalAlignment="Stretch"
                                                             VerticalAlignment="Center">
                                                     <arc:Button Variant="Secondary"
                                                                 Size="Small"
@@ -1708,7 +1726,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,200" ColumnSpacing="12">
                                                 <arc:Badge Content="3"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1724,9 +1742,9 @@
                                                                TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2"
-                                                            Orientation="Horizontal"
+                                                            Orientation="Vertical"
                                                             Spacing="6"
-                                                            HorizontalAlignment="Right"
+                                                            HorizontalAlignment="Stretch"
                                                             VerticalAlignment="Center">
                                                     <arc:Button Variant="Secondary"
                                                                 Size="Small"
@@ -1749,7 +1767,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,200" ColumnSpacing="12">
                                                 <arc:Badge Content="4"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1765,9 +1783,9 @@
                                                                TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2"
-                                                            Orientation="Horizontal"
+                                                            Orientation="Vertical"
                                                             Spacing="6"
-                                                            HorizontalAlignment="Right"
+                                                            HorizontalAlignment="Stretch"
                                                             VerticalAlignment="Center">
                                                     <arc:Button Variant="Secondary"
                                                                 Size="Small"
@@ -1790,7 +1808,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,200" ColumnSpacing="12">
                                                 <arc:Badge Content="5"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1816,9 +1834,9 @@
                                                     </Grid>
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2"
-                                                            Orientation="Horizontal"
+                                                            Orientation="Vertical"
                                                             Spacing="6"
-                                                            HorizontalAlignment="Right"
+                                                            HorizontalAlignment="Stretch"
                                                             VerticalAlignment="Center">
                                                     <arc:Button Variant="Secondary"
                                                                 Size="Small"
@@ -1834,7 +1852,7 @@
                                                 BorderThickness="1"
                                                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                                                 Padding="14">
-                                            <Grid ColumnDefinitions="34,*,310" ColumnSpacing="12">
+                                            <Grid ColumnDefinitions="34,*,200" ColumnSpacing="12">
                                                 <arc:Badge Content="6"
                                                            Tone="Neutral"
                                                            Size="Small"
@@ -1850,9 +1868,9 @@
                                                                TextWrapping="Wrap" />
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="2"
-                                                            Orientation="Horizontal"
+                                                            Orientation="Vertical"
                                                             Spacing="6"
-                                                            HorizontalAlignment="Right"
+                                                            HorizontalAlignment="Stretch"
                                                             VerticalAlignment="Center">
                                                     <arc:Button Variant="Secondary"
                                                                 Size="Small"
