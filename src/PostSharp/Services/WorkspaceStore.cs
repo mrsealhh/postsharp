@@ -68,6 +68,8 @@ public sealed class WorkspaceStore
             {
                 Id = collection.Id,
                 Name = collection.Name,
+                IsFavorite = collection.IsFavorite,
+                ParentId = collection.Parent?.Id,
                 Requests = collection.Requests.Select(ToDto).ToList()
             }).ToList(),
             Environments = environments.Select(environment => new EnvironmentDto
@@ -109,7 +111,8 @@ public sealed class WorkspaceStore
             BodyMode = dto.BodyMode,
             Body = dto.Body,
             UploadFilePath = dto.UploadFilePath,
-            UploadFieldName = string.IsNullOrWhiteSpace(dto.UploadFieldName) ? "file" : dto.UploadFieldName
+            UploadFieldName = string.IsNullOrWhiteSpace(dto.UploadFieldName) ? "file" : dto.UploadFieldName,
+            IsFavorite = dto.IsFavorite
         };
 
         FillRows(request.Params, dto.Params);
@@ -164,6 +167,7 @@ public sealed class WorkspaceStore
             Body = request.Body,
             UploadFilePath = request.UploadFilePath,
             UploadFieldName = request.UploadFieldName,
+            IsFavorite = request.IsFavorite,
             Params = ToRows(request.Params),
             Headers = ToRows(request.Headers),
             FormFields = ToRows(request.FormFields)
@@ -210,6 +214,10 @@ public sealed class CollectionDto
 
     public string Name { get; set; } = string.Empty;
 
+    public bool IsFavorite { get; set; }
+
+    public Guid? ParentId { get; set; }
+
     public List<RequestDto> Requests { get; set; } = new();
 }
 
@@ -230,6 +238,8 @@ public sealed class RequestDto
     public string UploadFilePath { get; set; } = string.Empty;
 
     public string UploadFieldName { get; set; } = "file";
+
+    public bool IsFavorite { get; set; }
 
     public List<RowDto> Params { get; set; } = new();
 

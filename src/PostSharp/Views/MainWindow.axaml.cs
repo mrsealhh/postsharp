@@ -12,16 +12,17 @@ using Avalonia.Styling;
 using Avalonia.VisualTree;
 using PostSharp.Models;
 using PostSharp.ViewModels;
-using ArcTreeViewItem = TKCode.Arc.TreeViewItem;
-using ArcTreeViewSelectionChangedEventArgs = TKCode.Arc.TreeViewSelectionChangedEventArgs;
-using ArcTreeViewItemEventArgs = TKCode.Arc.TreeViewItemEventArgs;
 
 namespace PostSharp.Views;
 
 public partial class MainWindow : Window
 {
     private MainWindowViewModel? _viewModel;
-    private bool _suppressSelection;
+    private object? _treeActionTarget;
+    private TreeDisplayNode? _dragCandidate;
+    private Point _dragStart;
+    private bool _dragging;
+    private Border? _dropTargetBorder;
 
     public MainWindow()
     {
@@ -30,21 +31,13 @@ public partial class MainWindow : Window
         Application.Current?.Resources["PostSharpBodyFont"] = new FontFamily("Inter");
         Application.Current?.Resources["PostSharpCodeFont"] = new FontFamily("Geist Mono");
         Application.Current?.Resources["PostSharpCodeFontSize"] = 12d;
-        CollectionTree.AddHandler(
-            InputElement.PointerPressedEvent,
-            OnCollectionTreePointerPressed,
-            RoutingStrategies.Tunnel,
-            handledEventsToo: true);
-        CollectionTree.AddHandler(
-            InputElement.KeyDownEvent,
-            OnCollectionTreeKeyDown,
-            RoutingStrategies.Tunnel,
-            handledEventsToo: true);
         AddHandler(
             InputElement.KeyDownEvent,
             OnWindowKeyDown,
             RoutingStrategies.Tunnel,
             handledEventsToo: true);
+        AddHandler(InputElement.PointerMovedEvent, OnWindowPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(InputElement.PointerReleasedEvent, OnWindowPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
         ResponseTabs.SizeChanged += (_, _) =>
         {
             JsonResponseViewer.MaxTreeHeight = Math.Max(140, ResponseTabs.Bounds.Height - 150);
@@ -56,6 +49,11 @@ public partial class MainWindow : Window
             if (TreeMenuOverlay.IsVisible)
             {
                 HideTreeMenu();
+            }
+
+            if (TreeActionMenuOverlay.IsVisible)
+            {
+                HideTreeActionMenu();
             }
         };
         Opened += (_, _) =>
@@ -85,35 +83,6 @@ public partial class MainWindow : Window
             ?.SetValue(manager, true);
     }
 
-    private void OnCollectionTreePointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (!e.GetCurrentPoint(CollectionTree).Properties.IsRightButtonPressed)
-        {
-            return;
-        }
-
-        SelectTreeItemAt(e.Source, e.GetPosition(CollectionTree));
-        ShowTreeMenu(e.GetPosition(RootPanel));
-        e.Handled = true;
-    }
-
-    private void OnCollectionTreeKeyDown(object? sender, KeyEventArgs e)
-    {
-        var isContextKey = e.Key == Key.Apps
-            || (e.Key == Key.F10 && e.KeyModifiers.HasFlag(KeyModifiers.Shift));
-
-        if (!isContextKey)
-        {
-            return;
-        }
-
-        SelectTreeItemAt(CollectionTree, null);
-        var origin = CollectionTree.TranslatePoint(new Point(16, 16), RootPanel)
-                     ?? new Point(24, 200);
-        ShowTreeMenu(origin);
-        e.Handled = true;
-    }
-
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Escape)
@@ -124,6 +93,13 @@ public partial class MainWindow : Window
         if (_viewModel?.IsManagementOpen == true)
         {
             _viewModel.CloseManagementCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+
+        if (TreeActionMenuOverlay.IsVisible)
+        {
+            HideTreeActionMenu();
             e.Handled = true;
             return;
         }
@@ -207,23 +183,319 @@ public partial class MainWindow : Window
         window.Activate();
     }
 
-    /// <summary>Right-click selects the row before the menu opens, so every command acts on what was clicked.</summary>
-    private void SelectTreeItemAt(object? source, Point? point)
+    private void OnTreeRowPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        var row = FindTreeRow(source);
-        if (row is null && point is { } position)
+        if (_viewModel is null
+            || sender is not Control control
+            || IsInsideButton(e.Source))
         {
-            row = FindTreeRow(CollectionTree.InputHitTest(position));
+            return;
         }
 
-        if (row is not null && FindTreeViewItem(row) is { } treeItem)
+        var properties = e.GetCurrentPoint(control).Properties;
+        if (properties.IsRightButtonPressed)
         {
-            CollectionTree.SelectedItem = treeItem;
+            SelectTreeNode(control);
+            ShowTreeMenu(e.GetPosition(RootPanel));
+            e.Handled = true;
+            return;
+        }
+
+        if (properties.IsLeftButtonPressed)
+        {
+            SelectTreeNode(control, expandCollection: true);
+            if (e.ClickCount == 2)
+            {
+                switch (control.DataContext)
+                {
+                    case TreeDisplayNode { Request: { } request }:
+                        _viewModel.RequestRenameNode(request);
+                        break;
+                    case TreeDisplayNode { Collection: { } collection }:
+                        _viewModel.RequestRenameNode(collection);
+                        break;
+                }
+
+                e.Handled = true;
+                return;
+            }
+
+            _dragCandidate = control.DataContext as TreeDisplayNode;
+            _dragStart = e.GetPosition(RootPanel);
         }
     }
 
+    private void SelectTreeNode(Control control, bool expandCollection = false)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        switch (control.DataContext)
+        {
+            case TreeDisplayNode { Request: { } request }:
+                _viewModel.OpenRequest(request);
+                break;
+            case TreeDisplayNode { Collection: { } collection }:
+                _viewModel.SelectCollection(collection);
+                if (expandCollection && !collection.IsExpanded)
+                {
+                    _viewModel.ToggleCollection(collection, true);
+                }
+
+                break;
+        }
+    }
+
+    private static bool IsInsideButton(object? source)
+    {
+        var current = source as Visual;
+        while (current is not null)
+        {
+            if (current is Avalonia.Controls.Button)
+            {
+                return true;
+            }
+
+            if (current is Border border && border.Classes.Contains("treeRow"))
+            {
+                return false;
+            }
+
+            current = current.GetVisualParent();
+        }
+
+        return false;
+    }
+
+    private void OnTreeCollectionChevronClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not null && sender is Control { DataContext: TreeDisplayNode { Collection: { } collection } })
+        {
+            _viewModel.ToggleCollection(collection, !collection.IsExpanded);
+        }
+    }
+
+    private void OnTreeRowActionsClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null || sender is not Control control)
+        {
+            return;
+        }
+
+        var target = control.DataContext switch
+        {
+            TreeDisplayNode { Request: { } request } => (object)request,
+            TreeDisplayNode { Collection: { } collection } => collection,
+            _ => null
+        };
+
+        if (target is null)
+        {
+            return;
+        }
+
+        _treeActionTarget = target;
+        SelectTreeNode(control);
+        var isCollection = target is RequestCollection;
+        TreeActionCollectionSection.IsVisible = isCollection;
+        TreeActionFavoriteLabel.Text = IsFavorite(target) ? "取消收藏" : "收藏";
+        ShowTreeActionMenu(control);
+        e.Handled = true;
+    }
+
+    private static bool IsFavorite(object target) => target switch
+    {
+        RequestItem request => request.IsFavorite,
+        RequestCollection collection => collection.IsFavorite,
+        _ => false
+    };
+
+    private void ShowTreeActionMenu(Control anchor)
+    {
+        HideTreeMenu();
+        TreeActionMenuOverlay.IsVisible = true;
+        TreeActionMenuCard.Measure(Size.Infinity);
+
+        var desired = TreeActionMenuCard.DesiredSize;
+        var area = RootPanel.Bounds.Size;
+        var position = anchor.TranslatePoint(
+                           new Point(anchor.Bounds.Width - desired.Width, anchor.Bounds.Height + 2),
+                           RootPanel)
+                       ?? new Point(24, 200);
+        var left = Math.Clamp(position.X, 8, Math.Max(8, area.Width - desired.Width - 8));
+        var top = Math.Clamp(position.Y, 8, Math.Max(8, area.Height - desired.Height - 8));
+
+        Canvas.SetLeft(TreeActionMenuCard, left);
+        Canvas.SetTop(TreeActionMenuCard, top);
+        TreeActionFavoriteButton.Focus();
+    }
+
+    private void HideTreeActionMenu()
+    {
+        TreeActionMenuOverlay.IsVisible = false;
+        _treeActionTarget = null;
+    }
+
+    private void OnTreeActionMenuDismiss(object? sender, PointerPressedEventArgs e)
+    {
+        HideTreeActionMenu();
+        e.Handled = true;
+    }
+
+    private void OnTreeActionFavoriteClick(object? sender, RoutedEventArgs e)
+    {
+        var target = _treeActionTarget;
+        HideTreeActionMenu();
+
+        if (_viewModel is not null && target is not null)
+        {
+            _viewModel.ToggleFavoriteNode(target);
+        }
+    }
+
+    private void OnTreeActionNewRequestClick(object? sender, RoutedEventArgs e)
+    {
+        var target = _treeActionTarget as RequestCollection;
+        HideTreeActionMenu();
+
+        if (_viewModel is not null && target is not null)
+        {
+            _viewModel.AddRequestToCollection(target);
+        }
+    }
+
+    private void OnTreeActionNewSubcollectionClick(object? sender, RoutedEventArgs e)
+    {
+        var target = _treeActionTarget as RequestCollection;
+        HideTreeActionMenu();
+
+        if (_viewModel is not null && target is not null)
+        {
+            _viewModel.AddSubcollection(target);
+        }
+    }
+
+    private void OnTreeActionRenameClick(object? sender, RoutedEventArgs e)
+    {
+        var target = _treeActionTarget;
+        HideTreeActionMenu();
+
+        if (_viewModel is not null && target is not null)
+        {
+            _viewModel.RequestRenameNode(target);
+        }
+    }
+
+    private void OnTreeActionDeleteClick(object? sender, RoutedEventArgs e)
+    {
+        var target = _treeActionTarget;
+        HideTreeActionMenu();
+
+        if (_viewModel is not null && target is not null)
+        {
+            _viewModel.RequestDeleteNode(target);
+        }
+    }
+
+    private void OnWindowPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_dragCandidate is null)
+        {
+            return;
+        }
+
+        var left = e.GetCurrentPoint(RootPanel).Properties.IsLeftButtonPressed;
+        if (!left)
+        {
+            _dragCandidate = null;
+            _dragging = false;
+            ClearDropTarget();
+            return;
+        }
+
+        var position = e.GetPosition(RootPanel);
+        if (!_dragging)
+        {
+            if (Math.Abs(position.X - _dragStart.X) < 8
+                && Math.Abs(position.Y - _dragStart.Y) < 8)
+            {
+                return;
+            }
+
+            _dragging = true;
+        }
+
+        var (target, border) = FindDropTarget(e.GetPosition(CollectionScrollArea));
+        if (_viewModel is not null
+            && target is not null
+            && _viewModel.CanMoveTreeNode(_dragCandidate, target))
+        {
+            SetDropTarget(border);
+        }
+        else
+        {
+            ClearDropTarget();
+        }
+    }
+
+    private void OnWindowPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_dragging && _dragCandidate is { } source)
+        {
+            var (target, _) = FindDropTarget(e.GetPosition(CollectionScrollArea));
+            if (_viewModel is not null && target is not null)
+            {
+                _viewModel.MoveTreeNode(source, target);
+            }
+        }
+
+        _dragCandidate = null;
+        _dragging = false;
+        ClearDropTarget();
+    }
+
+    private (RequestCollection? Collection, Border? Border) FindDropTarget(Point position)
+    {
+        var hit = CollectionScrollArea.InputHitTest(position) as Visual;
+        for (var current = hit; current is not null; current = current.GetVisualParent())
+        {
+            if (current is Border border
+                && border.Classes.Contains("treeRow")
+                && border.DataContext is TreeDisplayNode { Collection: { } collection })
+            {
+                return (collection, border);
+            }
+
+            if (current is Border requestBorder
+                && requestBorder.Classes.Contains("treeRow")
+                && requestBorder.DataContext is TreeDisplayNode { Request: not null })
+            {
+                return (null, null);
+            }
+        }
+
+        return (null, null);
+    }
+
+    private void SetDropTarget(Border? border)
+    {
+        if (ReferenceEquals(_dropTargetBorder, border))
+        {
+            return;
+        }
+
+        _dropTargetBorder?.Classes.Remove("dropTarget");
+        _dropTargetBorder = border;
+        border?.Classes.Add("dropTarget");
+    }
+
+    private void ClearDropTarget() => SetDropTarget(null);
+
     private void ShowTreeMenu(Point position)
     {
+        HideTreeActionMenu();
         TreeMenuOverlay.IsVisible = true;
         TreeMenuCard.Measure(Size.Infinity);
 
@@ -240,7 +512,6 @@ public partial class MainWindow : Window
     private void HideTreeMenu()
     {
         TreeMenuOverlay.IsVisible = false;
-        CollectionTree.Focus();
     }
 
     private void OnTreeMenuItemClick(object? sender, RoutedEventArgs e) => HideTreeMenu();
@@ -249,34 +520,6 @@ public partial class MainWindow : Window
     {
         HideTreeMenu();
         e.Handled = true;
-    }
-
-    /// <summary>The tree draws its rows, so the row is found through its visual type and its node model.</summary>
-    private static Control? FindTreeRow(object? source)
-    {
-        var current = source as Visual;
-        while (current is not null)
-        {
-            if (current.GetType().Name == "TreeViewRow")
-            {
-                return current as Control;
-            }
-
-            current = current.GetVisualParent();
-        }
-
-        return null;
-    }
-
-    private static ArcTreeViewItem? FindTreeViewItem(Control row)
-    {
-        var node = row.GetType()
-            .GetProperty("Node", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-            ?.GetValue(row);
-        var item = node?.GetType()
-            .GetProperty("Item", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-            ?.GetValue(node);
-        return item as ArcTreeViewItem;
     }
 
     /// <summary>Keeps the native Windows title bar in the same light/dark appearance as the Arc window.</summary>
@@ -298,17 +541,14 @@ public partial class MainWindow : Window
     {
         if (_viewModel is not null)
         {
-            _viewModel.TreeChanged -= OnTreeChanged;
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
         }
 
         _viewModel = DataContext as MainWindowViewModel;
         if (_viewModel is not null)
         {
-            _viewModel.TreeChanged += OnTreeChanged;
             _viewModel.AppearanceChanged += OnAppearanceChanged;
             ApplyAppearance();
-            RebuildTree();
         }
     }
 
@@ -316,7 +556,6 @@ public partial class MainWindow : Window
     {
         if (_viewModel is not null)
         {
-            _viewModel.TreeChanged -= OnTreeChanged;
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
             _viewModel.Shutdown();
             _viewModel = null;
@@ -361,126 +600,6 @@ public partial class MainWindow : Window
             application.Resources["PostSharpBodyFont"] = bodyFont;
             application.Resources["PostSharpCodeFont"] = codeFont;
             application.Resources["PostSharpCodeFontSize"] = codeSize;
-        }
-    }
-
-    private void OnTreeChanged(object? sender, EventArgs e) => RebuildTree();
-
-    private void RebuildTree()
-    {
-        if (_viewModel is null)
-        {
-            return;
-        }
-
-        var filter = _viewModel.FilterText.Trim();
-        var hasFilter = filter.Length > 0;
-        ArcTreeViewItem? toSelect = null;
-
-        _suppressSelection = true;
-        CollectionTree.Items.Clear();
-
-        foreach (var collection in _viewModel.Collections)
-        {
-            var collectionMatches = Contains(collection.Name, filter);
-            var requests = hasFilter && !collectionMatches
-                ? collection.Requests.Where(request => Matches(request, filter)).ToList()
-                : collection.Requests.ToList();
-
-            if (hasFilter && !collectionMatches && requests.Count == 0)
-            {
-                continue;
-            }
-
-            var collectionNode = new ArcTreeViewItem
-            {
-                Header = collection.Name,
-                Value = collection,
-                IsExpanded = hasFilter
-                    || _viewModel.IsExpanded(collection)
-                    || ReferenceEquals(_viewModel.Editing.Owner, collection)
-            };
-
-            foreach (var request in requests)
-            {
-                var requestNode = new ArcTreeViewItem
-                {
-                    Header = request.Name,
-                    Value = request
-                };
-
-                collectionNode.Items.Add(requestNode);
-
-                if (ReferenceEquals(_viewModel.Editing, request))
-                {
-                    toSelect = requestNode;
-                }
-            }
-
-            CollectionTree.Items.Add(collectionNode);
-
-            if (_viewModel.SelectedRequest is null
-                && ReferenceEquals(_viewModel.SelectedCollection, collection))
-            {
-                toSelect = collectionNode;
-            }
-        }
-
-        if (_viewModel.Editing.Owner is null)
-        {
-            toSelect = null;
-        }
-
-        CollectionTree.SelectedItem = toSelect;
-        _suppressSelection = false;
-        _viewModel.TreeIsEmpty = CollectionTree.Items.Count == 0;
-    }
-
-    private static bool Matches(RequestItem request, string filter) =>
-        Contains(request.Name, filter)
-        || Contains(request.Url, filter)
-        || Contains(request.Method, filter);
-
-    private static bool Contains(string? value, string filter) =>
-        filter.Length == 0
-        || (value?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
-
-    private void OnCollectionTreeSelectionChanged(object? sender, ArcTreeViewSelectionChangedEventArgs e)
-    {
-        if (_suppressSelection || _viewModel is null)
-        {
-            return;
-        }
-
-        if (e.NewItem is not ArcTreeViewItem node)
-        {
-            return;
-        }
-
-        switch (node.Value)
-        {
-            case RequestItem request:
-                _viewModel.OpenRequest(request);
-                break;
-            case RequestCollection collection:
-                _viewModel.SelectCollection(collection);
-                break;
-        }
-    }
-
-    private void OnCollectionTreeItemExpanded(object? sender, ArcTreeViewItemEventArgs e)
-    {
-        if (_viewModel is not null && e.Item is ArcTreeViewItem { Value: RequestCollection collection })
-        {
-            _viewModel.ToggleCollection(collection, true);
-        }
-    }
-
-    private void OnCollectionTreeItemCollapsed(object? sender, ArcTreeViewItemEventArgs e)
-    {
-        if (_viewModel is not null && e.Item is ArcTreeViewItem { Value: RequestCollection collection })
-        {
-            _viewModel.ToggleCollection(collection, false);
         }
     }
 }
