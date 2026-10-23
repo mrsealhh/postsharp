@@ -21,7 +21,6 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly SettingsStore _settingsStore = new();
     private readonly HttpRequestService _http = new();
     private readonly MockApiServer _mockServer = new();
-    private readonly Dictionary<RequestCollection, bool> _expanded = new();
     private readonly Dictionary<Guid, TestRunResult> _suiteResults = new();
 
     private const int AuditPreviewLimit = 2000;
@@ -102,11 +101,15 @@ public partial class MainWindowViewModel : ObservableObject
         RefreshAuditView();
         BindEditingTracking();
         RefreshDerivedState();
+        RefreshTree();
+        UpdateSelectionFlags();
 
         Persist();
     }
 
     public ObservableCollection<RequestCollection> Collections { get; } = new();
+
+    public ObservableCollection<TreeDisplayNode> TreeNodes { get; } = new();
 
     public ObservableCollection<EnvironmentModel> Environments { get; } = new();
 
@@ -120,14 +123,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<TestSuite> Suites { get; } = new();
 
+    public ObservableCollection<SuiteSourceCollection> SuiteSources { get; } = new();
+
     public ObservableCollection<ResponseHeaderView> ResponseHeaders { get; } = new();
 
     public IReadOnlyList<string> Methods { get; } = new[]
     {
         "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
     };
-
-    public event EventHandler? TreeChanged;
 
     [ObservableProperty]
     private RequestItem _editing = new();
@@ -146,6 +149,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string _filterText = string.Empty;
+
+    [ObservableProperty]
+    private string _treeFilterMode = "全部";
 
     [ObservableProperty]
     private bool _treeIsEmpty;
@@ -179,6 +185,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isRunningSuite;
+
+    [ObservableProperty]
+    private bool _isSuiteBuilderOpen;
+
+    [ObservableProperty]
+    private string _suiteBuilderName = string.Empty;
 
     [ObservableProperty]
     private bool _isBodySingleLine;
@@ -491,6 +503,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool HasHistory => History.Count > 0;
 
+    public string TreeEmptyText => TreeFilterMode == "收藏"
+        ? "还没有收藏的集合或请求"
+        : "没有匹配的请求";
+
     public bool HasRecycledHistory => RecycledHistory.Count > 0;
 
     public string RecycleBinLabel => RecycledHistory.Count > 0
@@ -584,6 +600,12 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     partial void OnFilterTextChanged(string value) => NotifyTreeChanged();
+
+    partial void OnTreeFilterModeChanged(string value)
+    {
+        OnPropertyChanged(nameof(TreeEmptyText));
+        NotifyTreeChanged();
+    }
 
     partial void OnActiveEnvironmentChanged(EnvironmentModel? value)
     {
@@ -705,13 +727,21 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void AddRequest()
     {
-        var target = SelectedCollection ?? Editing.Owner ?? Collections.FirstOrDefault();
+        var target = SelectedCollection
+                     ?? Editing.Owner
+                     ?? Collections.FirstOrDefault(collection => collection.Parent is null)
+                     ?? Collections.FirstOrDefault();
         if (target is null)
         {
             target = new RequestCollection { Name = "我的集合" };
             Collections.Add(target);
         }
 
+        AddRequestToCollection(target);
+    }
+
+    public void AddRequestToCollection(RequestCollection target)
+    {
         var request = new RequestItem
         {
             Name = $"新建请求 {target.Requests.Count + 1}",
@@ -722,11 +752,30 @@ public partial class MainWindowViewModel : ObservableObject
         };
 
         target.Requests.Add(request);
-        _expanded[target] = true;
+        target.IsExpanded = true;
         OpenRequest(request);
         Persist();
         NotifyTreeChanged();
         ShowToast("已创建请求");
+    }
+
+    public void AddSubcollection(RequestCollection parent)
+    {
+        var collection = new RequestCollection
+        {
+            Name = $"新建集合 {parent.Children.Count + 1}",
+            Parent = parent
+        };
+
+        parent.Children.Add(collection);
+        Collections.Add(collection);
+        parent.IsExpanded = true;
+        SelectedCollection = collection;
+        SelectedRequest = null;
+        NotifySelectionChanged();
+        Persist();
+        NotifyTreeChanged();
+        ShowToast("已创建二级集合");
     }
 
     [RelayCommand]
@@ -734,7 +783,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var collection = new RequestCollection { Name = $"新建集合 {Collections.Count + 1}" };
         Collections.Add(collection);
-        _expanded[collection] = true;
+        collection.IsExpanded = true;
         SelectedCollection = collection;
         SelectedRequest = null;
         IsDraft = Editing.Owner is null;
@@ -757,7 +806,7 @@ public partial class MainWindowViewModel : ObservableObject
         copy.Name = $"{source.Name} 副本";
         copy.Owner = source.Owner;
         source.Owner.Requests.Add(copy);
-        _expanded[source.Owner] = true;
+        source.Owner.IsExpanded = true;
         OpenRequest(copy);
         Persist();
         NotifyTreeChanged();
@@ -776,26 +825,115 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void DeleteSelected()
     {
-        if (SelectedRequest is not null)
+        if (SelectedRequest is { } request)
         {
-            _pendingDelete = SelectedRequest;
-            DeleteDialogTitle = "删除请求？";
-            DeleteDialogDescription = $"“{SelectedRequest.Name}”将从集合中删除。此操作无法撤销。";
-        }
-        else if (SelectedCollection is not null)
-        {
-            _pendingDelete = SelectedCollection;
-            DeleteDialogTitle = "删除集合？";
-            DeleteDialogDescription =
-                $"“{SelectedCollection.Name}”及其 {SelectedCollection.Requests.Count} 个请求将被删除。此操作无法撤销。";
-        }
-        else
-        {
-            ShowToast("请先选择集合或请求");
+            RequestDeleteNode(request);
             return;
         }
 
+        if (SelectedCollection is { } collection)
+        {
+            RequestDeleteNode(collection);
+            return;
+        }
+
+        ShowToast("请先选择集合或请求");
+    }
+
+    public void RequestDeleteNode(object node)
+    {
+        switch (node)
+        {
+            case RequestItem request:
+                _pendingDelete = request;
+                DeleteDialogTitle = "删除请求？";
+                DeleteDialogDescription = $"“{request.Name}”将从集合中删除。此操作无法撤销。";
+                break;
+            case RequestCollection collection:
+                _pendingDelete = collection;
+                DeleteDialogTitle = "删除集合？";
+                DeleteDialogDescription =
+                    $"“{collection.Name}”及其子集合、共 {CountRequests(collection)} 个请求将被删除。此操作无法撤销。";
+                break;
+            default:
+                ShowToast("请先选择集合或请求");
+                return;
+        }
+
         IsDeleteDialogOpen = true;
+    }
+
+    public void ToggleFavoriteNode(object node)
+    {
+        switch (node)
+        {
+            case RequestItem request:
+                request.IsFavorite = !request.IsFavorite;
+                ShowToast(request.IsFavorite ? "已收藏请求" : "已取消收藏");
+                break;
+            case RequestCollection collection:
+                collection.IsFavorite = !collection.IsFavorite;
+                ShowToast(collection.IsFavorite ? "已收藏集合" : "已取消收藏");
+                break;
+            default:
+                return;
+        }
+
+        Persist();
+        NotifyTreeChanged();
+    }
+
+    public bool CanMoveTreeNode(TreeDisplayNode source, RequestCollection target)
+    {
+        if (source.Request is { } request)
+        {
+            return !ReferenceEquals(request.Owner, target);
+        }
+
+        if (source.Collection is { } collection)
+        {
+            return !ReferenceEquals(collection, target)
+                   && !ReferenceEquals(collection.Parent, target)
+                   && !IsSelfOrDescendant(target, collection);
+        }
+
+        return false;
+    }
+
+    public bool MoveTreeNode(TreeDisplayNode source, RequestCollection target)
+    {
+        if (!CanMoveTreeNode(source, target))
+        {
+            return false;
+        }
+
+        if (source.Request is { } request)
+        {
+            request.Owner?.Requests.Remove(request);
+            request.Owner = target;
+            target.Requests.Add(request);
+            target.IsExpanded = true;
+
+            if (ReferenceEquals(SelectedRequest, request))
+            {
+                SelectedCollection = target;
+            }
+
+            ShowToast("已移动到集合");
+        }
+        else if (source.Collection is { } collection)
+        {
+            collection.Parent?.Children.Remove(collection);
+            collection.Parent = target;
+            target.Children.Add(collection);
+            target.IsExpanded = true;
+            ShowToast("已移动集合");
+        }
+
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
+        return true;
     }
 
     [RelayCommand]
@@ -803,24 +941,38 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (_pendingDelete is RequestItem request)
         {
+            var wasSelected = ReferenceEquals(SelectedRequest, request);
             request.Owner?.Requests.Remove(request);
-            if (ReferenceEquals(Editing, request))
+            if (wasSelected)
             {
                 SelectFirstRequestOrBlank();
             }
         }
         else if (_pendingDelete is RequestCollection collection)
         {
-            Collections.Remove(collection);
-            _expanded.Remove(collection);
-            if (ReferenceEquals(Editing.Owner, collection))
+            var editingRemoved = Editing.Owner is not null
+                                 && IsSelfOrDescendant(Editing.Owner, collection);
+            var selectedRemoved = SelectedCollection is not null
+                                  && IsSelfOrDescendant(SelectedCollection, collection);
+
+            RemoveCollectionRecursive(collection);
+
+            if (editingRemoved)
             {
+                SelectedCollection = null;
+                SelectedRequest = null;
                 SelectFirstRequestOrBlank();
+            }
+            else if (selectedRemoved)
+            {
+                SelectedCollection = Editing.Owner;
+                SelectedRequest = Editing.Owner is null ? null : Editing;
             }
         }
 
         _pendingDelete = null;
         IsDeleteDialogOpen = false;
+        NotifySelectionChanged();
         Persist();
         NotifyTreeChanged();
         ShowToast("已删除");
@@ -836,22 +988,40 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void RenameSelected()
     {
-        if (SelectedRequest is not null)
+        if (SelectedRequest is { } request)
         {
-            _pendingDelete = SelectedRequest;
-            RenameDialogTitle = "重命名请求";
-            RenameText = SelectedRequest.Name;
-        }
-        else if (SelectedCollection is not null)
-        {
-            _pendingDelete = SelectedCollection;
-            RenameDialogTitle = "重命名集合";
-            RenameText = SelectedCollection.Name;
-        }
-        else
-        {
-            ShowToast("请先选择集合或请求");
+            RequestRenameNode(request);
             return;
+        }
+
+        if (SelectedCollection is { } collection)
+        {
+            RequestRenameNode(collection);
+            return;
+        }
+
+        ShowToast("请先选择集合或请求");
+    }
+
+    public void RequestRenameNode(object node)
+    {
+        switch (node)
+        {
+            case RequestItem request:
+                OpenRequest(request);
+                _pendingDelete = request;
+                RenameDialogTitle = "重命名请求";
+                RenameText = request.Name;
+                break;
+            case RequestCollection collection:
+                SelectCollection(collection);
+                _pendingDelete = collection;
+                RenameDialogTitle = "重命名集合";
+                RenameText = collection.Name;
+                break;
+            default:
+                ShowToast("请先选择集合或请求");
+                return;
         }
 
         IsRenameDialogOpen = true;
@@ -1113,10 +1283,43 @@ public partial class MainWindowViewModel : ObservableObject
         NotifySelectionChanged();
     }
 
-    public void ToggleCollection(RequestCollection collection, bool expanded) => _expanded[collection] = expanded;
+    public void ToggleCollection(RequestCollection collection, bool expanded)
+    {
+        collection.IsExpanded = expanded;
+        NotifyTreeChanged();
+    }
 
-    public bool IsExpanded(RequestCollection collection) =>
-        _expanded.TryGetValue(collection, out var expanded) && expanded;
+    public bool IsExpanded(RequestCollection collection) => collection.IsExpanded;
+
+    private static bool IsSelfOrDescendant(RequestCollection child, RequestCollection ancestor)
+    {
+        for (var current = child; current is not null; current = current.Parent)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void RemoveCollectionRecursive(RequestCollection collection)
+    {
+        foreach (var child in collection.Children.ToList())
+        {
+            RemoveCollectionRecursive(child);
+        }
+
+        collection.Parent?.Children.Remove(collection);
+        Collections.Remove(collection);
+    }
+
+    private static int CountRequests(RequestCollection collection)
+    {
+        return collection.Requests.Count
+               + collection.Children.Sum(child => CountRequests(child));
+    }
 
     public void LoadHistory(HistoryEntry entry)
     {
@@ -1312,6 +1515,88 @@ public partial class MainWindowViewModel : ObservableObject
 
         IsManagementOpen = false;
         OpenRequest(request);
+    }
+
+    [RelayCommand]
+    private void OpenSuiteBuilder()
+    {
+        SuiteSources.Clear();
+        var defaultCollection = SelectedCollection ?? Editing.Owner;
+        foreach (var collection in Collections.Where(collection => collection.Parent is null))
+        {
+            AddSuiteSourceRows(collection, 0, defaultCollection);
+        }
+
+        SuiteBuilderName = $"组装套件 {Suites.Count + 1}";
+        IsSuiteBuilderOpen = true;
+    }
+
+    private void AddSuiteSourceRows(
+        RequestCollection collection,
+        int depth,
+        RequestCollection? defaultCollection)
+    {
+        var isSelected = defaultCollection is null || ReferenceEquals(collection, defaultCollection);
+        SuiteSources.Add(new SuiteSourceCollection
+        {
+            Collection = collection,
+            Depth = depth,
+            IsSelected = isSelected
+        });
+
+        foreach (var child in collection.Children)
+        {
+            AddSuiteSourceRows(child, depth + 1, defaultCollection);
+        }
+    }
+
+    [RelayCommand]
+    private void CancelSuiteBuilder() => IsSuiteBuilderOpen = false;
+
+    [RelayCommand]
+    private void CreateSuiteFromSources()
+    {
+        var sources = SuiteSources.Where(source => source.IsSelected).ToList();
+        var steps = sources
+            .SelectMany(source => source.Collection.Requests)
+            .Select(request => new TestStep
+            {
+                RequestId = request.Id,
+                RequestName = request.Name,
+                Method = request.Method,
+                Url = request.Url
+            })
+            .ToList();
+
+        if (steps.Count == 0)
+        {
+            ShowToast("请选择至少一个包含请求的集合");
+            return;
+        }
+
+        var name = SuiteBuilderName.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = $"组装套件 {Suites.Count + 1}";
+        }
+
+        var suite = new TestSuite
+        {
+            Name = name,
+            StopOnError = true
+        };
+
+        foreach (var step in steps)
+        {
+            suite.Steps.Add(step);
+        }
+
+        Suites.Add(suite);
+        SelectedSuite = suite;
+        SelectedSuiteResult = null;
+        IsSuiteBuilderOpen = false;
+        Persist();
+        ShowToast($"已创建套件（{steps.Count} 个步骤）");
     }
 
     [RelayCommand]
@@ -1897,13 +2182,118 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void NotifySelectionChanged()
     {
+        UpdateSelectionFlags();
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(IsRequestSelected));
         OnPropertyChanged(nameof(IsDraft));
         OnPropertyChanged(nameof(EditorHint));
     }
 
-    private void NotifyTreeChanged() => TreeChanged?.Invoke(this, EventArgs.Empty);
+    private void UpdateSelectionFlags()
+    {
+        foreach (var collection in Collections)
+        {
+            collection.IsSelected = SelectedRequest is null
+                                    && ReferenceEquals(SelectedCollection, collection);
+
+            foreach (var request in collection.Requests)
+            {
+                request.IsSelected = ReferenceEquals(SelectedRequest, request);
+            }
+        }
+    }
+
+    private void NotifyTreeChanged() => RefreshTree();
+
+    private void RefreshTree()
+    {
+        var filter = FilterText.Trim();
+        var hasFilter = filter.Length > 0;
+        var favoritesOnly = TreeFilterMode == "收藏";
+        var nodes = new List<TreeDisplayNode>();
+
+        foreach (var collection in Collections.Where(collection => collection.Parent is null))
+        {
+            AddCollectionRows(collection, 0, filter, hasFilter, favoritesOnly, false, nodes);
+        }
+
+        TreeNodes.Clear();
+        foreach (var node in nodes)
+        {
+            TreeNodes.Add(node);
+        }
+
+        TreeIsEmpty = TreeNodes.Count == 0;
+    }
+
+    private void AddCollectionRows(
+        RequestCollection collection,
+        int depth,
+        string filter,
+        bool hasFilter,
+        bool favoritesOnly,
+        bool forceInclude,
+        List<TreeDisplayNode> nodes)
+    {
+        var collectionMatches = !hasFilter || Contains(collection.Name, filter);
+        var includeAll = forceInclude
+                        || (!favoritesOnly && collectionMatches)
+                        || (favoritesOnly && collection.IsFavorite);
+
+        var requests = collection.Requests
+            .Where(request => (!favoritesOnly || includeAll || request.IsFavorite)
+                              && (!hasFilter || collectionMatches || Matches(request, filter)))
+            .ToList();
+
+        var childNodes = new List<TreeDisplayNode>();
+        foreach (var child in collection.Children)
+        {
+            AddCollectionRows(
+                child,
+                depth + 1,
+                filter,
+                hasFilter,
+                favoritesOnly,
+                includeAll,
+                childNodes);
+        }
+
+        var selfVisible = favoritesOnly
+            ? collection.IsFavorite || requests.Count > 0 || childNodes.Count > 0
+            : !hasFilter || collectionMatches || requests.Count > 0 || childNodes.Count > 0;
+
+        if (!selfVisible)
+        {
+            return;
+        }
+
+        if (hasFilter || favoritesOnly)
+        {
+            collection.IsExpanded = true;
+        }
+
+        nodes.Add(new TreeDisplayNode { Collection = collection, Depth = depth });
+
+        if (!collection.IsExpanded && !hasFilter && !favoritesOnly)
+        {
+            return;
+        }
+
+        nodes.AddRange(childNodes);
+        foreach (var request in requests)
+        {
+            nodes.Add(new TreeDisplayNode { Request = request, Depth = depth });
+        }
+    }
+
+    private static bool Matches(RequestItem request, string filter) =>
+        Contains(request.Name, filter)
+        || Contains(request.Url, filter)
+        || Contains(request.Method, filter);
+
+    private static bool Contains(string? value, string filter) =>
+        filter.Length == 0
+        || (value?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
 
     private void ShowToast(string title)
     {
@@ -1940,7 +2330,8 @@ public partial class MainWindowViewModel : ObservableObject
             var collection = new RequestCollection
             {
                 Id = collectionDto.Id == Guid.Empty ? Guid.NewGuid() : collectionDto.Id,
-                Name = collectionDto.Name
+                Name = collectionDto.Name,
+                IsFavorite = collectionDto.IsFavorite
             };
 
             foreach (var requestDto in collectionDto.Requests)
@@ -1951,6 +2342,22 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             Collections.Add(collection);
+        }
+
+        foreach (var collectionDto in workspace.Collections)
+        {
+            if (collectionDto.ParentId is not { } parentId)
+            {
+                continue;
+            }
+
+            var parent = Collections.FirstOrDefault(collection => collection.Id == parentId);
+            var child = Collections.FirstOrDefault(collection => collection.Id == collectionDto.Id);
+            if (parent is not null && child is not null && !ReferenceEquals(parent, child))
+            {
+                child.Parent = parent;
+                parent.Children.Add(child);
+            }
         }
 
         foreach (var environmentDto in workspace.Environments)
@@ -2131,7 +2538,7 @@ public partial class MainWindowViewModel : ObservableObject
         collection.Requests.Add(sse);
         collection.Requests.Add(upload);
         Collections.Add(collection);
-        _expanded[collection] = true;
+        collection.IsExpanded = true;
 
         var auth = new RequestCollection { Name = "示例：带鉴权头" };
         var me = new RequestItem
