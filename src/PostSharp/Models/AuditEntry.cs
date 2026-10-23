@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using CommunityToolkit.Mvvm.Input;
 using TKCode.Arc;
 
 namespace PostSharp.Models;
@@ -146,4 +147,10 @@ public sealed class AuditEntry
         >= 400 and < 500 => BadgeTone.Warning,
         _ => BadgeTone.Danger
     };
+
+    [JsonIgnore]
+    public IRelayCommand? RestoreCommand { get; set; }
+
+    [JsonIgnore]
+    public IRelayCommand? PurgeCommand { get; set; }
 }
