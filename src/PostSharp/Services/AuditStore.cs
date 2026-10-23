@@ -19,6 +19,8 @@ public sealed class AuditStore
 
     public string FilePath { get; }
 
+    public string TrashFilePath { get; }
+
     public AuditStore()
     {
         var root = Path.Combine(
@@ -26,14 +28,23 @@ public sealed class AuditStore
             "PostSharp");
         Directory.CreateDirectory(root);
         FilePath = Path.Combine(root, "audit.json");
+        TrashFilePath = Path.Combine(root, "audit-trash.json");
     }
 
-    public List<AuditEntry> Load()
+    public List<AuditEntry> Load() => LoadFile(FilePath);
+
+    public List<AuditEntry> LoadTrash() => LoadFile(TrashFilePath);
+
+    public void Save(IEnumerable<AuditEntry> entries) => SaveFile(FilePath, entries);
+
+    public void SaveTrash(IEnumerable<AuditEntry> entries) => SaveFile(TrashFilePath, entries);
+
+    private static List<AuditEntry> LoadFile(string path)
     {
         try
         {
-            return File.Exists(FilePath)
-                ? JsonSerializer.Deserialize<List<AuditEntry>>(File.ReadAllText(FilePath), JsonOptions) ?? new()
+            return File.Exists(path)
+                ? JsonSerializer.Deserialize<List<AuditEntry>>(File.ReadAllText(path), JsonOptions) ?? new()
                 : new List<AuditEntry>();
         }
         catch
@@ -42,11 +53,11 @@ public sealed class AuditStore
         }
     }
 
-    public void Save(IEnumerable<AuditEntry> entries)
+    private static void SaveFile(string path, IEnumerable<AuditEntry> entries)
     {
         try
         {
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(entries, JsonOptions));
+            File.WriteAllText(path, JsonSerializer.Serialize(entries, JsonOptions));
         }
         catch
         {

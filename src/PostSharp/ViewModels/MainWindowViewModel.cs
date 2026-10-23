@@ -36,6 +36,8 @@ public partial class MainWindowViewModel : ObservableObject
     private HistoryEntry? _pendingHistoryPurge;
     private bool _trashAllPending;
     private bool _purgeAllPending;
+    private AuditEntry? _pendingAuditPurge;
+    private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
     private bool _initializing = true;
 
@@ -93,10 +95,21 @@ public partial class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(AuditCount));
             RefreshAuditView();
         };
+        AuditTrash.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasAuditTrash));
+            OnPropertyChanged(nameof(AuditTrashLabel));
+        };
 
         foreach (var entry in _auditStore.Load().Take(_auditLimit))
         {
             Audit.Add(entry);
+        }
+
+        foreach (var entry in _auditStore.LoadTrash())
+        {
+            WireAuditTrashEntry(entry);
+            AuditTrash.Add(entry);
         }
 
         RefreshAuditView();
@@ -119,6 +132,8 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<HistoryEntry> RecycledHistory { get; } = new();
 
     public ObservableCollection<AuditEntry> Audit { get; } = new();
+
+    public ObservableCollection<AuditEntry> AuditTrash { get; } = new();
 
     public ObservableCollection<AuditEntry> VisibleAudit { get; } = new();
 
@@ -246,6 +261,27 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string _historyPurgeDescription = string.Empty;
+
+    [ObservableProperty]
+    private bool _isAuditTrashConfirmOpen;
+
+    [ObservableProperty]
+    private string _auditTrashConfirmTitle = "清空审计记录？";
+
+    [ObservableProperty]
+    private string _auditTrashConfirmDescription = string.Empty;
+
+    [ObservableProperty]
+    private bool _isAuditTrashOpen;
+
+    [ObservableProperty]
+    private bool _isAuditPurgeConfirmOpen;
+
+    [ObservableProperty]
+    private string _auditPurgeTitle = "永久删除？";
+
+    [ObservableProperty]
+    private string _auditPurgeDescription = string.Empty;
 
     [ObservableProperty]
     private bool _isToastOpen;
@@ -471,8 +507,12 @@ public partial class MainWindowViewModel : ObservableObject
 
         while (Audit.Count > _auditLimit)
         {
+            var oldest = Audit[^1];
             Audit.RemoveAt(Audit.Count - 1);
+            MoveAuditToTrash(oldest);
         }
+
+        PersistAudit();
 
         if (e.PropertyName == nameof(AppSettings.Theme))
         {
@@ -521,6 +561,12 @@ public partial class MainWindowViewModel : ObservableObject
     public bool HasSelectedSuiteResult => SelectedSuiteResult is not null;
 
     public int AuditCount => Audit.Count;
+
+    public bool HasAuditTrash => AuditTrash.Count > 0;
+
+    public string AuditTrashLabel => AuditTrash.Count > 0
+        ? $"审计回收站 ({AuditTrash.Count})"
+        : "审计回收站";
 
     public int SuiteCount => Suites.Count;
 
@@ -1465,10 +1511,12 @@ public partial class MainWindowViewModel : ObservableObject
         Audit.Insert(0, entry);
         while (Audit.Count > _auditLimit)
         {
+            var oldest = Audit[^1];
             Audit.RemoveAt(Audit.Count - 1);
+            MoveAuditToTrash(oldest);
         }
 
-        _auditStore.Save(Audit);
+        PersistAudit();
     }
 
     private void RefreshAuditView()
@@ -1506,9 +1554,126 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void ClearAudit()
     {
+        if (Audit.Count == 0)
+        {
+            ShowToast("审计记录为空");
+            return;
+        }
+
+        AuditTrashConfirmTitle = "清空审计记录？";
+        AuditTrashConfirmDescription =
+            $"将把 {Audit.Count} 条审计记录移入审计回收站，可在回收站恢复或永久删除。";
+        IsAuditTrashConfirmOpen = true;
+    }
+
+    [RelayCommand]
+    private void ConfirmAuditTrash()
+    {
+        for (var index = Audit.Count - 1; index >= 0; index--)
+        {
+            MoveAuditToTrash(Audit[index]);
+        }
+
         Audit.Clear();
+        IsAuditTrashConfirmOpen = false;
+        PersistAudit();
+        ShowToast("审计记录已移入回收站");
+    }
+
+    [RelayCommand]
+    private void CancelAuditTrash() => IsAuditTrashConfirmOpen = false;
+
+    [RelayCommand]
+    private void OpenAuditTrash() => IsAuditTrashOpen = true;
+
+    [RelayCommand]
+    private void CloseAuditTrash() => IsAuditTrashOpen = false;
+
+    private void MoveAuditToTrash(AuditEntry entry)
+    {
+        WireAuditTrashEntry(entry);
+        AuditTrash.Insert(0, entry);
+        while (AuditTrash.Count > 1000)
+        {
+            AuditTrash.RemoveAt(AuditTrash.Count - 1);
+        }
+    }
+
+    private void WireAuditTrashEntry(AuditEntry entry)
+    {
+        entry.RestoreCommand = new RelayCommand(() => RestoreAudit(entry));
+        entry.PurgeCommand = new RelayCommand(() => RequestPurgeAudit(entry));
+    }
+
+    private void RestoreAudit(AuditEntry entry)
+    {
+        if (!AuditTrash.Remove(entry))
+        {
+            return;
+        }
+
+        Audit.Insert(0, entry);
+        PersistAudit();
+        ShowToast("审计记录已恢复");
+    }
+
+    private void RequestPurgeAudit(AuditEntry entry)
+    {
+        _auditPurgeAllPending = false;
+        _pendingAuditPurge = entry;
+        AuditPurgeTitle = "永久删除？";
+        AuditPurgeDescription = $"“{entry.RequestName}”将从审计回收站永久删除，无法恢复。";
+        IsAuditPurgeConfirmOpen = true;
+    }
+
+    [RelayCommand]
+    private void EmptyAuditTrash()
+    {
+        if (AuditTrash.Count == 0)
+        {
+            ShowToast("审计回收站为空");
+            return;
+        }
+
+        _auditPurgeAllPending = true;
+        _pendingAuditPurge = null;
+        AuditPurgeTitle = "清空审计回收站？";
+        AuditPurgeDescription = "审计回收站中的所有记录将被永久删除，无法恢复。";
+        IsAuditPurgeConfirmOpen = true;
+    }
+
+    [RelayCommand]
+    private void ConfirmAuditPurge()
+    {
+        if (_auditPurgeAllPending)
+        {
+            AuditTrash.Clear();
+            ShowToast("审计回收站已清空");
+        }
+        else if (_pendingAuditPurge is { } entry)
+        {
+            AuditTrash.Remove(entry);
+            ShowToast("审计记录已永久删除");
+        }
+
+        _pendingAuditPurge = null;
+        _auditPurgeAllPending = false;
+        IsAuditPurgeConfirmOpen = false;
+        PersistAudit();
+    }
+
+    [RelayCommand]
+    private void CancelAuditPurge()
+    {
+        _pendingAuditPurge = null;
+        _auditPurgeAllPending = false;
+        IsAuditPurgeConfirmOpen = false;
+    }
+
+    private void PersistAudit()
+    {
         _auditStore.Save(Audit);
-        ShowToast("审计记录已清空");
+        _auditStore.SaveTrash(AuditTrash);
     }
 
     [RelayCommand]
