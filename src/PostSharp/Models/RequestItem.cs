@@ -8,7 +8,20 @@ public partial class RequestCollection : ObservableObject
     [ObservableProperty]
     private string _name = "新建集合";
 
+    [ObservableProperty]
+    private bool _isExpanded = true;
+
+    [ObservableProperty]
+    private bool _isSelected;
+
+    [ObservableProperty]
+    private bool _isFavorite;
+
     public Guid Id { get; init; } = Guid.NewGuid();
+
+    public RequestCollection? Parent { get; set; }
+
+    public ObservableCollection<RequestCollection> Children { get; } = new();
 
     public ObservableCollection<RequestItem> Requests { get; } = new();
 }
@@ -36,6 +49,12 @@ public partial class RequestItem : ObservableObject
 
     [ObservableProperty]
     private string _uploadFieldName = "file";
+
+    [ObservableProperty]
+    private bool _isSelected;
+
+    [ObservableProperty]
+    private bool _isFavorite;
 
     public Guid Id { get; set; } = Guid.NewGuid();
 
