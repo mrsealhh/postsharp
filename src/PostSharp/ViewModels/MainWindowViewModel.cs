@@ -26,6 +26,7 @@ public partial class MainWindowViewModel : ObservableObject
     private const int AuditPreviewLimit = 2000;
     private const int ResponsePreviewLimit = 8 * 1024;
     private const int DetailPageSize = 16 * 1024;
+    private const int MaxCollectionDepth = 5;
 
     private int _auditLimit = 500;
     private int _largeResponseThreshold = 64 * 1024;
@@ -761,6 +762,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void AddSubcollection(RequestCollection parent)
     {
+        if (parent.Depth >= MaxCollectionDepth)
+        {
+            ShowToast($"集合最多支持 {MaxCollectionDepth} 级");
+            return;
+        }
+
         var collection = new RequestCollection
         {
             Name = $"新建集合 {parent.Children.Count + 1}",
@@ -894,7 +901,8 @@ public partial class MainWindowViewModel : ObservableObject
         {
             return !ReferenceEquals(collection, target)
                    && !ReferenceEquals(collection.Parent, target)
-                   && !IsSelfOrDescendant(target, collection);
+                   && !IsSelfOrDescendant(target, collection)
+                   && target.Depth + GetCollectionSubtreeHeight(collection) <= MaxCollectionDepth;
         }
 
         return false;
@@ -1319,6 +1327,13 @@ public partial class MainWindowViewModel : ObservableObject
     {
         return collection.Requests.Count
                + collection.Children.Sum(child => CountRequests(child));
+    }
+
+    private static int GetCollectionSubtreeHeight(RequestCollection collection)
+    {
+        return 1 + (collection.Children.Count == 0
+            ? 0
+            : collection.Children.Max(GetCollectionSubtreeHeight));
     }
 
     public void LoadHistory(HistoryEntry entry)
