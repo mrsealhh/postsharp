@@ -58,6 +58,7 @@ public sealed class WorkspaceStore
         IEnumerable<RequestCollection> collections,
         IEnumerable<EnvironmentModel> environments,
         IEnumerable<HistoryEntry> history,
+        IEnumerable<TestSuite> suites,
         Guid? activeEnvironmentId)
     {
         return new WorkspaceDto
@@ -87,6 +88,22 @@ public sealed class WorkspaceStore
                 Params = entry.Params.ToList(),
                 Headers = entry.Headers.ToList()
             }).ToList(),
+            Suites = suites.Select(suite => new SuiteDto
+            {
+                Id = suite.Id,
+                Name = suite.Name,
+                StopOnError = suite.StopOnError,
+                LastSummary = suite.LastSummary,
+                Steps = suite.Steps.Select(step => new SuiteStepDto
+                {
+                    RequestId = step.RequestId,
+                    RequestName = step.RequestName,
+                    Method = step.Method,
+                    Url = step.Url,
+                    ExpectedStatus = step.ExpectedStatus,
+                    BodyContains = step.BodyContains
+                }).ToList()
+            }).ToList(),
             ActiveEnvironmentId = activeEnvironmentId
         };
     }
@@ -100,11 +117,14 @@ public sealed class WorkspaceStore
             Method = string.IsNullOrWhiteSpace(dto.Method) ? "GET" : dto.Method,
             Url = dto.Url,
             BodyMode = dto.BodyMode,
-            Body = dto.Body
+            Body = dto.Body,
+            UploadFilePath = dto.UploadFilePath,
+            UploadFieldName = string.IsNullOrWhiteSpace(dto.UploadFieldName) ? "file" : dto.UploadFieldName
         };
 
         FillRows(request.Params, dto.Params);
         FillRows(request.Headers, dto.Headers);
+        FillRows(request.FormFields, dto.FormFields);
         return request;
     }
 
@@ -135,8 +155,11 @@ public sealed class WorkspaceStore
             Url = request.Url,
             BodyMode = request.BodyMode,
             Body = request.Body,
+            UploadFilePath = request.UploadFilePath,
+            UploadFieldName = request.UploadFieldName,
             Params = ToRows(request.Params),
-            Headers = ToRows(request.Headers)
+            Headers = ToRows(request.Headers),
+            FormFields = ToRows(request.FormFields)
         };
     }
 
@@ -167,6 +190,8 @@ public sealed class WorkspaceDto
 
     public List<HistoryDto> History { get; set; } = new();
 
+    public List<SuiteDto> Suites { get; set; } = new();
+
     public Guid? ActiveEnvironmentId { get; set; }
 }
 
@@ -193,9 +218,15 @@ public sealed class RequestDto
 
     public string Body { get; set; } = string.Empty;
 
+    public string UploadFilePath { get; set; } = string.Empty;
+
+    public string UploadFieldName { get; set; } = "file";
+
     public List<RowDto> Params { get; set; } = new();
 
     public List<RowDto> Headers { get; set; } = new();
+
+    public List<RowDto> FormFields { get; set; } = new();
 }
 
 public sealed class EnvironmentDto
@@ -237,4 +268,32 @@ public sealed class RowDto
     public string Value { get; set; } = string.Empty;
 
     public bool IsEnabled { get; set; } = true;
+}
+
+public sealed class SuiteDto
+{
+    public Guid Id { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    public bool StopOnError { get; set; } = true;
+
+    public string LastSummary { get; set; } = "尚未运行";
+
+    public List<SuiteStepDto> Steps { get; set; } = new();
+}
+
+public sealed class SuiteStepDto
+{
+    public Guid RequestId { get; set; }
+
+    public string RequestName { get; set; } = string.Empty;
+
+    public string Method { get; set; } = "GET";
+
+    public string Url { get; set; } = string.Empty;
+
+    public int? ExpectedStatus { get; set; }
+
+    public string? BodyContains { get; set; }
 }

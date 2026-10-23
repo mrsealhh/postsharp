@@ -20,6 +20,13 @@ public sealed class MockApiServer : IDisposable
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
+    private static readonly JsonSerializerOptions SseJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     private static readonly MockUser[] Users =
     {
         new(1, "林小满", "xiaoman.lin@example.com", "admin", true),
@@ -235,6 +242,35 @@ public sealed class MockApiServer : IDisposable
                         }, cancellationToken);
                         return;
 
+                    case "/api/large":
+                        var sizeKb = query.TryGetValue("kb", out var kbText) && int.TryParse(kbText, out var kb)
+                            ? Math.Clamp(kb, 1, 4096)
+                            : 200;
+                        await WriteResponseAsync(stream, 200, "OK", new
+                        {
+                            message = "大响应测试。",
+                            sizeKb,
+                            data = new string('A', sizeKb * 1024),
+                            items = Enumerable.Range(1, 50)
+                                .Select(index => new { id = index, name = $"item-{index}" })
+                                .ToArray()
+                        }, cancellationToken);
+                        return;
+
+                    case "/api/ai/stream":
+                        await WriteSseAsync(stream, cancellationToken).ConfigureAwait(false);
+                        return;
+
+                    case "/api/upload" when method == "POST":
+                        await WriteResponseAsync(stream, 200, "OK", new
+                        {
+                            receivedBytes = contentLength,
+                            fileName = MultipartFileName(body) ?? "unknown",
+                            contentType = headers.GetValueOrDefault("Content-Type") ?? string.Empty,
+                            message = "文件已接收（Mock 服务不会落盘）。"
+                        }, cancellationToken);
+                        return;
+
                     case "/api/orders" when method == "POST":
                         await WriteResponseAsync(stream, 201, "Created", new
                         {
@@ -341,6 +377,89 @@ public sealed class MockApiServer : IDisposable
         }
 
         return values;
+    }
+
+    private static string? MultipartFileName(string body)
+    {
+        const string marker = "filename=";
+        var start = body.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+        {
+            return null;
+        }
+
+        start += marker.Length;
+        if (start < body.Length && body[start] == '"')
+        {
+            start++;
+            var quoteEnd = body.IndexOf('"', start);
+            return quoteEnd > start ? body[start..quoteEnd] : null;
+        }
+
+        var end = body.IndexOfAny(new[] { '\r', '\n', ';' }, start);
+        return end > start ? body[start..end].Trim() : body[start..].Trim();
+    }
+
+    private static async Task WriteSseAsync(NetworkStream stream, CancellationToken cancellationToken)
+    {        var head = "HTTP/1.1 200 OK\r\n"
+                   + "Content-Type: text/event-stream; charset=utf-8\r\n"
+                   + "Cache-Control: no-cache\r\n"
+                   + "Access-Control-Allow-Origin: *\r\n"
+                   + "Connection: close\r\n"
+                   + "\r\n";
+
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(head), cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+
+        var thinkingChunks = new[]
+        {
+            "先拆解问题：",
+            "确认接口、审计和聚合链路，",
+            "再给出完整回答。"
+        };
+
+        var contentChunks = new[]
+        {
+            "# PostSharp SSE 示例\n\n",
+            "这是一条流式响应。\n\n",
+            "- thinking 和 content 会被自动聚合\n",
+            "- 原始事件仍然保留在响应体中\n\n",
+            "你可以直接复制内容，或在审计中回看完整输出。"
+        };
+
+        foreach (var chunk in thinkingChunks)
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                choices = new[] { new { delta = new { reasoning_content = chunk } } }
+            }, SseJsonOptions);
+            await WriteSseEventAsync(stream, payload, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(70, cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var chunk in contentChunks)
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                choices = new[] { new { delta = new { content = chunk } } }
+            }, SseJsonOptions);
+            await WriteSseEventAsync(stream, payload, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(70, cancellationToken).ConfigureAwait(false);
+        }
+
+        await WriteSseEventAsync(stream, "{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}", cancellationToken)
+            .ConfigureAwait(false);
+        await WriteSseEventAsync(stream, "[DONE]", cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task WriteSseEventAsync(
+        NetworkStream stream,
+        string data,
+        CancellationToken cancellationToken)
+    {
+        var bytes = Encoding.UTF8.GetBytes($"data: {data}\n\n");
+        await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task WriteResponseAsync(
