@@ -63,11 +63,13 @@ PostSharp 的定位是：
   - 大响应折叠：主视图只展示预览，详情窗口按页查看完整内容，支持复制全部。
   - SSE 响应自动选中「AI 聚合」标签，内容 / 思考过程 / 原始事件三视图。
 - **集合、历史、环境变量、自动保存**。
+- **历史记录管理**：单条删除与清空都会先弹出确认，删除项进入回收站；回收站支持恢复、永久删除，永久删除前再次确认。
 
 ### 界面
 
 - 浅色 / 深色 / 跟随系统，标题栏同步。
 - 界面字体、代码字体、代码字号、窗口自适应。
+- 列表统一列布局：来源/方法/状态/时间固定对齐，长文本省略并在悬浮时显示完整内容。
 - 右键菜单：新建/复制/复制 URL/重命名/删除。
 - 内置一分钟指南和示例请求。
 
@@ -114,6 +116,8 @@ dotnet build PostSharp.slnx
    - **自动化**：运行「内置 Mock 冒烟测试」。
    - **指南**：一分钟了解全部核心功能。
    - **设置**：主题、字体、超时、默认请求体等。
+
+![一分钟指南](docs/guide.png)
 
 ## 内置 Mock API
 
@@ -237,6 +241,15 @@ http://127.0.0.1:5199/mcp
   - 自动格式化开关和阈值可配置。
 - **列表**：所有长文本使用省略号 + Tooltip，来源/状态/时间列对齐。
 
+### 历史记录与回收站
+
+- 历史列表支持单条删除；删除按钮位于每行右侧。
+- 单条删除和「清空」都会先弹出确认框，确认后移入回收站，不会立即永久删除。
+- 回收站支持恢复、单条永久删除和清空；永久删除前会再次确认。
+- 回收站内容随工作区一起持久化，重启后仍可恢复。
+
+![历史记录回收站](docs/history-trash.png)
+
 ## 系统全局设置
 
 顶栏「管理层」→「设置」：
@@ -269,7 +282,7 @@ http://127.0.0.1:5199/mcp
 
 ```text
 Windows: %APPDATA%\PostSharp\
-  workspace.json   集合、请求、环境、历史、自动化套件
+  workspace.json   集合、请求、环境、历史、回收站、自动化套件
   audit.json       UI / MCP 请求审计（含 AI 聚合输出）
   settings.json    主题、字体、超时、阈值、审计保留条数
 ```
@@ -309,7 +322,9 @@ docs/
   screenshot.png
   management-audit.png
   management-automation.png
+  guide.png
   settings.png
+  history-trash.png
   context-menu.png
 ```
 
@@ -344,6 +359,7 @@ docs/
 | MCP 审计 | `list_audit` 来源/客户端/工具正确；`get_audit` 含 AI 输出 |
 | MCP 套件 | create/run/delete 通过；断言 3/3 |
 | 参数合并 | `existing=1&page=2&q=中文` |
+| 历史记录删除 | 单条/清空均先确认并移入回收站；恢复、二次确认永久删除均已验证 |
 | 右键菜单 | 请求/集合菜单可用，复制请求/URL 已验证 |
 | 构建 | Debug / Release 0 警告、0 错误 |
 
@@ -356,11 +372,12 @@ master                 稳定可发布
   └── dev              集成分支
         ├── feature/initial-mvp
         ├── feature/logo
-        └── feature/ai-workbench
+        ├── feature/ai-workbench
+        └── feature/history-recycle
 ```
 
 - 功能从 `dev` 拉出 `feature/<short-name>`，合并回 `dev` 自测，再合并 `master`。
-- 当前 `master` / `dev` 已包含 AI 工作台更新；`feature/ai-workbench` 保留本次功能提交。
+- 当前 `master` / `dev` 已包含 AI 工作台与历史回收站更新；对应 feature 分支保留提交。
 
 ### 提交与代码
 

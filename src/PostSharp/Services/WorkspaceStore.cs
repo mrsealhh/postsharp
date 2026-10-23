@@ -58,6 +58,7 @@ public sealed class WorkspaceStore
         IEnumerable<RequestCollection> collections,
         IEnumerable<EnvironmentModel> environments,
         IEnumerable<HistoryEntry> history,
+        IEnumerable<HistoryEntry> recycledHistory,
         IEnumerable<TestSuite> suites,
         Guid? activeEnvironmentId)
     {
@@ -75,19 +76,8 @@ public sealed class WorkspaceStore
                 Name = environment.Name,
                 Variables = ToRows(environment.Variables)
             }).ToList(),
-            History = history.Select(entry => new HistoryDto
-            {
-                Timestamp = entry.Timestamp,
-                Name = entry.Name,
-                Method = entry.Method,
-                Url = entry.Url,
-                BodyMode = entry.BodyMode,
-                Body = entry.Body,
-                StatusCode = entry.StatusCode,
-                DurationMs = entry.DurationMs,
-                Params = entry.Params.ToList(),
-                Headers = entry.Headers.ToList()
-            }).ToList(),
+            History = history.Select(ToHistoryDto).ToList(),
+            RecycledHistory = recycledHistory.Select(ToHistoryDto).ToList(),
             Suites = suites.Select(suite => new SuiteDto
             {
                 Id = suite.Id,
@@ -145,6 +135,23 @@ public sealed class WorkspaceStore
         };
     }
 
+    private static HistoryDto ToHistoryDto(HistoryEntry entry)
+    {
+        return new HistoryDto
+        {
+            Timestamp = entry.Timestamp,
+            Name = entry.Name,
+            Method = entry.Method,
+            Url = entry.Url,
+            BodyMode = entry.BodyMode,
+            Body = entry.Body,
+            StatusCode = entry.StatusCode,
+            DurationMs = entry.DurationMs,
+            Params = entry.Params.ToList(),
+            Headers = entry.Headers.ToList()
+        };
+    }
+
     private static RequestDto ToDto(RequestItem request)
     {
         return new RequestDto
@@ -189,6 +196,8 @@ public sealed class WorkspaceDto
     public List<EnvironmentDto> Environments { get; set; } = new();
 
     public List<HistoryDto> History { get; set; } = new();
+
+    public List<HistoryDto> RecycledHistory { get; set; } = new();
 
     public List<SuiteDto> Suites { get; set; } = new();
 
