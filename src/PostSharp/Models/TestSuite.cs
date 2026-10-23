@@ -35,6 +35,15 @@ public sealed class TestStep
 
     public string? BodyContains { get; set; }
 
+    public BadgeTone MethodTone => Method.ToUpperInvariant() switch
+    {
+        "GET" => BadgeTone.Info,
+        "POST" => BadgeTone.Success,
+        "PUT" or "PATCH" => BadgeTone.Warning,
+        "DELETE" => BadgeTone.Danger,
+        _ => BadgeTone.Neutral
+    };
+
     public string ExpectationText => ExpectedStatus is null && string.IsNullOrWhiteSpace(BodyContains)
         ? "仅检查网络成功"
         : string.Join(" · ", new[]
@@ -67,6 +76,12 @@ public sealed class TestStepResult
     public string ResultLabel => Passed ? "通过" : "失败";
 
     public BadgeTone ResultTone => Passed ? BadgeTone.Success : BadgeTone.Danger;
+
+    public object ResultIcon => new ArcGlyph
+    {
+        Data = Passed ? ArcIcons.CircleCheck : ArcIcons.CircleX,
+        Size = 12
+    };
 }
 
 public sealed class TestRunResult

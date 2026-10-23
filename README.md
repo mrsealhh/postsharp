@@ -70,6 +70,10 @@ PostSharp 的定位是：
 - 浅色 / 深色 / 跟随系统，标题栏同步。
 - 界面字体、代码字体、代码字号、窗口自适应。
 - 列表统一列布局：来源/方法/状态/时间固定对齐，长文本省略并在悬浮时显示完整内容。
+- 类型化视觉：来源 `UI` / `AI · MCP` 使用不同图标与色调；状态成功/警告/失败使用勾/警告/叉图标；`GET` / `POST` / `PUT` / `PATCH` / `DELETE` 使用不同方法徽标。
+- 常用操作带图标：发送、保存、新建、重命名、删除、清空、回收站、上传、格式化、运行套件、MCP、设置等。
+- 管理层内的下拉选项固定显示在管理层之上，不会跑到主窗体或关闭后才出现。
+- 1000×660 窗口下工具栏、审计列表、指南卡片仍保持对齐并可滚动。
 - 右键菜单：新建/复制/复制 URL/重命名/删除。
 - 内置一分钟指南和示例请求。
 
@@ -317,6 +321,8 @@ src/PostSharp/
   Views/
     MainWindow.axaml      主界面 + 管理层
     TextViewerWindow.axaml 大响应分页详情
+  Controls/
+    IconLabel.cs          统一图标 + 文字按钮内容
   Program.cs               Arc / AtomUI 启动注册
 docs/
   screenshot.png
@@ -360,6 +366,8 @@ docs/
 | MCP 套件 | create/run/delete 通过；断言 3/3 |
 | 参数合并 | `existing=1&page=2&q=中文` |
 | 历史记录删除 | 单条/清空均先确认并移入回收站；恢复、二次确认永久删除均已验证 |
+| 设置下拉 | 在管理层打开时选项显示在管理层之上；关闭管理层不会残留到主窗体 |
+| 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 右键菜单 | 请求/集合菜单可用，复制请求/URL 已验证 |
 | 构建 | Debug / Release 0 警告、0 错误 |
 
@@ -373,11 +381,12 @@ master                 稳定可发布
         ├── feature/initial-mvp
         ├── feature/logo
         ├── feature/ai-workbench
-        └── feature/history-recycle
+        ├── feature/history-recycle
+        └── feature/ui-polish
 ```
 
 - 功能从 `dev` 拉出 `feature/<short-name>`，合并回 `dev` 自测，再合并 `master`。
-- 当前 `master` / `dev` 已包含 AI 工作台与历史回收站更新；对应 feature 分支保留提交。
+- 当前 `master` / `dev` 已包含 AI 工作台、历史回收站与 UI 图标/层级修复；对应 feature 分支保留提交。
 
 ### 提交与代码
 
@@ -394,7 +403,7 @@ master                 稳定可发布
 自动顺延，侧栏底部显示实际地址；示例环境变量使用实际端口。
 
 **Arc Select/菜单不显示？**  
-确认 `EnablePopupOverlayLayer()` 被调用，窗口内有 `VisualLayerManager EnableOverlayLayer="True"`。
+确认 `EnablePopupOverlayLayer()` 被调用，窗口内有 `VisualLayerManager EnableOverlayLayer="True"`；管理层、对话框和 Toast 需放在该 `VisualLayerManager` 的内容中，才能让下拉层显示在它们之上。
 
 **如何恢复示例？**  
 关闭应用，删除 `%APPDATA%\PostSharp`，重新启动。
