@@ -32,6 +32,10 @@ public partial class MainWindowViewModel : ObservableObject
     private int _largeResponseThreshold = 64 * 1024;
 
     private object? _pendingDelete;
+    private HistoryEntry? _pendingHistoryTrash;
+    private HistoryEntry? _pendingHistoryPurge;
+    private bool _trashAllPending;
+    private bool _purgeAllPending;
     private CancellationTokenSource? _sendCts;
     private bool _initializing = true;
 
@@ -78,6 +82,11 @@ public partial class MainWindowViewModel : ObservableObject
         _mockServer.CustomHandler = new McpServer(new McpWorkspaceAdapter(this)).HandleHttpAsync;
 
         History.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasHistory));
+        RecycledHistory.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasRecycledHistory));
+            OnPropertyChanged(nameof(RecycleBinLabel));
+        };
         Suites.CollectionChanged += (_, _) => OnPropertyChanged(nameof(SuiteCount));
         Audit.CollectionChanged += (_, _) =>
         {
@@ -102,6 +111,8 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<EnvironmentModel> Environments { get; } = new();
 
     public ObservableCollection<HistoryEntry> History { get; } = new();
+
+    public ObservableCollection<HistoryEntry> RecycledHistory { get; } = new();
 
     public ObservableCollection<AuditEntry> Audit { get; } = new();
 
@@ -201,6 +212,27 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string _deleteDialogDescription = string.Empty;
+
+    [ObservableProperty]
+    private bool _isHistoryTrashConfirmOpen;
+
+    [ObservableProperty]
+    private string _historyTrashConfirmTitle = "移入回收站？";
+
+    [ObservableProperty]
+    private string _historyTrashConfirmDescription = string.Empty;
+
+    [ObservableProperty]
+    private bool _isHistoryTrashOpen;
+
+    [ObservableProperty]
+    private bool _isHistoryPurgeConfirmOpen;
+
+    [ObservableProperty]
+    private string _historyPurgeTitle = "永久删除？";
+
+    [ObservableProperty]
+    private string _historyPurgeDescription = string.Empty;
 
     [ObservableProperty]
     private bool _isToastOpen;
@@ -457,6 +489,12 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsRequestSelected => SelectedRequest is not null;
 
     public bool HasHistory => History.Count > 0;
+
+    public bool HasRecycledHistory => RecycledHistory.Count > 0;
+
+    public string RecycleBinLabel => RecycledHistory.Count > 0
+        ? $"回收站 ({RecycledHistory.Count})"
+        : "回收站";
 
     public bool HasSelectedAuditEntry => SelectedAuditEntry is not null;
 
@@ -887,9 +925,156 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void ClearHistory()
     {
-        History.Clear();
+        if (History.Count == 0)
+        {
+            ShowToast("历史记录为空");
+            return;
+        }
+
+        _trashAllPending = true;
+        _pendingHistoryTrash = null;
+        HistoryTrashConfirmTitle = "清空历史记录？";
+        HistoryTrashConfirmDescription =
+            $"将把 {History.Count} 条记录移入回收站，可在回收站恢复或永久删除。";
+        IsHistoryTrashConfirmOpen = true;
+    }
+
+    [RelayCommand]
+    private void OpenHistoryTrash() => IsHistoryTrashOpen = true;
+
+    [RelayCommand]
+    private void CloseHistoryTrash() => IsHistoryTrashOpen = false;
+
+    private void RequestDeleteHistory(HistoryEntry entry)
+    {
+        _trashAllPending = false;
+        _pendingHistoryTrash = entry;
+        HistoryTrashConfirmTitle = "移入回收站？";
+        HistoryTrashConfirmDescription =
+            $"“{entry.Name}”将被移入回收站，可在回收站恢复或永久删除。";
+        IsHistoryTrashConfirmOpen = true;
+    }
+
+    [RelayCommand]
+    private void ConfirmHistoryTrash()
+    {
+        if (_trashAllPending)
+        {
+            for (var index = History.Count - 1; index >= 0; index--)
+            {
+                MoveToRecycleBin(History[index]);
+            }
+
+            History.Clear();
+            ShowToast("历史记录已移入回收站");
+        }
+        else if (_pendingHistoryTrash is { } entry)
+        {
+            History.Remove(entry);
+            MoveToRecycleBin(entry);
+            ShowToast("已移入回收站");
+        }
+
+        _pendingHistoryTrash = null;
+        _trashAllPending = false;
+        IsHistoryTrashConfirmOpen = false;
         Persist();
-        ShowToast("历史记录已清空");
+    }
+
+    [RelayCommand]
+    private void CancelHistoryTrash()
+    {
+        _pendingHistoryTrash = null;
+        _trashAllPending = false;
+        IsHistoryTrashConfirmOpen = false;
+    }
+
+    private void MoveToRecycleBin(HistoryEntry entry)
+    {
+        entry.RestoreCommand = new RelayCommand(() => RestoreFromRecycleBin(entry));
+        entry.PurgeCommand = new RelayCommand(() => RequestPurgeHistory(entry));
+        RecycledHistory.Insert(0, entry);
+        while (RecycledHistory.Count > 100)
+        {
+            RecycledHistory.RemoveAt(RecycledHistory.Count - 1);
+        }
+    }
+
+    private void RestoreFromRecycleBin(HistoryEntry entry)
+    {
+        if (!RecycledHistory.Remove(entry))
+        {
+            return;
+        }
+
+        WireHistoryEntry(entry);
+        History.Insert(0, entry);
+        while (History.Count > 40)
+        {
+            History.RemoveAt(History.Count - 1);
+        }
+
+        Persist();
+        ShowToast("已从回收站恢复");
+    }
+
+    private void RequestPurgeHistory(HistoryEntry entry)
+    {
+        _purgeAllPending = false;
+        _pendingHistoryPurge = entry;
+        HistoryPurgeTitle = "永久删除？";
+        HistoryPurgeDescription = $"“{entry.Name}”将从回收站永久删除，无法恢复。";
+        IsHistoryPurgeConfirmOpen = true;
+    }
+
+    [RelayCommand]
+    private void EmptyHistoryTrash()
+    {
+        if (RecycledHistory.Count == 0)
+        {
+            ShowToast("回收站为空");
+            return;
+        }
+
+        _purgeAllPending = true;
+        _pendingHistoryPurge = null;
+        HistoryPurgeTitle = "清空回收站？";
+        HistoryPurgeDescription = "回收站中的所有记录将被永久删除，无法恢复。";
+        IsHistoryPurgeConfirmOpen = true;
+    }
+
+    [RelayCommand]
+    private void ConfirmHistoryPurge()
+    {
+        if (_purgeAllPending)
+        {
+            RecycledHistory.Clear();
+            ShowToast("回收站已清空");
+        }
+        else if (_pendingHistoryPurge is { } entry)
+        {
+            RecycledHistory.Remove(entry);
+            ShowToast("已永久删除");
+        }
+
+        _pendingHistoryPurge = null;
+        _purgeAllPending = false;
+        IsHistoryPurgeConfirmOpen = false;
+        Persist();
+    }
+
+    [RelayCommand]
+    private void CancelHistoryPurge()
+    {
+        _pendingHistoryPurge = null;
+        _purgeAllPending = false;
+        IsHistoryPurgeConfirmOpen = false;
+    }
+
+    private void WireHistoryEntry(HistoryEntry entry)
+    {
+        entry.OpenCommand = new RelayCommand(() => LoadHistory(entry));
+        entry.DeleteCommand = new RelayCommand(() => RequestDeleteHistory(entry));
     }
 
     public void OpenRequest(RequestItem request)
@@ -1671,7 +1856,7 @@ public partial class MainWindowViewModel : ObservableObject
                 .ToList()
         };
 
-        entry.OpenCommand = new RelayCommand(() => LoadHistory(entry));
+        WireHistoryEntry(entry);
         History.Insert(0, entry);
         while (History.Count > 40)
         {
@@ -1724,6 +1909,7 @@ public partial class MainWindowViewModel : ObservableObject
             Collections,
             Environments,
             History,
+            RecycledHistory,
             Suites,
             ActiveEnvironment?.Id));
     }
@@ -1774,8 +1960,16 @@ public partial class MainWindowViewModel : ObservableObject
         foreach (var historyDto in workspace.History)
         {
             var entry = WorkspaceStore.ToHistory(historyDto);
-            entry.OpenCommand = new RelayCommand(() => LoadHistory(entry));
+            WireHistoryEntry(entry);
             History.Add(entry);
+        }
+
+        foreach (var historyDto in workspace.RecycledHistory)
+        {
+            var entry = WorkspaceStore.ToHistory(historyDto);
+            entry.RestoreCommand = new RelayCommand(() => RestoreFromRecycleBin(entry));
+            entry.PurgeCommand = new RelayCommand(() => RequestPurgeHistory(entry));
+            RecycledHistory.Add(entry);
         }
 
         foreach (var suiteDto in workspace.Suites)
