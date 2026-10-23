@@ -34,6 +34,22 @@ public sealed record McpHistoryInfo(
     int StatusCode,
     long DurationMs);
 
+public sealed record McpAuditSummary(
+    Guid Id,
+    DateTimeOffset Timestamp,
+    string Source,
+    string? Client,
+    string? Tool,
+    string Name,
+    string Method,
+    string Url,
+    int StatusCode,
+    string StatusText,
+    long ElapsedMs,
+    bool IsSuccess,
+    bool IsSse,
+    int SseEventCount);
+
 public sealed record McpSendResult(
     Guid RequestId,
     string Name,
@@ -47,7 +63,15 @@ public sealed record McpSendResult(
     bool IsJson,
     string ContentType,
     string Body,
-    IReadOnlyList<McpRowInfo> Headers);
+    IReadOnlyList<McpRowInfo> Headers,
+    bool IsSse = false,
+    int SseEventCount = 0,
+    string SseThinking = "",
+    string SseContent = "");
+
+public sealed record McpCallContext(string Tool, string? Client);
+
+public sealed record McpSuiteStepInput(Guid RequestId, int? ExpectedStatus, string? BodyContains);
 
 public sealed record McpSequenceStep(Guid RequestId, string Name, int StatusCode, string StatusText, string? Error);
 
@@ -231,7 +255,11 @@ public sealed class McpWorkspaceAdapter
         });
     }
 
-    public async Task<McpSendResult> SendAsync(Guid id, Guid? environmentId, CancellationToken cancellationToken)
+    public async Task<McpSendResult> SendAsync(
+        Guid id,
+        Guid? environmentId,
+        McpCallContext context,
+        CancellationToken cancellationToken)
     {
         var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -255,11 +283,21 @@ public sealed class McpWorkspaceAdapter
 
         snapshot.Request.Name = await Dispatcher.UIThread.InvokeAsync(() => FindRequest(id)?.Name ?? snapshot.Request.Name);
 
-        var result = await _http.SendAsync(snapshot.Request, snapshot.Environment, cancellationToken);
+        ComposedRequest? composed = null;
+        HttpResult result;
+        try
+        {
+            composed = RequestComposer.Compose(snapshot.Request, snapshot.Environment);
+            result = await _http.SendAsync(composed, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            result = HttpRequestService.Failure(exception.Message);
+        }
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            _viewModel.RecordExternalSend(snapshot.Request, result);
+            _viewModel.RecordExternalSend(snapshot.Request, composed, result, "MCP", context.Tool, context.Client);
             return true;
         });
 
@@ -270,8 +308,8 @@ public sealed class McpWorkspaceAdapter
         return new McpSendResult(
             id,
             snapshot.Request.Name,
-            snapshot.Request.Method,
-            snapshot.Request.Url,
+            composed?.Method ?? snapshot.Request.Method,
+            composed?.Url ?? snapshot.Request.Url,
             result.StatusCode,
             string.IsNullOrWhiteSpace(result.ReasonPhrase)
                 ? result.StatusCode.ToString()
@@ -282,12 +320,17 @@ public sealed class McpWorkspaceAdapter
             result.IsJson,
             result.MediaType,
             result.Body,
-            headers);
+            headers,
+            result.IsSse,
+            result.SseEventCount,
+            result.SseThinking,
+            result.SseContent);
     }
 
     public async Task<McpSequenceResult> RunSequenceAsync(
         IReadOnlyList<Guid> requestIds,
         bool stopOnError,
+        McpCallContext context,
         CancellationToken cancellationToken)
     {
         var steps = new List<McpSequenceStep>();
@@ -303,7 +346,7 @@ public sealed class McpWorkspaceAdapter
 
             try
             {
-                var result = await SendAsync(id, null, cancellationToken);
+                var result = await SendAsync(id, null, context, cancellationToken);
                 steps.Add(new McpSequenceStep(
                     result.RequestId,
                     result.Name,
@@ -334,6 +377,124 @@ public sealed class McpWorkspaceAdapter
             Failed: steps.Count(step => step.Error is not null || step.StatusCode >= 400 || step.StatusCode == 0),
             Stopped: stopped,
             Steps: steps);
+    }
+
+    public async Task<string> GetCurlAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var request = FindRequest(id)
+                          ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的请求。");
+            return RequestComposer.BuildCurl(request, _viewModel.ActiveEnvironment);
+        });
+    }
+
+    public async Task<IReadOnlyList<McpAuditSummary>> ListAuditAsync(int limit, string? source)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            (IReadOnlyList<McpAuditSummary>)_viewModel.Audit
+                .Where(entry => string.IsNullOrWhiteSpace(source)
+                                || entry.Source.Equals(source, StringComparison.OrdinalIgnoreCase))
+                .Take(Math.Clamp(limit, 1, 300))
+                .Select(entry => new McpAuditSummary(
+                    entry.Id,
+                    entry.Timestamp,
+                    entry.Source,
+                    entry.Client,
+                    entry.Tool,
+                    entry.RequestName,
+                    entry.Method,
+                    entry.Url,
+                    entry.StatusCode,
+                    entry.StatusText,
+                    entry.ElapsedMs,
+                    entry.IsSuccess,
+                    entry.IsSse,
+                    entry.SseEventCount))
+                .ToList());
+    }
+
+    public async Task<AuditEntry?> GetAuditAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(
+            () => _viewModel.Audit.FirstOrDefault(entry => entry.Id == id));
+    }
+
+    public async Task<IReadOnlyList<TestSuite>> ListSuitesAsync()
+    {
+        return await Dispatcher.UIThread.InvokeAsync(
+            () => (IReadOnlyList<TestSuite>)_viewModel.Suites.ToList());
+    }
+
+    public async Task<TestSuite> CreateSuiteAsync(
+        string name,
+        IReadOnlyList<McpSuiteStepInput> steps,
+        bool stopOnError)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (steps.Count == 0)
+            {
+                throw new InvalidOperationException("steps 不能为空。");
+            }
+
+            var suite = new TestSuite
+            {
+                Name = string.IsNullOrWhiteSpace(name) ? "MCP 测试套件" : name.Trim(),
+                StopOnError = stopOnError
+            };
+
+            foreach (var stepInput in steps)
+            {
+                var request = FindRequest(stepInput.RequestId)
+                              ?? throw new KeyNotFoundException(
+                                  $"没有找到 id 为 {stepInput.RequestId} 的请求。");
+
+                suite.Steps.Add(new TestStep
+                {
+                    RequestId = request.Id,
+                    RequestName = request.Name,
+                    Method = request.Method,
+                    Url = request.Url,
+                    ExpectedStatus = stepInput.ExpectedStatus,
+                    BodyContains = stepInput.BodyContains
+                });
+            }
+
+            _viewModel.Suites.Add(suite);
+            _viewModel.SelectedSuite = suite;
+            _viewModel.NotifyWorkspaceChanged();
+            return suite;
+        });
+    }
+
+    public async Task<bool> DeleteSuiteAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var suite = _viewModel.Suites.FirstOrDefault(candidate => candidate.Id == id);
+            if (suite is null)
+            {
+                return false;
+            }
+
+            _viewModel.Suites.Remove(suite);
+            if (_viewModel.SelectedSuite?.Id == suite.Id)
+            {
+                _viewModel.SelectedSuite = _viewModel.Suites.FirstOrDefault();
+            }
+
+            _viewModel.NotifyWorkspaceChanged();
+            return true;
+        });
+    }
+
+    public async Task<TestRunResult> RunSuiteAsync(
+        Guid id,
+        McpCallContext context,
+        CancellationToken cancellationToken)
+    {
+        return await _viewModel.RunSuiteForMcpAsync(id, context.Client, cancellationToken);
     }
 
     public async Task<IReadOnlyList<McpHistoryInfo>> ListHistoryAsync(int limit)

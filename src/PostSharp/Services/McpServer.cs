@@ -22,6 +22,8 @@ public sealed class McpServer
 
     private readonly McpWorkspaceAdapter _workspace;
 
+    private string? _clientName;
+
     public McpServer(McpWorkspaceAdapter workspace) => _workspace = workspace;
 
     public async Task<RawHttpResponse?> HandleHttpAsync(
@@ -133,6 +135,7 @@ public sealed class McpServer
                     return null;
 
                 case "initialize":
+                    _clientName = message["params"]?["clientInfo"]?["name"]?.GetValue<string>() ?? _clientName;
                     return Result(id, new JsonObject
                     {
                         ["protocolVersion"] = message["params"]?["protocolVersion"]?.GetValue<string>()
@@ -147,9 +150,11 @@ public sealed class McpServer
                             ["version"] = ServerVersion
                         },
                         ["instructions"] =
-                            "PostSharp 是本地接口调试工作台。用 list_collections 查看集合，用 get_request 读取请求，"
+                            "PostSharp 是本地接口调试和 AI 自动化工作台。用 list_collections / get_request 查看接口，"
                             + "用 create_request / update_request 管理接口，用 send_request 发请求，"
-                            + "用 run_sequence 按顺序运行一组请求做自动化，用 set_variable 维护环境变量。"
+                            + "用 get_curl 获取可直接执行的 cURL。用 list_audit / get_audit 查看所有 UI 和 AI 触发的请求审计。"
+                            + "用 create_suite / list_suites / run_suite 管理自动化套件，步骤可设置 expectedStatus 和 bodyContains。"
+                            + "send_request、run_sequence 和 run_suite 都会写入审计记录。"
                     });
 
                 case "ping":
@@ -209,6 +214,33 @@ public sealed class McpServer
                 },
                 "send_request" => await SendToolAsync(arguments, cancellationToken).ConfigureAwait(false),
                 "run_sequence" => await RunSequenceToolAsync(arguments, cancellationToken).ConfigureAwait(false),
+                "get_curl" => new
+                {
+                    id = RequireGuid(arguments, "id"),
+                    curl = await _workspace.GetCurlAsync(RequireGuid(arguments, "id")).ConfigureAwait(false)
+                },
+                "list_audit" => await _workspace.ListAuditAsync(
+                        OptionalInt(arguments, "limit") ?? 50,
+                        OptionalString(arguments, "source"))
+                    .ConfigureAwait(false),
+                "get_audit" => await _workspace.GetAuditAsync(RequireGuid(arguments, "id"))
+                    .ConfigureAwait(false),
+                "create_suite" => await _workspace.CreateSuiteAsync(
+                        OptionalString(arguments, "name") ?? "MCP 测试套件",
+                        ReadSuiteSteps(arguments),
+                        OptionalBool(arguments, "stopOnError") ?? true)
+                    .ConfigureAwait(false),
+                "list_suites" => await _workspace.ListSuitesAsync().ConfigureAwait(false),
+                "run_suite" => await _workspace.RunSuiteAsync(
+                        RequireGuid(arguments, "id"),
+                        new McpCallContext("run_suite", _clientName),
+                        cancellationToken)
+                    .ConfigureAwait(false),
+                "delete_suite" => new
+                {
+                    deleted = await _workspace.DeleteSuiteAsync(RequireGuid(arguments, "id"))
+                        .ConfigureAwait(false)
+                },
                 "list_history" => await _workspace.ListHistoryAsync(
                         OptionalInt(arguments, "limit") ?? 20)
                     .ConfigureAwait(false),
@@ -240,6 +272,7 @@ public sealed class McpServer
         var result = await _workspace.SendAsync(
                 RequireGuid(arguments, "id"),
                 OptionalGuid(arguments, "environmentId"),
+                new McpCallContext("send_request", _clientName),
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -256,6 +289,10 @@ public sealed class McpServer
             result.SizeBytes,
             result.IsJson,
             result.ContentType,
+            result.IsSse,
+            result.SseEventCount,
+            sseThinking = result.SseThinking,
+            sseContent = result.SseContent,
             body = Truncate(result.Body, 30000),
             bodyTruncated = result.Body.Length > 30000,
             headers = result.Headers
@@ -273,8 +310,33 @@ public sealed class McpServer
         return await _workspace.RunSequenceAsync(
                 ids,
                 OptionalBool(arguments, "stopOnError") ?? true,
+                new McpCallContext("run_sequence", _clientName),
                 cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private static IReadOnlyList<McpSuiteStepInput> ReadSuiteSteps(JsonObject arguments)
+    {
+        if (arguments["steps"] is not JsonArray array || array.Count == 0)
+        {
+            throw new InvalidOperationException("steps 不能为空。");
+        }
+
+        var steps = new List<McpSuiteStepInput>();
+        foreach (var node in array)
+        {
+            if (node is not JsonObject step)
+            {
+                continue;
+            }
+
+            steps.Add(new McpSuiteStepInput(
+                RequireGuid(step, "requestId"),
+                OptionalInt(step, "expectedStatus"),
+                OptionalString(step, "bodyContains")));
+        }
+
+        return steps;
     }
 
     private static JsonNode ToolResult(JsonNode? id, object payload, bool isError)
@@ -419,7 +481,66 @@ public sealed class McpServer
                     ["type"] = "boolean",
                     ["description"] = "是否启用，默认 true"
                 }
-            }, "key")));
+            }, "key")),
+        Tool(
+            "get_curl",
+            "生成当前请求可直接执行的 cURL（环境变量已解析）",
+            ObjectSchema(new JsonObject
+            {
+                ["id"] = StringSchema("请求 id")
+            }, "id")),
+        Tool(
+            "list_audit",
+            "查看 UI 和 AI/MCP 触发的请求审计记录",
+            ObjectSchema(new JsonObject
+            {
+                ["limit"] = new JsonObject
+                {
+                    ["type"] = "integer",
+                    ["description"] = "返回条数，默认 50",
+                    ["minimum"] = 1,
+                    ["maximum"] = 300
+                },
+                ["source"] = EnumSchema("来源筛选", "UI", "MCP")
+            })),
+        Tool(
+            "get_audit",
+            "读取单条审计记录（含请求/响应预览和 cURL）",
+            ObjectSchema(new JsonObject
+            {
+                ["id"] = StringSchema("审计记录 id")
+            }, "id")),
+        Tool(
+            "create_suite",
+            "创建自动化测试套件；每个步骤可设置期望状态和响应体包含文本",
+            ObjectSchema(new JsonObject
+            {
+                ["name"] = StringSchema("套件名称"),
+                ["stopOnError"] = new JsonObject
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "失败后停止，默认 true"
+                },
+                ["steps"] = SuiteStepsSchema()
+            }, "steps")),
+        Tool(
+            "list_suites",
+            "列出自动化测试套件和步骤",
+            ObjectSchema(new JsonObject())),
+        Tool(
+            "run_suite",
+            "运行自动化套件并返回每个步骤的断言结果",
+            ObjectSchema(new JsonObject
+            {
+                ["id"] = StringSchema("套件 id")
+            }, "id")),
+        Tool(
+            "delete_suite",
+            "删除自动化测试套件",
+            ObjectSchema(new JsonObject
+            {
+                ["id"] = StringSchema("套件 id")
+            }, "id")));
 
     private static JsonObject Tool(string name, string description, JsonObject schema) => new()
     {
@@ -489,6 +610,27 @@ public sealed class McpServer
                     ["description"] = "是否启用，默认 true"
                 }
             }
+        }
+    };
+
+    private static JsonObject SuiteStepsSchema() => new()
+    {
+        ["type"] = "array",
+        ["description"] = "按执行顺序排列的测试步骤",
+        ["items"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["requestId"] = StringSchema("请求 id"),
+                ["expectedStatus"] = new JsonObject
+                {
+                    ["type"] = "integer",
+                    ["description"] = "期望 HTTP 状态码；省略时接受 2xx/3xx"
+                },
+                ["bodyContains"] = StringSchema("响应体必须包含的文本")
+            },
+            ["required"] = new JsonArray("requestId")
         }
     };
 

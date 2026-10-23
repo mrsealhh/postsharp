@@ -1,10 +1,13 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform;
+using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
 using PostSharp.Models;
@@ -24,6 +27,9 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://PostSharp/Assets/logo-icon.png")));
+        Application.Current?.Resources["PostSharpBodyFont"] = new FontFamily("Inter");
+        Application.Current?.Resources["PostSharpCodeFont"] = new FontFamily("Geist Mono");
+        Application.Current?.Resources["PostSharpCodeFontSize"] = 12d;
         CollectionTree.AddHandler(
             InputElement.PointerPressedEvent,
             OnCollectionTreePointerPressed,
@@ -110,11 +116,95 @@ public partial class MainWindow : Window
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && TreeMenuOverlay.IsVisible)
+        if (e.Key != Key.Escape)
+        {
+            return;
+        }
+
+        if (_viewModel?.IsManagementOpen == true)
+        {
+            _viewModel.CloseManagementCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+
+        if (TreeMenuOverlay.IsVisible)
         {
             HideTreeMenu();
             e.Handled = true;
         }
+    }
+
+    private void OnManagementDismiss(object? sender, PointerPressedEventArgs e)
+    {
+        _viewModel?.CloseManagementCommand.Execute(null);
+        e.Handled = true;
+    }
+
+    private void OnAuditRowClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is not null && sender is Control { DataContext: AuditEntry entry })
+        {
+            _viewModel.SelectedAuditEntry = entry;
+        }
+    }
+
+    private void OnSuiteRowClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is not null && sender is Control { DataContext: TestSuite suite })
+        {
+            _viewModel.SelectedSuite = suite;
+        }
+    }
+
+    private async void OnPickUploadFileClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择上传文件",
+            AllowMultiple = false
+        });
+
+        var path = files.FirstOrDefault()?.TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        _viewModel.Editing.UploadFilePath = path;
+        _viewModel.NotifyUploadChanged();
+    }
+
+    private void OnClearUploadFileClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null || string.IsNullOrWhiteSpace(_viewModel.Editing.UploadFilePath))
+        {
+            return;
+        }
+
+        _viewModel.Editing.UploadFilePath = string.Empty;
+        _viewModel.NotifyUploadChanged();
+    }
+
+    private void OnOpenResponseDetailClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null || string.IsNullOrEmpty(_viewModel.FullResponseBody))
+        {
+            return;
+        }
+
+        var window = new TextViewerWindow(
+            "响应详情",
+            _viewModel.FullResponseBody,
+            $"{_viewModel.ResponseSizeText} · {_viewModel.ResponseContentType} · {_viewModel.ResponseTimeText}");
+        window.Topmost = Topmost;
+        window.Show(this);
+        window.Activate();
     }
 
     /// <summary>Right-click selects the row before the menu opens, so every command acts on what was clicked.</summary>
@@ -209,12 +299,15 @@ public partial class MainWindow : Window
         if (_viewModel is not null)
         {
             _viewModel.TreeChanged -= OnTreeChanged;
+            _viewModel.AppearanceChanged -= OnAppearanceChanged;
         }
 
         _viewModel = DataContext as MainWindowViewModel;
         if (_viewModel is not null)
         {
             _viewModel.TreeChanged += OnTreeChanged;
+            _viewModel.AppearanceChanged += OnAppearanceChanged;
+            ApplyAppearance();
             RebuildTree();
         }
     }
@@ -224,8 +317,50 @@ public partial class MainWindow : Window
         if (_viewModel is not null)
         {
             _viewModel.TreeChanged -= OnTreeChanged;
+            _viewModel.AppearanceChanged -= OnAppearanceChanged;
             _viewModel.Shutdown();
             _viewModel = null;
+        }
+    }
+
+    private void OnAppearanceChanged(object? sender, EventArgs e) => ApplyAppearance();
+
+    private void ApplyAppearance()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var settings = _viewModel.Settings;
+        var bodyFont = settings.UiFont switch
+        {
+            "系统默认" => FontFamily.Default,
+            "微软雅黑" => new FontFamily("Microsoft YaHei UI"),
+            _ => new FontFamily("Inter")
+        };
+
+        var codeFont = settings.CodeFont switch
+        {
+            "Consolas" => new FontFamily("Consolas"),
+            "Cascadia Mono" => new FontFamily("Cascadia Mono"),
+            _ => new FontFamily("Geist Mono")
+        };
+
+        var codeSize = double.TryParse(
+            settings.CodeFontSize,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out var parsed)
+            ? parsed
+            : 12d;
+
+        FontFamily = bodyFont;
+        if (Application.Current is { } application)
+        {
+            application.Resources["PostSharpBodyFont"] = bodyFont;
+            application.Resources["PostSharpCodeFont"] = codeFont;
+            application.Resources["PostSharpCodeFontSize"] = codeSize;
         }
     }
 

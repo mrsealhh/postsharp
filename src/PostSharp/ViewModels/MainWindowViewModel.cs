@@ -1,7 +1,11 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
+using Avalonia.Styling;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PostSharp.Models;
@@ -13,9 +17,19 @@ namespace PostSharp.ViewModels;
 public partial class MainWindowViewModel : ObservableObject
 {
     private readonly WorkspaceStore _store = new();
+    private readonly AuditStore _auditStore = new();
+    private readonly SettingsStore _settingsStore = new();
     private readonly HttpRequestService _http = new();
     private readonly MockApiServer _mockServer = new();
     private readonly Dictionary<RequestCollection, bool> _expanded = new();
+    private readonly Dictionary<Guid, TestRunResult> _suiteResults = new();
+
+    private const int AuditPreviewLimit = 2000;
+    private const int ResponsePreviewLimit = 8 * 1024;
+    private const int DetailPageSize = 16 * 1024;
+
+    private int _auditLimit = 500;
+    private int _largeResponseThreshold = 64 * 1024;
 
     private object? _pendingDelete;
     private CancellationTokenSource? _sendCts;
@@ -23,6 +37,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     public MainWindowViewModel()
     {
+        Settings = _settingsStore.Load();
+        Settings.PropertyChanged += OnSettingsChanged;
+        _http.TimeoutSeconds = Settings.RequestTimeoutSeconds;
+        _http.AutoFormatResponse = Settings.AutoFormatResponse;
+        _auditLimit = Math.Max(20, Settings.AuditLimit);
+        _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
+        ApplyTheme();
+
         _mockServer.Start();
         LoadWorkspace();
 
@@ -45,6 +67,7 @@ public partial class MainWindowViewModel : ObservableObject
         Editing = firstRequest ?? new RequestItem { Name = "新建请求" };
         SelectedCollection = firstRequest?.Owner;
         SelectedRequest = firstRequest;
+        SelectedSuite ??= Suites.FirstOrDefault();
         IsDraft = firstRequest is null;
         _initializing = false;
 
@@ -55,6 +78,21 @@ public partial class MainWindowViewModel : ObservableObject
         _mockServer.CustomHandler = new McpServer(new McpWorkspaceAdapter(this)).HandleHttpAsync;
 
         History.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasHistory));
+        Suites.CollectionChanged += (_, _) => OnPropertyChanged(nameof(SuiteCount));
+        Audit.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(AuditCount));
+            RefreshAuditView();
+        };
+
+        foreach (var entry in _auditStore.Load().Take(_auditLimit))
+        {
+            Audit.Add(entry);
+        }
+
+        RefreshAuditView();
+        BindEditingTracking();
+        RefreshDerivedState();
 
         Persist();
     }
@@ -64,6 +102,12 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<EnvironmentModel> Environments { get; } = new();
 
     public ObservableCollection<HistoryEntry> History { get; } = new();
+
+    public ObservableCollection<AuditEntry> Audit { get; } = new();
+
+    public ObservableCollection<AuditEntry> VisibleAudit { get; } = new();
+
+    public ObservableCollection<TestSuite> Suites { get; } = new();
 
     public ObservableCollection<ResponseHeaderView> ResponseHeaders { get; } = new();
 
@@ -105,6 +149,42 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isMcpDialogOpen;
 
     [ObservableProperty]
+    private bool _isManagementOpen;
+
+    [ObservableProperty]
+    private string _auditFilterText = string.Empty;
+
+    [ObservableProperty]
+    private string _auditSourceFilter = "全部";
+
+    [ObservableProperty]
+    private AuditEntry? _selectedAuditEntry;
+
+    [ObservableProperty]
+    private TestSuite? _selectedSuite;
+
+    [ObservableProperty]
+    private TestRunResult? _selectedSuiteResult;
+
+    [ObservableProperty]
+    private bool _isRunningSuite;
+
+    [ObservableProperty]
+    private bool _isBodySingleLine;
+
+    [ObservableProperty]
+    private string _bodyPreview = string.Empty;
+
+    [ObservableProperty]
+    private string _curlPreview = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasHeaderWarning;
+
+    [ObservableProperty]
+    private string _headerWarningText = string.Empty;
+
+    [ObservableProperty]
     private bool _isRenameDialogOpen;
 
     [ObservableProperty]
@@ -132,6 +212,7 @@ public partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowJsonResponse))]
     [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
     [NotifyPropertyChangedFor(nameof(ShowEmptyResponse))]
+    [NotifyPropertyChangedFor(nameof(ShowLargeResponseBanner))]
     private bool _hasResponse;
 
     [ObservableProperty]
@@ -152,7 +233,55 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isJsonResponse;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowJsonResponse))]
+    [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
+    [NotifyPropertyChangedFor(nameof(ShowLargeResponseBanner))]
+    private bool _isLargeResponse;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSseContent))]
+    [NotifyPropertyChangedFor(nameof(ShowSseThinking))]
+    [NotifyPropertyChangedFor(nameof(ShowSseRaw))]
+    [NotifyPropertyChangedFor(nameof(SseSummary))]
+    private bool _isSseResponse;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SseSummary))]
+    [NotifyPropertyChangedFor(nameof(HasSseThinking))]
+    private string _sseThinking = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SseSummary))]
+    [NotifyPropertyChangedFor(nameof(HasSseContent))]
+    private string _sseContent = string.Empty;
+
+    [ObservableProperty]
+    private string _sseRaw = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SseSummary))]
+    private int _sseEventCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSseContent))]
+    [NotifyPropertyChangedFor(nameof(ShowSseThinking))]
+    [NotifyPropertyChangedFor(nameof(ShowSseRaw))]
+    private string _sseViewMode = "内容";
+
+    [ObservableProperty]
+    private int _responseTabIndex;
+
+    [ObservableProperty]
     private string _responseBody = string.Empty;
+
+    [ObservableProperty]
+    private string _fullResponseBody = string.Empty;
+
+    [ObservableProperty]
+    private string _responseClipboardText = string.Empty;
+
+    [ObservableProperty]
+    private string _largeResponseNotice = string.Empty;
 
     [ObservableProperty]
     private string _responseStatusText = string.Empty;
@@ -172,19 +301,206 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string _mockStatus = string.Empty;
 
+    public AppSettings Settings { get; private set; } = new();
+
+    public event EventHandler? AppearanceChanged;
+
+    public IReadOnlyList<string> ThemeOptions { get; } = new[] { "跟随系统", "浅色", "深色" };
+
+    public IReadOnlyList<string> UiFontOptions { get; } = new[] { "Inter", "系统默认", "微软雅黑" };
+
+    public IReadOnlyList<string> CodeFontOptions { get; } = new[] { "Geist Mono", "Consolas", "Cascadia Mono" };
+
+    public IReadOnlyList<string> CodeFontSizeOptions { get; } = new[] { "12", "13", "14", "16" };
+
+    public IReadOnlyList<int> TimeoutOptions { get; } = new[] { 10, 30, 60, 120, 300 };
+
+    public IReadOnlyList<int> LargeResponseThresholdOptions { get; } = new[] { 32, 64, 128, 256 };
+
+    public IReadOnlyList<int> AuditLimitOptions { get; } = new[] { 100, 500, 1000, 2000 };
+
+    [ObservableProperty]
+    private string _managementTab = "审计";
+
+    public bool IsAuditTab => ManagementTab == "审计";
+
+    public bool IsAutomationTab => ManagementTab == "自动化";
+
+    public bool IsGuideTab => ManagementTab == "指南";
+
+    public bool IsSettingsTab => ManagementTab == "设置";
+
+    partial void OnManagementTabChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsAuditTab));
+        OnPropertyChanged(nameof(IsAutomationTab));
+        OnPropertyChanged(nameof(IsGuideTab));
+        OnPropertyChanged(nameof(IsSettingsTab));
+    }
+
+    [RelayCommand]
+    private void OpenGuide()
+    {
+        ManagementTab = "指南";
+        IsManagementOpen = true;
+    }
+
+    [RelayCommand]
+    private void OpenSettings()
+    {
+        ManagementTab = "设置";
+        IsManagementOpen = true;
+    }
+
+    [RelayCommand]
+    private void SetManagementTab(string tab)
+    {
+        if (tab is "审计" or "自动化" or "指南" or "设置")
+        {
+            ManagementTab = tab;
+        }
+    }
+
+    [RelayCommand]
+    private void LoadGuideRequest(string key)
+    {
+        var name = key switch
+        {
+            "health" => "健康检查",
+            "sse" => "AI 流式输出 (SSE)",
+            "upload" => "上传文件",
+            _ => key
+        };
+
+        var request = Collections.SelectMany(collection => collection.Requests)
+            .FirstOrDefault(candidate => candidate.Name == name);
+
+        if (request is null)
+        {
+            ShowToast($"示例请求「{name}」不存在");
+            return;
+        }
+
+        IsManagementOpen = false;
+        OpenRequest(request);
+        ShowToast($"已载入示例：{request.Name}");
+    }
+
+    [RelayCommand]
+    private void OpenEnvironmentFromGuide()
+    {
+        IsManagementOpen = false;
+        IsEnvironmentDialogOpen = true;
+    }
+
+    [RelayCommand]
+    private void OpenMcpFromGuide()
+    {
+        IsManagementOpen = false;
+        IsMcpDialogOpen = true;
+    }
+
+    [RelayCommand]
+    private void ResetSettings()
+    {
+        var defaults = new AppSettings();
+        Settings.Theme = defaults.Theme;
+        Settings.UiFont = defaults.UiFont;
+        Settings.CodeFont = defaults.CodeFont;
+        Settings.CodeFontSize = defaults.CodeFontSize;
+        Settings.RequestTimeoutSeconds = defaults.RequestTimeoutSeconds;
+        Settings.DefaultBodyMode = defaults.DefaultBodyMode;
+        Settings.AutoFormatResponse = defaults.AutoFormatResponse;
+        Settings.LargeResponseThresholdKb = defaults.LargeResponseThresholdKb;
+        Settings.AuditLimit = defaults.AuditLimit;
+        ShowToast("设置已恢复默认");
+    }
+
+    private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        _http.TimeoutSeconds = Math.Clamp(Settings.RequestTimeoutSeconds, 5, 600);
+        _http.AutoFormatResponse = Settings.AutoFormatResponse;
+        _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
+        _auditLimit = Math.Max(20, Settings.AuditLimit);
+
+        while (Audit.Count > _auditLimit)
+        {
+            Audit.RemoveAt(Audit.Count - 1);
+        }
+
+        if (e.PropertyName == nameof(AppSettings.Theme))
+        {
+            ApplyTheme();
+        }
+
+        _settingsStore.Save(Settings);
+        AppearanceChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ApplyTheme()
+    {
+        if (Application.Current is null)
+        {
+            return;
+        }
+
+        Application.Current.RequestedThemeVariant = Settings.Theme switch
+        {
+            "浅色" => ThemeVariant.Light,
+            "深色" => ThemeVariant.Dark,
+            _ => ThemeVariant.Default
+        };
+    }
+
     public bool HasSelection => SelectedRequest is not null || SelectedCollection is not null;
 
     public bool IsRequestSelected => SelectedRequest is not null;
 
     public bool HasHistory => History.Count > 0;
 
-    public bool ShowJsonResponse => HasResponse && IsJsonResponse;
+    public bool HasSelectedAuditEntry => SelectedAuditEntry is not null;
 
-    public bool ShowRawResponse => HasResponse && !IsJsonResponse;
+    public bool HasSelectedSuite => SelectedSuite is not null;
+
+    public bool HasSelectedSuiteResult => SelectedSuiteResult is not null;
+
+    public int AuditCount => Audit.Count;
+
+    public int SuiteCount => Suites.Count;
+
+    public bool ShowJsonResponse => HasResponse && IsJsonResponse && !IsLargeResponse;
+
+    public bool ShowRawResponse => HasResponse && !ShowJsonResponse;
 
     public bool ShowEmptyResponse => !HasResponse && !HasResponseError;
 
     public bool ShowResponseError => HasResponseError;
+
+    public bool ShowLargeResponseBanner => HasResponse && IsLargeResponse;
+
+    public IReadOnlyList<string> SseViewOptions { get; } = new[] { "内容", "思考过程", "原始事件" };
+
+    public bool ShowSseContent => IsSseResponse && SseViewMode == "内容";
+
+    public bool ShowSseThinking => IsSseResponse && SseViewMode == "思考过程";
+
+    public bool ShowSseRaw => IsSseResponse && SseViewMode == "原始事件";
+
+    public bool HasSseContent => SseContent.Length > 0;
+
+    public bool HasSseThinking => SseThinking.Length > 0;
+
+    public bool IsMultipartBody => Editing.BodyMode == "Multipart";
+
+    public bool IsTextBody => !IsMultipartBody;
+
+    public bool HasUploadFile => !string.IsNullOrWhiteSpace(Editing.UploadFilePath);
+
+    public string SseSummary => IsSseResponse
+        ? $"SSE 流 · {SseEventCount} 个事件 · 内容 {SseContent.Length} 字 · 思考 {SseThinking.Length} 字"
+        : "当前响应不是 SSE 流";
+
+    public string DetailPageSizeText => $"{DetailPageSize / 1024} KB/页";
 
     public string McpEndpoint => _mockServer.IsRunning
         ? $"{_mockServer.BaseUrl}/mcp"
@@ -212,6 +528,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsDraft));
         OnPropertyChanged(nameof(EditorHint));
+        BindEditingTracking();
+        RefreshDerivedState();
     }
 
     partial void OnFilterTextChanged(string value) => NotifyTreeChanged();
@@ -221,6 +539,41 @@ public partial class MainWindowViewModel : ObservableObject
         if (!_initializing)
         {
             Persist();
+        }
+
+        RefreshDerivedState();
+    }
+
+    partial void OnSelectedAuditEntryChanged(AuditEntry? value) =>
+        OnPropertyChanged(nameof(HasSelectedAuditEntry));
+
+    partial void OnSelectedSuiteChanged(TestSuite? value)
+    {
+        OnPropertyChanged(nameof(HasSelectedSuite));
+        SelectedSuiteResult = value is not null && _suiteResults.TryGetValue(value.Id, out var result)
+            ? result
+            : null;
+    }
+
+    partial void OnSelectedSuiteResultChanged(TestRunResult? value) =>
+        OnPropertyChanged(nameof(HasSelectedSuiteResult));
+
+    partial void OnAuditFilterTextChanged(string value) => RefreshAuditView();
+
+    partial void OnAuditSourceFilterChanged(string value) => RefreshAuditView();
+
+    partial void OnSseViewModeChanged(string value)
+    {
+        OnPropertyChanged(nameof(ShowSseContent));
+        OnPropertyChanged(nameof(ShowSseThinking));
+        OnPropertyChanged(nameof(ShowSseRaw));
+    }
+
+    partial void OnIsManagementOpenChanged(bool value)
+    {
+        if (value)
+        {
+            RefreshAuditView();
         }
     }
 
@@ -232,22 +585,23 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(Editing.Url))
-        {
-            HasResponse = false;
-            HasResponseError = true;
-            ResponseError = "请先输入请求地址，例如 {{baseUrl}}/api/health。";
-            ResponseTone = BadgeTone.Danger;
-            ResponseStatusText = "请求失败";
-            return;
-        }
-
         IsSending = true;
         _sendCts = new CancellationTokenSource();
+        ComposedRequest? composed = null;
 
         try
         {
-            var result = await _http.SendAsync(Editing, ActiveEnvironment, _sendCts.Token);
+            HttpResult result;
+            try
+            {
+                composed = RequestComposer.Compose(Editing, ActiveEnvironment);
+                result = await _http.SendAsync(composed, _sendCts.Token);
+            }
+            catch (Exception exception)
+            {
+                result = HttpRequestService.Failure(exception.Message);
+            }
+
             ApplyResponse(result);
 
             if (result.HasResponse)
@@ -255,6 +609,7 @@ public partial class MainWindowViewModel : ObservableObject
                 AddHistory(Editing, result);
             }
 
+            RecordAudit(Editing, composed, result, "UI", null, null);
             Persist();
         }
         finally
@@ -311,6 +666,7 @@ public partial class MainWindowViewModel : ObservableObject
             Name = $"新建请求 {target.Requests.Count + 1}",
             Method = "GET",
             Url = ActiveEnvironment is not null ? "{{baseUrl}}/api/health" : "https://api.example.com/health",
+            BodyMode = Settings.DefaultBodyMode,
             Owner = target
         };
 
@@ -494,6 +850,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void CloseEnvironmentDialog()
     {
         IsEnvironmentDialogOpen = false;
+        RefreshDerivedState();
         Persist();
         ShowToast("环境变量已保存");
     }
@@ -599,12 +956,571 @@ public partial class MainWindowViewModel : ObservableObject
     {
         Persist();
         NotifyTreeChanged();
+        RefreshDerivedState();
     }
 
-    public void RecordExternalSend(RequestItem request, HttpResult result)
+    public void RecordExternalSend(
+        RequestItem request,
+        ComposedRequest? composed,
+        HttpResult result,
+        string source,
+        string? tool,
+        string? client)
     {
         AddHistory(request, result);
+        RecordAudit(request, composed, result, source, tool, client);
         Persist();
+    }
+
+    public void NotifyUploadChanged()
+    {
+        RefreshDerivedState();
+        Persist();
+    }
+
+    private static string BuildMultipartPreview(RequestItem request)
+    {
+        if (!string.Equals(request.BodyMode, "Multipart", StringComparison.OrdinalIgnoreCase))
+        {
+            return request.Body;
+        }
+
+        var lines = request.FormFields.ActiveRows
+            .Select(row => $"{row.Key}: {row.Value}")
+            .ToList();
+        if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
+        {
+            lines.Add($"[file] {request.UploadFieldName}: {request.UploadFilePath}");
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    private void RecordAudit(
+        RequestItem request,
+        ComposedRequest? composed,
+        HttpResult result,
+        string source,
+        string? tool,
+        string? client)
+    {
+        var requestHeaders = composed is not null
+            ? string.Join(
+                "\n",
+                composed.Headers
+                    .Select(pair => $"{pair.Key}: {pair.Value}")
+                    .Concat(composed.ContentType is null
+                        ? Array.Empty<string>()
+                        : new[] { $"Content-Type: {composed.ContentType}" }))
+            : string.Join("\n", request.Headers.ActiveRows.Select(row => $"{row.Key}: {row.Value}"));
+
+        var entry = new AuditEntry
+        {
+            Source = source,
+            Tool = tool,
+            Client = client,
+            RequestId = request.Id,
+            RequestName = request.Name,
+            Method = composed?.Method ?? request.Method,
+            Url = composed?.Url ?? request.Url,
+            Environment = composed?.EnvironmentName ?? ActiveEnvironment?.Name,
+            StatusCode = result.StatusCode,
+            StatusText = result.ReasonPhrase,
+            ElapsedMs = result.ElapsedMs,
+            SizeBytes = result.SizeBytes,
+            IsSuccess = result.HasResponse && result.StatusCode < 400,
+            Error = result.Error,
+            Curl = composed is null ? null : RequestComposer.BuildCurl(composed),
+            RequestHeaders = Truncate(requestHeaders, AuditPreviewLimit),
+            RequestBodyPreview = Truncate(
+                composed?.Body ?? BuildMultipartPreview(request),
+                AuditPreviewLimit),
+            ResponseHeaders = Truncate(
+                string.Join("\n", result.Headers.Select(header => $"{header.Key}: {header.Value}")),
+                AuditPreviewLimit),
+            ResponseBodyPreview = Truncate(result.Body, AuditPreviewLimit),
+            ResponseContentType = result.MediaType,
+            IsSse = result.IsSse,
+            SseEventCount = result.SseEventCount,
+            AiThinking = result.SseThinking,
+            AiContent = result.SseContent
+        };
+
+        Audit.Insert(0, entry);
+        while (Audit.Count > _auditLimit)
+        {
+            Audit.RemoveAt(Audit.Count - 1);
+        }
+
+        _auditStore.Save(Audit);
+    }
+
+    private void RefreshAuditView()
+    {
+        var query = AuditFilterText.Trim();
+        IEnumerable<AuditEntry> entries = Audit;
+
+        if (AuditSourceFilter is "UI" or "MCP")
+        {
+            entries = entries.Where(entry => entry.Source == AuditSourceFilter);
+        }
+
+        if (query.Length > 0)
+        {
+            entries = entries.Where(entry =>
+                entry.RequestName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || entry.Url.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || (entry.Client?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (entry.Tool?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        VisibleAudit.Clear();
+        foreach (var entry in entries.Take(300))
+        {
+            VisibleAudit.Add(entry);
+        }
+    }
+
+    [RelayCommand]
+    private void OpenManagement() => IsManagementOpen = true;
+
+    [RelayCommand]
+    private void CloseManagement() => IsManagementOpen = false;
+
+    [RelayCommand]
+    private void ClearAudit()
+    {
+        Audit.Clear();
+        _auditStore.Save(Audit);
+        ShowToast("审计记录已清空");
+    }
+
+    [RelayCommand]
+    private void OpenSelectedAuditRequest()
+    {
+        if (SelectedAuditEntry?.RequestId is not { } id)
+        {
+            ShowToast("这条审计记录没有关联请求");
+            return;
+        }
+
+        var request = Collections.SelectMany(collection => collection.Requests)
+            .FirstOrDefault(candidate => candidate.Id == id);
+        if (request is null)
+        {
+            ShowToast("原请求已被删除");
+            return;
+        }
+
+        IsManagementOpen = false;
+        OpenRequest(request);
+    }
+
+    [RelayCommand]
+    private void CreateSuiteFromCollection()
+    {
+        var collection = SelectedCollection ?? Editing.Owner ?? Collections.FirstOrDefault();
+        if (collection is null || collection.Requests.Count == 0)
+        {
+            ShowToast("当前集合没有可加入套件的请求");
+            return;
+        }
+
+        var suite = new TestSuite
+        {
+            Name = $"{collection.Name} · 回归测试",
+            StopOnError = true
+        };
+
+        foreach (var request in collection.Requests)
+        {
+            suite.Steps.Add(new TestStep
+            {
+                RequestId = request.Id,
+                RequestName = request.Name,
+                Method = request.Method,
+                Url = request.Url
+            });
+        }
+
+        Suites.Add(suite);
+        SelectedSuite = suite;
+        Persist();
+        ShowToast("已创建自动化套件");
+    }
+
+    [RelayCommand]
+    private void DeleteSelectedSuite()
+    {
+        if (SelectedSuite is not { } suite)
+        {
+            return;
+        }
+
+        Suites.Remove(suite);
+        _suiteResults.Remove(suite.Id);
+        SelectedSuite = Suites.FirstOrDefault();
+        Persist();
+        ShowToast("套件已删除");
+    }
+
+    [RelayCommand]
+    private async Task RunSelectedSuiteAsync()
+    {
+        if (SelectedSuite is not { } suite || IsRunningSuite)
+        {
+            return;
+        }
+
+        try
+        {
+            IsRunningSuite = true;
+            var result = await RunSuiteCoreAsync(
+                suite,
+                "UI",
+                $"suite:{suite.Name}",
+                null,
+                CancellationToken.None);
+            SelectedSuiteResult = result;
+            ShowToast($"套件完成：{result.Passed}/{result.Total} 通过");
+        }
+        finally
+        {
+            IsRunningSuite = false;
+        }
+    }
+
+    public async Task<TestRunResult> RunSuiteForMcpAsync(
+        Guid suiteId,
+        string? client,
+        CancellationToken cancellationToken)
+    {
+        return await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var suite = Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
+                        ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            return await RunSuiteCoreAsync(
+                suite,
+                "MCP",
+                "run_suite",
+                client,
+                cancellationToken);
+        });
+    }
+
+    private async Task<TestRunResult> RunSuiteCoreAsync(
+        TestSuite suite,
+        string source,
+        string tool,
+        string? client,
+        CancellationToken cancellationToken)
+    {
+        var steps = new List<TestStepResult>();
+        var stopped = false;
+
+        foreach (var step in suite.Steps)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                stopped = true;
+                break;
+            }
+
+            var request = Collections.SelectMany(collection => collection.Requests)
+                .FirstOrDefault(candidate => candidate.Id == step.RequestId);
+
+            if (request is null)
+            {
+                steps.Add(new TestStepResult
+                {
+                    RequestId = step.RequestId,
+                    Name = step.RequestName,
+                    Method = step.Method,
+                    StatusText = "请求已删除",
+                    Error = "请求已删除",
+                    Passed = false
+                });
+
+                if (suite.StopOnError)
+                {
+                    stopped = true;
+                    break;
+                }
+
+                continue;
+            }
+
+            ComposedRequest? composed = null;
+            HttpResult result;
+            try
+            {
+                composed = RequestComposer.Compose(request, ActiveEnvironment);
+                result = await _http.SendAsync(composed, cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                result = HttpRequestService.Failure(exception.Message);
+            }
+
+            AddHistory(request, result);
+            RecordAudit(request, composed, result, source, tool, client);
+
+            var statusMatches = step.ExpectedStatus is null
+                ? result.StatusCode is >= 200 and < 400
+                : result.StatusCode == step.ExpectedStatus;
+            var bodyMatches = string.IsNullOrWhiteSpace(step.BodyContains)
+                || result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
+            var passed = result.HasResponse && statusMatches && bodyMatches;
+            var error = result.Error;
+            if (passed is false && error is null)
+            {
+                error = !statusMatches
+                    ? $"期望状态 {step.ExpectedStatus?.ToString() ?? "2xx/3xx"}，实际 {result.StatusCode}"
+                    : $"响应不包含 \"{step.BodyContains}\"";
+            }
+
+            steps.Add(new TestStepResult
+            {
+                RequestId = request.Id,
+                Name = request.Name,
+                Method = request.Method,
+                StatusCode = result.StatusCode,
+                StatusText = result.ReasonPhrase,
+                ElapsedMs = result.ElapsedMs,
+                Passed = passed,
+                Error = error,
+                ResponsePreview = Truncate(result.Body, 500)
+            });
+
+            if (!passed && suite.StopOnError)
+            {
+                stopped = true;
+                break;
+            }
+        }
+
+        var run = new TestRunResult
+        {
+            SuiteId = suite.Id,
+            SuiteName = suite.Name,
+            Total = steps.Count,
+            Passed = steps.Count(step => step.Passed),
+            Failed = steps.Count(step => !step.Passed),
+            Stopped = stopped,
+            Steps = steps
+        };
+
+        _suiteResults[suite.Id] = run;
+        suite.LastSummary = run.Summary;
+        if (SelectedSuite?.Id == suite.Id)
+        {
+            SelectedSuiteResult = run;
+        }
+
+        Persist();
+        return run;
+    }
+
+    [RelayCommand]
+    private void FormatBody()
+    {
+        var body = Editing.Body;
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            ShowToast("请求体为空");
+            return;
+        }
+
+        var trimmed = body.TrimStart();
+        try
+        {
+            if (trimmed[0] is '{' or '[')
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(body);
+                Editing.Body = System.Text.Json.JsonSerializer.Serialize(
+                    document.RootElement,
+                    new JsonSerializerOptions
+                    {
+                        WriteIndented = true,
+                        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                    });
+                ShowToast("JSON 已格式化");
+            }
+            else if (trimmed[0] == '<')
+            {
+                Editing.Body = System.Xml.Linq.XDocument.Parse(body).ToString();
+                ShowToast("XML 已格式化");
+            }
+            else
+            {
+                ShowToast("当前内容不是可格式化的 JSON/XML");
+            }
+        }
+        catch (Exception exception)
+        {
+            ShowToast($"格式化失败：{exception.Message}");
+        }
+
+        RefreshDerivedState();
+    }
+
+    [RelayCommand]
+    private void MinifyBody()
+    {
+        var body = Editing.Body;
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return;
+        }
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(body);
+            Editing.Body = System.Text.Json.JsonSerializer.Serialize(
+                document.RootElement,
+                new JsonSerializerOptions
+                {
+                    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                });
+            ShowToast("JSON 已压缩为单行");
+        }
+        catch (Exception)
+        {
+            ShowToast("只有 JSON 请求体可以压缩为单行");
+        }
+
+        RefreshDerivedState();
+    }
+
+    [RelayCommand]
+    private void AddJsonContentType()
+    {
+        Editing.Headers.AddRow("Content-Type", "application/json");
+        RefreshDerivedState();
+    }
+
+    [RelayCommand]
+    private void AddAcceptJson()
+    {
+        Editing.Headers.AddRow("Accept", "application/json");
+        RefreshDerivedState();
+    }
+
+    [RelayCommand]
+    private void AddBearerToken()
+    {
+        Editing.Headers.AddRow("Authorization", "Bearer {{token}}");
+        RefreshDerivedState();
+    }
+
+    private void BindEditingTracking()
+    {
+        if (_trackedEditing is not null)
+        {
+            _trackedEditing.PropertyChanged -= OnTrackedEditingPropertyChanged;
+        }
+
+        if (_trackedParams is not null)
+        {
+            _trackedParams.CollectionChanged -= OnTrackedRowsCollectionChanged;
+        }
+
+        if (_trackedHeaders is not null)
+        {
+            _trackedHeaders.CollectionChanged -= OnTrackedRowsCollectionChanged;
+        }
+
+        foreach (var row in _trackedRows)
+        {
+            row.PropertyChanged -= OnTrackedRowPropertyChanged;
+        }
+
+        _trackedRows.Clear();
+        _trackedEditing = Editing;
+        _trackedParams = Editing.Params;
+        _trackedHeaders = Editing.Headers;
+
+        _trackedEditing.PropertyChanged += OnTrackedEditingPropertyChanged;
+        _trackedParams.CollectionChanged += OnTrackedRowsCollectionChanged;
+        _trackedHeaders.CollectionChanged += OnTrackedRowsCollectionChanged;
+
+        foreach (var row in _trackedParams.Concat(_trackedHeaders))
+        {
+            row.PropertyChanged += OnTrackedRowPropertyChanged;
+            _trackedRows.Add(row);
+        }
+    }
+
+    private RequestItem? _trackedEditing;
+    private EditableRowCollection? _trackedParams;
+    private EditableRowCollection? _trackedHeaders;
+    private readonly List<KeyValueRow> _trackedRows = new();
+
+    private void OnTrackedEditingPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(RequestItem.Url)
+            or nameof(RequestItem.Method)
+            or nameof(RequestItem.Body)
+            or nameof(RequestItem.BodyMode)
+            or nameof(RequestItem.UploadFilePath)
+            or nameof(RequestItem.UploadFieldName))
+        {
+            RefreshDerivedState();
+        }
+    }
+
+    private void OnTrackedRowsCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        BindEditingTracking();
+        RefreshDerivedState();
+    }
+
+    private void OnTrackedRowPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(KeyValueRow.Key)
+            or nameof(KeyValueRow.Value)
+            or nameof(KeyValueRow.IsEnabled))
+        {
+            RefreshDerivedState();
+        }
+    }
+
+    private void RefreshDerivedState()
+    {
+        var body = Editing.Body ?? string.Empty;
+        BodyPreview = string.IsNullOrWhiteSpace(body)
+            ? "请求体为空"
+            : Truncate(string.Join(" ", body.Split(
+                new[] { '\r', '\n', '\t' },
+                StringSplitOptions.RemoveEmptyEntries)), 260);
+
+        OnPropertyChanged(nameof(IsMultipartBody));
+        OnPropertyChanged(nameof(IsTextBody));
+        OnPropertyChanged(nameof(HasUploadFile));
+
+        var duplicates = Editing.Headers.ActiveRows
+            .Where(row => !string.IsNullOrWhiteSpace(row.Key))
+            .GroupBy(row => row.Key.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToList();
+
+        HasHeaderWarning = duplicates.Count > 0;
+        HeaderWarningText = HasHeaderWarning
+            ? $"重复请求头：{string.Join("、", duplicates)}；发送时会按行依次附加。"
+            : string.Empty;
+
+        CurlPreview = RequestComposer.BuildCurl(Editing, ActiveEnvironment);
+    }
+
+    private static string Truncate(string text, int limit)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= limit)
+        {
+            return text ?? string.Empty;
+        }
+
+        return text[..limit] + "\n…（已截断）";
     }
 
     public void AfterExternalDelete(RequestItem request)
@@ -643,15 +1559,42 @@ public partial class MainWindowViewModel : ObservableObject
             ResponseSizeText = string.Empty;
             ResponseContentType = string.Empty;
             ResponseBody = string.Empty;
+            FullResponseBody = string.Empty;
+            ResponseClipboardText = string.Empty;
+            LargeResponseNotice = string.Empty;
             IsJsonResponse = false;
+            IsLargeResponse = false;
+            IsSseResponse = false;
+            SseThinking = string.Empty;
+            SseContent = string.Empty;
+            SseRaw = string.Empty;
+            SseEventCount = 0;
+            ResponseTabIndex = 0;
             return;
         }
+
+        var body = result.Body;
+        var isLarge = body.Length > _largeResponseThreshold;
+        var preview = isLarge ? TakePreview(body, ResponsePreviewLimit) : body;
 
         HasResponse = true;
         HasResponseError = false;
         ResponseError = null;
-        ResponseBody = result.Body;
+        ResponseBody = preview;
+        FullResponseBody = body;
+        ResponseClipboardText = body;
         IsJsonResponse = result.IsJson;
+        IsLargeResponse = isLarge;
+        IsSseResponse = result.IsSse;
+        SseThinking = result.SseThinking;
+        SseContent = result.SseContent;
+        SseRaw = result.SseRaw;
+        SseEventCount = result.SseEventCount;
+        SseViewMode = "内容";
+        ResponseTabIndex = result.IsSse ? 2 : 0;
+        LargeResponseNotice = isLarge
+            ? $"响应体 {FormatSize(result.SizeBytes)}，已折叠显示前 {ResponsePreviewLimit / 1024} KB。完整内容可在详情页分页查看或复制。"
+            : string.Empty;
         ResponseStatusText = string.IsNullOrWhiteSpace(result.ReasonPhrase)
             ? result.StatusCode.ToString()
             : $"{result.StatusCode} {result.ReasonPhrase}";
@@ -680,12 +1623,33 @@ public partial class MainWindowViewModel : ObservableObject
         HasResponseError = false;
         ResponseError = null;
         ResponseBody = string.Empty;
+        FullResponseBody = string.Empty;
+        ResponseClipboardText = string.Empty;
+        LargeResponseNotice = string.Empty;
         IsJsonResponse = false;
+        IsLargeResponse = false;
+        IsSseResponse = false;
+        SseThinking = string.Empty;
+        SseContent = string.Empty;
+        SseRaw = string.Empty;
+        SseEventCount = 0;
+        ResponseTabIndex = 0;
         ResponseStatusText = string.Empty;
         ResponseTimeText = string.Empty;
         ResponseSizeText = string.Empty;
         ResponseContentType = string.Empty;
         ResponseHeaders.Clear();
+    }
+
+    private static string TakePreview(string text, int limit)
+    {
+        if (text.Length <= limit)
+        {
+            return text;
+        }
+
+        var preview = text[..limit];
+        return char.IsHighSurrogate(preview[^1]) ? preview[..^1] : preview;
     }
 
     private void AddHistory(RequestItem request, HttpResult result)
@@ -756,7 +1720,12 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        _store.Save(WorkspaceStore.Capture(Collections, Environments, History, ActiveEnvironment?.Id));
+        _store.Save(WorkspaceStore.Capture(
+            Collections,
+            Environments,
+            History,
+            Suites,
+            ActiveEnvironment?.Id));
     }
 
     private void LoadWorkspace()
@@ -807,6 +1776,32 @@ public partial class MainWindowViewModel : ObservableObject
             var entry = WorkspaceStore.ToHistory(historyDto);
             entry.OpenCommand = new RelayCommand(() => LoadHistory(entry));
             History.Add(entry);
+        }
+
+        foreach (var suiteDto in workspace.Suites)
+        {
+            var suite = new TestSuite
+            {
+                Id = suiteDto.Id == Guid.Empty ? Guid.NewGuid() : suiteDto.Id,
+                Name = suiteDto.Name,
+                StopOnError = suiteDto.StopOnError,
+                LastSummary = string.IsNullOrWhiteSpace(suiteDto.LastSummary) ? "尚未运行" : suiteDto.LastSummary
+            };
+
+            foreach (var stepDto in suiteDto.Steps)
+            {
+                suite.Steps.Add(new TestStep
+                {
+                    RequestId = stepDto.RequestId,
+                    RequestName = stepDto.RequestName,
+                    Method = stepDto.Method,
+                    Url = stepDto.Url,
+                    ExpectedStatus = stepDto.ExpectedStatus,
+                    BodyContains = stepDto.BodyContains
+                });
+            }
+
+            Suites.Add(suite);
         }
 
         ActiveEnvironment = Environments.FirstOrDefault(
@@ -891,12 +1886,43 @@ public partial class MainWindowViewModel : ObservableObject
             Owner = collection
         };
 
+        var large = new RequestItem
+        {
+            Name = "大响应 (200 KB)",
+            Method = "GET",
+            Url = "{{baseUrl}}/api/large?kb=200",
+            Owner = collection
+        };
+
+        var sse = new RequestItem
+        {
+            Name = "AI 流式输出 (SSE)",
+            Method = "GET",
+            Url = "{{baseUrl}}/api/ai/stream",
+            Owner = collection
+        };
+        sse.Headers.AddRow("Accept", "text/event-stream");
+
+        var upload = new RequestItem
+        {
+            Name = "上传文件",
+            Method = "POST",
+            Url = "{{baseUrl}}/api/upload",
+            BodyMode = "Multipart",
+            UploadFieldName = "file",
+            Owner = collection
+        };
+        upload.FormFields.AddRow("note", "PostSharp upload demo");
+
         collection.Requests.Add(health);
         collection.Requests.Add(users);
         collection.Requests.Add(echo);
         collection.Requests.Add(orders);
         collection.Requests.Add(slow);
         collection.Requests.Add(error);
+        collection.Requests.Add(large);
+        collection.Requests.Add(sse);
+        collection.Requests.Add(upload);
         Collections.Add(collection);
         _expanded[collection] = true;
 
@@ -911,6 +1937,48 @@ public partial class MainWindowViewModel : ObservableObject
         me.Headers.AddRow("Authorization", "Bearer {{token}}");
         auth.Requests.Add(me);
         Collections.Add(auth);
+
+        var smokeSuite = new TestSuite
+        {
+            Name = "内置 Mock 冒烟测试",
+            StopOnError = true
+        };
+
+        smokeSuite.Steps.Add(new TestStep
+        {
+            RequestId = health.Id,
+            RequestName = health.Name,
+            Method = health.Method,
+            Url = health.Url,
+            ExpectedStatus = 200
+        });
+        smokeSuite.Steps.Add(new TestStep
+        {
+            RequestId = users.Id,
+            RequestName = users.Name,
+            Method = users.Method,
+            Url = users.Url,
+            ExpectedStatus = 200
+        });
+        smokeSuite.Steps.Add(new TestStep
+        {
+            RequestId = echo.Id,
+            RequestName = echo.Name,
+            Method = echo.Method,
+            Url = echo.Url,
+            ExpectedStatus = 200
+        });
+        smokeSuite.Steps.Add(new TestStep
+        {
+            RequestId = orders.Id,
+            RequestName = orders.Name,
+            Method = orders.Method,
+            Url = orders.Url,
+            ExpectedStatus = 201
+        });
+
+        Suites.Add(smokeSuite);
+        SelectedSuite = smokeSuite;
     }
 
     private static string FormatSize(long bytes)
