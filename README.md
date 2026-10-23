@@ -1,5 +1,7 @@
 # PostSharp
 
+<img src="src/PostSharp/Assets/logo.png" width="110" align="right" alt="PostSharp logo" />
+
 > 轻量、离线可用的接口调试桌面工具。基于 **Avalonia 12.1.4** 与 **TKCode.Arc 0.3.0-preview.2**，界面使用 Arc 设计语言，内置 Mock API 和 MCP 服务，适合日常接口调试、联调自测和 AI 自动化。
 
 ![PostSharp 主界面](docs/screenshot.png)
@@ -178,6 +180,13 @@ Windows: %APPDATA%\PostSharp\workspace.json
 - 工作区文件为 UTF-8 JSON，可直接备份或纳入内部配置管理。
 - 应用退出时会自动保存一次。
 
+### 品牌资产
+
+- `Assets/logo.png`：完整透明底品牌图，用于顶栏和 README。
+- `Assets/logo-icon.png`：从原图裁切的小尺寸图标，保证 16–64px 下仍然清晰。
+- `Assets/logo.ico`：多尺寸应用图标；16/24/32/48/64 使用紧凑裁切，128/256 使用完整图。
+- 两张 PNG 都是透明背景，不依赖白色底。
+
 ## 项目结构
 
 ```text
@@ -199,6 +208,10 @@ src/PostSharp/
   Views/
     MainWindow.axaml       主界面
     MainWindow.axaml.cs    集合树重建、右键菜单、弹层和标题栏适配
+  Assets/
+    logo.png              完整透明底品牌图（顶栏 / README）
+    logo-icon.png         紧凑图标（窗口 / 任务栏）
+    logo.ico              多尺寸 Windows 应用图标
   Program.cs               Arc / AtomUI 启动注册
 docs/
   screenshot.png           主界面截图
@@ -275,13 +288,14 @@ docs/
 ```text
 master                 稳定可发布
   └── dev              集成分支，日常合并目标
-        └── feature/*  功能开发分支，例如 feature/initial-mvp
+        ├── feature/initial-mvp
+        └── feature/logo
 ```
 
 - 功能开发从 `dev` 拉出 `feature/<short-name>`。
 - 完成后先合并到 `dev` 自测，再合并到 `master` 发版。
 - 不要在 `master` 上直接开发。
-- 当前初始版本同时存在于 `master`、`dev`、`feature/initial-mvp`，后续从 `dev` 继续。
+- 初始 MVP 在 `feature/initial-mvp`；品牌更新在 `feature/logo`，已合并到 `dev` / `master`。后续从 `dev` 继续。
 
 ### 提交信息
 
