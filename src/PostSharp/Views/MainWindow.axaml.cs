@@ -11,12 +11,17 @@ using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
 using PostSharp.Models;
+using PostSharp.Services;
 using PostSharp.ViewModels;
 
 namespace PostSharp.Views;
 
 public partial class MainWindow : Window
 {
+    private const double DefaultSidebarWidth = 320;
+    private const double MinSidebarWidth = 240;
+    private const double MaxSidebarWidth = 520;
+
     private MainWindowViewModel? _viewModel;
     private SettingsWindow? _settingsWindow;
     private TreeDisplayNode? _dragCandidate;
@@ -56,6 +61,7 @@ public partial class MainWindow : Window
         {
             JsonResponseViewer.MaxTreeHeight = Math.Max(140, ResponseTabs.Bounds.Height - 150);
         };
+        HistoryScrollArea.SizeChanged += (_, _) => UpdateHistoryWidth();
         DataContextChanged += OnDataContextChanged;
         Closed += OnClosed;
         SizeChanged += (_, _) =>
@@ -345,6 +351,9 @@ public partial class MainWindow : Window
         }
 
         var window = new SettingsWindow { DataContext = _viewModel.CreateSettingsViewModel() };
+        // Keep the settings window inside the owner on smaller or scaled screens; its content scrolls.
+        window.Width = Math.Clamp(Bounds.Width - 120, window.MinWidth, 860);
+        window.Height = Math.Clamp(Bounds.Height - 80, window.MinHeight, 900);
         _settingsWindow = window;
         window.Closed += (_, _) => _settingsWindow = null;
         window.Show(this);
@@ -857,6 +866,7 @@ public partial class MainWindow : Window
     {
         if (_viewModel is not null)
         {
+            SaveSidebarWidth();
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
             _viewModel.Shutdown();
             _viewModel = null;
@@ -873,19 +883,8 @@ public partial class MainWindow : Window
         }
 
         var settings = _viewModel.Settings;
-        var bodyFont = settings.UiFont switch
-        {
-            "系统默认" => FontFamily.Default,
-            "微软雅黑" => new FontFamily("Microsoft YaHei UI"),
-            _ => new FontFamily("Inter"),
-        };
-
-        var codeFont = settings.CodeFont switch
-        {
-            "Consolas" => new FontFamily("Consolas"),
-            "Cascadia Mono" => new FontFamily("Cascadia Mono"),
-            _ => new FontFamily("Geist Mono"),
-        };
+        var bodyFont = FontService.Resolve(settings.UiFont);
+        var codeFont = FontService.Resolve(settings.CodeFont);
 
         var codeSize = double.TryParse(
             settings.CodeFontSize,
@@ -903,5 +902,116 @@ public partial class MainWindow : Window
             application.Resources["PostSharpCodeFont"] = codeFont;
             application.Resources["PostSharpCodeFontSize"] = codeSize;
         }
+
+        ApplySidebarLayout();
+
+        if (
+            FontManager.Current.TryGetGlyphTypeface(new Typeface(bodyFont), out var bodyGlyph)
+            && FontManager.Current.TryGetGlyphTypeface(new Typeface(codeFont), out var codeGlyph)
+        )
+        {
+            Log.Debug(
+                "字体已应用：界面 {UiFont} -> {BodyGlyph}，代码 {CodeFont} -> {CodeGlyph}",
+                settings.UiFont,
+                bodyGlyph.FamilyName,
+                settings.CodeFont,
+                codeGlyph.FamilyName
+            );
+        }
+        else
+        {
+            Log.Warning(
+                "字体解析失败：界面 {UiFont}，代码 {CodeFont}，已使用系统回退字体",
+                settings.UiFont,
+                settings.CodeFont
+            );
+        }
+    }
+
+    private void UpdateHistoryWidth()
+    {
+        var width = HistoryScrollArea.Bounds.Width;
+        if (width <= 0)
+        {
+            return;
+        }
+
+        // The scroll area measures its content with infinite width; pin the rows to the viewport so
+        // the name column can trim instead of pushing the status and time columns outside the panel.
+        HistoryItems.Width = Math.Max(160, width - 14);
+    }
+
+    private void ApplySidebarLayout()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        UpdateHistoryWidth();
+
+        var width = Math.Clamp(_viewModel.Settings.TreePaneWidth, MinSidebarWidth, MaxSidebarWidth);
+        WorkspaceLayout.ColumnDefinitions[0].Width = new GridLength(width);
+
+        var collapsed = _viewModel.Settings.HistoryCollapsed;
+        SidebarLayout.RowDefinitions[2].Height = new GridLength(
+            collapsed ? 1 : 3,
+            GridUnitType.Star
+        );
+        SidebarLayout.RowDefinitions[4].Height = collapsed
+            ? new GridLength(0)
+            : new GridLength(2, GridUnitType.Star);
+    }
+
+    private void OnSidebarSplitterDragCompleted(object? sender, VectorEventArgs e)
+    {
+        SaveSidebarWidth();
+    }
+
+    private void OnSidebarSplitterDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        WorkspaceLayout.ColumnDefinitions[0].Width = new GridLength(DefaultSidebarWidth);
+        _viewModel.Settings.TreePaneWidth = DefaultSidebarWidth;
+        ApplySidebarLayout();
+        e.Handled = true;
+    }
+
+    private void SaveSidebarWidth()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var width = WorkspaceLayout.ColumnDefinitions[0].ActualWidth;
+        if (width <= 0)
+        {
+            return;
+        }
+
+        width = Math.Clamp(width, MinSidebarWidth, MaxSidebarWidth);
+        if (Math.Abs(_viewModel.Settings.TreePaneWidth - width) < 0.5)
+        {
+            return;
+        }
+
+        _viewModel.Settings.TreePaneWidth = width;
+    }
+
+    private void OnToggleHistoryClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        _viewModel.Settings.HistoryCollapsed = !_viewModel.Settings.HistoryCollapsed;
+        ApplySidebarLayout();
+        e.Handled = true;
     }
 }

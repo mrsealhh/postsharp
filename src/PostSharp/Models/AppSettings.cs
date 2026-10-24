@@ -38,4 +38,13 @@ public partial class AppSettings : ObservableObject
         "PostSharp",
         "logs"
     );
+
+    [ObservableProperty]
+    private List<string> _fontDirectories = new();
+
+    [ObservableProperty]
+    private double _treePaneWidth = 320;
+
+    [ObservableProperty]
+    private bool _historyCollapsed;
 }

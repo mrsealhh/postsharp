@@ -2,16 +2,19 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+    xmlns:controls="using:PostSharp.Controls"
+    xmlns:models="using:PostSharp.Models"
     xmlns:vm="using:PostSharp.ViewModels"
     x:Class="PostSharp.Views.SettingsWindow"
     x:DataType="vm:SettingsViewModel"
     Title="设置 · PostSharp"
     Width="860"
-    Height="860"
+    Height="900"
     MinWidth="680"
     MinHeight="560"
     WindowStartupLocation="CenterOwner"
     Background="{arc:ArcDesignTokenResource Background}"
+    FontFamily="{DynamicResource PostSharpBodyFont}"
 >
     <Window.Styles>
         <Style Selector="TextBlock">
@@ -67,7 +70,8 @@
                                 <arc:Select
                                     Grid.Column="1"
                                     Label="界面字体"
-                                    ItemsSource="{Binding UiFontOptions}"
+                                    Description="界面文字、按钮和菜单使用的字体。"
+                                    ItemsSource="{Binding FontOptions}"
                                     SelectedItem="{Binding Draft.UiFont, Mode=TwoWay}"
                                     AutomationProperties.Name="界面字体"
                                 />
@@ -75,7 +79,8 @@
                             <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
                                 <arc:Select
                                     Label="代码字体"
-                                    ItemsSource="{Binding CodeFontOptions}"
+                                    Description="URL、请求体和响应文本使用的字体。"
+                                    ItemsSource="{Binding FontOptions}"
                                     SelectedItem="{Binding Draft.CodeFont, Mode=TwoWay}"
                                     AutomationProperties.Name="代码字体"
                                 />
@@ -87,6 +92,175 @@
                                     AutomationProperties.Name="代码字号"
                                 />
                             </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="settingsSection">
+                        <StackPanel Spacing="12">
+                            <TextBlock
+                                Text="字体"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                FontWeight="Medium"
+                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                            />
+                            <TextBlock
+                                Text="导入的字体文件会复制到应用字体库；也可以添加一个字体目录并原地扫描。加载后的字体族会出现在上方「界面字体」和「代码字体」选项中。"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                TextWrapping="Wrap"
+                            />
+                            <WrapPanel ItemSpacing="8" LineSpacing="8">
+                                <arc:Button
+                                    Variant="Secondary"
+                                    Size="Small"
+                                    Click="OnImportFontsClick"
+                                    IsEnabled="{Binding !IsFontsBusy}"
+                                    AutomationProperties.Name="导入字体文件"
+                                >
+                                    <controls:IconLabel
+                                        Icon="{x:Static arc:ArcIcons.Upload}"
+                                        Text="导入字体文件…"
+                                        IconSize="13"
+                                    />
+                                </arc:Button>
+                                <arc:Button
+                                    Variant="Secondary"
+                                    Size="Small"
+                                    Click="OnAddFontDirectoryClick"
+                                    IsEnabled="{Binding !IsFontsBusy}"
+                                    AutomationProperties.Name="添加字体目录"
+                                >
+                                    <controls:IconLabel
+                                        Icon="{x:Static arc:ArcIcons.Folder}"
+                                        Text="添加字体目录…"
+                                        IconSize="13"
+                                    />
+                                </arc:Button>
+                                <arc:Button
+                                    Variant="Ghost"
+                                    Size="Small"
+                                    Command="{Binding OpenFontDirectoryCommand}"
+                                    AutomationProperties.Name="打开字体库目录"
+                                >
+                                    <controls:IconLabel
+                                        Icon="{x:Static arc:ArcIcons.FolderOpen}"
+                                        Text="打开字体库"
+                                        IconSize="13"
+                                    />
+                                </arc:Button>
+                                <arc:Button
+                                    Variant="Ghost"
+                                    Size="Small"
+                                    Command="{Binding RefreshFontsCommand}"
+                                    IsEnabled="{Binding !IsFontsBusy}"
+                                    AutomationProperties.Name="重新扫描字体"
+                                >
+                                    <controls:IconLabel
+                                        Icon="{x:Static arc:ArcIcons.RefreshCw}"
+                                        Text="重新扫描"
+                                        IconSize="13"
+                                    />
+                                </arc:Button>
+                            </WrapPanel>
+                            <Grid>
+                                <TextBlock
+                                    IsVisible="{Binding !HasFontError}"
+                                    Text="{Binding FontStatusMessage}"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <TextBlock
+                                    IsVisible="{Binding HasFontError}"
+                                    Text="{Binding FontStatusMessage}"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource Danger}"
+                                    TextWrapping="Wrap"
+                                />
+                            </Grid>
+
+                            <StackPanel Spacing="6">
+                                <TextBlock
+                                    Text="已加载的自定义字体"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <ItemsControl
+                                    ItemsSource="{Binding CustomFonts}"
+                                    IsVisible="{Binding HasCustomFonts}"
+                                >
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel ItemSpacing="6" LineSpacing="6" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <arc:Button
+                                                Content="{Binding}"
+                                                Variant="Secondary"
+                                                Size="Small"
+                                                Click="OnUseFontForAllClick"
+                                                ToolTip.Tip="同时设为界面和代码字体"
+                                                AutomationProperties.Name="同时设为界面和代码字体"
+                                            />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock
+                                    Text="还没有加载自定义字体。可以导入 Maple Mono 等字体文件，或添加字体所在目录。"
+                                    IsVisible="{Binding !HasCustomFonts}"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                            </StackPanel>
+
+                            <StackPanel Spacing="6">
+                                <TextBlock
+                                    Text="字体目录"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <ItemsControl ItemsSource="{Binding FontDirectories}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="models:FontDirectoryItem">
+                                            <Grid
+                                                ColumnDefinitions="*,Auto"
+                                                ColumnSpacing="8"
+                                                Margin="0,0,0,6"
+                                            >
+                                                <StackPanel Spacing="1">
+                                                    <TextBlock
+                                                        Text="{Binding Label}"
+                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                        FontWeight="Medium"
+                                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                    />
+                                                    <SelectableTextBlock
+                                                        Text="{Binding Path}"
+                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                        TextWrapping="Wrap"
+                                                    />
+                                                </StackPanel>
+                                                <arc:Button
+                                                    Grid.Column="1"
+                                                    Content="移除"
+                                                    Variant="Ghost"
+                                                    Size="Small"
+                                                    VerticalAlignment="Center"
+                                                    IsVisible="{Binding !IsManaged}"
+                                                    Click="OnRemoveFontDirectoryClick"
+                                                    AutomationProperties.Name="移除字体目录"
+                                                />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

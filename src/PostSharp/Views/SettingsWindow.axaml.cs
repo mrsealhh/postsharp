@@ -6,6 +6,7 @@ using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
+using PostSharp.Models;
 using PostSharp.ViewModels;
 
 namespace PostSharp.Views;
@@ -23,6 +24,13 @@ public partial class SettingsWindow : Window
             ApplyTitleBarTheme();
         };
         ActualThemeVariantChanged += (_, _) => ApplyTitleBarTheme();
+        Closed += (_, _) =>
+        {
+            if (DataContext is SettingsViewModel viewModel)
+            {
+                viewModel.DiscardFontPreview();
+            }
+        };
     }
 
     /// <summary>
@@ -75,6 +83,91 @@ public partial class SettingsWindow : Window
     }
 
     private void OnCloseClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Close();
+
+    private async void OnImportFontsClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel viewModel)
+        {
+            return;
+        }
+
+        var files = await StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = "导入字体文件",
+                AllowMultiple = true,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("字体文件")
+                    {
+                        Patterns = new[] { "*.ttf", "*.otf", "*.ttc" },
+                        MimeTypes = new[] { "font/ttf", "font/otf", "font/collection" },
+                    },
+                },
+            }
+        );
+
+        var paths = new List<string>();
+        foreach (var file in files)
+        {
+            var path = file.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                paths.Add(path);
+            }
+        }
+
+        if (paths.Count > 0)
+        {
+            await viewModel.ImportFontsAsync(paths);
+        }
+    }
+
+    private async void OnAddFontDirectoryClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (DataContext is not SettingsViewModel viewModel)
+        {
+            return;
+        }
+
+        var folders = await StorageProvider.OpenFolderPickerAsync(
+            new FolderPickerOpenOptions { Title = "添加字体目录", AllowMultiple = false }
+        );
+
+        var path = folders.FirstOrDefault()?.TryGetLocalPath();
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            await viewModel.AddFontDirectoryAsync(path);
+        }
+    }
+
+    private void OnRemoveFontDirectoryClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (
+            sender is Control { DataContext: FontDirectoryItem item }
+            && DataContext is SettingsViewModel viewModel
+        )
+        {
+            viewModel.RemoveFontDirectory(item);
+        }
+    }
+
+    private void OnUseFontForAllClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (
+            sender is Control { DataContext: string family }
+            && DataContext is SettingsViewModel viewModel
+        )
+        {
+            viewModel.ApplyFontToAll(family);
+        }
+    }
 
     private void ApplyTitleBarTheme()
     {

@@ -60,6 +60,7 @@ public partial class MainWindowViewModel : ObservableObject
     public MainWindowViewModel()
     {
         Settings = _settingsStore.Load();
+        FontService.Initialize(Settings);
         AppLog.Reconfigure(Settings.LogDirectory);
         Log.Information(
             "设置已加载 {SettingsFile}，主题 {Theme}，日志目录 {LogDirectory}",
@@ -750,6 +751,11 @@ public partial class MainWindowViewModel : ObservableObject
         if (e.PropertyName == nameof(AppSettings.LogDirectory))
         {
             AppLog.Reconfigure(Settings.LogDirectory);
+        }
+
+        if (e.PropertyName == nameof(AppSettings.FontDirectories))
+        {
+            FontService.Reload(Settings.FontDirectories);
         }
 
         _settingsStore.Save(Settings);
