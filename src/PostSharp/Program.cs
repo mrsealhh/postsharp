@@ -13,7 +13,8 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        AppLog.Initialize(AppPaths.DefaultLogDirectory);
+        var settings = new SettingsStore().Load();
+        AppLog.Initialize(settings.LogDirectory, settings.LogLevel);
         AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
             Log.Fatal(
                 eventArgs.ExceptionObject as Exception,

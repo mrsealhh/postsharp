@@ -40,6 +40,9 @@ public partial class AppSettings : ObservableObject
     );
 
     [ObservableProperty]
+    private string _logLevel = LogLevels.Default;
+
+    [ObservableProperty]
     private List<string> _fontDirectories = new();
 
     [ObservableProperty]

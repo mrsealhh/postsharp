@@ -1,10 +1,12 @@
+using PostSharp.Models;
 using Serilog.Core;
+using Serilog.Events;
 
 namespace PostSharp.Services;
 
 /// <summary>
 /// Owns the Serilog file sink. Logs roll daily under <c>%APPDATA%\PostSharp\logs</c> by default; changing the
-/// directory in the settings window reopens the sink without restarting the application.
+/// directory or minimum level in the settings window reopens the sink without restarting the application.
 /// </summary>
 public static class AppLog
 {
@@ -12,44 +14,81 @@ public static class AppLog
     private const int RetainedFileCount = 30;
 
     private static readonly object Gate = new();
+    private static readonly LoggingLevelSwitch LevelSwitch = new(LogEventLevel.Debug);
 
     private static string _directory = AppPaths.DefaultLogDirectory;
     private static bool _started;
 
-    public static void Initialize(string? directory)
+    public static void Initialize(string? directory, string? level = null)
     {
         lock (Gate)
         {
             if (_started)
             {
-                Reopen(directory);
+                Reconfigure(directory, level);
                 return;
             }
 
             _directory = PrepareDirectory(directory);
+            LevelSwitch.MinimumLevel = ParseLevel(level);
             Log.Logger = CreateLogger(_directory);
             _started = true;
             Log.Information(
-                "PostSharp 启动，日志目录 {LogDirectory}，日志按天滚动，最多保留 {RetainedFileCount} 个文件",
+                "PostSharp 启动，日志目录 {LogDirectory}，日志级别 {LogLevel}，日志按天滚动，最多保留 {RetainedFileCount} 个文件",
                 _directory,
+                LevelSwitch.MinimumLevel.ToString(),
                 RetainedFileCount
             );
         }
     }
 
-    public static void Reconfigure(string? directory)
+    public static void Reconfigure(string? directory, string? level = null)
     {
         lock (Gate)
         {
+            var resolved = PrepareDirectory(directory);
+            var minimumLevel = ParseLevel(level);
+
             if (!_started)
             {
-                _directory = PrepareDirectory(directory);
+                _directory = resolved;
+                LevelSwitch.MinimumLevel = minimumLevel;
                 Log.Logger = CreateLogger(_directory);
                 _started = true;
                 return;
             }
 
-            Reopen(directory);
+            if (string.Equals(resolved, _directory, StringComparison.OrdinalIgnoreCase))
+            {
+                if (LevelSwitch.MinimumLevel == minimumLevel)
+                {
+                    return;
+                }
+
+                Log.Information(
+                    "日志级别从 {PreviousLevel} 切换为 {LogLevel}",
+                    LevelSwitch.MinimumLevel.ToString(),
+                    minimumLevel.ToString()
+                );
+                LevelSwitch.MinimumLevel = minimumLevel;
+                return;
+            }
+
+            Log.Information(
+                "日志目录从 {PreviousDirectory} 切换到 {LogDirectory}，日志级别 {LogLevel}",
+                _directory,
+                resolved,
+                minimumLevel.ToString()
+            );
+            Log.CloseAndFlush();
+            _directory = resolved;
+            LevelSwitch.MinimumLevel = minimumLevel;
+            Log.Logger = CreateLogger(_directory);
+            Log.Information(
+                "新的日志写入 {LogDirectory}，日志级别 {LogLevel}",
+                _directory,
+                LevelSwitch.MinimumLevel.ToString()
+            );
         }
     }
 
@@ -68,28 +107,11 @@ public static class AppLog
         }
     }
 
-    private static void Reopen(string? directory)
-    {
-        var resolved = PrepareDirectory(directory);
-        if (string.Equals(resolved, _directory, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        Log.Information(
-            "日志目录从 {PreviousDirectory} 切换到 {LogDirectory}",
-            _directory,
-            resolved
-        );
-        Log.CloseAndFlush();
-        _directory = resolved;
-        Log.Logger = CreateLogger(_directory);
-        Log.Information("新的日志写入 {LogDirectory}", _directory);
-    }
-
     private static Logger CreateLogger(string directory)
     {
-        var configuration = new LoggerConfiguration().MinimumLevel.Debug().Enrich.FromLogContext();
+        var configuration = new LoggerConfiguration()
+            .MinimumLevel.ControlledBy(LevelSwitch)
+            .Enrich.FromLogContext();
 
         if (!string.IsNullOrEmpty(directory))
         {
@@ -106,6 +128,17 @@ public static class AppLog
         }
 
         return configuration.CreateLogger();
+    }
+
+    private static LogEventLevel ParseLevel(string? level)
+    {
+        return level switch
+        {
+            LogLevels.Information => LogEventLevel.Information,
+            LogLevels.Warning => LogEventLevel.Warning,
+            LogLevels.Error => LogEventLevel.Error,
+            _ => LogEventLevel.Debug,
+        };
     }
 
     private static string PrepareDirectory(string? directory)

@@ -146,23 +146,68 @@ public static class RequestComposer
     /// <summary>Builds a cURL command for the current request, or a comment explaining why it cannot.</summary>
     public static string BuildCurl(RequestItem request, EnvironmentModel? environment)
     {
+        var blocker = FindCurlBlocker(request, environment);
+        if (blocker is not null)
+        {
+            return $"# 无法生成 cURL：{blocker}";
+        }
+
         try
         {
             return BuildCurl(Compose(request, environment));
         }
         catch (Exception exception)
         {
-            Log.Debug(exception, "生成 cURL 失败 {RequestName}", request.Name);
-            return $"# 无法生成 cURL：{exception.Message}";
+            Log.Error(exception, "生成 cURL 时出现意外错误 {RequestName}", request.Name);
+            return "# 无法生成 cURL：生成时出现意外错误，请检查请求配置。";
         }
     }
 
-    private static string BuildUrl(RequestItem request, EnvironmentModel? environment)
+    /// <summary>
+    /// Checks the request before composing it, so an incomplete draft (blank URL, missing upload file) is reported
+    /// as a hint instead of being logged as a failure.
+    /// </summary>
+    private static string? FindCurlBlocker(RequestItem request, EnvironmentModel? environment)
     {
-        var raw = VariableResolver.Resolve(request.Url, environment).Trim();
+        if (
+            !TryResolveHttpUri(
+                VariableResolver.Resolve(request.Url, environment),
+                out _,
+                out var problem
+            )
+        )
+        {
+            return problem;
+        }
+
+        if (
+            !string.Equals(
+                request.BodyMode ?? "None",
+                "Multipart",
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            return null;
+        }
+
+        var filePath = VariableResolver.Resolve(request.UploadFilePath, environment).Trim();
+        if (!string.IsNullOrEmpty(filePath) && !File.Exists(filePath))
+        {
+            return $"上传文件不存在：{filePath}";
+        }
+
+        return null;
+    }
+
+    private static bool TryResolveHttpUri(string raw, out Uri uri, out string problem)
+    {
+        raw = raw.Trim();
         if (string.IsNullOrWhiteSpace(raw))
         {
-            throw new InvalidOperationException("请输入请求地址。");
+            uri = null!;
+            problem = "请输入请求地址。";
+            return false;
         }
 
         if (!raw.Contains("://", StringComparison.Ordinal))
@@ -170,14 +215,36 @@ public static class RequestComposer
             raw = "http://" + raw;
         }
 
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var parsed))
+        {
+            uri = null!;
+            problem = "请求地址无效，请使用 http:// 或 https:// 开头的完整地址。";
+            return false;
+        }
+
+        if (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)
+        {
+            uri = null!;
+            problem = "请求地址无效，请使用 http:// 或 https:// 开头的完整地址。";
+            return false;
+        }
+
+        uri = parsed;
+        problem = string.Empty;
+        return true;
+    }
+
+    private static string BuildUrl(RequestItem request, EnvironmentModel? environment)
+    {
         if (
-            !Uri.TryCreate(raw, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            !TryResolveHttpUri(
+                VariableResolver.Resolve(request.Url, environment),
+                out var uri,
+                out var problem
+            )
         )
         {
-            throw new InvalidOperationException(
-                "请求地址无效，请使用 http:// 或 https:// 开头的完整地址。"
-            );
+            throw new InvalidOperationException(problem);
         }
 
         var query = uri.Query.TrimStart('?');

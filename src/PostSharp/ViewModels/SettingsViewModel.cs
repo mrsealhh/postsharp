@@ -328,11 +328,13 @@ public partial class SettingsViewModel : ObservableObject
         {
             _fontDirectoriesPreviewActive = false;
             HasError = false;
-            StatusMessage = $"已保存到 {_store.FilePath}，新日志将写入 {directory}。";
+            StatusMessage =
+                $"已保存到 {_store.FilePath}，日志级别 {Draft.LogLevel}，新日志将写入 {directory}。";
             Log.Information(
-                "设置已保存 {SettingsFile}，日志目录 {LogDirectory}",
+                "设置已保存 {SettingsFile}，日志目录 {LogDirectory}，日志级别 {LogLevel}",
                 _store.FilePath,
-                directory
+                directory,
+                Draft.LogLevel
             );
             return;
         }
@@ -356,6 +358,7 @@ public partial class SettingsViewModel : ObservableObject
         Draft.LargeResponseThresholdKb = defaults.LargeResponseThresholdKb;
         Draft.AuditLimit = defaults.AuditLimit;
         Draft.LogDirectory = defaults.LogDirectory;
+        Draft.LogLevel = defaults.LogLevel;
         Draft.FontDirectories = new List<string>();
         Draft.TreePaneWidth = defaults.TreePaneWidth;
         Draft.HistoryCollapsed = defaults.HistoryCollapsed;
@@ -461,6 +464,7 @@ public partial class SettingsViewModel : ObservableObject
         _current.LargeResponseThresholdKb = Draft.LargeResponseThresholdKb;
         _current.AuditLimit = Draft.AuditLimit;
         _current.LogDirectory = Draft.LogDirectory;
+        _current.LogLevel = Draft.LogLevel;
         if (
             !_current.FontDirectories.SequenceEqual(
                 Draft.FontDirectories,
@@ -488,6 +492,7 @@ public partial class SettingsViewModel : ObservableObject
             LargeResponseThresholdKb = source.LargeResponseThresholdKb,
             AuditLimit = source.AuditLimit,
             LogDirectory = source.LogDirectory,
+            LogLevel = source.LogLevel,
             FontDirectories = new List<string>(source.FontDirectories),
             TreePaneWidth = source.TreePaneWidth,
             HistoryCollapsed = source.HistoryCollapsed,

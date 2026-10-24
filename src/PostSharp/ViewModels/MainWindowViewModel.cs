@@ -61,12 +61,13 @@ public partial class MainWindowViewModel : ObservableObject
     {
         Settings = _settingsStore.Load();
         FontService.Initialize(Settings);
-        AppLog.Reconfigure(Settings.LogDirectory);
+        AppLog.Reconfigure(Settings.LogDirectory, Settings.LogLevel);
         Log.Information(
-            "设置已加载 {SettingsFile}，主题 {Theme}，日志目录 {LogDirectory}",
+            "设置已加载 {SettingsFile}，主题 {Theme}，日志目录 {LogDirectory}，日志级别 {LogLevel}",
             _settingsStore.FilePath,
             Settings.Theme,
-            Settings.LogDirectory
+            Settings.LogDirectory,
+            Settings.LogLevel
         );
         Settings.PropertyChanged += OnSettingsChanged;
         _http.TimeoutSeconds = Settings.RequestTimeoutSeconds;
@@ -748,9 +749,12 @@ public partial class MainWindowViewModel : ObservableObject
             _ = ThemeService.ApplyAsync(Settings.Theme);
         }
 
-        if (e.PropertyName == nameof(AppSettings.LogDirectory))
+        if (
+            e.PropertyName == nameof(AppSettings.LogDirectory)
+            || e.PropertyName == nameof(AppSettings.LogLevel)
+        )
         {
-            AppLog.Reconfigure(Settings.LogDirectory);
+            AppLog.Reconfigure(Settings.LogDirectory, Settings.LogLevel);
         }
 
         if (e.PropertyName == nameof(AppSettings.FontDirectories))
