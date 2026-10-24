@@ -14,17 +14,25 @@ namespace PostSharp.Controls;
 /// </summary>
 public sealed class IconLabel : StackPanel
 {
-    public static readonly StyledProperty<Geometry?> IconProperty =
-        AvaloniaProperty.Register<IconLabel, Geometry?>(nameof(Icon));
+    public static readonly StyledProperty<Geometry?> IconProperty = AvaloniaProperty.Register<
+        IconLabel,
+        Geometry?
+    >(nameof(Icon));
 
-    public static readonly StyledProperty<string?> TextProperty =
-        AvaloniaProperty.Register<IconLabel, string?>(nameof(Text));
+    public static readonly StyledProperty<string?> TextProperty = AvaloniaProperty.Register<
+        IconLabel,
+        string?
+    >(nameof(Text));
 
-    public static readonly StyledProperty<double> IconSizeProperty =
-        AvaloniaProperty.Register<IconLabel, double>(nameof(IconSize), 14d);
+    public static readonly StyledProperty<double> IconSizeProperty = AvaloniaProperty.Register<
+        IconLabel,
+        double
+    >(nameof(IconSize), 14d);
 
-    public static readonly StyledProperty<double> TextFontSizeProperty =
-        AvaloniaProperty.Register<IconLabel, double>(nameof(TextFontSize));
+    public static readonly StyledProperty<double> TextFontSizeProperty = AvaloniaProperty.Register<
+        IconLabel,
+        double
+    >(nameof(TextFontSize));
 
     public static readonly StyledProperty<IBrush?> TextForegroundProperty =
         AvaloniaProperty.Register<IconLabel, IBrush?>(nameof(TextForeground));
@@ -80,12 +88,14 @@ public sealed class IconLabel : StackPanel
     {
         base.OnPropertyChanged(change);
 
-        if (change.Property == IconProperty
+        if (
+            change.Property == IconProperty
             || change.Property == TextProperty
             || change.Property == IconSizeProperty
             || change.Property == TextFontSizeProperty
             || change.Property == TextForegroundProperty
-            || change.Property == IconForegroundProperty)
+            || change.Property == IconForegroundProperty
+        )
         {
             Rebuild();
         }
@@ -126,7 +136,7 @@ public sealed class IconLabel : StackPanel
             {
                 Data = geometry,
                 Size = IconSize,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
             };
 
             if (IconForeground is not null)
@@ -139,11 +149,7 @@ public sealed class IconLabel : StackPanel
 
         if (!string.IsNullOrEmpty(Text))
         {
-            var text = new TextBlock
-            {
-                Text = Text,
-                VerticalAlignment = VerticalAlignment.Center
-            };
+            var text = new TextBlock { Text = Text, VerticalAlignment = VerticalAlignment.Center };
 
             if (TextFontSize > 0)
             {

@@ -40,7 +40,12 @@ public sealed class EditableRowCollection : ObservableCollection<KeyValueRow>
     public void AddRow(string key, string value, bool isEnabled = true)
     {
         _suspend = true;
-        var row = new KeyValueRow { Key = key, Value = value, IsEnabled = isEnabled };
+        var row = new KeyValueRow
+        {
+            Key = key,
+            Value = value,
+            IsEnabled = isEnabled,
+        };
         if (Count > 0 && IsBlank(this[^1]))
         {
             Insert(Count - 1, row);

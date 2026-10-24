@@ -6,7 +6,6 @@ using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
-using Avalonia.Styling;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PostSharp.Models;
@@ -20,7 +19,7 @@ public enum TreeDropPosition
 {
     Before,
     After,
-    Inside
+    Inside,
 }
 
 public partial class MainWindowViewModel : ObservableObject
@@ -40,7 +39,7 @@ public partial class MainWindowViewModel : ObservableObject
     private static readonly JsonSerializerOptions MappingJsonOptions = new()
     {
         WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     private int _auditLimit = 500;
@@ -54,18 +53,25 @@ public partial class MainWindowViewModel : ObservableObject
     private AuditEntry? _pendingAuditPurge;
     private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
+    private CancellationTokenSource? _importCts;
     private bool _initializing = true;
     private IReadOnlyList<SuiteStepOption> _mappingSourceOptions = Array.Empty<SuiteStepOption>();
 
     public MainWindowViewModel()
     {
         Settings = _settingsStore.Load();
+        AppLog.Reconfigure(Settings.LogDirectory);
+        Log.Information(
+            "设置已加载 {SettingsFile}，主题 {Theme}，日志目录 {LogDirectory}",
+            _settingsStore.FilePath,
+            Settings.Theme,
+            Settings.LogDirectory
+        );
         Settings.PropertyChanged += OnSettingsChanged;
         _http.TimeoutSeconds = Settings.RequestTimeoutSeconds;
         _http.AutoFormatResponse = Settings.AutoFormatResponse;
         _auditLimit = Math.Max(20, Settings.AuditLimit);
         _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
-        ApplyTheme();
 
         _mockServer.Start();
         LoadWorkspace();
@@ -85,7 +91,9 @@ public partial class MainWindowViewModel : ObservableObject
             ActiveEnvironment = environment;
         }
 
-        var firstRequest = Collections.SelectMany(collection => collection.Requests).FirstOrDefault();
+        var firstRequest = Collections
+            .SelectMany(collection => collection.Requests)
+            .FirstOrDefault();
         Editing = firstRequest ?? new RequestItem { Name = "新建请求" };
         SelectedCollection = firstRequest?.Owner;
         SelectedRequest = firstRequest;
@@ -163,10 +171,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<ResponseHeaderView> ResponseHeaders { get; } = new();
 
-    public IReadOnlyList<string> Methods { get; } = new[]
-    {
-        "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
-    };
+    public IReadOnlyList<string> Methods { get; } =
+        new[] { "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS" };
 
     [ObservableProperty]
     private RequestItem _editing = new();
@@ -313,6 +319,22 @@ public partial class MainWindowViewModel : ObservableObject
     private string _auditPurgeDescription = string.Empty;
 
     [ObservableProperty]
+    private bool _isImportDialogOpen;
+
+    [ObservableProperty]
+    private string _importUrl = string.Empty;
+
+    [ObservableProperty]
+    private string _importStatus =
+        "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。";
+
+    [ObservableProperty]
+    private bool _hasImportError;
+
+    [ObservableProperty]
+    private bool _isImporting;
+
+    [ObservableProperty]
     private bool _isToastOpen;
 
     [ObservableProperty]
@@ -416,20 +438,6 @@ public partial class MainWindowViewModel : ObservableObject
 
     public event EventHandler? AppearanceChanged;
 
-    public IReadOnlyList<string> ThemeOptions { get; } = new[] { "跟随系统", "浅色", "深色" };
-
-    public IReadOnlyList<string> UiFontOptions { get; } = new[] { "Inter", "系统默认", "微软雅黑" };
-
-    public IReadOnlyList<string> CodeFontOptions { get; } = new[] { "Geist Mono", "Consolas", "Cascadia Mono" };
-
-    public IReadOnlyList<string> CodeFontSizeOptions { get; } = new[] { "12", "13", "14", "16" };
-
-    public IReadOnlyList<int> TimeoutOptions { get; } = new[] { 10, 30, 60, 120, 300 };
-
-    public IReadOnlyList<int> LargeResponseThresholdOptions { get; } = new[] { 32, 64, 128, 256 };
-
-    public IReadOnlyList<int> AuditLimitOptions { get; } = new[] { 100, 500, 1000, 2000 };
-
     [ObservableProperty]
     private string _managementTab = "审计";
 
@@ -439,14 +447,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool IsGuideTab => ManagementTab == "指南";
 
-    public bool IsSettingsTab => ManagementTab == "设置";
-
     partial void OnManagementTabChanged(string value)
     {
         OnPropertyChanged(nameof(IsAuditTab));
         OnPropertyChanged(nameof(IsAutomationTab));
         OnPropertyChanged(nameof(IsGuideTab));
-        OnPropertyChanged(nameof(IsSettingsTab));
     }
 
     [RelayCommand]
@@ -457,19 +462,226 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void OpenSettings()
-    {
-        ManagementTab = "设置";
-        IsManagementOpen = true;
-    }
-
-    [RelayCommand]
     private void SetManagementTab(string tab)
     {
-        if (tab is "审计" or "自动化" or "指南" or "设置")
+        if (tab is "审计" or "自动化" or "指南")
         {
             ManagementTab = tab;
         }
+    }
+
+    [RelayCommand]
+    private void OpenImportDialog()
+    {
+        ImportUrl = string.Empty;
+        ImportStatus =
+            "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。";
+        HasImportError = false;
+        IsImportDialogOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseImportDialog()
+    {
+        if (IsImporting)
+        {
+            _importCts?.Cancel();
+        }
+
+        IsImportDialogOpen = false;
+    }
+
+    [RelayCommand]
+    private async Task ImportFromUrlAsync()
+    {
+        if (IsImporting)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(ImportUrl))
+        {
+            HasImportError = true;
+            ImportStatus = "请填写 OpenAPI 文档地址，或改为从本地文件导入。";
+            return;
+        }
+
+        _importCts?.Dispose();
+        _importCts = new CancellationTokenSource();
+        IsImporting = true;
+        HasImportError = false;
+        ImportStatus = "正在下载并解析 OpenAPI 文档…";
+
+        try
+        {
+            var document = await OpenApiImportService
+                .LoadFromUrlAsync(ImportUrl, _importCts.Token)
+                .ConfigureAwait(true);
+            ApplyOpenApiImport(document);
+        }
+        catch (OperationCanceledException exception)
+        {
+            Log.Debug(exception, "从 URL 导入 OpenAPI 已取消 {Url}", ImportUrl);
+            ImportStatus = "导入已取消。";
+            HasImportError = true;
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "从 URL 导入 OpenAPI 失败 {Url}", ImportUrl);
+        }
+        finally
+        {
+            IsImporting = false;
+            _importCts?.Dispose();
+            _importCts = null;
+        }
+    }
+
+    public async Task ImportFromFileAsync(
+        string path,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (IsImporting)
+        {
+            return;
+        }
+
+        _importCts?.Dispose();
+        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        IsImporting = true;
+        HasImportError = false;
+        ImportStatus = "正在读取并解析 OpenAPI 文件…";
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
+            var document = await Task.Run(
+                    () => OpenApiImportService.Parse(content, Path.GetFileName(path)),
+                    _importCts.Token
+                )
+                .ConfigureAwait(true);
+            ApplyOpenApiImport(document);
+        }
+        catch (OperationCanceledException exception)
+        {
+            Log.Debug(exception, "从文件导入 OpenAPI 已取消 {FilePath}", path);
+            ImportStatus = "导入已取消。";
+            HasImportError = true;
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "从文件导入 OpenAPI 失败 {FilePath}", path);
+        }
+        finally
+        {
+            IsImporting = false;
+            _importCts?.Dispose();
+            _importCts = null;
+        }
+    }
+
+    private void ApplyOpenApiImport(OpenApiImportDocument document)
+    {
+        var root = new RequestCollection { Name = document.Title, IsExpanded = true };
+        Collections.Add(root);
+
+        var groupCount = 0;
+        var requestCount = 0;
+        RequestCollection? firstGroup = null;
+        RequestItem? firstRequest = null;
+
+        foreach (var group in document.Groups)
+        {
+            var target = root;
+            if (group.Name != "未分组")
+            {
+                target = new RequestCollection
+                {
+                    Name = group.Name,
+                    Parent = root,
+                    IsExpanded = true,
+                };
+                root.Children.Add(target);
+                Collections.Add(target);
+                groupCount++;
+            }
+
+            firstGroup ??= target;
+
+            foreach (var imported in group.Requests)
+            {
+                var request = new RequestItem
+                {
+                    Name = imported.Name,
+                    Method = imported.Method,
+                    Url = imported.Url,
+                    BodyMode = imported.BodyMode,
+                    Body = imported.Body,
+                    Owner = target,
+                };
+
+                foreach (var field in imported.Query)
+                {
+                    request.Params.AddRow(field.Name, field.Value, true);
+                }
+
+                foreach (var header in imported.Headers)
+                {
+                    request.Headers.AddRow(header.Name, header.Value, true);
+                }
+
+                request.Params.EnsureTrailingRow();
+                request.Headers.EnsureTrailingRow();
+                request.FormFields.EnsureTrailingRow();
+                target.Requests.Add(request);
+                firstRequest ??= request;
+                requestCount++;
+            }
+        }
+
+        SyncRootCollections();
+        if (firstRequest is not null)
+        {
+            OpenRequest(firstRequest);
+        }
+        else
+        {
+            SelectedCollection = root;
+            SelectedRequest = null;
+        }
+
+        IsImportDialogOpen = false;
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
+        RefreshDerivedState();
+        ShowToast($"已导入「{document.Title}」：{requestCount} 个请求，{groupCount} 个分组");
+        Log.Information(
+            "OpenAPI 导入完成 {Source}：{Title} {Version}，{RequestCount} 个请求，{GroupCount} 个分组",
+            document.Source,
+            document.Title,
+            document.Version,
+            requestCount,
+            groupCount
+        );
+    }
+
+    private static string DescribeImportFailure(Exception exception)
+    {
+        return exception switch
+        {
+            HttpRequestException => "无法连接文档地址，请检查网络和 URL 是否可直接访问。",
+            TaskCanceledException => "下载超时，请检查网络后重试。",
+            UnauthorizedAccessException => "没有读取该文件的权限，请换一个位置。",
+            FileNotFoundException => "文件不存在，请重新选择。",
+            InvalidOperationException => exception.Message,
+            _ => "文档格式无法识别，请确认是合法的 OpenAPI JSON 或 YAML。",
+        };
     }
 
     [RelayCommand]
@@ -480,10 +692,11 @@ public partial class MainWindowViewModel : ObservableObject
             "health" => "健康检查",
             "sse" => "AI 流式输出 (SSE)",
             "upload" => "上传文件",
-            _ => key
+            _ => key,
         };
 
-        var request = Collections.SelectMany(collection => collection.Requests)
+        var request = Collections
+            .SelectMany(collection => collection.Requests)
             .FirstOrDefault(candidate => candidate.Name == name);
 
         if (request is null)
@@ -511,21 +724,7 @@ public partial class MainWindowViewModel : ObservableObject
         IsMcpDialogOpen = true;
     }
 
-    [RelayCommand]
-    private void ResetSettings()
-    {
-        var defaults = new AppSettings();
-        Settings.Theme = defaults.Theme;
-        Settings.UiFont = defaults.UiFont;
-        Settings.CodeFont = defaults.CodeFont;
-        Settings.CodeFontSize = defaults.CodeFontSize;
-        Settings.RequestTimeoutSeconds = defaults.RequestTimeoutSeconds;
-        Settings.DefaultBodyMode = defaults.DefaultBodyMode;
-        Settings.AutoFormatResponse = defaults.AutoFormatResponse;
-        Settings.LargeResponseThresholdKb = defaults.LargeResponseThresholdKb;
-        Settings.AuditLimit = defaults.AuditLimit;
-        ShowToast("设置已恢复默认");
-    }
+    public SettingsViewModel CreateSettingsViewModel() => new(Settings, _settingsStore);
 
     private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -545,56 +744,172 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (e.PropertyName == nameof(AppSettings.Theme))
         {
-            ApplyTheme();
+            _ = ThemeService.ApplyAsync(Settings.Theme);
+        }
+
+        if (e.PropertyName == nameof(AppSettings.LogDirectory))
+        {
+            AppLog.Reconfigure(Settings.LogDirectory);
         }
 
         _settingsStore.Save(Settings);
         AppearanceChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private void ApplyTheme()
-    {
-        if (Application.Current is null)
-        {
-            return;
-        }
-
-        Application.Current.RequestedThemeVariant = Settings.Theme switch
-        {
-            "浅色" => ThemeVariant.Light,
-            "深色" => ThemeVariant.Dark,
-            _ => ThemeVariant.Default
-        };
-    }
-
     public bool HasSelection => SelectedRequest is not null || SelectedCollection is not null;
 
     public bool IsRequestSelected => SelectedRequest is not null;
 
-    public bool HasOpenDialog => IsEnvironmentDialogOpen
-                                 || IsMcpDialogOpen
-                                 || IsSuiteBuilderOpen
-                                 || IsMappingEditorOpen
-                                 || IsRenameDialogOpen
-                                 || IsDeleteDialogOpen
-                                 || IsHistoryTrashConfirmOpen
-                                 || IsHistoryTrashOpen
-                                 || IsHistoryPurgeConfirmOpen
-                                 || IsAuditTrashConfirmOpen
-                                 || IsAuditTrashOpen
-                                 || IsAuditPurgeConfirmOpen;
+    public bool HasOpenDialog =>
+        IsEnvironmentDialogOpen
+        || IsMcpDialogOpen
+        || IsSuiteBuilderOpen
+        || IsMappingEditorOpen
+        || IsRenameDialogOpen
+        || IsDeleteDialogOpen
+        || IsHistoryTrashConfirmOpen
+        || IsHistoryTrashOpen
+        || IsHistoryPurgeConfirmOpen
+        || IsAuditTrashConfirmOpen
+        || IsAuditTrashOpen
+        || IsAuditPurgeConfirmOpen
+        || IsImportDialogOpen;
+
+    /// <summary>Enter in a confirmation or rename dialog; buttons keep their own activation.</summary>
+    public bool TryConfirmActiveDialog()
+    {
+        if (IsDeleteDialogOpen)
+        {
+            ConfirmDeleteCommand.Execute(null);
+            return true;
+        }
+
+        if (IsRenameDialogOpen)
+        {
+            ApplyRenameCommand.Execute(null);
+            return true;
+        }
+
+        if (IsHistoryTrashConfirmOpen)
+        {
+            ConfirmHistoryTrashCommand.Execute(null);
+            return true;
+        }
+
+        if (IsHistoryPurgeConfirmOpen)
+        {
+            ConfirmHistoryPurgeCommand.Execute(null);
+            return true;
+        }
+
+        if (IsAuditTrashConfirmOpen)
+        {
+            ConfirmAuditTrashCommand.Execute(null);
+            return true;
+        }
+
+        if (IsAuditPurgeConfirmOpen)
+        {
+            ConfirmAuditPurgeCommand.Execute(null);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Esc closes the top-most overlay and applies its cancel semantics.</summary>
+    public bool TryCancelActiveDialog()
+    {
+        if (IsImportDialogOpen)
+        {
+            CloseImportDialogCommand.Execute(null);
+            return true;
+        }
+
+        if (IsMappingEditorOpen)
+        {
+            CancelMappingEditorCommand.Execute(null);
+            return true;
+        }
+
+        if (IsSuiteBuilderOpen)
+        {
+            CancelSuiteBuilderCommand.Execute(null);
+            return true;
+        }
+
+        if (IsHistoryPurgeConfirmOpen)
+        {
+            CancelHistoryPurgeCommand.Execute(null);
+            return true;
+        }
+
+        if (IsAuditPurgeConfirmOpen)
+        {
+            CancelAuditPurgeCommand.Execute(null);
+            return true;
+        }
+
+        if (IsHistoryTrashConfirmOpen)
+        {
+            CancelHistoryTrashCommand.Execute(null);
+            return true;
+        }
+
+        if (IsAuditTrashConfirmOpen)
+        {
+            CancelAuditTrashCommand.Execute(null);
+            return true;
+        }
+
+        if (IsDeleteDialogOpen)
+        {
+            CancelDeleteCommand.Execute(null);
+            return true;
+        }
+
+        if (IsRenameDialogOpen)
+        {
+            CancelRenameCommand.Execute(null);
+            return true;
+        }
+
+        if (IsEnvironmentDialogOpen)
+        {
+            CancelEnvironmentDialogCommand.Execute(null);
+            return true;
+        }
+
+        if (IsMcpDialogOpen)
+        {
+            CloseMcpDialogCommand.Execute(null);
+            return true;
+        }
+
+        if (IsHistoryTrashOpen)
+        {
+            CloseHistoryTrashCommand.Execute(null);
+            return true;
+        }
+
+        if (IsAuditTrashOpen)
+        {
+            CloseAuditTrashCommand.Execute(null);
+            return true;
+        }
+
+        return false;
+    }
 
     public bool HasHistory => History.Count > 0;
 
-    public string TreeEmptyText => TreeFilterMode == "收藏"
-        ? "还没有收藏的集合或请求"
-        : "没有匹配的请求";
+    public string TreeEmptyText =>
+        TreeFilterMode == "收藏" ? "还没有收藏的集合或请求" : "没有匹配的请求";
 
     public bool HasRecycledHistory => RecycledHistory.Count > 0;
 
-    public string RecycleBinLabel => RecycledHistory.Count > 0
-        ? $"回收站 ({RecycledHistory.Count})"
-        : "回收站";
+    public string RecycleBinLabel =>
+        RecycledHistory.Count > 0 ? $"回收站 ({RecycledHistory.Count})" : "回收站";
 
     public bool HasSelectedAuditEntry => SelectedAuditEntry is not null;
 
@@ -606,9 +921,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool HasAuditTrash => AuditTrash.Count > 0;
 
-    public string AuditTrashLabel => AuditTrash.Count > 0
-        ? $"审计回收站 ({AuditTrash.Count})"
-        : "审计回收站";
+    public string AuditTrashLabel =>
+        AuditTrash.Count > 0 ? $"审计回收站 ({AuditTrash.Count})" : "审计回收站";
 
     public int SuiteCount => Suites.Count;
 
@@ -640,37 +954,41 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool HasUploadFile => !string.IsNullOrWhiteSpace(Editing.UploadFilePath);
 
-    public string SseSummary => IsSseResponse
-        ? $"SSE 流 · {SseEventCount} 个事件 · 内容 {SseContent.Length} 字 · 思考 {SseThinking.Length} 字"
-        : "当前响应不是 SSE 流";
+    public string SseSummary =>
+        IsSseResponse
+            ? $"SSE 流 · {SseEventCount} 个事件 · 内容 {SseContent.Length} 字 · 思考 {SseThinking.Length} 字"
+            : "当前响应不是 SSE 流";
 
-    public object ResponseStatusIcon => new ArcGlyph
-    {
-        Data = ResponseTone switch
+    public object ResponseStatusIcon =>
+        new ArcGlyph
         {
-            BadgeTone.Success => ArcIcons.CircleCheck,
-            BadgeTone.Warning => ArcIcons.TriangleAlert,
-            BadgeTone.Danger => ArcIcons.CircleX,
-            _ => ArcIcons.Info
-        },
-        Size = 12
-    };
+            Data = ResponseTone switch
+            {
+                BadgeTone.Success => ArcIcons.CircleCheck,
+                BadgeTone.Warning => ArcIcons.TriangleAlert,
+                BadgeTone.Danger => ArcIcons.CircleX,
+                _ => ArcIcons.Info,
+            },
+            Size = 12,
+        };
 
     public string DetailPageSizeText => $"{DetailPageSize / 1024} KB/页";
 
-    public string McpEndpoint => _mockServer.IsRunning
-        ? $"{_mockServer.BaseUrl}/mcp"
-        : "MCP 服务未启动";
+    public string McpEndpoint =>
+        _mockServer.IsRunning ? $"{_mockServer.BaseUrl}/mcp" : "MCP 服务未启动";
 
-    public string McpClientConfig => $$"""
-                                       {
-                                         "mcpServers": {
-                                           "postsharp": {
-                                             "url": "{{(_mockServer.IsRunning ? _mockServer.BaseUrl : "http://127.0.0.1:5199")}}/mcp"
-                                           }
-                                         }
-                                       }
-                                       """;
+    public string McpClientConfig =>
+        $$"""
+            {
+              "mcpServers": {
+                "postsharp": {
+                  "url": "{{(
+                _mockServer.IsRunning ? _mockServer.BaseUrl : "http://127.0.0.1:5199"
+            )}}/mcp"
+                }
+              }
+            }
+            """;
 
     public string McpToolSummary =>
         "集合/请求：list_collections、create_collection、update_collection、move_collection、delete_collection、"
@@ -678,9 +996,7 @@ public partial class MainWindowViewModel : ObservableObject
         + "套件：list_suites、get_suite、create_suite、create_suite_from_collections、update_suite、run_suite、delete_suite；"
         + "运行与审计：send_request、run_sequence、get_curl、list_audit、get_audit、list_history、list_environments、set_variable。";
 
-    public string EditorHint => IsDraft
-        ? "草稿 · 保存后加入集合"
-        : "Ctrl+S 保存 · Ctrl+Enter 发送";
+    public string EditorHint => IsDraft ? "草稿 · 保存后加入集合" : "Ctrl+S 保存 · Ctrl+Enter 发送";
 
     partial void OnEditingChanged(RequestItem value)
     {
@@ -714,9 +1030,10 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnSelectedSuiteChanged(TestSuite? value)
     {
         OnPropertyChanged(nameof(HasSelectedSuite));
-        SelectedSuiteResult = value is not null && _suiteResults.TryGetValue(value.Id, out var result)
-            ? result
-            : null;
+        SelectedSuiteResult =
+            value is not null && _suiteResults.TryGetValue(value.Id, out var result)
+                ? result
+                : null;
     }
 
     partial void OnSelectedSuiteResultChanged(TestRunResult? value) =>
@@ -763,6 +1080,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
             catch (Exception exception)
             {
+                Log.Error(exception, "UI 发送请求失败 {RequestName}", Editing.Name);
                 result = HttpRequestService.Failure(exception.Message);
             }
 
@@ -818,10 +1136,11 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void AddRequest()
     {
-        var target = SelectedCollection
-                     ?? Editing.Owner
-                     ?? Collections.FirstOrDefault(collection => collection.Parent is null)
-                     ?? Collections.FirstOrDefault();
+        var target =
+            SelectedCollection
+            ?? Editing.Owner
+            ?? Collections.FirstOrDefault(collection => collection.Parent is null)
+            ?? Collections.FirstOrDefault();
         if (target is null)
         {
             target = new RequestCollection { Name = "我的集合" };
@@ -837,9 +1156,11 @@ public partial class MainWindowViewModel : ObservableObject
         {
             Name = $"新建请求 {target.Requests.Count + 1}",
             Method = "GET",
-            Url = ActiveEnvironment is not null ? "{{baseUrl}}/api/health" : "https://api.example.com/health",
+            Url = ActiveEnvironment is not null
+                ? "{{baseUrl}}/api/health"
+                : "https://api.example.com/health",
             BodyMode = Settings.DefaultBodyMode,
-            Owner = target
+            Owner = target,
         };
 
         target.Requests.Add(request);
@@ -861,7 +1182,7 @@ public partial class MainWindowViewModel : ObservableObject
         var collection = new RequestCollection
         {
             Name = $"新建集合 {parent.Children.Count + 1}",
-            Parent = parent
+            Parent = parent,
         };
 
         parent.Children.Add(collection);
@@ -875,13 +1196,19 @@ public partial class MainWindowViewModel : ObservableObject
         ShowToast("已创建二级集合");
     }
 
-    public RequestCollection CreateCollection(string name, Guid? parentId, bool favorite, int? position)
+    public RequestCollection CreateCollection(
+        string name,
+        Guid? parentId,
+        bool favorite,
+        int? position
+    )
     {
         RequestCollection? parent = null;
         if (parentId is { } requestedParent)
         {
-            parent = Collections.FirstOrDefault(candidate => candidate.Id == requestedParent)
-                     ?? throw new KeyNotFoundException($"没有找到 id 为 {requestedParent} 的父集合。");
+            parent =
+                Collections.FirstOrDefault(candidate => candidate.Id == requestedParent)
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {requestedParent} 的父集合。");
         }
 
         if (parent is not null && parent.Depth >= MaxCollectionDepth)
@@ -893,7 +1220,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             Name = string.IsNullOrWhiteSpace(name) ? "MCP 集合" : name.Trim(),
             Parent = parent,
-            IsFavorite = favorite
+            IsFavorite = favorite,
         };
 
         Collections.Add(collection);
@@ -922,10 +1249,12 @@ public partial class MainWindowViewModel : ObservableObject
         Guid? parentId,
         bool changeParent,
         bool? favorite,
-        int? position)
+        int? position
+    )
     {
-        var collection = Collections.FirstOrDefault(candidate => candidate.Id == id)
-                         ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的集合。");
+        var collection =
+            Collections.FirstOrDefault(candidate => candidate.Id == id)
+            ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的集合。");
 
         if (!string.IsNullOrWhiteSpace(name))
         {
@@ -943,18 +1272,25 @@ public partial class MainWindowViewModel : ObservableObject
             RequestCollection? target = null;
             if (parentId is { } requestedParent)
             {
-                target = Collections.FirstOrDefault(candidate => candidate.Id == requestedParent)
-                         ?? throw new KeyNotFoundException($"没有找到 id 为 {requestedParent} 的目标集合。");
+                target =
+                    Collections.FirstOrDefault(candidate => candidate.Id == requestedParent)
+                    ?? throw new KeyNotFoundException(
+                        $"没有找到 id 为 {requestedParent} 的目标集合。"
+                    );
             }
 
-            if (ReferenceEquals(target, collection)
-                || (target is not null && IsSelfOrDescendant(target, collection)))
+            if (
+                ReferenceEquals(target, collection)
+                || (target is not null && IsSelfOrDescendant(target, collection))
+            )
             {
                 throw new InvalidOperationException("不能把集合移动到自身或后代集合。");
             }
 
-            if (target is not null
-                && target.Depth + GetCollectionSubtreeHeight(collection) > MaxCollectionDepth)
+            if (
+                target is not null
+                && target.Depth + GetCollectionSubtreeHeight(collection) > MaxCollectionDepth
+            )
             {
                 throw new InvalidOperationException($"集合最多支持 {MaxCollectionDepth} 级。");
             }
@@ -1024,10 +1360,10 @@ public partial class MainWindowViewModel : ObservableObject
             return false;
         }
 
-        var editingRemoved = Editing.Owner is not null
-                             && IsSelfOrDescendant(Editing.Owner, collection);
-        var selectedRemoved = SelectedCollection is not null
-                              && IsSelfOrDescendant(SelectedCollection, collection);
+        var editingRemoved =
+            Editing.Owner is not null && IsSelfOrDescendant(Editing.Owner, collection);
+        var selectedRemoved =
+            SelectedCollection is not null && IsSelfOrDescendant(SelectedCollection, collection);
         RemoveCollectionRecursive(collection);
 
         if (editingRemoved)
@@ -1050,11 +1386,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     public RequestItem MoveRequest(Guid requestId, Guid targetCollectionId, int? position)
     {
-        var request = Collections.SelectMany(collection => collection.Requests)
-                          .FirstOrDefault(candidate => candidate.Id == requestId)
-                      ?? throw new KeyNotFoundException($"没有找到 id 为 {requestId} 的请求。");
-        var target = Collections.FirstOrDefault(candidate => candidate.Id == targetCollectionId)
-                     ?? throw new KeyNotFoundException($"没有找到 id 为 {targetCollectionId} 的集合。");
+        var request =
+            Collections
+                .SelectMany(collection => collection.Requests)
+                .FirstOrDefault(candidate => candidate.Id == requestId)
+            ?? throw new KeyNotFoundException($"没有找到 id 为 {requestId} 的请求。");
+        var target =
+            Collections.FirstOrDefault(candidate => candidate.Id == targetCollectionId)
+            ?? throw new KeyNotFoundException($"没有找到 id 为 {targetCollectionId} 的集合。");
 
         if (!ReferenceEquals(request.Owner, target))
         {
@@ -1094,7 +1433,8 @@ public partial class MainWindowViewModel : ObservableObject
     private static void MoveCollectionWithin(
         IList<RequestCollection> siblings,
         RequestCollection collection,
-        int? position)
+        int? position
+    )
     {
         if (position is not { } requestedPosition)
         {
@@ -1232,15 +1572,19 @@ public partial class MainWindowViewModel : ObservableObject
         if (source.Collection is { } collection)
         {
             return !ReferenceEquals(collection, target)
-                   && !ReferenceEquals(collection.Parent, target)
-                   && !IsSelfOrDescendant(target, collection)
-                   && target.Depth + GetCollectionSubtreeHeight(collection) <= MaxCollectionDepth;
+                && !ReferenceEquals(collection.Parent, target)
+                && !IsSelfOrDescendant(target, collection)
+                && target.Depth + GetCollectionSubtreeHeight(collection) <= MaxCollectionDepth;
         }
 
         return false;
     }
 
-    public bool CanMoveTreeNode(TreeDisplayNode source, TreeDisplayNode target, TreeDropPosition position)
+    public bool CanMoveTreeNode(
+        TreeDisplayNode source,
+        TreeDisplayNode target,
+        TreeDropPosition position
+    )
     {
         if (ReferenceEquals(source, target) || target.Collection is null && target.Request is null)
         {
@@ -1251,42 +1595,49 @@ public partial class MainWindowViewModel : ObservableObject
         {
             if (target.Request is { } targetRequest)
             {
-                return targetRequest.Owner is not null
-                       && !ReferenceEquals(request, targetRequest);
+                return targetRequest.Owner is not null && !ReferenceEquals(request, targetRequest);
             }
 
             return target.Collection is not null;
         }
 
-        if (source.Collection is not { } collection || target.Collection is not { } targetCollection)
+        if (
+            source.Collection is not { } collection
+            || target.Collection is not { } targetCollection
+        )
         {
             return false;
         }
 
-        if (ReferenceEquals(collection, targetCollection)
-            || IsSelfOrDescendant(targetCollection, collection))
+        if (
+            ReferenceEquals(collection, targetCollection)
+            || IsSelfOrDescendant(targetCollection, collection)
+        )
         {
             return false;
         }
 
-        var parent = position == TreeDropPosition.Inside
-            ? targetCollection
-            : targetCollection.Parent;
+        var parent =
+            position == TreeDropPosition.Inside ? targetCollection : targetCollection.Parent;
 
         return parent is null
-               || (!IsSelfOrDescendant(parent, collection)
-                   && parent.Depth + GetCollectionSubtreeHeight(collection) <= MaxCollectionDepth);
+            || (
+                !IsSelfOrDescendant(parent, collection)
+                && parent.Depth + GetCollectionSubtreeHeight(collection) <= MaxCollectionDepth
+            );
     }
 
     public bool CanMoveNode(object node, int delta)
     {
         return node switch
         {
-            RequestItem request when request.Owner is { } owner =>
-                owner.Requests.IndexOf(request) + delta is var index
-                && index >= 0 && index < owner.Requests.Count,
+            RequestItem request when request.Owner is { } owner => owner.Requests.IndexOf(request)
+                + delta
+                is var index
+                && index >= 0
+                && index < owner.Requests.Count,
             RequestCollection collection => CanMoveCollection(collection, delta),
-            _ => false
+            _ => false,
         };
     }
 
@@ -1338,15 +1689,11 @@ public partial class MainWindowViewModel : ObservableObject
                 parent.Children.Move(index, target);
             }
 
-            roots = Collections
-                .Where(candidate => candidate.Parent is null)
-                .ToList();
+            roots = Collections.Where(candidate => candidate.Parent is null).ToList();
         }
         else
         {
-            roots = Collections
-                .Where(candidate => candidate.Parent is null)
-                .ToList();
+            roots = Collections.Where(candidate => candidate.Parent is null).ToList();
             var index = roots.IndexOf(collection);
             var target = index + delta;
             if (index >= 0 && target >= 0 && target < roots.Count)
@@ -1382,7 +1729,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static void AddCollectionInTreeOrder(
         RequestCollection collection,
-        ICollection<RequestCollection> target)
+        ICollection<RequestCollection> target
+    )
     {
         target.Add(collection);
         foreach (var child in collection.Children)
@@ -1432,7 +1780,11 @@ public partial class MainWindowViewModel : ObservableObject
         return true;
     }
 
-    public bool MoveTreeNode(TreeDisplayNode source, TreeDisplayNode target, TreeDropPosition position)
+    public bool MoveTreeNode(
+        TreeDisplayNode source,
+        TreeDisplayNode target,
+        TreeDropPosition position
+    )
     {
         if (!CanMoveTreeNode(source, target, position))
         {
@@ -1443,7 +1795,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             { Request: { } request } => MoveRequestNode(request, target, position),
             { Collection: { } collection } => MoveCollectionNode(collection, target, position),
-            _ => false
+            _ => false,
         };
 
         if (!moved)
@@ -1457,7 +1809,11 @@ public partial class MainWindowViewModel : ObservableObject
         return true;
     }
 
-    private bool MoveRequestNode(RequestItem request, TreeDisplayNode target, TreeDropPosition position)
+    private bool MoveRequestNode(
+        RequestItem request,
+        TreeDisplayNode target,
+        TreeDropPosition position
+    )
     {
         RequestCollection destination;
         int index;
@@ -1484,7 +1840,7 @@ public partial class MainWindowViewModel : ObservableObject
             index = position switch
             {
                 TreeDropPosition.Before => 0,
-                _ => collection.Requests.Count
+                _ => collection.Requests.Count,
             };
         }
         else
@@ -1503,7 +1859,10 @@ public partial class MainWindowViewModel : ObservableObject
                     index--;
                 }
 
-                destination.Requests.Move(oldIndex, Math.Clamp(index, 0, destination.Requests.Count - 1));
+                destination.Requests.Move(
+                    oldIndex,
+                    Math.Clamp(index, 0, destination.Requests.Count - 1)
+                );
             }
         }
         else
@@ -1523,7 +1882,11 @@ public partial class MainWindowViewModel : ObservableObject
         return true;
     }
 
-    private bool MoveCollectionNode(RequestCollection collection, TreeDisplayNode target, TreeDropPosition position)
+    private bool MoveCollectionNode(
+        RequestCollection collection,
+        TreeDisplayNode target,
+        TreeDropPosition position
+    )
     {
         if (target.Collection is not { } targetCollection)
         {
@@ -1578,7 +1941,10 @@ public partial class MainWindowViewModel : ObservableObject
             }
             else
             {
-                newParent.Children.Move(oldIndex, Math.Clamp(index, 0, newParent.Children.Count - 1));
+                newParent.Children.Move(
+                    oldIndex,
+                    Math.Clamp(index, 0, newParent.Children.Count - 1)
+                );
             }
         }
         else
@@ -1588,7 +1954,10 @@ public partial class MainWindowViewModel : ObservableObject
 
             if (newParent is not null)
             {
-                newParent.Children.Insert(Math.Clamp(index, 0, newParent.Children.Count), collection);
+                newParent.Children.Insert(
+                    Math.Clamp(index, 0, newParent.Children.Count),
+                    collection
+                );
                 newParent.IsExpanded = true;
             }
             else
@@ -1619,10 +1988,11 @@ public partial class MainWindowViewModel : ObservableObject
         }
         else if (_pendingDelete is RequestCollection collection)
         {
-            var editingRemoved = Editing.Owner is not null
-                                 && IsSelfOrDescendant(Editing.Owner, collection);
-            var selectedRemoved = SelectedCollection is not null
-                                  && IsSelfOrDescendant(SelectedCollection, collection);
+            var editingRemoved =
+                Editing.Owner is not null && IsSelfOrDescendant(Editing.Owner, collection);
+            var selectedRemoved =
+                SelectedCollection is not null
+                && IsSelfOrDescendant(SelectedCollection, collection);
 
             RemoveCollectionRecursive(collection);
 
@@ -1986,15 +2356,17 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static int CountRequests(RequestCollection collection)
     {
-        return collection.Requests.Count
-               + collection.Children.Sum(child => CountRequests(child));
+        return collection.Requests.Count + collection.Children.Sum(child => CountRequests(child));
     }
 
     private static int GetCollectionSubtreeHeight(RequestCollection collection)
     {
-        return 1 + (collection.Children.Count == 0
-            ? 0
-            : collection.Children.Max(GetCollectionSubtreeHeight));
+        return 1
+            + (
+                collection.Children.Count == 0
+                    ? 0
+                    : collection.Children.Max(GetCollectionSubtreeHeight)
+            );
     }
 
     public void LoadHistory(HistoryEntry entry)
@@ -2013,8 +2385,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     public async Task CopyTextAsync(string text, string toast)
     {
-        if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime
-            { MainWindow: { } window })
+        if (
+            Application.Current?.ApplicationLifetime
+            is not IClassicDesktopStyleApplicationLifetime { MainWindow: { } window }
+        )
         {
             return;
         }
@@ -2042,7 +2416,8 @@ public partial class MainWindowViewModel : ObservableObject
         HttpResult result,
         string source,
         string? tool,
-        string? client)
+        string? client
+    )
     {
         AddHistory(request, result);
         RecordAudit(request, composed, result, source, tool, client);
@@ -2062,9 +2437,7 @@ public partial class MainWindowViewModel : ObservableObject
             return request.Body;
         }
 
-        var lines = request.FormFields.ActiveRows
-            .Select(row => $"{row.Key}: {row.Value}")
-            .ToList();
+        var lines = request.FormFields.ActiveRows.Select(row => $"{row.Key}: {row.Value}").ToList();
         if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
         {
             lines.Add($"[file] {request.UploadFieldName}: {request.UploadFilePath}");
@@ -2079,17 +2452,24 @@ public partial class MainWindowViewModel : ObservableObject
         HttpResult result,
         string source,
         string? tool,
-        string? client)
+        string? client
+    )
     {
         var requestHeaders = composed is not null
             ? string.Join(
                 "\n",
-                composed.Headers
-                    .Select(pair => $"{pair.Key}: {pair.Value}")
-                    .Concat(composed.ContentType is null
-                        ? Array.Empty<string>()
-                        : new[] { $"Content-Type: {composed.ContentType}" }))
-            : string.Join("\n", request.Headers.ActiveRows.Select(row => $"{row.Key}: {row.Value}"));
+                composed
+                    .Headers.Select(pair => $"{pair.Key}: {pair.Value}")
+                    .Concat(
+                        composed.ContentType is null
+                            ? Array.Empty<string>()
+                            : new[] { $"Content-Type: {composed.ContentType}" }
+                    )
+            )
+            : string.Join(
+                "\n",
+                request.Headers.ActiveRows.Select(row => $"{row.Key}: {row.Value}")
+            );
 
         var entry = new AuditEntry
         {
@@ -2111,16 +2491,18 @@ public partial class MainWindowViewModel : ObservableObject
             RequestHeaders = Truncate(requestHeaders, AuditPreviewLimit),
             RequestBodyPreview = Truncate(
                 composed?.Body ?? BuildMultipartPreview(request),
-                AuditPreviewLimit),
+                AuditPreviewLimit
+            ),
             ResponseHeaders = Truncate(
                 string.Join("\n", result.Headers.Select(header => $"{header.Key}: {header.Value}")),
-                AuditPreviewLimit),
+                AuditPreviewLimit
+            ),
             ResponseBodyPreview = Truncate(result.Body, AuditPreviewLimit),
             ResponseContentType = result.MediaType,
             IsSse = result.IsSse,
             SseEventCount = result.SseEventCount,
             AiThinking = result.SseThinking,
-            AiContent = result.SseContent
+            AiContent = result.SseContent,
         };
 
         Audit.Insert(0, entry);
@@ -2150,7 +2532,8 @@ public partial class MainWindowViewModel : ObservableObject
                 entry.RequestName.Contains(query, StringComparison.OrdinalIgnoreCase)
                 || entry.Url.Contains(query, StringComparison.OrdinalIgnoreCase)
                 || (entry.Client?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
-                || (entry.Tool?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
+                || (entry.Tool?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+            );
         }
 
         VisibleAudit.Clear();
@@ -2300,7 +2683,8 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        var request = Collections.SelectMany(collection => collection.Requests)
+        var request = Collections
+            .SelectMany(collection => collection.Requests)
             .FirstOrDefault(candidate => candidate.Id == id);
         if (request is null)
         {
@@ -2337,15 +2721,19 @@ public partial class MainWindowViewModel : ObservableObject
     private void AddSuiteSourceRows(
         RequestCollection collection,
         int depth,
-        RequestCollection? defaultCollection)
+        RequestCollection? defaultCollection
+    )
     {
-        var isSelected = defaultCollection is null || ReferenceEquals(collection, defaultCollection);
-        SuiteSources.Add(new SuiteSourceCollection
-        {
-            Collection = collection,
-            Depth = depth,
-            IsSelected = isSelected
-        });
+        var isSelected =
+            defaultCollection is null || ReferenceEquals(collection, defaultCollection);
+        SuiteSources.Add(
+            new SuiteSourceCollection
+            {
+                Collection = collection,
+                Depth = depth,
+                IsSelected = isSelected,
+            }
+        );
 
         foreach (var child in collection.Children)
         {
@@ -2355,8 +2743,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void OnSuiteSourceChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(SuiteSourceCollection.IsSelected)
-            && IsSuiteBuilderOpen)
+        if (e.PropertyName == nameof(SuiteSourceCollection.IsSelected) && IsSuiteBuilderOpen)
         {
             RebuildSuiteBuilderSteps();
         }
@@ -2383,9 +2770,9 @@ public partial class MainWindowViewModel : ObservableObject
                         RequestName = request.Name,
                         Method = request.Method,
                         Url = request.Url,
-                        DelayMs = 200
+                        DelayMs = 200,
                     },
-                    DelayText = "200"
+                    DelayText = "200",
                 };
             }
 
@@ -2420,11 +2807,12 @@ public partial class MainWindowViewModel : ObservableObject
         {
             SourceOptions = _mappingSourceOptions,
             SelectedSource = _mappingSourceOptions.FirstOrDefault(option =>
-                option.Id == source.SourceStepId),
+                option.Id == source.SourceStepId
+            ),
             SourcePath = source.SourcePath,
             TargetKind = string.IsNullOrWhiteSpace(source.TargetKind) ? "Body" : source.TargetKind,
             TargetPath = source.TargetPath,
-            Template = string.IsNullOrWhiteSpace(source.Template) ? "{value}" : source.Template
+            Template = string.IsNullOrWhiteSpace(source.Template) ? "{value}" : source.Template,
         };
         editor.RemoveCommand = new RelayCommand(() => MappingEditors.Remove(editor));
         return editor;
@@ -2435,9 +2823,10 @@ public partial class MainWindowViewModel : ObservableObject
         var index = SuiteBuilderSteps.IndexOf(step);
         _mappingSourceOptions = SuiteBuilderSteps
             .Take(Math.Max(0, index))
-            .Select((source, sourceIndex) => new SuiteStepOption(
-                source.Step.Id,
-                $"{sourceIndex + 1}. {source.RequestName}"))
+            .Select(
+                (source, sourceIndex) =>
+                    new SuiteStepOption(source.Step.Id, $"{sourceIndex + 1}. {source.RequestName}")
+            )
             .ToList();
 
         MappingEditors.Clear();
@@ -2485,16 +2874,18 @@ public partial class MainWindowViewModel : ObservableObject
         step.Step.InputMappings.Clear();
         foreach (var editor in MappingEditors)
         {
-            step.Step.InputMappings.Add(new InputMapping
-            {
-                SourceStepId = editor.SelectedSource?.Id ?? Guid.Empty,
-                SourcePath = editor.SourcePath.Trim(),
-                TargetKind = editor.TargetKind,
-                TargetPath = editor.TargetPath.Trim(),
-                Template = string.IsNullOrWhiteSpace(editor.Template)
-                    ? "{value}"
-                    : editor.Template
-            });
+            step.Step.InputMappings.Add(
+                new InputMapping
+                {
+                    SourceStepId = editor.SelectedSource?.Id ?? Guid.Empty,
+                    SourcePath = editor.SourcePath.Trim(),
+                    TargetKind = editor.TargetKind,
+                    TargetPath = editor.TargetPath.Trim(),
+                    Template = string.IsNullOrWhiteSpace(editor.Template)
+                        ? "{value}"
+                        : editor.Template,
+                }
+            );
         }
 
         step.RefreshMappingLabel();
@@ -2539,11 +2930,7 @@ public partial class MainWindowViewModel : ObservableObject
             name = $"组装套件 {Suites.Count + 1}";
         }
 
-        var suite = new TestSuite
-        {
-            Name = name,
-            StopOnError = true
-        };
+        var suite = new TestSuite { Name = name, StopOnError = true };
 
         foreach (var step in steps)
         {
@@ -2568,21 +2955,19 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        var suite = new TestSuite
-        {
-            Name = $"{collection.Name} · 回归测试",
-            StopOnError = true
-        };
+        var suite = new TestSuite { Name = $"{collection.Name} · 回归测试", StopOnError = true };
 
         foreach (var request in collection.Requests)
         {
-            suite.Steps.Add(new TestStep
-            {
-                RequestId = request.Id,
-                RequestName = request.Name,
-                Method = request.Method,
-                Url = request.Url
-            });
+            suite.Steps.Add(
+                new TestStep
+                {
+                    RequestId = request.Id,
+                    RequestName = request.Name,
+                    Method = request.Method,
+                    Url = request.Url,
+                }
+            );
         }
 
         Suites.Add(suite);
@@ -2622,7 +3007,8 @@ public partial class MainWindowViewModel : ObservableObject
                 "UI",
                 $"suite:{suite.Name}",
                 null,
-                CancellationToken.None);
+                CancellationToken.None
+            );
             SelectedSuiteResult = result;
             ShowToast($"套件完成：{result.Passed}/{result.Total} 通过");
         }
@@ -2635,18 +3021,15 @@ public partial class MainWindowViewModel : ObservableObject
     public async Task<TestRunResult> RunSuiteForMcpAsync(
         Guid suiteId,
         string? client,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         return await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
         {
-            var suite = Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
-                        ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
-            return await RunSuiteCoreAsync(
-                suite,
-                "MCP",
-                "run_suite",
-                client,
-                cancellationToken);
+            var suite =
+                Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            return await RunSuiteCoreAsync(suite, "MCP", "run_suite", client, cancellationToken);
         });
     }
 
@@ -2655,7 +3038,8 @@ public partial class MainWindowViewModel : ObservableObject
         string source,
         string tool,
         string? client,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var steps = new List<TestStepResult>();
         var stopped = false;
@@ -2671,10 +3055,12 @@ public partial class MainWindowViewModel : ObservableObject
                 {
                     await Task.Delay(
                         Math.Clamp(suite.Steps[index - 1].DelayMs, 0, 60_000),
-                        cancellationToken);
+                        cancellationToken
+                    );
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException exception)
                 {
+                    Log.Debug(exception, "套件运行被取消 {SuiteName}", suite.Name);
                     stopped = true;
                     break;
                 }
@@ -2686,22 +3072,25 @@ public partial class MainWindowViewModel : ObservableObject
                 break;
             }
 
-            var request = Collections.SelectMany(collection => collection.Requests)
+            var request = Collections
+                .SelectMany(collection => collection.Requests)
                 .FirstOrDefault(candidate => candidate.Id == step.RequestId);
 
             if (request is null)
             {
-                steps.Add(new TestStepResult
-                {
-                    StepId = step.Id,
-                    RequestId = step.RequestId,
-                    Name = step.RequestName,
-                    Method = step.Method,
-                    Url = step.Url,
-                    StatusText = "请求已删除",
-                    Error = "请求已删除",
-                    Passed = false
-                });
+                steps.Add(
+                    new TestStepResult
+                    {
+                        StepId = step.Id,
+                        RequestId = step.RequestId,
+                        Name = step.RequestName,
+                        Method = step.Method,
+                        Url = step.Url,
+                        StatusText = "请求已删除",
+                        Error = "请求已删除",
+                        Passed = false,
+                    }
+                );
 
                 if (suite.StopOnError)
                 {
@@ -2713,9 +3102,10 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             var effectiveRequest = step.InputMappings.Count > 0 ? request.Clone() : request;
-            var mappingError = step.InputMappings.Count > 0
-                ? ApplyInputMappings(effectiveRequest, step, stepResults)
-                : null;
+            var mappingError =
+                step.InputMappings.Count > 0
+                    ? ApplyInputMappings(effectiveRequest, step, stepResults)
+                    : null;
 
             if (mappingError is not null)
             {
@@ -2723,17 +3113,19 @@ public partial class MainWindowViewModel : ObservableObject
                 AddHistory(effectiveRequest, failure);
                 RecordAudit(effectiveRequest, null, failure, source, tool, client);
                 stepResults[step.Id] = failure;
-                steps.Add(new TestStepResult
-                {
-                    StepId = step.Id,
-                    RequestId = request.Id,
-                    Name = request.Name,
-                    Method = request.Method,
-                    Url = request.Url,
-                    StatusText = "入参映射失败",
-                    Error = mappingError,
-                    Passed = false
-                });
+                steps.Add(
+                    new TestStepResult
+                    {
+                        StepId = step.Id,
+                        RequestId = request.Id,
+                        Name = request.Name,
+                        Method = request.Method,
+                        Url = request.Url,
+                        StatusText = "入参映射失败",
+                        Error = mappingError,
+                        Passed = false,
+                    }
+                );
 
                 if (suite.StopOnError)
                 {
@@ -2753,6 +3145,12 @@ public partial class MainWindowViewModel : ObservableObject
             }
             catch (Exception exception)
             {
+                Log.Error(
+                    exception,
+                    "套件步骤发送失败 {SuiteName} {StepName}",
+                    suite.Name,
+                    step.RequestName
+                );
                 result = HttpRequestService.Failure(exception.Message);
             }
 
@@ -2763,7 +3161,8 @@ public partial class MainWindowViewModel : ObservableObject
             var statusMatches = step.ExpectedStatus is null
                 ? result.StatusCode is >= 200 and < 400
                 : result.StatusCode == step.ExpectedStatus;
-            var bodyMatches = string.IsNullOrWhiteSpace(step.BodyContains)
+            var bodyMatches =
+                string.IsNullOrWhiteSpace(step.BodyContains)
                 || result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
             var passed = result.HasResponse && statusMatches && bodyMatches;
             var error = result.Error;
@@ -2774,20 +3173,22 @@ public partial class MainWindowViewModel : ObservableObject
                     : $"响应不包含 \"{step.BodyContains}\"";
             }
 
-            steps.Add(new TestStepResult
-            {
-                StepId = step.Id,
-                RequestId = request.Id,
-                Name = request.Name,
-                Method = request.Method,
-                Url = composed?.Url ?? request.Url,
-                StatusCode = result.StatusCode,
-                StatusText = result.ReasonPhrase,
-                ElapsedMs = result.ElapsedMs,
-                Passed = passed,
-                Error = error,
-                ResponsePreview = Truncate(result.Body, 500)
-            });
+            steps.Add(
+                new TestStepResult
+                {
+                    StepId = step.Id,
+                    RequestId = request.Id,
+                    Name = request.Name,
+                    Method = request.Method,
+                    Url = composed?.Url ?? request.Url,
+                    StatusCode = result.StatusCode,
+                    StatusText = result.ReasonPhrase,
+                    ElapsedMs = result.ElapsedMs,
+                    Passed = passed,
+                    Error = error,
+                    ResponsePreview = Truncate(result.Body, 500),
+                }
+            );
 
             if (!passed && suite.StopOnError)
             {
@@ -2804,7 +3205,7 @@ public partial class MainWindowViewModel : ObservableObject
             Passed = steps.Count(step => step.Passed),
             Failed = steps.Count(step => !step.Passed),
             Stopped = stopped,
-            Steps = steps
+            Steps = steps,
         };
 
         _suiteResults[suite.Id] = run;
@@ -2821,7 +3222,8 @@ public partial class MainWindowViewModel : ObservableObject
     private static string? ApplyInputMappings(
         RequestItem request,
         TestStep step,
-        IReadOnlyDictionary<Guid, HttpResult> stepResults)
+        IReadOnlyDictionary<Guid, HttpResult> stepResults
+    )
     {
         foreach (var mapping in step.InputMappings)
         {
@@ -2830,8 +3232,10 @@ public partial class MainWindowViewModel : ObservableObject
                 return "入参映射的目标字段为空";
             }
 
-            if (!stepResults.TryGetValue(mapping.SourceStepId, out var source)
-                || !source.HasResponse)
+            if (
+                !stepResults.TryGetValue(mapping.SourceStepId, out var source)
+                || !source.HasResponse
+            )
             {
                 return "入参映射的来源步骤不存在或尚未执行";
             }
@@ -2856,12 +3260,18 @@ public partial class MainWindowViewModel : ObservableObject
                     return error;
                 }
             }
-            catch (JsonException)
+            catch (JsonException exception)
             {
+                Log.Warning(
+                    exception,
+                    "入参映射来源不是有效 JSON {SourcePath}",
+                    mapping.SourcePath
+                );
                 return $"来源响应不是有效 JSON：{mapping.SourcePath}";
             }
             catch (Exception exception)
             {
+                Log.Error(exception, "入参映射失败 {SourcePath}", mapping.SourcePath);
                 return $"入参映射失败：{exception.Message}";
             }
         }
@@ -2873,7 +3283,8 @@ public partial class MainWindowViewModel : ObservableObject
         RequestItem request,
         InputMapping mapping,
         JsonNode sourceValue,
-        string rendered)
+        string rendered
+    )
     {
         switch (mapping.TargetKind.Trim().ToLowerInvariant())
         {
@@ -2895,8 +3306,8 @@ public partial class MainWindowViewModel : ObservableObject
 
                 var encoded = Uri.EscapeDataString(rendered);
                 var before = request.Url;
-                request.Url = request.Url
-                    .Replace($"{{{name}}}", encoded, StringComparison.Ordinal)
+                request.Url = request
+                    .Url.Replace($"{{{name}}}", encoded, StringComparison.Ordinal)
                     .Replace($":{name}", encoded, StringComparison.Ordinal);
 
                 return string.Equals(before, request.Url, StringComparison.Ordinal)
@@ -2920,8 +3331,13 @@ public partial class MainWindowViewModel : ObservableObject
                     {
                         valueNode = JsonNode.Parse(rendered) ?? JsonValue.Create(rendered)!;
                     }
-                    catch (JsonException)
+                    catch (JsonException exception)
                     {
+                        Log.Debug(
+                            exception,
+                            "映射模板不是 JSON，按字符串写入 {TargetPath}",
+                            mapping.TargetPath
+                        );
                         valueNode = JsonValue.Create(rendered)!;
                     }
                 }
@@ -2971,7 +3387,8 @@ public partial class MainWindowViewModel : ObservableObject
     private static void SetInputRow(EditableRowCollection rows, string key, string value)
     {
         var row = rows.FirstOrDefault(candidate =>
-            candidate.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+            candidate.Key.Equals(key, StringComparison.OrdinalIgnoreCase)
+        );
         if (row is not null)
         {
             row.Value = value;
@@ -3005,8 +3422,10 @@ public partial class MainWindowViewModel : ObservableObject
         {
             if (segment.Property is { } property)
             {
-                if (current is not JsonObject obj
-                    || !obj.TryGetPropertyValue(property, out var child))
+                if (
+                    current is not JsonObject obj
+                    || !obj.TryGetPropertyValue(property, out var child)
+                )
                 {
                     return null;
                 }
@@ -3072,9 +3491,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
             else if (segment.Index is { } arrayIndex)
             {
-                if (current is not JsonArray array
-                    || arrayIndex < 0
-                    || arrayIndex >= array.Count)
+                if (current is not JsonArray array || arrayIndex < 0 || arrayIndex >= array.Count)
                 {
                     return $"目标数组索引不可用：{arrayIndex}";
                 }
@@ -3129,8 +3546,7 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 Flush();
                 var end = text.IndexOf(']', index);
-                if (end < 0
-                    || !int.TryParse(text[(index + 1)..end], out var arrayIndex))
+                if (end < 0 || !int.TryParse(text[(index + 1)..end], out var arrayIndex))
                 {
                     throw new JsonException($"无效的数组索引：{text}");
                 }
@@ -3149,8 +3565,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static string JsonNodeToText(JsonNode node)
     {
-        if (node is JsonValue value
-            && value.TryGetValue<string>(out var text))
+        if (node is JsonValue value && value.TryGetValue<string>(out var text))
         {
             return text ?? string.Empty;
         }
@@ -3179,8 +3594,9 @@ public partial class MainWindowViewModel : ObservableObject
                     new JsonSerializerOptions
                     {
                         WriteIndented = true,
-                        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                    });
+                        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                    }
+                );
                 ShowToast("JSON 已格式化");
             }
             else if (trimmed[0] == '<')
@@ -3195,6 +3611,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception exception)
         {
+            Log.Warning(exception, "请求体格式化失败 {RequestName}", Editing.Name);
             ShowToast($"格式化失败：{exception.Message}");
         }
 
@@ -3215,14 +3632,13 @@ public partial class MainWindowViewModel : ObservableObject
             using var document = System.Text.Json.JsonDocument.Parse(body);
             Editing.Body = System.Text.Json.JsonSerializer.Serialize(
                 document.RootElement,
-                new JsonSerializerOptions
-                {
-                    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                });
+                new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }
+            );
             ShowToast("JSON 已压缩为单行");
         }
-        catch (Exception)
+        catch (Exception exception)
         {
+            Log.Debug(exception, "请求体不是 JSON，无法压缩 {RequestName}", Editing.Name);
             ShowToast("只有 JSON 请求体可以压缩为单行");
         }
 
@@ -3293,30 +3709,45 @@ public partial class MainWindowViewModel : ObservableObject
     private EditableRowCollection? _trackedHeaders;
     private readonly List<KeyValueRow> _trackedRows = new();
 
-    private void OnTrackedEditingPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private void OnTrackedEditingPropertyChanged(
+        object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e
+    )
     {
-        if (e.PropertyName is nameof(RequestItem.Url)
-            or nameof(RequestItem.Method)
-            or nameof(RequestItem.Body)
-            or nameof(RequestItem.BodyMode)
-            or nameof(RequestItem.UploadFilePath)
-            or nameof(RequestItem.UploadFieldName))
+        if (
+            e.PropertyName
+            is nameof(RequestItem.Url)
+                or nameof(RequestItem.Method)
+                or nameof(RequestItem.Body)
+                or nameof(RequestItem.BodyMode)
+                or nameof(RequestItem.UploadFilePath)
+                or nameof(RequestItem.UploadFieldName)
+        )
         {
             RefreshDerivedState();
         }
     }
 
-    private void OnTrackedRowsCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    private void OnTrackedRowsCollectionChanged(
+        object? sender,
+        System.Collections.Specialized.NotifyCollectionChangedEventArgs e
+    )
     {
         BindEditingTracking();
         RefreshDerivedState();
     }
 
-    private void OnTrackedRowPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private void OnTrackedRowPropertyChanged(
+        object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e
+    )
     {
-        if (e.PropertyName is nameof(KeyValueRow.Key)
-            or nameof(KeyValueRow.Value)
-            or nameof(KeyValueRow.IsEnabled))
+        if (
+            e.PropertyName
+            is nameof(KeyValueRow.Key)
+                or nameof(KeyValueRow.Value)
+                or nameof(KeyValueRow.IsEnabled)
+        )
         {
             RefreshDerivedState();
         }
@@ -3327,16 +3758,20 @@ public partial class MainWindowViewModel : ObservableObject
         var body = Editing.Body ?? string.Empty;
         BodyPreview = string.IsNullOrWhiteSpace(body)
             ? "请求体为空"
-            : Truncate(string.Join(" ", body.Split(
-                new[] { '\r', '\n', '\t' },
-                StringSplitOptions.RemoveEmptyEntries)), 260);
+            : Truncate(
+                string.Join(
+                    " ",
+                    body.Split(new[] { '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                ),
+                260
+            );
 
         OnPropertyChanged(nameof(IsMultipartBody));
         OnPropertyChanged(nameof(IsTextBody));
         OnPropertyChanged(nameof(HasUploadFile));
 
-        var duplicates = Editing.Headers.ActiveRows
-            .Where(row => !string.IsNullOrWhiteSpace(row.Key))
+        var duplicates = Editing
+            .Headers.ActiveRows.Where(row => !string.IsNullOrWhiteSpace(row.Key))
             .GroupBy(row => row.Key.Trim(), StringComparer.OrdinalIgnoreCase)
             .Where(group => group.Count() > 1)
             .Select(group => group.Key)
@@ -3445,7 +3880,7 @@ public partial class MainWindowViewModel : ObservableObject
             >= 200 and < 300 => BadgeTone.Success,
             >= 300 and < 400 => BadgeTone.Info,
             >= 400 and < 500 => BadgeTone.Warning,
-            _ => BadgeTone.Danger
+            _ => BadgeTone.Danger,
         };
 
         foreach (var header in result.Headers)
@@ -3500,12 +3935,16 @@ public partial class MainWindowViewModel : ObservableObject
             Body = request.Body,
             StatusCode = result.StatusCode,
             DurationMs = result.ElapsedMs,
-            Params = request.Params.ActiveRows
-                .Select(row => new RowSnapshot(row.Key, row.Value, row.IsEnabled))
+            Params = request
+                .Params.ActiveRows.Select(row => new RowSnapshot(row.Key, row.Value, row.IsEnabled))
                 .ToList(),
-            Headers = request.Headers.ActiveRows
-                .Select(row => new RowSnapshot(row.Key, row.Value, row.IsEnabled))
-                .ToList()
+            Headers = request
+                .Headers.ActiveRows.Select(row => new RowSnapshot(
+                    row.Key,
+                    row.Value,
+                    row.IsEnabled
+                ))
+                .ToList(),
         };
 
         WireHistoryEntry(entry);
@@ -3547,8 +3986,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         foreach (var collection in Collections)
         {
-            collection.IsSelected = SelectedRequest is null
-                                    && ReferenceEquals(SelectedCollection, collection);
+            collection.IsSelected =
+                SelectedRequest is null && ReferenceEquals(SelectedCollection, collection);
 
             foreach (var request in collection.Requests)
             {
@@ -3587,16 +4026,20 @@ public partial class MainWindowViewModel : ObservableObject
         bool hasFilter,
         bool favoritesOnly,
         bool forceInclude,
-        List<TreeDisplayNode> nodes)
+        List<TreeDisplayNode> nodes
+    )
     {
         var collectionMatches = !hasFilter || Contains(collection.Name, filter);
-        var includeAll = forceInclude
-                        || (!favoritesOnly && collectionMatches)
-                        || (favoritesOnly && collection.IsFavorite);
+        var includeAll =
+            forceInclude
+            || (!favoritesOnly && collectionMatches)
+            || (favoritesOnly && collection.IsFavorite);
 
-        var requests = collection.Requests
-            .Where(request => (!favoritesOnly || includeAll || request.IsFavorite)
-                              && (!hasFilter || collectionMatches || Matches(request, filter)))
+        var requests = collection
+            .Requests.Where(request =>
+                (!favoritesOnly || includeAll || request.IsFavorite)
+                && (!hasFilter || collectionMatches || Matches(request, filter))
+            )
             .ToList();
 
         var childNodes = new List<TreeDisplayNode>();
@@ -3609,7 +4052,8 @@ public partial class MainWindowViewModel : ObservableObject
                 hasFilter,
                 favoritesOnly,
                 includeAll,
-                childNodes);
+                childNodes
+            );
         }
 
         var selfVisible = favoritesOnly
@@ -3662,13 +4106,16 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        _store.Save(WorkspaceStore.Capture(
-            Collections,
-            Environments,
-            History,
-            RecycledHistory,
-            Suites,
-            ActiveEnvironment?.Id));
+        _store.Save(
+            WorkspaceStore.Capture(
+                Collections,
+                Environments,
+                History,
+                RecycledHistory,
+                Suites,
+                ActiveEnvironment?.Id
+            )
+        );
     }
 
     private void LoadWorkspace()
@@ -3685,7 +4132,7 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 Id = collectionDto.Id == Guid.Empty ? Guid.NewGuid() : collectionDto.Id,
                 Name = collectionDto.Name,
-                IsFavorite = collectionDto.IsFavorite
+                IsFavorite = collectionDto.IsFavorite,
             };
 
             foreach (var requestDto in collectionDto.Requests)
@@ -3719,7 +4166,7 @@ public partial class MainWindowViewModel : ObservableObject
             var environment = new EnvironmentModel
             {
                 Id = environmentDto.Id == Guid.Empty ? Guid.NewGuid() : environmentDto.Id,
-                Name = environmentDto.Name
+                Name = environmentDto.Name,
             };
 
             foreach (var row in environmentDto.Variables)
@@ -3753,7 +4200,9 @@ public partial class MainWindowViewModel : ObservableObject
                 Id = suiteDto.Id == Guid.Empty ? Guid.NewGuid() : suiteDto.Id,
                 Name = suiteDto.Name,
                 StopOnError = suiteDto.StopOnError,
-                LastSummary = string.IsNullOrWhiteSpace(suiteDto.LastSummary) ? "尚未运行" : suiteDto.LastSummary
+                LastSummary = string.IsNullOrWhiteSpace(suiteDto.LastSummary)
+                    ? "尚未运行"
+                    : suiteDto.LastSummary,
             };
 
             foreach (var stepDto in suiteDto.Steps)
@@ -3767,19 +4216,21 @@ public partial class MainWindowViewModel : ObservableObject
                     Url = stepDto.Url,
                     DelayMs = stepDto.DelayMs,
                     ExpectedStatus = stepDto.ExpectedStatus,
-                    BodyContains = stepDto.BodyContains
+                    BodyContains = stepDto.BodyContains,
                 };
 
                 foreach (var mappingDto in stepDto.InputMappings)
                 {
-                    step.InputMappings.Add(new InputMapping
-                    {
-                        SourceStepId = mappingDto.SourceStepId,
-                        SourcePath = mappingDto.SourcePath,
-                        TargetKind = mappingDto.TargetKind,
-                        TargetPath = mappingDto.TargetPath,
-                        Template = mappingDto.Template
-                    });
+                    step.InputMappings.Add(
+                        new InputMapping
+                        {
+                            SourceStepId = mappingDto.SourceStepId,
+                            SourcePath = mappingDto.SourcePath,
+                            TargetKind = mappingDto.TargetKind,
+                            TargetPath = mappingDto.TargetPath,
+                            Template = mappingDto.Template,
+                        }
+                    );
                 }
 
                 suite.Steps.Add(step);
@@ -3788,9 +4239,10 @@ public partial class MainWindowViewModel : ObservableObject
             Suites.Add(suite);
         }
 
-        ActiveEnvironment = Environments.FirstOrDefault(
-            environment => environment.Id == workspace.ActiveEnvironmentId)
-            ?? Environments.FirstOrDefault();
+        ActiveEnvironment =
+            Environments.FirstOrDefault(environment =>
+                environment.Id == workspace.ActiveEnvironmentId
+            ) ?? Environments.FirstOrDefault();
     }
 
     private void SeedWorkspace()
@@ -3809,7 +4261,7 @@ public partial class MainWindowViewModel : ObservableObject
             Name = "健康检查",
             Method = "GET",
             Url = "{{baseUrl}}/api/health",
-            Owner = collection
+            Owner = collection,
         };
 
         var users = new RequestItem
@@ -3817,7 +4269,7 @@ public partial class MainWindowViewModel : ObservableObject
             Name = "用户列表",
             Method = "GET",
             Url = "{{baseUrl}}/api/users",
-            Owner = collection
+            Owner = collection,
         };
         users.Params.AddRow("page", "1");
 
@@ -3828,13 +4280,13 @@ public partial class MainWindowViewModel : ObservableObject
             Url = "{{baseUrl}}/api/echo",
             BodyMode = "Json",
             Body = """
-                   {
-                     "name": "PostSharp",
-                     "message": "你好，接口",
-                     "tags": ["mock", "demo"]
-                   }
-                   """,
-            Owner = collection
+                {
+                  "name": "PostSharp",
+                  "message": "你好，接口",
+                  "tags": ["mock", "demo"]
+                }
+                """,
+            Owner = collection,
         };
         echo.Headers.AddRow("X-Demo-Token", "{{token}}");
 
@@ -3845,13 +4297,13 @@ public partial class MainWindowViewModel : ObservableObject
             Url = "{{baseUrl}}/api/orders",
             BodyMode = "Json",
             Body = """
-                   {
-                     "flight": "MU5101",
-                     "cabin": "Y",
-                     "amount": 1280
-                   }
-                   """,
-            Owner = collection
+                {
+                  "flight": "MU5101",
+                  "cabin": "Y",
+                  "amount": 1280
+                }
+                """,
+            Owner = collection,
         };
 
         var slow = new RequestItem
@@ -3859,7 +4311,7 @@ public partial class MainWindowViewModel : ObservableObject
             Name = "慢响应",
             Method = "GET",
             Url = "{{baseUrl}}/api/slow?ms=1200",
-            Owner = collection
+            Owner = collection,
         };
 
         var error = new RequestItem
@@ -3867,7 +4319,7 @@ public partial class MainWindowViewModel : ObservableObject
             Name = "模拟错误",
             Method = "GET",
             Url = "{{baseUrl}}/api/error",
-            Owner = collection
+            Owner = collection,
         };
 
         var large = new RequestItem
@@ -3875,7 +4327,7 @@ public partial class MainWindowViewModel : ObservableObject
             Name = "大响应 (200 KB)",
             Method = "GET",
             Url = "{{baseUrl}}/api/large?kb=200",
-            Owner = collection
+            Owner = collection,
         };
 
         var sse = new RequestItem
@@ -3883,7 +4335,7 @@ public partial class MainWindowViewModel : ObservableObject
             Name = "AI 流式输出 (SSE)",
             Method = "GET",
             Url = "{{baseUrl}}/api/ai/stream",
-            Owner = collection
+            Owner = collection,
         };
         sse.Headers.AddRow("Accept", "text/event-stream");
 
@@ -3894,7 +4346,7 @@ public partial class MainWindowViewModel : ObservableObject
             Url = "{{baseUrl}}/api/upload",
             BodyMode = "Multipart",
             UploadFieldName = "file",
-            Owner = collection
+            Owner = collection,
         };
         upload.FormFields.AddRow("note", "PostSharp upload demo");
 
@@ -3916,50 +4368,54 @@ public partial class MainWindowViewModel : ObservableObject
             Name = "读取用户详情",
             Method = "GET",
             Url = "{{baseUrl}}/api/users/1",
-            Owner = auth
+            Owner = auth,
         };
         me.Headers.AddRow("Authorization", "Bearer {{token}}");
         auth.Requests.Add(me);
         Collections.Add(auth);
 
-        var smokeSuite = new TestSuite
-        {
-            Name = "内置 Mock 冒烟测试",
-            StopOnError = true
-        };
+        var smokeSuite = new TestSuite { Name = "内置 Mock 冒烟测试", StopOnError = true };
 
-        smokeSuite.Steps.Add(new TestStep
-        {
-            RequestId = health.Id,
-            RequestName = health.Name,
-            Method = health.Method,
-            Url = health.Url,
-            ExpectedStatus = 200
-        });
-        smokeSuite.Steps.Add(new TestStep
-        {
-            RequestId = users.Id,
-            RequestName = users.Name,
-            Method = users.Method,
-            Url = users.Url,
-            ExpectedStatus = 200
-        });
-        smokeSuite.Steps.Add(new TestStep
-        {
-            RequestId = echo.Id,
-            RequestName = echo.Name,
-            Method = echo.Method,
-            Url = echo.Url,
-            ExpectedStatus = 200
-        });
-        smokeSuite.Steps.Add(new TestStep
-        {
-            RequestId = orders.Id,
-            RequestName = orders.Name,
-            Method = orders.Method,
-            Url = orders.Url,
-            ExpectedStatus = 201
-        });
+        smokeSuite.Steps.Add(
+            new TestStep
+            {
+                RequestId = health.Id,
+                RequestName = health.Name,
+                Method = health.Method,
+                Url = health.Url,
+                ExpectedStatus = 200,
+            }
+        );
+        smokeSuite.Steps.Add(
+            new TestStep
+            {
+                RequestId = users.Id,
+                RequestName = users.Name,
+                Method = users.Method,
+                Url = users.Url,
+                ExpectedStatus = 200,
+            }
+        );
+        smokeSuite.Steps.Add(
+            new TestStep
+            {
+                RequestId = echo.Id,
+                RequestName = echo.Name,
+                Method = echo.Method,
+                Url = echo.Url,
+                ExpectedStatus = 200,
+            }
+        );
+        smokeSuite.Steps.Add(
+            new TestStep
+            {
+                RequestId = orders.Id,
+                RequestName = orders.Name,
+                Method = orders.Method,
+                Url = orders.Url,
+                ExpectedStatus = 201,
+            }
+        );
 
         Suites.Add(smokeSuite);
         SelectedSuite = smokeSuite;
@@ -3971,7 +4427,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             < 1024 => $"{bytes} B",
             < 1024 * 1024 => $"{bytes / 1024d:0.#} KB",
-            _ => $"{bytes / (1024d * 1024d):0.##} MB"
+            _ => $"{bytes / (1024d * 1024d):0.##} MB",
         };
     }
 }

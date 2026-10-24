@@ -31,4 +31,11 @@ public partial class AppSettings : ObservableObject
 
     [ObservableProperty]
     private int _auditLimit = 500;
+
+    [ObservableProperty]
+    private string _logDirectory = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "PostSharp",
+        "logs"
+    );
 }

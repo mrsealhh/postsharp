@@ -90,20 +90,32 @@ public partial class RequestItem : ObservableObject
             BodyMode = BodyMode,
             Body = Body,
             UploadFilePath = UploadFilePath,
-            UploadFieldName = UploadFieldName
+            UploadFieldName = UploadFieldName,
         };
 
-        foreach (var row in Params.Where(r => !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)))
+        foreach (
+            var row in Params.Where(r =>
+                !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)
+            )
+        )
         {
             clone.Params.AddRow(row.Key, row.Value, row.IsEnabled);
         }
 
-        foreach (var row in Headers.Where(r => !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)))
+        foreach (
+            var row in Headers.Where(r =>
+                !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)
+            )
+        )
         {
             clone.Headers.AddRow(row.Key, row.Value, row.IsEnabled);
         }
 
-        foreach (var row in FormFields.Where(r => !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)))
+        foreach (
+            var row in FormFields.Where(r =>
+                !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)
+            )
+        )
         {
             clone.FormFields.AddRow(row.Key, row.Value, row.IsEnabled);
         }

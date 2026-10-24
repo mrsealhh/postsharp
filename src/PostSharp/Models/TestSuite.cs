@@ -43,22 +43,27 @@ public sealed class TestStep
 
     public string? BodyContains { get; set; }
 
-    public BadgeTone MethodTone => Method.ToUpperInvariant() switch
-    {
-        "GET" => BadgeTone.Info,
-        "POST" => BadgeTone.Success,
-        "PUT" or "PATCH" => BadgeTone.Warning,
-        "DELETE" => BadgeTone.Danger,
-        _ => BadgeTone.Neutral
-    };
-
-    public string ExpectationText => ExpectedStatus is null && string.IsNullOrWhiteSpace(BodyContains)
-        ? "仅检查网络成功"
-        : string.Join(" · ", new[]
+    public BadgeTone MethodTone =>
+        Method.ToUpperInvariant() switch
         {
-            ExpectedStatus is null ? null : $"状态 {ExpectedStatus}",
-            string.IsNullOrWhiteSpace(BodyContains) ? null : $"包含 {BodyContains}"
-        }.Where(value => value is not null));
+            "GET" => BadgeTone.Info,
+            "POST" => BadgeTone.Success,
+            "PUT" or "PATCH" => BadgeTone.Warning,
+            "DELETE" => BadgeTone.Danger,
+            _ => BadgeTone.Neutral,
+        };
+
+    public string ExpectationText =>
+        ExpectedStatus is null && string.IsNullOrWhiteSpace(BodyContains)
+            ? "仅检查网络成功"
+            : string.Join(
+                " · ",
+                new[]
+                {
+                    ExpectedStatus is null ? null : $"状态 {ExpectedStatus}",
+                    string.IsNullOrWhiteSpace(BodyContains) ? null : $"包含 {BodyContains}",
+                }.Where(value => value is not null)
+            );
 }
 
 /// <summary>A custom mapping from a previous step's response into this request's input.</summary>
@@ -108,11 +113,8 @@ public sealed class TestStepResult
     public BadgeTone ResultTone => Passed ? BadgeTone.Success : BadgeTone.Danger;
 
     [JsonIgnore]
-    public object ResultIcon => new ArcGlyph
-    {
-        Data = Passed ? ArcIcons.CircleCheck : ArcIcons.CircleX,
-        Size = 12
-    };
+    public object ResultIcon =>
+        new ArcGlyph { Data = Passed ? ArcIcons.CircleCheck : ArcIcons.CircleX, Size = 12 };
 }
 
 public sealed class TestRunResult

@@ -19,9 +19,7 @@ public partial class TextViewerWindow : Window
     private int _page;
 
     public TextViewerWindow()
-        : this("响应详情", string.Empty, string.Empty)
-    {
-    }
+        : this("响应详情", string.Empty, string.Empty) { }
 
     public TextViewerWindow(string title, string text, string info)
     {
@@ -45,8 +43,9 @@ public partial class TextViewerWindow : Window
         var start = _page * PageSize;
         var length = Math.Min(PageSize, Math.Max(0, _fullText.Length - start));
         BodyText.Text = _fullText.Substring(start, length);
-        PageText.Text = $"第 {_page + 1} / {PageCount} 页 · 每页 {PageSize / 1024} KB"
-                        + (_fullText.Length == 0 ? " · 响应体为空" : string.Empty);
+        PageText.Text =
+            $"第 {_page + 1} / {PageCount} 页 · 每页 {PageSize / 1024} KB"
+            + (_fullText.Length == 0 ? " · 响应体为空" : string.Empty);
         PreviousButton.IsEnabled = _page > 0;
         NextButton.IsEnabled = _page < PageCount - 1;
     }
@@ -96,5 +95,10 @@ public partial class TextViewerWindow : Window
     }
 
     [DllImport("dwmapi.dll", SetLastError = true)]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+    private static extern int DwmSetWindowAttribute(
+        IntPtr hwnd,
+        int attribute,
+        ref int value,
+        int size
+    );
 }

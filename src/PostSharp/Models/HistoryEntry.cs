@@ -39,34 +39,37 @@ public sealed class HistoryEntry
 
     public string StatusLabel => StatusCode > 0 ? StatusCode.ToString() : "失败";
 
-    public BadgeTone StatusTone => StatusCode switch
-    {
-        >= 200 and < 300 => BadgeTone.Success,
-        >= 300 and < 400 => BadgeTone.Info,
-        >= 400 and < 500 => BadgeTone.Warning,
-        _ => BadgeTone.Danger
-    };
-
-    public object StatusIcon => new ArcGlyph
-    {
-        Data = StatusCode switch
+    public BadgeTone StatusTone =>
+        StatusCode switch
         {
-            >= 200 and < 300 => ArcIcons.CircleCheck,
-            >= 300 and < 400 => ArcIcons.Info,
-            >= 400 and < 500 => ArcIcons.TriangleAlert,
-            _ => ArcIcons.CircleX
-        },
-        Size = 12
-    };
+            >= 200 and < 300 => BadgeTone.Success,
+            >= 300 and < 400 => BadgeTone.Info,
+            >= 400 and < 500 => BadgeTone.Warning,
+            _ => BadgeTone.Danger,
+        };
 
-    public BadgeTone MethodTone => Method.ToUpperInvariant() switch
-    {
-        "GET" => BadgeTone.Info,
-        "POST" => BadgeTone.Success,
-        "PUT" or "PATCH" => BadgeTone.Warning,
-        "DELETE" => BadgeTone.Danger,
-        _ => BadgeTone.Neutral
-    };
+    public object StatusIcon =>
+        new ArcGlyph
+        {
+            Data = StatusCode switch
+            {
+                >= 200 and < 300 => ArcIcons.CircleCheck,
+                >= 300 and < 400 => ArcIcons.Info,
+                >= 400 and < 500 => ArcIcons.TriangleAlert,
+                _ => ArcIcons.CircleX,
+            },
+            Size = 12,
+        };
+
+    public BadgeTone MethodTone =>
+        Method.ToUpperInvariant() switch
+        {
+            "GET" => BadgeTone.Info,
+            "POST" => BadgeTone.Success,
+            "PUT" or "PATCH" => BadgeTone.Warning,
+            "DELETE" => BadgeTone.Danger,
+            _ => BadgeTone.Neutral,
+        };
 
     public RequestItem ToRequest()
     {
@@ -76,7 +79,7 @@ public sealed class HistoryEntry
             Method = Method,
             Url = Url,
             BodyMode = BodyMode,
-            Body = Body
+            Body = Body,
         };
 
         foreach (var row in Params)

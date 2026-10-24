@@ -46,7 +46,7 @@ PostSharp 的定位是：
 - **完整审计**：来源 `UI` / `MCP`、MCP 客户端名称、工具名、时间、状态、耗时、大小、cURL、请求头和请求/响应预览。
 - **SSE / AI 输出聚合**：自动解析 `text/event-stream`，聚合常见 AI 协议的 thinking 与 content，不再只保留最后一条推送。
 - **自动化套件**：步骤支持 `expectedStatus` 与 `bodyContains` 断言，支持失败停止；运行结果进入审计。
-- **管理层**：一个窗口内切换审计、自动化、指南、设置。
+- **管理层**：一个窗口内切换审计、自动化、指南。
 
 ### 调试能力
 
@@ -65,10 +65,13 @@ PostSharp 的定位是：
   - SSE 响应自动选中「AI 聚合」标签，内容 / 思考过程 / 原始事件三视图。
 - **集合、历史、环境变量、自动保存**。
 - **历史记录管理**：单条删除与清空都会先弹出确认，删除项进入回收站；回收站支持恢复、永久删除，永久删除前再次确认。
+- **OpenAPI 导入**：从本地 JSON / YAML 文件或可直接访问的 URL 读取 OpenAPI 3.x 与 Swagger 2.0；按 `info.title` 创建集合、按第一个 tag 创建子分组，并带出服务器地址、查询参数、请求头和 JSON 请求体示例。
 
 ### 界面
 
-- 浅色 / 深色 / 跟随系统，标题栏同步。
+- 启动时读取系统深色 / 浅色主题；设置窗口可固定为浅色或深色，原生标题栏同步。
+- 顶栏「设置」直达独立设置窗口；外观、日志和请求默认值分组展示，保存后立即生效。
+- **Serilog 文件日志**：默认写入 `%APPDATA%\PostSharp\logs\postsharp-YYYYMMDD.log`，按天滚动，保留最近 30 个文件；日志目录可在设置窗口修改。所有 `catch` 都会留下结构化异常日志。
 - 界面字体、代码字体、代码字号、窗口自适应。
 - 列表统一列布局：来源/方法/状态/时间固定对齐，长文本省略并在悬浮时显示完整内容。
 - 类型化视觉：来源 `UI` / `AI · MCP` 使用不同图标与色调；状态成功/警告/失败使用勾/警告/叉图标；`GET` / `POST` / `PUT` / `PATCH` / `DELETE` 使用不同方法徽标。
@@ -76,7 +79,7 @@ PostSharp 的定位是：
 - 主窗口采用无头自绘标题栏：顶部栏空白区域可拖拽移动，双击切换最大化；最小化、最大化/还原、关闭固定在顶栏最右侧，窗口仍保留边缘缩放。
 - 管理层内的下拉选项固定显示在管理层之上，不会跑到主窗体或关闭后才出现。
 - 1000×660 窗口下工具栏、审计列表、指南卡片仍保持对齐并可滚动。
-- 集合顶部左右分列两个快捷操作：「新建集合」（文件夹图标，左侧）和「新建请求」（加号图标，右侧）；中间不再占用一整行按钮组。
+- 集合顶部快捷操作：「新建集合」（文件夹图标，左侧）、「导入」（OpenAPI，中间）和「新建请求」（加号图标，右侧）。
 - 支持最多五级集合：选择集合后可通过三点菜单「新建二级集合」；请求可拖拽进任意集合文件夹，集合也可拖入其他集合（自动阻止循环嵌套与超过五级）。
 - 拖拽排序：拖到同级节点上/下边缘可上移/下移，拖到集合中间可移入该集合；根级集合、子集合和请求都支持。
 - 树节点图标与文字垂直居中；悬浮三点菜单使用横向省略号，点击热区加宽；悬浮时还会显示上移/下移箭头，可直接点击排序。
@@ -101,6 +104,8 @@ PostSharp 的定位是：
 | AtomUI | 由 TKCode.Arc 带入，`6.2.8` |
 | MVVM | CommunityToolkit.Mvvm `8.4.0` |
 | 持久化 | `System.Text.Json`，本地文件 |
+| 日志 | Serilog `4.3.0` + Serilog.Sinks.File `7.0.0`，按天滚动 |
+| OpenAPI | YAML：YamlDotNet `16.3.0`；JSON：`System.Text.Json` |
 | Mock / MCP | 原生 `TcpListener` + 最小 HTTP/SSE 解析，无额外 Web 框架 |
 
 ## 快速开始
@@ -133,7 +138,8 @@ dotnet build PostSharp.slnx
    - **审计**：查看刚才的 UI 发送。
    - **自动化**：运行「内置 Mock 冒烟测试」。
    - **指南**：一分钟了解全部核心功能。
-   - **设置**：主题、字体、超时、默认请求体等。
+4. 顶栏「设置」打开独立设置窗口：主题、日志目录、字体、超时、默认请求体等。
+5. 集合树顶部的「导入」可以从 OpenAPI JSON / YAML 或 URL 创建集合分组。
 
 ![一分钟指南](docs/guide.png)
 
@@ -322,17 +328,18 @@ http://127.0.0.1:5199/mcp
 
 ## 系统全局设置
 
-顶栏「管理层」→「设置」：
+顶栏「设置」打开独立设置窗口。窗口内编辑的是草稿，点「保存设置」后写入 `%APPDATA%\PostSharp\settings.json`，并立即更新内存中的设置；下次启动重新读取该文件。
 
-- 主题：跟随系统 / 浅色 / 深色。
-- 界面字体：Inter / 系统默认 / 微软雅黑。
-- 代码字体：Geist Mono / Consolas / Cascadia Mono；代码字号 12–16。
-- 请求超时：10 / 30 / 60 / 120 / 300 秒。
-- 默认请求体：无 / JSON / 文本 / 表单上传（用于新建请求）。
-- 大响应折叠阈值：32 / 64 / 128 / 256 KB。
-- 审计保留条数：100 / 500 / 1000 / 2000。
-- 自动格式化 JSON/XML 响应。
-- 设置即时生效并自动保存。
+- **主题**：跟随系统 / 浅色 / 深色。跟随系统会在启动时读取 Windows 主题，并在系统切换时同步。
+- **日志目录**：默认 `%APPDATA%\PostSharp\logs`；可浏览选择其他目录或直接打开。保存时会校验目录可写，校验失败会保留原设置并给出原因；若写入配置文件失败，当前会话仍会应用新值，但重启后回到上次成功保存的设置。
+- **界面字体**：Inter / 系统默认 / 微软雅黑。
+- **代码字体**：Geist Mono / Consolas / Cascadia Mono；代码字号 12–16。
+- **请求超时**：10 / 30 / 60 / 120 / 300 秒。
+- **默认请求体**：无 / JSON / 文本 / 表单上传（用于新建请求）。
+- **大响应折叠阈值**：32 / 64 / 128 / 256 KB。
+- **审计保留条数**：100 / 500 / 1000 / 2000。
+- **自动格式化 JSON/XML 响应**。
+- **恢复默认**：把草稿恢复为默认值，保存后生效。
 
 ![系统设置](docs/settings.png)
 
@@ -344,9 +351,12 @@ http://127.0.0.1:5199/mcp
 | `Ctrl+S` | 保存 |
 | `Ctrl+N` | 新建请求 |
 | `Ctrl+Shift+F` | 格式化请求体 |
+| `Delete`（集合树获得焦点时） | 删除选中的集合或请求，先弹出二次确认 |
+| `Ctrl+Enter`（确认弹窗内） | 执行确认（删除 / 移入回收站 / 永久删除） |
 | `Enter`（单行输入框内） | 发送 |
+| `Enter`（弹窗内） | 激活当前焦点按钮；重命名弹窗直接保存 |
 | `Shift+F10` / 菜单键 | 集合树右键菜单 |
-| `Esc` | 关闭右键菜单 / 管理层 |
+| `Esc` | 关闭弹窗 / 右键菜单 / 管理层 |
 
 ## 数据与配置
 
@@ -355,11 +365,13 @@ Windows: %APPDATA%\PostSharp\
   workspace.json   集合、请求、环境、历史、回收站、自动化套件
   audit.json       UI / MCP 请求审计（含 AI 聚合输出）
   audit-trash.json 被清空审计的回收站
-  settings.json    主题、字体、超时、阈值、审计保留条数
+  settings.json    主题、字体、日志目录、超时、阈值、审计保留条数
+  logs\            默认日志目录；postsharp-YYYYMMDD.log，按天滚动
 ```
 
 - 删除整个目录即可恢复首次运行的示例。
 - 工作区、审计和设置均为 UTF-8 JSON。
+- 日志为 UTF-8 文本，默认保留最近 30 个文件；修改设置中的日志目录后，新日志写入新目录，旧日志不会自动迁移。
 - 数据不上传任何服务。
 
 ## 项目结构
@@ -376,7 +388,12 @@ src/PostSharp/
     TestSuite.cs          自动化套件、步骤、结果
     HistoryEntry.cs       历史快照
     EditableRow.cs        自动补行的键值编辑集合
+    OpenApiImport.cs      OpenAPI 导入后的分组/请求模型
   Services/
+    AppPaths.cs           本地数据与日志目录
+    AppLog.cs             Serilog 文件日志与目录切换
+    ThemeService.cs       主题偏好解析与 AtomUI 应用
+    OpenApiImportService.cs OpenAPI/Swagger JSON、YAML、URL 解析
     RequestComposer.cs    环境变量、URL、cURL、multipart 组合
     HttpRequestService.cs HTTP、超时、格式化、SSE 解析聚合
     MockApiServer.cs      Mock API / SSE / 上传
@@ -386,9 +403,11 @@ src/PostSharp/
     AuditStore.cs         审计持久化
     SettingsStore.cs      设置持久化
   ViewModels/
-    MainWindowViewModel.cs 状态、命令、审计、套件运行
+    MainWindowViewModel.cs 状态、命令、审计、套件运行、OpenAPI 导入
+    SettingsViewModel.cs  设置草稿、校验与保存
   Views/
     MainWindow.axaml      主界面 + 管理层
+    SettingsWindow.axaml  独立设置窗口
     TextViewerWindow.axaml 大响应分页详情
   Controls/
     IconLabel.cs          统一图标 + 文字按钮内容
@@ -450,7 +469,15 @@ docs/
 | 拖拽 | 请求上下拖动调整同级顺序；集合拖入集合/拖到上边缘排序；自动阻止自身/后代循环 |
 | 收藏筛选 | 收藏请求/集合显示星标；「收藏」筛选独立展示；重启后保留 |
 | 集合组装套件 | 勾选集合生成 9 步骤套件并出现在自动化列表 |
-| 设置下拉 | 在管理层打开时选项显示在管理层之上；关闭管理层不会残留到主窗体 |
+| 设置窗口 | 顶栏「设置」直达独立窗口；主题、日志、字体、请求默认值分组展示，保存后写入 `settings.json` 并立即应用；重复点击只激活已打开窗口 |
+| 启动主题 | Windows 为深色时「跟随系统」启动为深色；切换为「浅色」或「深色」重启后保持对应外观 |
+| 文件日志 | 启动写入 `%APPDATA%\PostSharp\logs\postsharp-20261025.log`；修改日志目录并保存后，新日志立即写入新目录 |
+| 异常日志 | 所有 `catch` 均记录结构化异常；工作区写入失败、请求超时、OpenAPI 解析失败等可在日志中检索 |
+| 树节点 Delete | 选中请求按 `Delete` 弹出「删除请求？」；`Esc` 取消且保留请求，`Ctrl+Enter` 确认后删除 |
+| 确认弹窗快捷键 | 删除、移入回收站、永久删除弹窗均显示 `Ctrl+Enter 确认，Esc 取消`，键盘可完成全部操作 |
+| OpenAPI JSON | Petstore 样例：3 个请求 / 2 个分组；服务器地址、query/header、`$ref` schema 示例生成正确 |
+| OpenAPI YAML | Swagger 2 风格路径样例：2 个请求 / 1 个分组；路径级参数与 DELETE 正确解析 |
+| OpenAPI URL | 从本地 HTTP 服务下载 OpenAPI JSON 后导入，集合、分组、请求 URL 正确 |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
@@ -479,11 +506,13 @@ master                 稳定可发布
         ├── feature/sidebar-actions
         ├── feature/tree-polish
         ├── feature/audit-trash
-        └── feature/suite-priority
+        ├── feature/suite-priority
+        └── feat/settings-logging-openapi
 ```
 
-- 功能从 `dev` 拉出 `feature/<short-name>`，合并回 `dev` 自测，再合并 `master`。
+- 功能从 `dev` 拉出 `feature/<short-name>`（本次需求使用 `feat/<short-name>`），合并回 `dev` 自测，再合并 `master`。
 - 当前 `master` / `dev` 已包含 AI 工作台、历史回收站、UI 图标/层级修复与集合树操作；对应 feature 分支保留提交。
+- `feat/settings-logging-openapi`：独立设置窗口、Serilog 日志、系统主题、树节点 Delete、确认弹窗快捷键、OpenAPI 导入。
 
 ### 提交与代码
 
@@ -504,6 +533,12 @@ master                 稳定可发布
 
 **如何恢复示例？**  
 关闭应用，删除 `%APPDATA%\PostSharp`，重新启动。
+
+**日志在哪里？**  
+默认 `%APPDATA%\PostSharp\logs\postsharp-YYYYMMDD.log`，按天滚动、保留最近 30 个文件；可在设置窗口修改目录，保存后新日志立即写入新目录。
+
+**设置保存失败怎么办？**  
+设置窗口会保留原设置并显示失败原因。优先检查日志目录是否存在写权限，或 `settings.json` 是否被其他程序占用。
 
 **SSE 请求一直等到超时？**  
 当前按流结束或 `[DONE]` 结束；若服务端保持连接不关闭，会受请求超时控制。
@@ -526,7 +561,8 @@ master                 稳定可发布
 - 套件断言目前是状态码 + 响应体包含；字段提取已支持直接映射到下一步请求，JSONPath 断言、条件分支、重试、并行、定时任务在路线图。
 - cURL 为 bash 风格；PowerShell 专用格式未提供。
 - 字体设置主要覆盖窗口正文和代码视图；Arc 组件的内部令牌字体不保证全部跟随。
-- Cookie 管理、代理、客户端证书、OAuth、OpenAPI/cURL 导入导出未实现。
+- OpenAPI 导入只取第一个 tag、第一个服务器和常见参数/请求体；外部 `$ref`、OAuth/安全方案、回调、Webhook、多服务器切换未解析。
+- Cookie 管理、代理、客户端证书、OAuth、Postman Collection/cURL 导入未实现。
 - MCP 仅本地回环，无 OAuth；SSE 通知未实现。
 
 计划优先级：
@@ -534,7 +570,7 @@ master                 稳定可发布
 1. SSE 逐 token 实时渲染 + 中断/继续。
 2. 套件工作流增强：JSONPath/响应头断言、条件分支、重试/轮询、并行、定时触发、CLI 运行。
 3. 多文件上传、拖拽上传、进度与取消。
-4. cURL/OpenAPI/Postman Collection 导入导出。
+4. OpenAPI 导入增强（多 tag、安全方案、外部 `$ref`、多服务器），Postman Collection/cURL 导入导出。
 5. MCP 事件通知与鉴权。
 
 ## 许可证

@@ -24,7 +24,8 @@ public sealed record HttpResult(
     string SseThinking = "",
     string SseContent = "",
     int SseEventCount = 0,
-    string SseRaw = "");
+    string SseRaw = ""
+);
 
 public sealed class HttpRequestService
 {
@@ -35,26 +36,34 @@ public sealed class HttpRequestService
     private static readonly JsonSerializerOptions PrettyJson = new()
     {
         WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     public int TimeoutSeconds { get; set; } = 60;
 
     public bool AutoFormatResponse { get; set; } = true;
 
-    public async Task<HttpResult> SendAsync(ComposedRequest composed, CancellationToken cancellationToken)
+    public async Task<HttpResult> SendAsync(
+        ComposedRequest composed,
+        CancellationToken cancellationToken
+    )
     {
         var stopwatch = Stopwatch.StartNew();
 
         try
         {
-            using var message = new HttpRequestMessage(new HttpMethod(composed.Method), composed.Url);
+            using var message = new HttpRequestMessage(
+                new HttpMethod(composed.Method),
+                composed.Url
+            );
 
             HttpContent? content = null;
             if (composed.IsMultipart)
             {
                 var multipart = new MultipartFormDataContent();
-                foreach (var field in composed.FormFields ?? Array.Empty<KeyValuePair<string, string>>())
+                foreach (
+                    var field in composed.FormFields ?? Array.Empty<KeyValuePair<string, string>>()
+                )
                 {
                     multipart.Add(new StringContent(field.Value, Encoding.UTF8), field.Key);
                 }
@@ -63,12 +72,14 @@ public sealed class HttpRequestService
                 {
                     var fileStream = File.OpenRead(composed.UploadFilePath);
                     var fileContent = new StreamContent(fileStream);
-                    fileContent.Headers.ContentType =
-                        new MediaTypeHeaderValue(GuessContentType(composed.UploadFilePath));
+                    fileContent.Headers.ContentType = new MediaTypeHeaderValue(
+                        GuessContentType(composed.UploadFilePath)
+                    );
                     multipart.Add(
                         fileContent,
                         composed.UploadFieldName ?? "file",
-                        Path.GetFileName(composed.UploadFilePath));
+                        Path.GetFileName(composed.UploadFilePath)
+                    );
                 }
 
                 content = multipart;
@@ -81,7 +92,7 @@ public sealed class HttpRequestService
                 {
                     content.Headers.ContentType = new MediaTypeHeaderValue(composed.ContentType)
                     {
-                        CharSet = "utf-8"
+                        CharSet = "utf-8",
                     };
                 }
 
@@ -90,9 +101,13 @@ public sealed class HttpRequestService
 
             foreach (var (key, value) in composed.Headers)
             {
-                if (composed.IsMultipart
-                    && (key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)
-                        || key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)))
+                if (
+                    composed.IsMultipart
+                    && (
+                        key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)
+                        || key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)
+                    )
+                )
                 {
                     continue;
                 }
@@ -103,28 +118,40 @@ public sealed class HttpRequestService
                 }
             }
 
-            if (!composed.Headers.Any(pair => pair.Key.Equals("Accept", StringComparison.OrdinalIgnoreCase)))
+            if (
+                !composed.Headers.Any(pair =>
+                    pair.Key.Equals("Accept", StringComparison.OrdinalIgnoreCase)
+                )
+            )
             {
                 message.Headers.TryAddWithoutValidation("Accept", "*/*");
             }
 
-            if (!composed.Headers.Any(pair => pair.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)))
+            if (
+                !composed.Headers.Any(pair =>
+                    pair.Key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)
+                )
+            )
             {
                 message.Headers.TryAddWithoutValidation("User-Agent", "PostSharp/0.1");
             }
 
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(TimeoutSeconds));
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                timeout.Token
+            );
 
-            using var response = await Client.SendAsync(
-                message,
-                HttpCompletionOption.ResponseHeadersRead,
-                linked.Token).ConfigureAwait(false);
+            using var response = await Client
+                .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, linked.Token)
+                .ConfigureAwait(false);
 
             var mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
-            var responseHeaders = response.Headers
-                .Concat(response.Content.Headers)
-                .SelectMany(pair => pair.Value.Select(value => new ResponseHeaderView(pair.Key, value)))
+            var responseHeaders = response
+                .Headers.Concat(response.Content.Headers)
+                .SelectMany(pair =>
+                    pair.Value.Select(value => new ResponseHeaderView(pair.Key, value))
+                )
                 .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
@@ -147,10 +174,13 @@ public sealed class HttpRequestService
                     SseThinking: sse.Thinking,
                     SseContent: sse.Content,
                     SseEventCount: sse.Count,
-                    SseRaw: sse.Raw);
+                    SseRaw: sse.Raw
+                );
             }
 
-            var bytes = await response.Content.ReadAsByteArrayAsync(linked.Token).ConfigureAwait(false);
+            var bytes = await response
+                .Content.ReadAsByteArrayAsync(linked.Token)
+                .ConfigureAwait(false);
             stopwatch.Stop();
 
             var text = Decode(bytes, response.Content.Headers.ContentType?.CharSet);
@@ -166,36 +196,47 @@ public sealed class HttpRequestService
                 ElapsedMs: stopwatch.ElapsedMilliseconds,
                 SizeBytes: bytes.LongLength,
                 Headers: responseHeaders,
-                Error: null);
+                Error: null
+            );
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             stopwatch.Stop();
+            Log.Debug("请求被取消 {Method} {Url}", composed.Method, composed.Url);
             return Failure("请求已取消。");
         }
         catch (OperationCanceledException)
         {
             stopwatch.Stop();
+            Log.Warning(
+                "请求超时 {Method} {Url} {TimeoutSeconds}",
+                composed.Method,
+                composed.Url,
+                TimeoutSeconds
+            );
             return Failure($"请求超时，{TimeoutSeconds} 秒内没有收到响应。");
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
+            Log.Error(ex, "发送请求失败 {Method} {Url}", composed.Method, composed.Url);
             return Failure($"无法完成请求：{ex.Message}");
         }
     }
 
-    public static HttpResult Failure(string message) => new(
-        HasResponse: false,
-        StatusCode: 0,
-        ReasonPhrase: string.Empty,
-        Body: string.Empty,
-        IsJson: false,
-        MediaType: string.Empty,
-        ElapsedMs: 0,
-        SizeBytes: 0,
-        Headers: Array.Empty<ResponseHeaderView>(),
-        Error: message);
+    public static HttpResult Failure(string message) =>
+        new(
+            HasResponse: false,
+            StatusCode: 0,
+            ReasonPhrase: string.Empty,
+            Body: string.Empty,
+            IsJson: false,
+            MediaType: string.Empty,
+            ElapsedMs: 0,
+            SizeBytes: 0,
+            Headers: Array.Empty<ResponseHeaderView>(),
+            Error: message
+        );
 
     private static HttpClient CreateClient()
     {
@@ -203,13 +244,10 @@ public sealed class HttpRequestService
         {
             AutomaticDecompression = DecompressionMethods.All,
             AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 10
+            MaxAutomaticRedirections = 10,
         };
 
-        return new HttpClient(handler)
-        {
-            Timeout = Timeout.InfiniteTimeSpan
-        };
+        return new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
     }
 
     private static string GuessContentType(string path)
@@ -227,12 +265,13 @@ public sealed class HttpRequestService
             ".webp" => "image/webp",
             ".pdf" => "application/pdf",
             ".zip" => "application/zip",
-            _ => "application/octet-stream"
+            _ => "application/octet-stream",
         };
     }
 
     private static string Decode(byte[] bytes, string? charset)
-    {        if (bytes.Length == 0)
+    {
+        if (bytes.Length == 0)
         {
             return string.Empty;
         }
@@ -244,9 +283,10 @@ public sealed class HttpRequestService
                 var encoding = Encoding.GetEncoding(charset.Trim('"', ' '));
                 return encoding.GetString(bytes);
             }
-            catch
+            catch (Exception exception)
             {
                 // Unknown charset: fall through to UTF-8.
+                Log.Warning(exception, "响应字符集无法解码，回退到 UTF-8 {Charset}", charset);
             }
         }
 
@@ -276,9 +316,10 @@ public sealed class HttpRequestService
                     using var document = JsonDocument.Parse(text);
                     isJson = true;
                 }
-                catch (JsonException)
+                catch (JsonException exception)
                 {
                     // Keep raw text.
+                    Log.Debug(exception, "响应不是合法 JSON，保留原始文本 {MediaType}", mediaType);
                 }
             }
 
@@ -292,22 +333,28 @@ public sealed class HttpRequestService
                 using var document = JsonDocument.Parse(text);
                 return (JsonSerializer.Serialize(document.RootElement, PrettyJson), true);
             }
-            catch (JsonException)
+            catch (JsonException exception)
             {
+                Log.Debug(exception, "响应 JSON 格式化失败，保留原始文本");
                 return (text, false);
             }
         }
 
-        if (trimmed[0] == '<'
-            && (mediaType.Contains("xml", StringComparison.OrdinalIgnoreCase)
-                || trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase)))
+        if (
+            trimmed[0] == '<'
+            && (
+                mediaType.Contains("xml", StringComparison.OrdinalIgnoreCase)
+                || trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase)
+            )
+        )
         {
             try
             {
                 return (XDocument.Parse(text).ToString(), false);
             }
-            catch
+            catch (Exception exception)
             {
+                Log.Warning(exception, "响应 XML 格式化失败，保留原始文本 {MediaType}", mediaType);
                 return (text, false);
             }
         }
@@ -317,7 +364,8 @@ public sealed class HttpRequestService
 
     private static async Task<SseReadResult> ReadSseAsync(
         HttpResponseMessage response,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var raw = new StringBuilder();
         var thinking = new StringBuilder();
@@ -325,8 +373,14 @@ public sealed class HttpRequestService
         var dataLines = new List<string>();
         var eventCount = 0;
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        await using var stream = await response
+            .Content.ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+        using var reader = new StreamReader(
+            stream,
+            Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: true
+        );
 
         while (true)
         {
@@ -379,7 +433,12 @@ public sealed class HttpRequestService
             eventCount++;
             AppendSsePayload(string.Join("\n", dataLines), thinking, content);
         }
-        return new SseReadResult(raw.ToString(), thinking.ToString(), content.ToString(), eventCount);
+        return new SseReadResult(
+            raw.ToString(),
+            thinking.ToString(),
+            content.ToString(),
+            eventCount
+        );
     }
 
     private static void AppendSsePayload(string data, StringBuilder thinking, StringBuilder content)
@@ -394,13 +453,18 @@ public sealed class HttpRequestService
             using var document = JsonDocument.Parse(data);
             AppendSseElement(document.RootElement, thinking, content);
         }
-        catch (JsonException)
+        catch (JsonException exception)
         {
             // Some servers send plain text SSE events; keep them in the raw stream only.
+            Log.Debug(exception, "SSE 事件不是 JSON，仅保留原始事件流");
         }
     }
 
-    private static void AppendSseElement(JsonElement root, StringBuilder thinking, StringBuilder content)
+    private static void AppendSseElement(
+        JsonElement root,
+        StringBuilder thinking,
+        StringBuilder content
+    )
     {
         if (root.ValueKind == JsonValueKind.Array)
         {
@@ -418,8 +482,10 @@ public sealed class HttpRequestService
         }
 
         // OpenAI-compatible streams.
-        if (root.TryGetProperty("choices", out var choices)
-            && choices.ValueKind == JsonValueKind.Array)
+        if (
+            root.TryGetProperty("choices", out var choices)
+            && choices.ValueKind == JsonValueKind.Array
+        )
         {
             foreach (var choice in choices.EnumerateArray())
             {
@@ -494,14 +560,18 @@ public sealed class HttpRequestService
         }
 
         // Gemini/other providers expose candidate content as parts.
-        if (root.TryGetProperty("candidates", out var candidates)
-            && candidates.ValueKind == JsonValueKind.Array)
+        if (
+            root.TryGetProperty("candidates", out var candidates)
+            && candidates.ValueKind == JsonValueKind.Array
+        )
         {
             foreach (var candidate in candidates.EnumerateArray())
             {
-                if (TryGetObject(candidate, "content", out var candidateContent)
+                if (
+                    TryGetObject(candidate, "content", out var candidateContent)
                     && candidateContent.TryGetProperty("parts", out var parts)
-                    && parts.ValueKind == JsonValueKind.Array)
+                    && parts.ValueKind == JsonValueKind.Array
+                )
                 {
                     foreach (var part in parts.EnumerateArray())
                     {
@@ -510,8 +580,10 @@ public sealed class HttpRequestService
                             continue;
                         }
 
-                        if (part.TryGetProperty("thought", out var thought)
-                            && thought.ValueKind == JsonValueKind.True)
+                        if (
+                            part.TryGetProperty("thought", out var thought)
+                            && thought.ValueKind == JsonValueKind.True
+                        )
                         {
                             AppendString(part, "text", thinking);
                         }
@@ -537,8 +609,10 @@ public sealed class HttpRequestService
 
     private static void AppendThinking(JsonElement element, StringBuilder target)
     {
-        if (!AppendString(element, "reasoning_content", target)
-            && !AppendString(element, "reasoning", target))
+        if (
+            !AppendString(element, "reasoning_content", target)
+            && !AppendString(element, "reasoning", target)
+        )
         {
             AppendString(element, "thinking", target);
         }
@@ -578,9 +652,11 @@ public sealed class HttpRequestService
 
     private static bool AppendString(JsonElement element, string property, StringBuilder target)
     {
-        if (element.ValueKind != JsonValueKind.Object
+        if (
+            element.ValueKind != JsonValueKind.Object
             || !element.TryGetProperty(property, out var value)
-            || value.ValueKind != JsonValueKind.String)
+            || value.ValueKind != JsonValueKind.String
+        )
         {
             return false;
         }
@@ -597,9 +673,11 @@ public sealed class HttpRequestService
 
     private static bool TryGetObject(JsonElement element, string property, out JsonElement value)
     {
-        if (element.ValueKind == JsonValueKind.Object
+        if (
+            element.ValueKind == JsonValueKind.Object
             && element.TryGetProperty(property, out value)
-            && value.ValueKind == JsonValueKind.Object)
+            && value.ValueKind == JsonValueKind.Object
+        )
         {
             return true;
         }
@@ -610,9 +688,10 @@ public sealed class HttpRequestService
 
     private static string? GetString(JsonElement element, string property)
     {
-        return element.ValueKind == JsonValueKind.Object
-               && element.TryGetProperty(property, out var value)
-               && value.ValueKind == JsonValueKind.String
+        return
+            element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(property, out var value)
+            && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
     }

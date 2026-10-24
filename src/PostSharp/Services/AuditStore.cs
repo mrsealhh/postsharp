@@ -14,7 +14,7 @@ public sealed class AuditStore
     {
         WriteIndented = true,
         PropertyNameCaseInsensitive = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     public string FilePath { get; }
@@ -25,7 +25,8 @@ public sealed class AuditStore
     {
         var root = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "PostSharp");
+            "PostSharp"
+        );
         Directory.CreateDirectory(root);
         FilePath = Path.Combine(root, "audit.json");
         TrashFilePath = Path.Combine(root, "audit-trash.json");
@@ -44,11 +45,13 @@ public sealed class AuditStore
         try
         {
             return File.Exists(path)
-                ? JsonSerializer.Deserialize<List<AuditEntry>>(File.ReadAllText(path), JsonOptions) ?? new()
+                ? JsonSerializer.Deserialize<List<AuditEntry>>(File.ReadAllText(path), JsonOptions)
+                    ?? new()
                 : new List<AuditEntry>();
         }
-        catch
+        catch (Exception exception)
         {
+            Log.Warning(exception, "读取审计文件失败 {AuditFile}", path);
             return new List<AuditEntry>();
         }
     }
@@ -59,9 +62,10 @@ public sealed class AuditStore
         {
             File.WriteAllText(path, JsonSerializer.Serialize(entries, JsonOptions));
         }
-        catch
+        catch (Exception exception)
         {
-            // Auditing must never break a request.
+            // Auditing must never break a request, but the failure stays visible in the log.
+            Log.Error(exception, "保存审计文件失败 {AuditFile}", path);
         }
     }
 }

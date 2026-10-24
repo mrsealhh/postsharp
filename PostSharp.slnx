@@ -1,5 +1,5 @@
 <Solution>
-  <Folder Name="/src/">
-    <Project Path="src/PostSharp/PostSharp.csproj" />
-  </Folder>
+    <Folder Name="/src/">
+        <Project Path="src/PostSharp/PostSharp.csproj" />
+    </Folder>
 </Solution>

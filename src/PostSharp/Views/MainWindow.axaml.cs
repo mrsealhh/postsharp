@@ -1,6 +1,6 @@
 using System.Globalization;
-using System.Runtime.InteropServices;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -18,6 +18,7 @@ namespace PostSharp.Views;
 public partial class MainWindow : Window
 {
     private MainWindowViewModel? _viewModel;
+    private SettingsWindow? _settingsWindow;
     private TreeDisplayNode? _dragCandidate;
     private Point _dragStart;
     private bool _dragging;
@@ -36,9 +37,20 @@ public partial class MainWindow : Window
             InputElement.KeyDownEvent,
             OnWindowKeyDown,
             RoutingStrategies.Tunnel,
-            handledEventsToo: true);
-        AddHandler(InputElement.PointerMovedEvent, OnWindowPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
-        AddHandler(InputElement.PointerReleasedEvent, OnWindowPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
+            handledEventsToo: true
+        );
+        AddHandler(
+            InputElement.PointerMovedEvent,
+            OnWindowPointerMoved,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true
+        );
+        AddHandler(
+            InputElement.PointerReleasedEvent,
+            OnWindowPointerReleased,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true
+        );
         PropertyChanged += OnWindowPropertyChanged;
         ResponseTabs.SizeChanged += (_, _) =>
         {
@@ -73,37 +85,102 @@ public partial class MainWindow : Window
             .OfType<Avalonia.Controls.Primitives.VisualLayerManager>()
             .FirstOrDefault();
 
-        manager?.GetType()
+        manager
+            ?.GetType()
             .GetProperty(
                 "EnablePopupOverlayLayer",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+            )
             ?.SetValue(manager, true);
     }
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Escape)
+        if (_viewModel is null)
         {
             return;
         }
 
-        if (_viewModel?.HasOpenDialog == true)
+        if (e.Key == Key.Escape)
         {
+            if (_viewModel.TryCancelActiveDialog())
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (_viewModel.IsManagementOpen)
+            {
+                _viewModel.CloseManagementCommand.Execute(null);
+                e.Handled = true;
+                return;
+            }
+
+            if (TreeMenuOverlay.IsVisible)
+            {
+                HideTreeMenu();
+                e.Handled = true;
+            }
+
             return;
         }
 
-        if (_viewModel?.IsManagementOpen == true)
+        if (
+            e.Key == Key.Enter
+            && e.KeyModifiers.HasFlag(KeyModifiers.Control)
+            && _viewModel.HasOpenDialog
+        )
         {
-            _viewModel.CloseManagementCommand.Execute(null);
+            // A modal dialog owns Ctrl+Enter; it must never fall through to "send request".
+            _viewModel.TryConfirmActiveDialog();
             e.Handled = true;
             return;
         }
 
-        if (TreeMenuOverlay.IsVisible)
+        if (e.Key == Key.Enter && _viewModel.HasOpenDialog && e.Source is not Button)
         {
-            HideTreeMenu();
+            if (_viewModel.TryConfirmActiveDialog())
+            {
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+        if (
+            e.Key == Key.Delete
+            && !_viewModel.HasOpenDialog
+            && !_viewModel.IsManagementOpen
+            && !TreeMenuOverlay.IsVisible
+            && IsTreeFocusSource(e.Source)
+            && (_viewModel.SelectedRequest is not null || _viewModel.SelectedCollection is not null)
+        )
+        {
+            _viewModel.DeleteSelectedCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    private bool IsTreeFocusSource(object? source)
+    {
+        for (
+            var current = source as Visual;
+            current is not null;
+            current = current.GetVisualParent()
+        )
+        {
+            if (ReferenceEquals(current, CollectionScrollArea))
+            {
+                return true;
+            }
+
+            if (ReferenceEquals(current, RootPanel))
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
@@ -136,16 +213,14 @@ public partial class MainWindow : Window
     private void OnMinimizeWindowClick(object? sender, RoutedEventArgs e) =>
         WindowState = WindowState.Minimized;
 
-    private void OnToggleMaximizeWindowClick(object? sender, RoutedEventArgs e) =>
-        ToggleMaximize();
+    private void OnToggleMaximizeWindowClick(object? sender, RoutedEventArgs e) => ToggleMaximize();
 
     private void OnCloseWindowClick(object? sender, RoutedEventArgs e) => Close();
 
     private void ToggleMaximize()
     {
-        WindowState = WindowState == WindowState.Maximized
-            ? WindowState.Normal
-            : WindowState.Maximized;
+        WindowState =
+            WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     }
 
     private void UpdateWindowStateVisuals()
@@ -157,15 +232,21 @@ public partial class MainWindow : Window
 
     private bool IsInteractiveTitleBarSource(object? source)
     {
-        for (var current = source as Visual; current is not null; current = current.GetVisualParent())
+        for (
+            var current = source as Visual;
+            current is not null;
+            current = current.GetVisualParent()
+        )
         {
             if (ReferenceEquals(current, TitleBar))
             {
                 return false;
             }
 
-            if (current is Button or TextBox or ComboBox or CheckBox or Slider
-                || current is Control { Focusable: true })
+            if (
+                current is Button or TextBox or ComboBox or CheckBox or Slider
+                || current is Control { Focusable: true }
+            )
             {
                 return true;
             }
@@ -196,18 +277,19 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnPickUploadFileClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void OnPickUploadFileClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
     {
         if (_viewModel is null)
         {
             return;
         }
 
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "选择上传文件",
-            AllowMultiple = false
-        });
+        var files = await StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions { Title = "选择上传文件", AllowMultiple = false }
+        );
 
         var path = files.FirstOrDefault()?.TryGetLocalPath();
         if (string.IsNullOrWhiteSpace(path))
@@ -248,6 +330,66 @@ public partial class MainWindow : Window
         surface.MaxWidth = width;
     }
 
+    private void OnOpenSettingsClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        _viewModel.IsManagementOpen = false;
+        if (_settingsWindow is { } existing)
+        {
+            existing.Activate();
+            return;
+        }
+
+        var window = new SettingsWindow { DataContext = _viewModel.CreateSettingsViewModel() };
+        _settingsWindow = window;
+        window.Closed += (_, _) => _settingsWindow = null;
+        window.Show(this);
+        window.Activate();
+    }
+
+    private async void OnPickOpenApiFileClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var files = await StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = "导入 OpenAPI 文档",
+                AllowMultiple = false,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("OpenAPI 文档")
+                    {
+                        Patterns = new[] { "*.json", "*.yaml", "*.yml" },
+                        MimeTypes = new[]
+                        {
+                            "application/json",
+                            "application/yaml",
+                            "text/yaml",
+                            "text/plain",
+                        },
+                    },
+                },
+            }
+        );
+
+        var path = files.FirstOrDefault()?.TryGetLocalPath();
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            await _viewModel.ImportFromFileAsync(path);
+        }
+    }
+
     private void OnOpenResponseDetailClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_viewModel is null || string.IsNullOrEmpty(_viewModel.FullResponseBody))
@@ -258,7 +400,8 @@ public partial class MainWindow : Window
         var window = new TextViewerWindow(
             "响应详情",
             _viewModel.FullResponseBody,
-            $"{_viewModel.ResponseSizeText} · {_viewModel.ResponseContentType} · {_viewModel.ResponseTimeText}");
+            $"{_viewModel.ResponseSizeText} · {_viewModel.ResponseContentType} · {_viewModel.ResponseTimeText}"
+        );
         window.Topmost = Topmost;
         window.Show(this);
         window.Activate();
@@ -266,9 +409,7 @@ public partial class MainWindow : Window
 
     private void OnTreeRowPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (_viewModel is null
-            || sender is not Control control
-            || IsInsideButton(e.Source))
+        if (_viewModel is null || sender is not Control control || IsInsideButton(e.Source))
         {
             return;
         }
@@ -313,6 +454,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        control.Focus();
+
         switch (control.DataContext)
         {
             case TreeDisplayNode { Request: { } request }:
@@ -352,7 +495,10 @@ public partial class MainWindow : Window
 
     private void OnTreeCollectionChevronClick(object? sender, RoutedEventArgs e)
     {
-        if (_viewModel is not null && sender is Control { DataContext: TreeDisplayNode { Collection: { } collection } })
+        if (
+            _viewModel is not null
+            && sender is Control { DataContext: TreeDisplayNode { Collection: { } collection } }
+        )
         {
             _viewModel.ToggleCollection(collection, !collection.IsExpanded);
         }
@@ -369,7 +515,7 @@ public partial class MainWindow : Window
         {
             TreeDisplayNode { Request: { } request } => (object)request,
             TreeDisplayNode { Collection: { } collection } => collection,
-            _ => null
+            _ => null,
         };
 
         if (target is null)
@@ -378,10 +524,11 @@ public partial class MainWindow : Window
         }
 
         SelectTreeNode(control);
-        var point = control.TranslatePoint(
-                        new Point(control.Bounds.Width - 190, control.Bounds.Height + 2),
-                        RootPanel)
-                    ?? new Point(24, 200);
+        var point =
+            control.TranslatePoint(
+                new Point(control.Bounds.Width - 190, control.Bounds.Height + 2),
+                RootPanel
+            ) ?? new Point(24, 200);
         ShowTreeMenu(point);
         e.Handled = true;
     }
@@ -409,7 +556,7 @@ public partial class MainWindow : Window
         {
             TreeDisplayNode { Request: { } request } => (object)request,
             TreeDisplayNode { Collection: { } collection } => collection,
-            _ => null
+            _ => null,
         };
 
         if (target is not null)
@@ -418,12 +565,13 @@ public partial class MainWindow : Window
         }
     }
 
-    private static bool IsFavorite(object target) => target switch
-    {
-        RequestItem request => request.IsFavorite,
-        RequestCollection collection => collection.IsFavorite,
-        _ => false
-    };
+    private static bool IsFavorite(object target) =>
+        target switch
+        {
+            RequestItem request => request.IsFavorite,
+            RequestCollection collection => collection.IsFavorite,
+            _ => false,
+        };
 
     private void OnWindowPointerMoved(object? sender, PointerEventArgs e)
     {
@@ -444,8 +592,7 @@ public partial class MainWindow : Window
         var position = e.GetPosition(RootPanel);
         if (!_dragging)
         {
-            if (Math.Abs(position.X - _dragStart.X) < 8
-                && Math.Abs(position.Y - _dragStart.Y) < 8)
+            if (Math.Abs(position.X - _dragStart.X) < 8 && Math.Abs(position.Y - _dragStart.Y) < 8)
             {
                 return;
             }
@@ -454,10 +601,12 @@ public partial class MainWindow : Window
         }
 
         var (target, border) = FindDropTarget(e.GetPosition(CollectionScrollArea));
-        if (_viewModel is not null
+        if (
+            _viewModel is not null
             && _dragCandidate is { } source
             && target is not null
-            && border is not null)
+            && border is not null
+        )
         {
             var dropPosition = GetDropPosition(target, border, e.GetPosition(border));
             if (_viewModel.CanMoveTreeNode(source, target, dropPosition))
@@ -492,10 +641,12 @@ public partial class MainWindow : Window
         var hit = CollectionScrollArea.InputHitTest(position) as Visual;
         for (var current = hit; current is not null; current = current.GetVisualParent())
         {
-            if (current is Border border
+            if (
+                current is Border border
                 && border.Classes.Contains("treeRow")
                 && border.DataContext is TreeDisplayNode node
-                && (node.Collection is not null || node.Request is not null))
+                && (node.Collection is not null || node.Request is not null)
+            )
             {
                 return (node, border);
             }
@@ -507,11 +658,13 @@ public partial class MainWindow : Window
     private static TreeDropPosition GetDropPosition(
         TreeDisplayNode target,
         Border border,
-        Point positionInRow)
+        Point positionInRow
+    )
     {
-        var ratio = border.Bounds.Height <= 0
-            ? 0.5
-            : Math.Clamp(positionInRow.Y / border.Bounds.Height, 0, 1);
+        var ratio =
+            border.Bounds.Height <= 0
+                ? 0.5
+                : Math.Clamp(positionInRow.Y / border.Bounds.Height, 0, 1);
 
         if (target.Collection is not null)
         {
@@ -519,13 +672,11 @@ public partial class MainWindow : Window
             {
                 < 0.28 => TreeDropPosition.Before,
                 > 0.72 => TreeDropPosition.After,
-                _ => TreeDropPosition.Inside
+                _ => TreeDropPosition.Inside,
             };
         }
 
-        return ratio < 0.5
-            ? TreeDropPosition.Before
-            : TreeDropPosition.After;
+        return ratio < 0.5 ? TreeDropPosition.Before : TreeDropPosition.After;
     }
 
     private void SetDropTarget(Border? border, TreeDropPosition position)
@@ -544,12 +695,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        border.Classes.Add(position switch
-        {
-            TreeDropPosition.Before => "dropBefore",
-            TreeDropPosition.After => "dropAfter",
-            _ => "dropTarget"
-        });
+        border.Classes.Add(
+            position switch
+            {
+                TreeDropPosition.Before => "dropBefore",
+                TreeDropPosition.After => "dropAfter",
+                _ => "dropTarget",
+            }
+        );
     }
 
     private void ClearDropTarget() => SetDropTarget(null, TreeDropPosition.Inside);
@@ -564,20 +717,19 @@ public partial class MainWindow : Window
     private void ShowTreeMenu(Point position)
     {
         var favoriteTarget = _viewModel?.SelectedRequest ?? (object?)_viewModel?.SelectedCollection;
-        var isCollectionNode = _viewModel?.SelectedRequest is null
-                               && _viewModel?.SelectedCollection is not null;
+        var isCollectionNode =
+            _viewModel?.SelectedRequest is null && _viewModel?.SelectedCollection is not null;
         var isRequestNode = _viewModel?.SelectedRequest is not null;
         TreeMenuCollectionSection.IsVisible = isCollectionNode;
         TreeMenuRequestSection.IsVisible = isRequestNode;
         var orderTarget = _viewModel?.SelectedRequest ?? (object?)_viewModel?.SelectedCollection;
-        TreeMenuMoveUpButton.IsEnabled = orderTarget is not null
-                                         && _viewModel?.CanMoveNode(orderTarget, -1) == true;
-        TreeMenuMoveDownButton.IsEnabled = orderTarget is not null
-                                           && _viewModel?.CanMoveNode(orderTarget, 1) == true;
+        TreeMenuMoveUpButton.IsEnabled =
+            orderTarget is not null && _viewModel?.CanMoveNode(orderTarget, -1) == true;
+        TreeMenuMoveDownButton.IsEnabled =
+            orderTarget is not null && _viewModel?.CanMoveNode(orderTarget, 1) == true;
         TreeMenuFavoriteButton.IsVisible = favoriteTarget is not null;
-        TreeMenuFavoriteLabel.Text = favoriteTarget is not null && IsFavorite(favoriteTarget)
-            ? "取消收藏"
-            : "收藏";
+        TreeMenuFavoriteLabel.Text =
+            favoriteTarget is not null && IsFavorite(favoriteTarget) ? "取消收藏" : "收藏";
         TreeMenuOverlay.IsVisible = true;
         TreeMenuCard.Measure(Size.Infinity);
 
@@ -679,7 +831,12 @@ public partial class MainWindow : Window
     }
 
     [DllImport("dwmapi.dll", SetLastError = true)]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+    private static extern int DwmSetWindowAttribute(
+        IntPtr hwnd,
+        int attribute,
+        ref int value,
+        int size
+    );
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
@@ -720,21 +877,22 @@ public partial class MainWindow : Window
         {
             "系统默认" => FontFamily.Default,
             "微软雅黑" => new FontFamily("Microsoft YaHei UI"),
-            _ => new FontFamily("Inter")
+            _ => new FontFamily("Inter"),
         };
 
         var codeFont = settings.CodeFont switch
         {
             "Consolas" => new FontFamily("Consolas"),
             "Cascadia Mono" => new FontFamily("Cascadia Mono"),
-            _ => new FontFamily("Geist Mono")
+            _ => new FontFamily("Geist Mono"),
         };
 
         var codeSize = double.TryParse(
             settings.CodeFontSize,
             NumberStyles.Float,
             CultureInfo.InvariantCulture,
-            out var parsed)
+            out var parsed
+        )
             ? parsed
             : 12d;
 
