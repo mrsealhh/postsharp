@@ -51,6 +51,10 @@ public partial class RequestItem : ObservableObject
     [ObservableProperty]
     private string _url = string.Empty;
 
+    /// <summary>0 means "use the global timeout from settings"; a positive value overrides it for this request.</summary>
+    [ObservableProperty]
+    private int _timeoutSeconds;
+
     /// <summary>None, Json or Text.</summary>
     [ObservableProperty]
     private string _bodyMode = "None";
@@ -87,6 +91,7 @@ public partial class RequestItem : ObservableObject
             Name = Name,
             Method = Method,
             Url = Url,
+            TimeoutSeconds = TimeoutSeconds,
             BodyMode = BodyMode,
             Body = Body,
             UploadFilePath = UploadFilePath,

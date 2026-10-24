@@ -892,7 +892,7 @@
                             </arc:Button>
                         </Grid>
 
-                        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,12">
+                        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,0,0,12">
                             <arc:Select
                                 Grid.Column="0"
                                 Width="130"
@@ -913,7 +913,32 @@
                                 FontFamily="{DynamicResource PostSharpCodeFont}"
                                 AutomationProperties.Name="请求地址"
                             />
-                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                            <StackPanel
+                                Grid.Column="2"
+                                Orientation="Horizontal"
+                                Spacing="6"
+                                Margin="0,0,8,0"
+                                VerticalAlignment="Center"
+                            >
+                                <TextBlock
+                                    Text="超时"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    VerticalAlignment="Center"
+                                />
+                                <arc:NumberField
+                                    Width="150"
+                                    IsLabelVisible="False"
+                                    Minimum="0"
+                                    Maximum="3600"
+                                    Step="5"
+                                    SuffixFormatter="{x:Static controls:TimeoutFormatting.SuffixFormatter}"
+                                    Value="{Binding Editing.TimeoutSeconds, Mode=TwoWay}"
+                                    ToolTip.Tip="本请求超时秒数；0 表示跟随设置中的全局超时"
+                                    AutomationProperties.Name="请求超时（秒，0 跟随全局）"
+                                />
+                            </StackPanel>
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8">
                                 <arc:Button
                                     Variant="Primary"
                                     IsDefault="True"

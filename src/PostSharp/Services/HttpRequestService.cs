@@ -45,10 +45,15 @@ public sealed class HttpRequestService
 
     public async Task<HttpResult> SendAsync(
         ComposedRequest composed,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        int timeoutSeconds = 0
     )
     {
         var stopwatch = Stopwatch.StartNew();
+        var effectiveTimeoutSeconds =
+            timeoutSeconds > 0
+                ? Math.Clamp(timeoutSeconds, 1, 3600)
+                : Math.Clamp(TimeoutSeconds, 1, 3600);
 
         try
         {
@@ -136,7 +141,9 @@ public sealed class HttpRequestService
                 message.Headers.TryAddWithoutValidation("User-Agent", "PostSharp/0.1");
             }
 
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(TimeoutSeconds));
+            using var timeout = new CancellationTokenSource(
+                TimeSpan.FromSeconds(effectiveTimeoutSeconds)
+            );
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
                 timeout.Token
@@ -212,9 +219,9 @@ public sealed class HttpRequestService
                 "请求超时 {Method} {Url} {TimeoutSeconds}",
                 composed.Method,
                 composed.Url,
-                TimeoutSeconds
+                effectiveTimeoutSeconds
             );
-            return Failure($"请求超时，{TimeoutSeconds} 秒内没有收到响应。");
+            return Failure($"请求超时，{effectiveTimeoutSeconds} 秒内没有收到响应。");
         }
         catch (Exception ex)
         {

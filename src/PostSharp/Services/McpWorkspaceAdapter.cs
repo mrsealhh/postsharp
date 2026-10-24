@@ -397,7 +397,11 @@ public sealed class McpWorkspaceAdapter
         try
         {
             composed = RequestComposer.Compose(snapshot.Request, snapshot.Environment);
-            result = await _http.SendAsync(composed, cancellationToken);
+            result = await _http.SendAsync(
+                composed,
+                cancellationToken,
+                snapshot.Request.TimeoutSeconds
+            );
         }
         catch (Exception exception)
         {

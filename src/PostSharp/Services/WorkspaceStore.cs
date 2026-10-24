@@ -135,6 +135,7 @@ public sealed class WorkspaceStore
             Name = dto.Name,
             Method = string.IsNullOrWhiteSpace(dto.Method) ? "GET" : dto.Method,
             Url = dto.Url,
+            TimeoutSeconds = dto.TimeoutSeconds,
             BodyMode = dto.BodyMode,
             Body = dto.Body,
             UploadFilePath = dto.UploadFilePath,
@@ -158,6 +159,7 @@ public sealed class WorkspaceStore
             Name = dto.Name,
             Method = dto.Method,
             Url = dto.Url,
+            TimeoutSeconds = dto.TimeoutSeconds,
             BodyMode = dto.BodyMode,
             Body = dto.Body,
             StatusCode = dto.StatusCode,
@@ -175,6 +177,7 @@ public sealed class WorkspaceStore
             Name = entry.Name,
             Method = entry.Method,
             Url = entry.Url,
+            TimeoutSeconds = entry.TimeoutSeconds,
             BodyMode = entry.BodyMode,
             Body = entry.Body,
             StatusCode = entry.StatusCode,
@@ -192,6 +195,7 @@ public sealed class WorkspaceStore
             Name = request.Name,
             Method = request.Method,
             Url = request.Url,
+            TimeoutSeconds = request.TimeoutSeconds,
             BodyMode = request.BodyMode,
             Body = request.Body,
             UploadFilePath = request.UploadFilePath,
@@ -266,6 +270,8 @@ public sealed class RequestDto
 
     public string Url { get; set; } = string.Empty;
 
+    public int TimeoutSeconds { get; set; }
+
     public string BodyMode { get; set; } = "None";
 
     public string Body { get; set; } = string.Empty;
@@ -301,6 +307,8 @@ public sealed class HistoryDto
     public string Method { get; set; } = "GET";
 
     public string Url { get; set; } = string.Empty;
+
+    public int TimeoutSeconds { get; set; }
 
     public string BodyMode { get; set; } = "None";
 

@@ -13,6 +13,8 @@ public sealed class HistoryEntry
 
     public string Url { get; init; } = string.Empty;
 
+    public int TimeoutSeconds { get; init; }
+
     public string BodyMode { get; init; } = "None";
 
     public string Body { get; init; } = string.Empty;
@@ -78,6 +80,7 @@ public sealed class HistoryEntry
             Name = string.IsNullOrWhiteSpace(Name) ? "历史请求" : $"{Name}（历史）",
             Method = Method,
             Url = Url,
+            TimeoutSeconds = TimeoutSeconds,
             BodyMode = BodyMode,
             Body = Body,
         };

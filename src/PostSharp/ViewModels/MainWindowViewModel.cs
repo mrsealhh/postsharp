@@ -1076,7 +1076,7 @@ public partial class MainWindowViewModel : ObservableObject
             try
             {
                 composed = RequestComposer.Compose(Editing, ActiveEnvironment);
-                result = await _http.SendAsync(composed, _sendCts.Token);
+                result = await _http.SendAsync(composed, _sendCts.Token, Editing.TimeoutSeconds);
             }
             catch (Exception exception)
             {
@@ -3141,7 +3141,11 @@ public partial class MainWindowViewModel : ObservableObject
             try
             {
                 composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment);
-                result = await _http.SendAsync(composed, cancellationToken);
+                result = await _http.SendAsync(
+                    composed,
+                    cancellationToken,
+                    effectiveRequest.TimeoutSeconds
+                );
             }
             catch (Exception exception)
             {
@@ -3931,6 +3935,7 @@ public partial class MainWindowViewModel : ObservableObject
             Name = request.Name,
             Method = request.Method,
             Url = request.Url,
+            TimeoutSeconds = request.TimeoutSeconds,
             BodyMode = request.BodyMode,
             Body = request.Body,
             StatusCode = result.StatusCode,
