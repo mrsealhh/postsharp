@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml.Styling;
 using PostSharp.Services;
 using PostSharp.ViewModels;
 using PostSharp.Views;
@@ -10,6 +11,13 @@ public partial class App : Application
 {
     public override async void OnFrameworkInitializationCompleted()
     {
+        Styles.Add(
+            new StyleInclude(new Uri("avares://PostSharp/"))
+            {
+                Source = new Uri("avares://PostSharp/Styles/ToolTipStyles.axaml"),
+            }
+        );
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var viewModel = new MainWindowViewModel();

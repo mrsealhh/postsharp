@@ -1,0 +1,43 @@
+<Styles
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+>
+    <Style Selector="ToolTip">
+        <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
+        <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusControl}" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="MaxWidth" Value="380" />
+        <Setter Property="FontFamily" Value="{DynamicResource PostSharpBodyFont}" />
+        <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}" />
+        <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}" />
+        <Setter Property="VerticalOffset" Value="6" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="{TemplateBinding CornerRadius}"
+                    Padding="{TemplateBinding Padding}"
+                    BoxShadow="{arc:ArcDesignTokenResource ShadowFloating}"
+                    MaxWidth="{TemplateBinding MaxWidth}"
+                >
+                    <ContentPresenter
+                        Content="{TemplateBinding Content}"
+                        ContentTemplate="{TemplateBinding ContentTemplate}"
+                        FontFamily="{TemplateBinding FontFamily}"
+                        FontSize="{TemplateBinding FontSize}"
+                        FontWeight="{TemplateBinding FontWeight}"
+                        Foreground="{TemplateBinding Foreground}"
+                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                        TextWrapping="Wrap"
+                    />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+</Styles>
