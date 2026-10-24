@@ -4009,19 +4009,82 @@ public partial class MainWindowViewModel : ObservableObject
         var hasFilter = filter.Length > 0;
         var favoritesOnly = TreeFilterMode == "收藏";
         var nodes = new List<TreeDisplayNode>();
+        var reusable = new Dictionary<object, TreeDisplayNode>(TreeNodes.Count);
+        foreach (var node in TreeNodes)
+        {
+            if (node.Collection is { } collection)
+            {
+                reusable[collection] = node;
+            }
+            else if (node.Request is { } request)
+            {
+                reusable[request] = node;
+            }
+        }
 
         foreach (var collection in Collections.Where(collection => collection.Parent is null))
         {
-            AddCollectionRows(collection, 0, filter, hasFilter, favoritesOnly, false, nodes);
+            AddCollectionRows(
+                collection,
+                0,
+                filter,
+                hasFilter,
+                favoritesOnly,
+                false,
+                nodes,
+                reusable
+            );
         }
 
-        TreeNodes.Clear();
-        foreach (var node in nodes)
-        {
-            TreeNodes.Add(node);
-        }
-
+        ApplyTreeNodes(nodes);
         TreeIsEmpty = TreeNodes.Count == 0;
+    }
+
+    /// <summary>
+    /// Reconciles <see cref="TreeNodes"/> with the freshly built row list in place: unchanged rows keep their
+    /// existing node and container, and only inserted / removed / reordered rows touch the collection.
+    /// </summary>
+    private void ApplyTreeNodes(IReadOnlyList<TreeDisplayNode> nodes)
+    {
+        var keep = new HashSet<TreeDisplayNode>(nodes);
+        for (var index = TreeNodes.Count - 1; index >= 0; index--)
+        {
+            if (!keep.Contains(TreeNodes[index]))
+            {
+                TreeNodes.RemoveAt(index);
+            }
+        }
+
+        for (var index = 0; index < nodes.Count; index++)
+        {
+            if (index < TreeNodes.Count && ReferenceEquals(TreeNodes[index], nodes[index]))
+            {
+                continue;
+            }
+
+            var existingIndex = IndexOfNode(nodes[index], index + 1);
+            if (existingIndex >= 0)
+            {
+                TreeNodes.Move(existingIndex, index);
+            }
+            else
+            {
+                TreeNodes.Insert(index, nodes[index]);
+            }
+        }
+    }
+
+    private int IndexOfNode(TreeDisplayNode node, int startIndex)
+    {
+        for (var index = startIndex; index < TreeNodes.Count; index++)
+        {
+            if (ReferenceEquals(TreeNodes[index], node))
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     private void AddCollectionRows(
@@ -4031,9 +4094,31 @@ public partial class MainWindowViewModel : ObservableObject
         bool hasFilter,
         bool favoritesOnly,
         bool forceInclude,
-        List<TreeDisplayNode> nodes
+        List<TreeDisplayNode> nodes,
+        Dictionary<object, TreeDisplayNode> reusable
     )
     {
+        if (!hasFilter && !favoritesOnly)
+        {
+            nodes.Add(GetCollectionNode(collection, depth, reusable));
+            if (!collection.IsExpanded)
+            {
+                return;
+            }
+
+            foreach (var child in collection.Children)
+            {
+                AddCollectionRows(child, depth + 1, filter, false, false, false, nodes, reusable);
+            }
+
+            foreach (var request in collection.Requests)
+            {
+                nodes.Add(GetRequestNode(request, depth, reusable));
+            }
+
+            return;
+        }
+
         var collectionMatches = !hasFilter || Contains(collection.Name, filter);
         var includeAll =
             forceInclude
@@ -4057,7 +4142,8 @@ public partial class MainWindowViewModel : ObservableObject
                 hasFilter,
                 favoritesOnly,
                 includeAll,
-                childNodes
+                childNodes,
+                reusable
             );
         }
 
@@ -4070,23 +4156,41 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        if (hasFilter || favoritesOnly)
-        {
-            collection.IsExpanded = true;
-        }
-
-        nodes.Add(new TreeDisplayNode { Collection = collection, Depth = depth });
-
-        if (!collection.IsExpanded && !hasFilter && !favoritesOnly)
-        {
-            return;
-        }
-
+        collection.IsExpanded = true;
+        nodes.Add(GetCollectionNode(collection, depth, reusable));
         nodes.AddRange(childNodes);
         foreach (var request in requests)
         {
-            nodes.Add(new TreeDisplayNode { Request = request, Depth = depth });
+            nodes.Add(GetRequestNode(request, depth, reusable));
         }
+    }
+
+    private static TreeDisplayNode GetCollectionNode(
+        RequestCollection collection,
+        int depth,
+        Dictionary<object, TreeDisplayNode> reusable
+    )
+    {
+        if (reusable.TryGetValue(collection, out var node) && node.Depth == depth)
+        {
+            return node;
+        }
+
+        return new TreeCollectionNode(collection, depth);
+    }
+
+    private static TreeDisplayNode GetRequestNode(
+        RequestItem request,
+        int depth,
+        Dictionary<object, TreeDisplayNode> reusable
+    )
+    {
+        if (reusable.TryGetValue(request, out var node) && node.Depth == depth)
+        {
+            return node;
+        }
+
+        return new TreeRequestNode(request, depth);
     }
 
     private static bool Matches(RequestItem request, string filter) =>

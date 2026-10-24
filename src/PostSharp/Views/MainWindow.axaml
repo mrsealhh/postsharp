@@ -481,262 +481,264 @@
                                     <Grid>
                                         <ItemsControl
                                             ItemsSource="{Binding TreeNodes}"
-                                            Width="{Binding #CollectionScrollArea.Bounds.Width}"
                                             HorizontalAlignment="Stretch"
                                         >
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="models:TreeDisplayNode">
-                                                    <Grid>
-                                                        <Border
-                                                            IsVisible="{Binding IsCollection}"
-                                                            Classes="treeRow"
-                                                            Classes.selected="{Binding Collection.IsSelected}"
-                                                            Margin="{Binding Indent}"
-                                                            Focusable="True"
-                                                            PointerPressed="OnTreeRowPointerPressed"
-                                                            AutomationProperties.Name="{Binding Collection.Name}"
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <VirtualizingStackPanel />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.DataTemplates>
+                                                <DataTemplate DataType="models:TreeCollectionNode">
+                                                    <Border
+                                                        Classes="treeRow"
+                                                        Classes.selected="{Binding Collection.IsSelected}"
+                                                        Margin="{Binding Indent}"
+                                                        Focusable="True"
+                                                        PointerPressed="OnTreeRowPointerPressed"
+                                                        AutomationProperties.Name="{Binding Collection.Name}"
+                                                    >
+                                                        <Grid
+                                                            ColumnDefinitions="24,*,Auto,40"
+                                                            ColumnSpacing="2"
                                                         >
-                                                            <Grid
-                                                                ColumnDefinitions="24,*,Auto,40"
-                                                                ColumnSpacing="2"
+                                                            <arc:Button
+                                                                Variant="Ghost"
+                                                                Size="Small"
+                                                                Width="24"
+                                                                Padding="0"
+                                                                Click="OnTreeCollectionChevronClick"
+                                                                AutomationProperties.Name="展开或折叠集合"
+                                                            >
+                                                                <Panel VerticalAlignment="Center">
+                                                                    <arc:ArcGlyph
+                                                                        Data="{x:Static arc:ArcIcons.ChevronRight}"
+                                                                        Size="14"
+                                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                        IsVisible="{Binding !Collection.IsExpanded}"
+                                                                    />
+                                                                    <arc:ArcGlyph
+                                                                        Data="{x:Static arc:ArcIcons.ChevronDown}"
+                                                                        Size="14"
+                                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                        IsVisible="{Binding Collection.IsExpanded}"
+                                                                    />
+                                                                </Panel>
+                                                            </arc:Button>
+                                                            <Border
+                                                                Grid.Column="1"
+                                                                Background="Transparent"
+                                                                Padding="4,3"
+                                                                Cursor="Hand"
+                                                            >
+                                                                <Grid
+                                                                    ColumnDefinitions="18,*,Auto"
+                                                                    ColumnSpacing="6"
+                                                                >
+                                                                    <Panel VerticalAlignment="Center">
+                                                                        <arc:ArcGlyph
+                                                                            Data="{x:Static arc:ArcIcons.Folder}"
+                                                                            Size="15"
+                                                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                            IsVisible="{Binding !Collection.IsExpanded}"
+                                                                        />
+                                                                        <arc:ArcGlyph
+                                                                            Data="{x:Static arc:ArcIcons.FolderOpen}"
+                                                                            Size="15"
+                                                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                            IsVisible="{Binding Collection.IsExpanded}"
+                                                                        />
+                                                                    </Panel>
+                                                                    <TextBlock
+                                                                        Grid.Column="1"
+                                                                        Text="{Binding Collection.Name}"
+                                                                        FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                                                                        FontWeight="Medium"
+                                                                        Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                                        VerticalAlignment="Center"
+                                                                        TextTrimming="CharacterEllipsis"
+                                                                    />
+                                                                    <arc:ArcGlyph
+                                                                        Grid.Column="2"
+                                                                        Data="{x:Static arc:ArcIcons.Star}"
+                                                                        Size="12"
+                                                                        Foreground="{arc:ArcDesignTokenResource Warning}"
+                                                                        VerticalAlignment="Center"
+                                                                        IsVisible="{Binding Collection.IsFavorite}"
+                                                                    />
+                                                                </Grid>
+                                                            </Border>
+                                                            <StackPanel
+                                                                Grid.Column="2"
+                                                                Orientation="Horizontal"
+                                                                Spacing="2"
+                                                                VerticalAlignment="Center"
                                                             >
                                                                 <arc:Button
+                                                                    Classes="rowActions"
                                                                     Variant="Ghost"
                                                                     Size="Small"
                                                                     Width="24"
                                                                     Padding="0"
-                                                                    Click="OnTreeCollectionChevronClick"
-                                                                    AutomationProperties.Name="展开或折叠集合"
-                                                                >
-                                                                    <Panel VerticalAlignment="Center">
-                                                                        <arc:ArcGlyph
-                                                                            Data="{x:Static arc:ArcIcons.ChevronRight}"
-                                                                            Size="14"
-                                                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                                            IsVisible="{Binding !Collection.IsExpanded}"
-                                                                        />
-                                                                        <arc:ArcGlyph
-                                                                            Data="{x:Static arc:ArcIcons.ChevronDown}"
-                                                                            Size="14"
-                                                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                                            IsVisible="{Binding Collection.IsExpanded}"
-                                                                        />
-                                                                    </Panel>
-                                                                </arc:Button>
-                                                                <Border
-                                                                    Grid.Column="1"
-                                                                    Background="Transparent"
-                                                                    Padding="4,3"
-                                                                    Cursor="Hand"
-                                                                >
-                                                                    <Grid
-                                                                        ColumnDefinitions="18,*,Auto"
-                                                                        ColumnSpacing="6"
-                                                                    >
-                                                                        <Panel VerticalAlignment="Center">
-                                                                            <arc:ArcGlyph
-                                                                                Data="{x:Static arc:ArcIcons.Folder}"
-                                                                                Size="15"
-                                                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                                                                IsVisible="{Binding !Collection.IsExpanded}"
-                                                                            />
-                                                                            <arc:ArcGlyph
-                                                                                Data="{x:Static arc:ArcIcons.FolderOpen}"
-                                                                                Size="15"
-                                                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                                                                IsVisible="{Binding Collection.IsExpanded}"
-                                                                            />
-                                                                        </Panel>
-                                                                        <TextBlock
-                                                                            Grid.Column="1"
-                                                                            Text="{Binding Collection.Name}"
-                                                                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
-                                                                            FontWeight="Medium"
-                                                                            Foreground="{arc:ArcDesignTokenResource Foreground}"
-                                                                            VerticalAlignment="Center"
-                                                                            TextTrimming="CharacterEllipsis"
-                                                                        />
-                                                                        <arc:ArcGlyph
-                                                                            Grid.Column="2"
-                                                                            Data="{x:Static arc:ArcIcons.Star}"
-                                                                            Size="12"
-                                                                            Foreground="{arc:ArcDesignTokenResource Warning}"
-                                                                            VerticalAlignment="Center"
-                                                                            IsVisible="{Binding Collection.IsFavorite}"
-                                                                        />
-                                                                    </Grid>
-                                                                </Border>
-                                                                <StackPanel
-                                                                    Grid.Column="2"
-                                                                    Orientation="Horizontal"
-                                                                    Spacing="2"
-                                                                    VerticalAlignment="Center"
-                                                                >
-                                                                    <arc:Button
-                                                                        Classes="rowActions"
-                                                                        Variant="Ghost"
-                                                                        Size="Small"
-                                                                        Width="24"
-                                                                        Padding="0"
-                                                                        IsTabStop="False"
-                                                                        Click="OnTreeMoveRowUpClick"
-                                                                        ToolTip.Tip="上移"
-                                                                        AutomationProperties.Name="上移"
-                                                                    >
-                                                                        <arc:ArcGlyph
-                                                                            Data="{x:Static arc:ArcIcons.ArrowUp}"
-                                                                            Size="13"
-                                                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                                                        />
-                                                                    </arc:Button>
-                                                                    <arc:Button
-                                                                        Classes="rowActions"
-                                                                        Variant="Ghost"
-                                                                        Size="Small"
-                                                                        Width="24"
-                                                                        Padding="0"
-                                                                        IsTabStop="False"
-                                                                        Click="OnTreeMoveRowDownClick"
-                                                                        ToolTip.Tip="下移"
-                                                                        AutomationProperties.Name="下移"
-                                                                    >
-                                                                        <arc:ArcGlyph
-                                                                            Data="{x:Static arc:ArcIcons.ArrowDown}"
-                                                                            Size="13"
-                                                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                                                        />
-                                                                    </arc:Button>
-                                                                </StackPanel>
-                                                                <arc:Button
-                                                                    Grid.Column="3"
-                                                                    Classes="rowActions"
-                                                                    Variant="Ghost"
-                                                                    Size="Small"
-                                                                    Width="40"
-                                                                    Padding="0"
                                                                     IsTabStop="False"
-                                                                    Click="OnTreeRowActionsClick"
-                                                                    AutomationProperties.Name="更多操作"
+                                                                    Click="OnTreeMoveRowUpClick"
+                                                                    ToolTip.Tip="上移"
+                                                                    AutomationProperties.Name="上移"
                                                                 >
                                                                     <arc:ArcGlyph
-                                                                        Data="{x:Static arc:ArcIcons.Ellipsis}"
-                                                                        Size="15"
+                                                                        Data="{x:Static arc:ArcIcons.ArrowUp}"
+                                                                        Size="13"
                                                                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                                                     />
                                                                 </arc:Button>
-                                                            </Grid>
-                                                        </Border>
-
-                                                        <Border
-                                                            IsVisible="{Binding IsRequest}"
-                                                            Classes="treeRow"
-                                                            Classes.selected="{Binding Request.IsSelected}"
-                                                            Margin="{Binding RequestIndent}"
-                                                            Focusable="True"
-                                                            PointerPressed="OnTreeRowPointerPressed"
-                                                            AutomationProperties.Name="{Binding Request.Name}"
-                                                        >
-                                                            <Grid
-                                                                ColumnDefinitions="*,Auto,40"
-                                                                ColumnSpacing="2"
+                                                                <arc:Button
+                                                                    Classes="rowActions"
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Width="24"
+                                                                    Padding="0"
+                                                                    IsTabStop="False"
+                                                                    Click="OnTreeMoveRowDownClick"
+                                                                    ToolTip.Tip="下移"
+                                                                    AutomationProperties.Name="下移"
+                                                                >
+                                                                    <arc:ArcGlyph
+                                                                        Data="{x:Static arc:ArcIcons.ArrowDown}"
+                                                                        Size="13"
+                                                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                    />
+                                                                </arc:Button>
+                                                            </StackPanel>
+                                                            <arc:Button
+                                                                Grid.Column="3"
+                                                                Classes="rowActions"
+                                                                Variant="Ghost"
+                                                                Size="Small"
+                                                                Width="40"
+                                                                Padding="0"
+                                                                IsTabStop="False"
+                                                                Click="OnTreeRowActionsClick"
+                                                                AutomationProperties.Name="更多操作"
                                                             >
-                                                                <Border
-                                                                    Grid.Column="0"
-                                                                    Background="Transparent"
-                                                                    Padding="6,3"
-                                                                    Cursor="Hand"
+                                                                <arc:ArcGlyph
+                                                                    Data="{x:Static arc:ArcIcons.Ellipsis}"
+                                                                    Size="15"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                />
+                                                            </arc:Button>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+
+                                                <DataTemplate DataType="models:TreeRequestNode">
+                                                    <Border
+                                                        Classes="treeRow"
+                                                        Classes.selected="{Binding Request.IsSelected}"
+                                                        Margin="{Binding Indent}"
+                                                        Focusable="True"
+                                                        PointerPressed="OnTreeRowPointerPressed"
+                                                        AutomationProperties.Name="{Binding Request.Name}"
+                                                    >
+                                                        <Grid
+                                                            ColumnDefinitions="*,Auto,40"
+                                                            ColumnSpacing="2"
+                                                        >
+                                                            <Border
+                                                                Grid.Column="0"
+                                                                Background="Transparent"
+                                                                Padding="6,3"
+                                                                Cursor="Hand"
+                                                            >
+                                                                <Grid
+                                                                    ColumnDefinitions="18,*,Auto"
+                                                                    ColumnSpacing="6"
                                                                 >
-                                                                    <Grid
-                                                                        ColumnDefinitions="18,*,Auto"
-                                                                        ColumnSpacing="6"
-                                                                    >
-                                                                        <arc:ArcGlyph
-                                                                            Data="{x:Static arc:ArcIcons.FileText}"
-                                                                            Size="14"
-                                                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                                            VerticalAlignment="Center"
-                                                                        />
-                                                                        <TextBlock
-                                                                            Grid.Column="1"
-                                                                            Text="{Binding Request.Name}"
-                                                                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
-                                                                            Foreground="{arc:ArcDesignTokenResource Foreground}"
-                                                                            VerticalAlignment="Center"
-                                                                            TextTrimming="CharacterEllipsis"
-                                                                        />
-                                                                        <arc:ArcGlyph
-                                                                            Grid.Column="2"
-                                                                            Data="{x:Static arc:ArcIcons.Star}"
-                                                                            Size="12"
-                                                                            Foreground="{arc:ArcDesignTokenResource Warning}"
-                                                                            VerticalAlignment="Center"
-                                                                            IsVisible="{Binding Request.IsFavorite}"
-                                                                        />
-                                                                    </Grid>
-                                                                </Border>
-                                                                <StackPanel
-                                                                    Grid.Column="1"
-                                                                    Orientation="Horizontal"
-                                                                    Spacing="2"
-                                                                    VerticalAlignment="Center"
-                                                                >
-                                                                    <arc:Button
-                                                                        Classes="rowActions"
-                                                                        Variant="Ghost"
-                                                                        Size="Small"
-                                                                        Width="24"
-                                                                        Padding="0"
-                                                                        IsTabStop="False"
-                                                                        Click="OnTreeMoveRowUpClick"
-                                                                        ToolTip.Tip="上移"
-                                                                        AutomationProperties.Name="上移"
-                                                                    >
-                                                                        <arc:ArcGlyph
-                                                                            Data="{x:Static arc:ArcIcons.ArrowUp}"
-                                                                            Size="13"
-                                                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                                                        />
-                                                                    </arc:Button>
-                                                                    <arc:Button
-                                                                        Classes="rowActions"
-                                                                        Variant="Ghost"
-                                                                        Size="Small"
-                                                                        Width="24"
-                                                                        Padding="0"
-                                                                        IsTabStop="False"
-                                                                        Click="OnTreeMoveRowDownClick"
-                                                                        ToolTip.Tip="下移"
-                                                                        AutomationProperties.Name="下移"
-                                                                    >
-                                                                        <arc:ArcGlyph
-                                                                            Data="{x:Static arc:ArcIcons.ArrowDown}"
-                                                                            Size="13"
-                                                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                                                        />
-                                                                    </arc:Button>
-                                                                </StackPanel>
+                                                                    <arc:ArcGlyph
+                                                                        Data="{x:Static arc:ArcIcons.FileText}"
+                                                                        Size="14"
+                                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                        VerticalAlignment="Center"
+                                                                    />
+                                                                    <TextBlock
+                                                                        Grid.Column="1"
+                                                                        Text="{Binding Request.Name}"
+                                                                        FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                                                                        Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                                        VerticalAlignment="Center"
+                                                                        TextTrimming="CharacterEllipsis"
+                                                                    />
+                                                                    <arc:ArcGlyph
+                                                                        Grid.Column="2"
+                                                                        Data="{x:Static arc:ArcIcons.Star}"
+                                                                        Size="12"
+                                                                        Foreground="{arc:ArcDesignTokenResource Warning}"
+                                                                        VerticalAlignment="Center"
+                                                                        IsVisible="{Binding Request.IsFavorite}"
+                                                                    />
+                                                                </Grid>
+                                                            </Border>
+                                                            <StackPanel
+                                                                Grid.Column="1"
+                                                                Orientation="Horizontal"
+                                                                Spacing="2"
+                                                                VerticalAlignment="Center"
+                                                            >
                                                                 <arc:Button
-                                                                    Grid.Column="2"
                                                                     Classes="rowActions"
                                                                     Variant="Ghost"
                                                                     Size="Small"
-                                                                    Width="40"
+                                                                    Width="24"
                                                                     Padding="0"
                                                                     IsTabStop="False"
-                                                                    Click="OnTreeRowActionsClick"
-                                                                    AutomationProperties.Name="更多操作"
+                                                                    Click="OnTreeMoveRowUpClick"
+                                                                    ToolTip.Tip="上移"
+                                                                    AutomationProperties.Name="上移"
                                                                 >
                                                                     <arc:ArcGlyph
-                                                                        Data="{x:Static arc:ArcIcons.Ellipsis}"
-                                                                        Size="15"
+                                                                        Data="{x:Static arc:ArcIcons.ArrowUp}"
+                                                                        Size="13"
                                                                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                                                     />
                                                                 </arc:Button>
-                                                            </Grid>
-                                                        </Border>
-                                                    </Grid>
+                                                                <arc:Button
+                                                                    Classes="rowActions"
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Width="24"
+                                                                    Padding="0"
+                                                                    IsTabStop="False"
+                                                                    Click="OnTreeMoveRowDownClick"
+                                                                    ToolTip.Tip="下移"
+                                                                    AutomationProperties.Name="下移"
+                                                                >
+                                                                    <arc:ArcGlyph
+                                                                        Data="{x:Static arc:ArcIcons.ArrowDown}"
+                                                                        Size="13"
+                                                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                    />
+                                                                </arc:Button>
+                                                            </StackPanel>
+                                                            <arc:Button
+                                                                Grid.Column="2"
+                                                                Classes="rowActions"
+                                                                Variant="Ghost"
+                                                                Size="Small"
+                                                                Width="40"
+                                                                Padding="0"
+                                                                IsTabStop="False"
+                                                                Click="OnTreeRowActionsClick"
+                                                                AutomationProperties.Name="更多操作"
+                                                            >
+                                                                <arc:ArcGlyph
+                                                                    Data="{x:Static arc:ArcIcons.Ellipsis}"
+                                                                    Size="15"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                />
+                                                            </arc:Button>
+                                                        </Grid>
+                                                    </Border>
                                                 </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
+                                            </ItemsControl.DataTemplates>
                                         </ItemsControl>
 
                                         <TextBlock
