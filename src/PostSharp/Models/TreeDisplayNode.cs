@@ -3,19 +3,42 @@ using Avalonia;
 namespace PostSharp.Models;
 
 /// <summary>One visible row in the flattened sidebar tree: a collection header or a request.</summary>
-public sealed class TreeDisplayNode
+public abstract class TreeDisplayNode
 {
-    public RequestCollection? Collection { get; init; }
+    private protected TreeDisplayNode(
+        RequestCollection? collection,
+        RequestItem? request,
+        int depth
+    )
+    {
+        Collection = collection;
+        Request = request;
+        Depth = depth;
+    }
 
-    public RequestItem? Request { get; init; }
+    public RequestCollection? Collection { get; }
 
-    public int Depth { get; init; }
+    public RequestItem? Request { get; }
 
-    public bool IsCollection => Collection is not null;
+    public int Depth { get; }
 
-    public bool IsRequest => Request is not null;
+    public abstract Thickness Indent { get; }
+}
 
-    public Thickness Indent => new(Depth * 16, 0, 0, 0);
+/// <summary>A collection header row; it owns its expand / collapse chevron and actions.</summary>
+public sealed class TreeCollectionNode : TreeDisplayNode
+{
+    public TreeCollectionNode(RequestCollection collection, int depth)
+        : base(collection, null, depth) { }
 
-    public Thickness RequestIndent => new(Depth * 16 + 20, 0, 0, 0);
+    public override Thickness Indent => new(Depth * 16, 0, 0, 0);
+}
+
+/// <summary>A request row, indented one step under its collection.</summary>
+public sealed class TreeRequestNode : TreeDisplayNode
+{
+    public TreeRequestNode(RequestItem request, int depth)
+        : base(null, request, depth) { }
+
+    public override Thickness Indent => new(Depth * 16 + 20, 0, 0, 0);
 }

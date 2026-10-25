@@ -64,7 +64,8 @@ public sealed class AuditEntry
     public bool HasAiOutput => IsSse && (AiContent.Length > 0 || AiThinking.Length > 0);
 
     [JsonIgnore]
-    public string AiSummary => $"SSE · {SseEventCount} 个事件 · 内容 {AiContent.Length} 字 · 思考 {AiThinking.Length} 字";
+    public string AiSummary =>
+        $"SSE · {SseEventCount} 个事件 · 内容 {AiContent.Length} 字 · 思考 {AiThinking.Length} 字";
 
     [JsonIgnore]
     public string TimeText => Timestamp.LocalDateTime.ToString("MM-dd HH:mm:ss");
@@ -76,16 +77,18 @@ public sealed class AuditEntry
     public string SourceTooltip => Source == "MCP" ? "AI 通过 MCP 发起" : "界面手动发送";
 
     [JsonIgnore]
-    public object SourceIcon => new ArcGlyph
-    {
-        Data = Source == "MCP" ? ArcIcons.Sparkles : ArcIcons.Monitor,
-        Size = 12
-    };
+    public object SourceIcon =>
+        new ArcGlyph { Data = Source == "MCP" ? ArcIcons.Sparkles : ArcIcons.Monitor, Size = 12 };
 
     [JsonIgnore]
-    public string StatusLabel => StatusCode > 0
-        ? (string.IsNullOrWhiteSpace(StatusText) ? StatusCode.ToString() : $"{StatusCode} {StatusText}")
-        : "失败";
+    public string StatusLabel =>
+        StatusCode > 0
+            ? (
+                string.IsNullOrWhiteSpace(StatusText)
+                    ? StatusCode.ToString()
+                    : $"{StatusCode} {StatusText}"
+            )
+            : "失败";
 
     [JsonIgnore]
     public string StatusShortLabel => StatusCode > 0 ? StatusCode.ToString() : "失败";
@@ -100,12 +103,13 @@ public sealed class AuditEntry
     public string DurationText => $"{ElapsedMs} ms";
 
     [JsonIgnore]
-    public string SizeText => SizeBytes switch
-    {
-        < 1024 => $"{SizeBytes} B",
-        < 1024 * 1024 => $"{SizeBytes / 1024d:0.#} KB",
-        _ => $"{SizeBytes / (1024d * 1024d):0.##} MB"
-    };
+    public string SizeText =>
+        SizeBytes switch
+        {
+            < 1024 => $"{SizeBytes} B",
+            < 1024 * 1024 => $"{SizeBytes / 1024d:0.#} KB",
+            _ => $"{SizeBytes / (1024d * 1024d):0.##} MB",
+        };
 
     [JsonIgnore]
     public string ClientLabel => string.IsNullOrWhiteSpace(Client) ? "—" : Client;
@@ -117,36 +121,39 @@ public sealed class AuditEntry
     public BadgeTone SourceTone => Source == "MCP" ? BadgeTone.Info : BadgeTone.Neutral;
 
     [JsonIgnore]
-    public object StatusIcon => new ArcGlyph
-    {
-        Data = StatusCode switch
+    public object StatusIcon =>
+        new ArcGlyph
         {
-            >= 200 and < 300 => ArcIcons.CircleCheck,
-            >= 300 and < 400 => ArcIcons.Info,
-            >= 400 and < 500 => ArcIcons.TriangleAlert,
-            _ => ArcIcons.CircleX
-        },
-        Size = 12
-    };
+            Data = StatusCode switch
+            {
+                >= 200 and < 300 => ArcIcons.CircleCheck,
+                >= 300 and < 400 => ArcIcons.Info,
+                >= 400 and < 500 => ArcIcons.TriangleAlert,
+                _ => ArcIcons.CircleX,
+            },
+            Size = 12,
+        };
 
     [JsonIgnore]
-    public BadgeTone MethodTone => Method.ToUpperInvariant() switch
-    {
-        "GET" => BadgeTone.Info,
-        "POST" => BadgeTone.Success,
-        "PUT" or "PATCH" => BadgeTone.Warning,
-        "DELETE" => BadgeTone.Danger,
-        _ => BadgeTone.Neutral
-    };
+    public BadgeTone MethodTone =>
+        Method.ToUpperInvariant() switch
+        {
+            "GET" => BadgeTone.Info,
+            "POST" => BadgeTone.Success,
+            "PUT" or "PATCH" => BadgeTone.Warning,
+            "DELETE" => BadgeTone.Danger,
+            _ => BadgeTone.Neutral,
+        };
 
     [JsonIgnore]
-    public BadgeTone StatusTone => StatusCode switch
-    {
-        >= 200 and < 300 => BadgeTone.Success,
-        >= 300 and < 400 => BadgeTone.Info,
-        >= 400 and < 500 => BadgeTone.Warning,
-        _ => BadgeTone.Danger
-    };
+    public BadgeTone StatusTone =>
+        StatusCode switch
+        {
+            >= 200 and < 300 => BadgeTone.Success,
+            >= 300 and < 400 => BadgeTone.Info,
+            >= 400 and < 500 => BadgeTone.Warning,
+            _ => BadgeTone.Danger,
+        };
 
     [JsonIgnore]
     public IRelayCommand? RestoreCommand { get; set; }

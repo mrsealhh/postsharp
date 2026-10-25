@@ -13,7 +13,8 @@ public sealed record ComposedRequest(
     bool IsMultipart = false,
     IReadOnlyList<KeyValuePair<string, string>>? FormFields = null,
     string? UploadFilePath = null,
-    string? UploadFieldName = null);
+    string? UploadFieldName = null
+);
 
 public static class RequestComposer
 {
@@ -24,15 +25,17 @@ public static class RequestComposer
             : request.Method.Trim().ToUpperInvariant();
 
         var url = BuildUrl(request, environment);
-        var headers = request.Headers.ActiveRows
-            .Select(row => new KeyValuePair<string, string>(
+        var headers = request
+            .Headers.ActiveRows.Select(row => new KeyValuePair<string, string>(
                 row.Key.Trim(),
-                VariableResolver.Resolve(row.Value, environment)))
+                VariableResolver.Resolve(row.Value, environment)
+            ))
             .ToList();
 
         var bodyMode = request.BodyMode ?? "None";
         var isMultipart = string.Equals(bodyMode, "Multipart", StringComparison.OrdinalIgnoreCase);
-        var hasBody = !isMultipart && !string.Equals(bodyMode, "None", StringComparison.OrdinalIgnoreCase);
+        var hasBody =
+            !isMultipart && !string.Equals(bodyMode, "None", StringComparison.OrdinalIgnoreCase);
         var body = hasBody ? VariableResolver.Resolve(request.Body, environment) : null;
         if (string.IsNullOrEmpty(body))
         {
@@ -40,7 +43,8 @@ public static class RequestComposer
         }
 
         var hasUserContentType = headers.Any(pair =>
-            pair.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase));
+            pair.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)
+        );
 
         string? contentType = null;
         if (body is not null && !hasUserContentType)
@@ -56,10 +60,11 @@ public static class RequestComposer
 
         if (isMultipart)
         {
-            formFields = request.FormFields.ActiveRows
-                .Select(row => new KeyValuePair<string, string>(
+            formFields = request
+                .FormFields.ActiveRows.Select(row => new KeyValuePair<string, string>(
                     row.Key.Trim(),
-                    VariableResolver.Resolve(row.Value, environment)))
+                    VariableResolver.Resolve(row.Value, environment)
+                ))
                 .ToList();
 
             uploadFieldName = string.IsNullOrWhiteSpace(request.UploadFieldName)
@@ -88,7 +93,8 @@ public static class RequestComposer
             isMultipart,
             formFields,
             uploadFilePath,
-            uploadFieldName);
+            uploadFieldName
+        );
     }
 
     public static string BuildCurl(ComposedRequest request)
@@ -96,7 +102,7 @@ public static class RequestComposer
         var lines = new List<string>
         {
             $"curl -X {request.Method} {Quote(request.Url)}",
-            "  --compressed"
+            "  --compressed",
         };
 
         foreach (var (key, value) in request.Headers)
@@ -104,9 +110,12 @@ public static class RequestComposer
             lines.Add($"  -H {Quote($"{key}: {value}")}");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.ContentType)
+        if (
+            !string.IsNullOrWhiteSpace(request.ContentType)
             && !request.Headers.Any(pair =>
-                pair.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)))
+                pair.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)
+            )
+        )
         {
             lines.Add($"  -H {Quote($"Content-Type: {request.ContentType}")}");
         }
@@ -137,22 +146,68 @@ public static class RequestComposer
     /// <summary>Builds a cURL command for the current request, or a comment explaining why it cannot.</summary>
     public static string BuildCurl(RequestItem request, EnvironmentModel? environment)
     {
+        var blocker = FindCurlBlocker(request, environment);
+        if (blocker is not null)
+        {
+            return $"# 无法生成 cURL：{blocker}";
+        }
+
         try
         {
             return BuildCurl(Compose(request, environment));
         }
         catch (Exception exception)
         {
-            return $"# 无法生成 cURL：{exception.Message}";
+            Log.Error(exception, "生成 cURL 时出现意外错误 {RequestName}", request.Name);
+            return "# 无法生成 cURL：生成时出现意外错误，请检查请求配置。";
         }
     }
 
-    private static string BuildUrl(RequestItem request, EnvironmentModel? environment)
+    /// <summary>
+    /// Checks the request before composing it, so an incomplete draft (blank URL, missing upload file) is reported
+    /// as a hint instead of being logged as a failure.
+    /// </summary>
+    private static string? FindCurlBlocker(RequestItem request, EnvironmentModel? environment)
     {
-        var raw = VariableResolver.Resolve(request.Url, environment).Trim();
+        if (
+            !TryResolveHttpUri(
+                VariableResolver.Resolve(request.Url, environment),
+                out _,
+                out var problem
+            )
+        )
+        {
+            return problem;
+        }
+
+        if (
+            !string.Equals(
+                request.BodyMode ?? "None",
+                "Multipart",
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            return null;
+        }
+
+        var filePath = VariableResolver.Resolve(request.UploadFilePath, environment).Trim();
+        if (!string.IsNullOrEmpty(filePath) && !File.Exists(filePath))
+        {
+            return $"上传文件不存在：{filePath}";
+        }
+
+        return null;
+    }
+
+    private static bool TryResolveHttpUri(string raw, out Uri uri, out string problem)
+    {
+        raw = raw.Trim();
         if (string.IsNullOrWhiteSpace(raw))
         {
-            throw new InvalidOperationException("请输入请求地址。");
+            uri = null!;
+            problem = "请输入请求地址。";
+            return false;
         }
 
         if (!raw.Contains("://", StringComparison.Ordinal))
@@ -160,16 +215,43 @@ public static class RequestComposer
             raw = "http://" + raw;
         }
 
-        if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var parsed))
         {
-            throw new InvalidOperationException("请求地址无效，请使用 http:// 或 https:// 开头的完整地址。");
+            uri = null!;
+            problem = "请求地址无效，请使用 http:// 或 https:// 开头的完整地址。";
+            return false;
+        }
+
+        if (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)
+        {
+            uri = null!;
+            problem = "请求地址无效，请使用 http:// 或 https:// 开头的完整地址。";
+            return false;
+        }
+
+        uri = parsed;
+        problem = string.Empty;
+        return true;
+    }
+
+    private static string BuildUrl(RequestItem request, EnvironmentModel? environment)
+    {
+        if (
+            !TryResolveHttpUri(
+                VariableResolver.Resolve(request.Url, environment),
+                out var uri,
+                out var problem
+            )
+        )
+        {
+            throw new InvalidOperationException(problem);
         }
 
         var query = uri.Query.TrimStart('?');
-        var additions = request.Params.ActiveRows
-            .Select(row =>
-                $"{Uri.EscapeDataString(row.Key.Trim())}={Uri.EscapeDataString(VariableResolver.Resolve(row.Value, environment))}")
+        var additions = request
+            .Params.ActiveRows.Select(row =>
+                $"{Uri.EscapeDataString(row.Key.Trim())}={Uri.EscapeDataString(VariableResolver.Resolve(row.Value, environment))}"
+            )
             .ToList();
 
         if (additions.Count == 0)
@@ -181,7 +263,7 @@ public static class RequestComposer
         {
             Query = string.IsNullOrEmpty(query)
                 ? string.Join("&", additions)
-                : query + "&" + string.Join("&", additions)
+                : query + "&" + string.Join("&", additions),
         };
 
         return builder.Uri.ToString();

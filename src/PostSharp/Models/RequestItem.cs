@@ -51,6 +51,10 @@ public partial class RequestItem : ObservableObject
     [ObservableProperty]
     private string _url = string.Empty;
 
+    /// <summary>0 means "use the global timeout from settings"; a positive value overrides it for this request.</summary>
+    [ObservableProperty]
+    private int _timeoutSeconds;
+
     /// <summary>None, Json or Text.</summary>
     [ObservableProperty]
     private string _bodyMode = "None";
@@ -87,23 +91,36 @@ public partial class RequestItem : ObservableObject
             Name = Name,
             Method = Method,
             Url = Url,
+            TimeoutSeconds = TimeoutSeconds,
             BodyMode = BodyMode,
             Body = Body,
             UploadFilePath = UploadFilePath,
-            UploadFieldName = UploadFieldName
+            UploadFieldName = UploadFieldName,
         };
 
-        foreach (var row in Params.Where(r => !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)))
+        foreach (
+            var row in Params.Where(r =>
+                !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)
+            )
+        )
         {
             clone.Params.AddRow(row.Key, row.Value, row.IsEnabled);
         }
 
-        foreach (var row in Headers.Where(r => !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)))
+        foreach (
+            var row in Headers.Where(r =>
+                !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)
+            )
+        )
         {
             clone.Headers.AddRow(row.Key, row.Value, row.IsEnabled);
         }
 
-        foreach (var row in FormFields.Where(r => !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)))
+        foreach (
+            var row in FormFields.Where(r =>
+                !string.IsNullOrWhiteSpace(r.Key) || !string.IsNullOrWhiteSpace(r.Value)
+            )
+        )
         {
             clone.FormFields.AddRow(row.Key, row.Value, row.IsEnabled);
         }

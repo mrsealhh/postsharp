@@ -20,9 +20,8 @@ public sealed partial class SuiteBuilderStep : ObservableObject
 
     public BadgeTone MethodTone => Step.MethodTone;
 
-    public string MappingLabel => Step.InputMappings.Count == 0
-        ? "映射"
-        : $"映射 ({Step.InputMappings.Count})";
+    public string MappingLabel =>
+        Step.InputMappings.Count == 0 ? "映射" : $"映射 ({Step.InputMappings.Count})";
 
     public IRelayCommand? EditMappingsCommand { get; set; }
 
@@ -56,7 +55,8 @@ public sealed partial class InputMappingEditor : ObservableObject
     [ObservableProperty]
     private string? _error;
 
-    public IReadOnlyList<SuiteStepOption> SourceOptions { get; set; } = Array.Empty<SuiteStepOption>();
+    public IReadOnlyList<SuiteStepOption> SourceOptions { get; set; } =
+        Array.Empty<SuiteStepOption>();
 
     public IRelayCommand? RemoveCommand { get; set; }
 }

@@ -10,7 +10,7 @@ public sealed class WorkspaceStore
     {
         WriteIndented = true,
         PropertyNameCaseInsensitive = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     public string FilePath { get; }
@@ -19,7 +19,8 @@ public sealed class WorkspaceStore
     {
         var root = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "PostSharp");
+            "PostSharp"
+        );
         Directory.CreateDirectory(root);
         FilePath = Path.Combine(root, "workspace.json");
     }
@@ -33,10 +34,14 @@ public sealed class WorkspaceStore
                 return null;
             }
 
-            return JsonSerializer.Deserialize<WorkspaceDto>(File.ReadAllText(FilePath), JsonOptions);
+            return JsonSerializer.Deserialize<WorkspaceDto>(
+                File.ReadAllText(FilePath),
+                JsonOptions
+            );
         }
-        catch
+        catch (Exception exception)
         {
+            Log.Warning(exception, "读取工作区失败 {WorkspaceFile}", FilePath);
             return null;
         }
     }
@@ -48,9 +53,10 @@ public sealed class WorkspaceStore
             var json = JsonSerializer.Serialize(workspace, JsonOptions);
             File.WriteAllText(FilePath, json);
         }
-        catch
+        catch (Exception exception)
         {
             // A failed autosave must never break the request the person is sending.
+            Log.Error(exception, "保存工作区失败 {WorkspaceFile}", FilePath);
         }
     }
 
@@ -60,53 +66,64 @@ public sealed class WorkspaceStore
         IEnumerable<HistoryEntry> history,
         IEnumerable<HistoryEntry> recycledHistory,
         IEnumerable<TestSuite> suites,
-        Guid? activeEnvironmentId)
+        Guid? activeEnvironmentId
+    )
     {
         return new WorkspaceDto
         {
-            Collections = collections.Select(collection => new CollectionDto
-            {
-                Id = collection.Id,
-                Name = collection.Name,
-                IsFavorite = collection.IsFavorite,
-                ParentId = collection.Parent?.Id,
-                Requests = collection.Requests.Select(ToDto).ToList()
-            }).ToList(),
-            Environments = environments.Select(environment => new EnvironmentDto
-            {
-                Id = environment.Id,
-                Name = environment.Name,
-                Variables = ToRows(environment.Variables)
-            }).ToList(),
+            Collections = collections
+                .Select(collection => new CollectionDto
+                {
+                    Id = collection.Id,
+                    Name = collection.Name,
+                    IsFavorite = collection.IsFavorite,
+                    ParentId = collection.Parent?.Id,
+                    Requests = collection.Requests.Select(ToDto).ToList(),
+                })
+                .ToList(),
+            Environments = environments
+                .Select(environment => new EnvironmentDto
+                {
+                    Id = environment.Id,
+                    Name = environment.Name,
+                    Variables = ToRows(environment.Variables),
+                })
+                .ToList(),
             History = history.Select(ToHistoryDto).ToList(),
             RecycledHistory = recycledHistory.Select(ToHistoryDto).ToList(),
-            Suites = suites.Select(suite => new SuiteDto
-            {
-                Id = suite.Id,
-                Name = suite.Name,
-                StopOnError = suite.StopOnError,
-                LastSummary = suite.LastSummary,
-                Steps = suite.Steps.Select(step => new SuiteStepDto
+            Suites = suites
+                .Select(suite => new SuiteDto
                 {
-                    Id = step.Id,
-                    RequestId = step.RequestId,
-                    RequestName = step.RequestName,
-                    Method = step.Method,
-                    Url = step.Url,
-                    DelayMs = step.DelayMs,
-                    ExpectedStatus = step.ExpectedStatus,
-                    BodyContains = step.BodyContains,
-                    InputMappings = step.InputMappings.Select(mapping => new SuiteMappingDto
-                    {
-                        SourceStepId = mapping.SourceStepId,
-                        SourcePath = mapping.SourcePath,
-                        TargetKind = mapping.TargetKind,
-                        TargetPath = mapping.TargetPath,
-                        Template = mapping.Template
-                    }).ToList()
-                }).ToList()
-            }).ToList(),
-            ActiveEnvironmentId = activeEnvironmentId
+                    Id = suite.Id,
+                    Name = suite.Name,
+                    StopOnError = suite.StopOnError,
+                    LastSummary = suite.LastSummary,
+                    Steps = suite
+                        .Steps.Select(step => new SuiteStepDto
+                        {
+                            Id = step.Id,
+                            RequestId = step.RequestId,
+                            RequestName = step.RequestName,
+                            Method = step.Method,
+                            Url = step.Url,
+                            DelayMs = step.DelayMs,
+                            ExpectedStatus = step.ExpectedStatus,
+                            BodyContains = step.BodyContains,
+                            InputMappings = step
+                                .InputMappings.Select(mapping => new SuiteMappingDto
+                                {
+                                    SourceStepId = mapping.SourceStepId,
+                                    SourcePath = mapping.SourcePath,
+                                    TargetKind = mapping.TargetKind,
+                                    TargetPath = mapping.TargetPath,
+                                    Template = mapping.Template,
+                                })
+                                .ToList(),
+                        })
+                        .ToList(),
+                })
+                .ToList(),
+            ActiveEnvironmentId = activeEnvironmentId,
         };
     }
 
@@ -118,11 +135,14 @@ public sealed class WorkspaceStore
             Name = dto.Name,
             Method = string.IsNullOrWhiteSpace(dto.Method) ? "GET" : dto.Method,
             Url = dto.Url,
+            TimeoutSeconds = dto.TimeoutSeconds,
             BodyMode = dto.BodyMode,
             Body = dto.Body,
             UploadFilePath = dto.UploadFilePath,
-            UploadFieldName = string.IsNullOrWhiteSpace(dto.UploadFieldName) ? "file" : dto.UploadFieldName,
-            IsFavorite = dto.IsFavorite
+            UploadFieldName = string.IsNullOrWhiteSpace(dto.UploadFieldName)
+                ? "file"
+                : dto.UploadFieldName,
+            IsFavorite = dto.IsFavorite,
         };
 
         FillRows(request.Params, dto.Params);
@@ -139,12 +159,13 @@ public sealed class WorkspaceStore
             Name = dto.Name,
             Method = dto.Method,
             Url = dto.Url,
+            TimeoutSeconds = dto.TimeoutSeconds,
             BodyMode = dto.BodyMode,
             Body = dto.Body,
             StatusCode = dto.StatusCode,
             DurationMs = dto.DurationMs,
             Params = dto.Params.ToList(),
-            Headers = dto.Headers.ToList()
+            Headers = dto.Headers.ToList(),
         };
     }
 
@@ -156,12 +177,13 @@ public sealed class WorkspaceStore
             Name = entry.Name,
             Method = entry.Method,
             Url = entry.Url,
+            TimeoutSeconds = entry.TimeoutSeconds,
             BodyMode = entry.BodyMode,
             Body = entry.Body,
             StatusCode = entry.StatusCode,
             DurationMs = entry.DurationMs,
             Params = entry.Params.ToList(),
-            Headers = entry.Headers.ToList()
+            Headers = entry.Headers.ToList(),
         };
     }
 
@@ -173,6 +195,7 @@ public sealed class WorkspaceStore
             Name = request.Name,
             Method = request.Method,
             Url = request.Url,
+            TimeoutSeconds = request.TimeoutSeconds,
             BodyMode = request.BodyMode,
             Body = request.Body,
             UploadFilePath = request.UploadFilePath,
@@ -180,15 +203,21 @@ public sealed class WorkspaceStore
             IsFavorite = request.IsFavorite,
             Params = ToRows(request.Params),
             Headers = ToRows(request.Headers),
-            FormFields = ToRows(request.FormFields)
+            FormFields = ToRows(request.FormFields),
         };
     }
 
     private static List<RowDto> ToRows(EditableRowCollection rows)
     {
-        return rows
-            .Where(row => !string.IsNullOrWhiteSpace(row.Key) || !string.IsNullOrWhiteSpace(row.Value))
-            .Select(row => new RowDto { Key = row.Key, Value = row.Value, IsEnabled = row.IsEnabled })
+        return rows.Where(row =>
+                !string.IsNullOrWhiteSpace(row.Key) || !string.IsNullOrWhiteSpace(row.Value)
+            )
+            .Select(row => new RowDto
+            {
+                Key = row.Key,
+                Value = row.Value,
+                IsEnabled = row.IsEnabled,
+            })
             .ToList();
     }
 
@@ -241,6 +270,8 @@ public sealed class RequestDto
 
     public string Url { get; set; } = string.Empty;
 
+    public int TimeoutSeconds { get; set; }
+
     public string BodyMode { get; set; } = "None";
 
     public string Body { get; set; } = string.Empty;
@@ -276,6 +307,8 @@ public sealed class HistoryDto
     public string Method { get; set; } = "GET";
 
     public string Url { get; set; } = string.Empty;
+
+    public int TimeoutSeconds { get; set; }
 
     public string BodyMode { get; set; } = "None";
 

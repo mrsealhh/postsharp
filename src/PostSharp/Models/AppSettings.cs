@@ -31,4 +31,23 @@ public partial class AppSettings : ObservableObject
 
     [ObservableProperty]
     private int _auditLimit = 500;
+
+    [ObservableProperty]
+    private string _logDirectory = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "PostSharp",
+        "logs"
+    );
+
+    [ObservableProperty]
+    private string _logLevel = LogLevels.Default;
+
+    [ObservableProperty]
+    private List<string> _fontDirectories = new();
+
+    [ObservableProperty]
+    private double _treePaneWidth = 320;
+
+    [ObservableProperty]
+    private bool _historyCollapsed;
 }

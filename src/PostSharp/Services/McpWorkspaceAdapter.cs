@@ -21,7 +21,8 @@ public sealed record McpRequestInfo(
     bool IsFavorite,
     IReadOnlyList<McpRowInfo> FormFields,
     string UploadFilePath,
-    string UploadFieldName);
+    string UploadFieldName
+);
 
 public sealed record McpCollectionInfo(
     Guid Id,
@@ -30,14 +31,15 @@ public sealed record McpCollectionInfo(
     int Depth,
     int Order,
     bool IsFavorite,
-    IReadOnlyList<McpRequestInfo> Requests);
-
+    IReadOnlyList<McpRequestInfo> Requests
+);
 
 public sealed record McpEnvironmentInfo(
     Guid Id,
     string Name,
     bool Active,
-    IReadOnlyList<McpRowInfo> Variables);
+    IReadOnlyList<McpRowInfo> Variables
+);
 
 public sealed record McpHistoryInfo(
     DateTimeOffset Time,
@@ -45,7 +47,8 @@ public sealed record McpHistoryInfo(
     string Method,
     string Url,
     int StatusCode,
-    long DurationMs);
+    long DurationMs
+);
 
 public sealed record McpAuditSummary(
     Guid Id,
@@ -61,7 +64,8 @@ public sealed record McpAuditSummary(
     long ElapsedMs,
     bool IsSuccess,
     bool IsSse,
-    int SseEventCount);
+    int SseEventCount
+);
 
 public sealed record McpSendResult(
     Guid RequestId,
@@ -80,7 +84,8 @@ public sealed record McpSendResult(
     bool IsSse = false,
     int SseEventCount = 0,
     string SseThinking = "",
-    string SseContent = "");
+    string SseContent = ""
+);
 
 public sealed record McpCallContext(string Tool, string? Client);
 
@@ -89,7 +94,8 @@ public sealed record McpSuiteStepInput(
     int? ExpectedStatus,
     string? BodyContains,
     int? DelayMs,
-    IReadOnlyList<McpSuiteMappingInput>? Mappings);
+    IReadOnlyList<McpSuiteMappingInput>? Mappings
+);
 
 public sealed record McpSuiteMappingInput(
     Guid? SourceStepId,
@@ -97,17 +103,24 @@ public sealed record McpSuiteMappingInput(
     string SourcePath,
     string TargetKind,
     string TargetPath,
-    string Template);
+    string Template
+);
 
-
-public sealed record McpSequenceStep(Guid RequestId, string Name, int StatusCode, string StatusText, string? Error);
+public sealed record McpSequenceStep(
+    Guid RequestId,
+    string Name,
+    int StatusCode,
+    string StatusText,
+    string? Error
+);
 
 public sealed record McpSequenceResult(
     int Total,
     int Succeeded,
     int Failed,
     bool Stopped,
-    IReadOnlyList<McpSequenceStep> Steps);
+    IReadOnlyList<McpSequenceStep> Steps
+);
 
 public sealed record McpRequestDraft(
     Guid? CollectionId,
@@ -122,7 +135,8 @@ public sealed record McpRequestDraft(
     string? UploadFilePath,
     string? UploadFieldName,
     bool? IsFavorite,
-    int? Position);
+    int? Position
+);
 
 /// <summary>
 /// The bridge between MCP tool calls (which run on the local HTTP listener's thread) and the workspace,
@@ -139,9 +153,9 @@ public sealed class McpWorkspaceAdapter
     public async Task<IReadOnlyList<McpCollectionInfo>> ListCollectionsAsync()
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
-            (IReadOnlyList<McpCollectionInfo>)_viewModel.Collections
-                .Select(ToCollectionInfo)
-                .ToList());
+            (IReadOnlyList<McpCollectionInfo>)
+                _viewModel.Collections.Select(ToCollectionInfo).ToList()
+        );
     }
 
     public async Task<McpRequestInfo?> GetRequestAsync(Guid id)
@@ -157,7 +171,8 @@ public sealed class McpWorkspaceAdapter
         string name,
         Guid? parentId,
         bool favorite,
-        int? position)
+        int? position
+    )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -172,7 +187,8 @@ public sealed class McpWorkspaceAdapter
         Guid? parentId,
         bool changeParent,
         bool? favorite,
-        int? position)
+        int? position
+    )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -182,7 +198,8 @@ public sealed class McpWorkspaceAdapter
                 parentId,
                 changeParent,
                 favorite,
-                position);
+                position
+            );
             return ToCollectionInfo(collection);
         });
     }
@@ -208,8 +225,9 @@ public sealed class McpWorkspaceAdapter
             RequestCollection? collection = null;
             if (draft.CollectionId is { } collectionId)
             {
-                collection = _viewModel.Collections.FirstOrDefault(candidate => candidate.Id == collectionId)
-                             ?? throw new KeyNotFoundException($"没有找到 id 为 {collectionId} 的集合。");
+                collection =
+                    _viewModel.Collections.FirstOrDefault(candidate => candidate.Id == collectionId)
+                    ?? throw new KeyNotFoundException($"没有找到 id 为 {collectionId} 的集合。");
             }
 
             collection ??= _viewModel.Collections.FirstOrDefault();
@@ -231,7 +249,7 @@ public sealed class McpWorkspaceAdapter
                     ? "file"
                     : draft.UploadFieldName.Trim(),
                 IsFavorite = draft.IsFavorite ?? false,
-                Owner = collection
+                Owner = collection,
             };
 
             ReplaceRows(request.Params, draft.Params);
@@ -314,9 +332,10 @@ public sealed class McpWorkspaceAdapter
 
             if (draft.CollectionId is not null || draft.Position is not null)
             {
-                var targetId = draft.CollectionId
-                               ?? request.Owner?.Id
-                               ?? throw new InvalidOperationException("请求没有所属集合。");
+                var targetId =
+                    draft.CollectionId
+                    ?? request.Owner?.Id
+                    ?? throw new InvalidOperationException("请求没有所属集合。");
                 _viewModel.MoveRequest(id, targetId, draft.Position);
             }
 
@@ -346,7 +365,8 @@ public sealed class McpWorkspaceAdapter
         Guid id,
         Guid? environmentId,
         McpCallContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -368,28 +388,42 @@ public sealed class McpWorkspaceAdapter
             throw new KeyNotFoundException($"没有找到 id 为 {id} 的请求。");
         }
 
-        snapshot.Request.Name = await Dispatcher.UIThread.InvokeAsync(() => FindRequest(id)?.Name ?? snapshot.Request.Name);
+        snapshot.Request.Name = await Dispatcher.UIThread.InvokeAsync(() =>
+            FindRequest(id)?.Name ?? snapshot.Request.Name
+        );
 
         ComposedRequest? composed = null;
         HttpResult result;
         try
         {
             composed = RequestComposer.Compose(snapshot.Request, snapshot.Environment);
-            result = await _http.SendAsync(composed, cancellationToken);
+            result = await _http.SendAsync(
+                composed,
+                cancellationToken,
+                snapshot.Request.TimeoutSeconds
+            );
         }
         catch (Exception exception)
         {
+            Log.Error(exception, "MCP 发送请求前组合失败 {RequestId}", id);
             result = HttpRequestService.Failure(exception.Message);
         }
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            _viewModel.RecordExternalSend(snapshot.Request, composed, result, "MCP", context.Tool, context.Client);
+            _viewModel.RecordExternalSend(
+                snapshot.Request,
+                composed,
+                result,
+                "MCP",
+                context.Tool,
+                context.Client
+            );
             return true;
         });
 
-        var headers = result.Headers
-            .Select(header => new McpRowInfo(header.Key, header.Value, true))
+        var headers = result
+            .Headers.Select(header => new McpRowInfo(header.Key, header.Value, true))
             .ToList();
 
         return new McpSendResult(
@@ -411,14 +445,16 @@ public sealed class McpWorkspaceAdapter
             result.IsSse,
             result.SseEventCount,
             result.SseThinking,
-            result.SseContent);
+            result.SseContent
+        );
     }
 
     public async Task<McpSequenceResult> RunSequenceAsync(
         IReadOnlyList<Guid> requestIds,
         bool stopOnError,
         McpCallContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var steps = new List<McpSequenceStep>();
         var stopped = false;
@@ -434,12 +470,15 @@ public sealed class McpWorkspaceAdapter
             try
             {
                 var result = await SendAsync(id, null, context, cancellationToken);
-                steps.Add(new McpSequenceStep(
-                    result.RequestId,
-                    result.Name,
-                    result.StatusCode,
-                    result.StatusText,
-                    result.Error));
+                steps.Add(
+                    new McpSequenceStep(
+                        result.RequestId,
+                        result.Name,
+                        result.StatusCode,
+                        result.StatusText,
+                        result.Error
+                    )
+                );
 
                 if (stopOnError && (result.Error is not null || result.StatusCode >= 400))
                 {
@@ -449,6 +488,7 @@ public sealed class McpWorkspaceAdapter
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "MCP 顺序运行步骤失败 {RequestId}", id);
                 steps.Add(new McpSequenceStep(id, string.Empty, 0, "失败", ex.Message));
                 if (stopOnError)
                 {
@@ -460,18 +500,23 @@ public sealed class McpWorkspaceAdapter
 
         return new McpSequenceResult(
             Total: steps.Count,
-            Succeeded: steps.Count(step => step.Error is null && step.StatusCode is >= 200 and < 400),
-            Failed: steps.Count(step => step.Error is not null || step.StatusCode >= 400 || step.StatusCode == 0),
+            Succeeded: steps.Count(step =>
+                step.Error is null && step.StatusCode is >= 200 and < 400
+            ),
+            Failed: steps.Count(step =>
+                step.Error is not null || step.StatusCode >= 400 || step.StatusCode == 0
+            ),
             Stopped: stopped,
-            Steps: steps);
+            Steps: steps
+        );
     }
 
     public async Task<string> GetCurlAsync(Guid id)
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            var request = FindRequest(id)
-                          ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的请求。");
+            var request =
+                FindRequest(id) ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的请求。");
             return RequestComposer.BuildCurl(request, _viewModel.ActiveEnvironment);
         });
     }
@@ -479,57 +524,66 @@ public sealed class McpWorkspaceAdapter
     public async Task<IReadOnlyList<McpAuditSummary>> ListAuditAsync(int limit, string? source)
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
-            (IReadOnlyList<McpAuditSummary>)_viewModel.Audit
-                .Where(entry => string.IsNullOrWhiteSpace(source)
-                                || entry.Source.Equals(source, StringComparison.OrdinalIgnoreCase))
-                .Take(Math.Clamp(limit, 1, 300))
-                .Select(entry => new McpAuditSummary(
-                    entry.Id,
-                    entry.Timestamp,
-                    entry.Source,
-                    entry.Client,
-                    entry.Tool,
-                    entry.RequestName,
-                    entry.Method,
-                    entry.Url,
-                    entry.StatusCode,
-                    entry.StatusText,
-                    entry.ElapsedMs,
-                    entry.IsSuccess,
-                    entry.IsSse,
-                    entry.SseEventCount))
-                .ToList());
+            (IReadOnlyList<McpAuditSummary>)
+                _viewModel
+                    .Audit.Where(entry =>
+                        string.IsNullOrWhiteSpace(source)
+                        || entry.Source.Equals(source, StringComparison.OrdinalIgnoreCase)
+                    )
+                    .Take(Math.Clamp(limit, 1, 300))
+                    .Select(entry => new McpAuditSummary(
+                        entry.Id,
+                        entry.Timestamp,
+                        entry.Source,
+                        entry.Client,
+                        entry.Tool,
+                        entry.RequestName,
+                        entry.Method,
+                        entry.Url,
+                        entry.StatusCode,
+                        entry.StatusText,
+                        entry.ElapsedMs,
+                        entry.IsSuccess,
+                        entry.IsSse,
+                        entry.SseEventCount
+                    ))
+                    .ToList()
+        );
     }
 
     public async Task<AuditEntry?> GetAuditAsync(Guid id)
     {
-        return await Dispatcher.UIThread.InvokeAsync(
-            () => _viewModel.Audit.FirstOrDefault(entry => entry.Id == id));
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            _viewModel.Audit.FirstOrDefault(entry => entry.Id == id)
+        );
     }
 
     public async Task<IReadOnlyList<TestSuite>> ListSuitesAsync()
     {
-        return await Dispatcher.UIThread.InvokeAsync(
-            () => (IReadOnlyList<TestSuite>)_viewModel.Suites.ToList());
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            (IReadOnlyList<TestSuite>)_viewModel.Suites.ToList()
+        );
     }
 
     public async Task<TestSuite?> GetSuiteAsync(Guid id)
     {
-        return await Dispatcher.UIThread.InvokeAsync(
-            () => _viewModel.Suites.FirstOrDefault(suite => suite.Id == id));
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            _viewModel.Suites.FirstOrDefault(suite => suite.Id == id)
+        );
     }
 
     public async Task<TestSuite> CreateSuiteAsync(
         string name,
         IReadOnlyList<McpSuiteStepInput> steps,
-        bool stopOnError)
+        bool stopOnError
+    )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
         {
             var suite = new TestSuite
             {
                 Name = string.IsNullOrWhiteSpace(name) ? "MCP 测试套件" : name.Trim(),
-                StopOnError = stopOnError
+                StopOnError = stopOnError,
             };
 
             suite.Steps.AddRange(BuildSuiteSteps(steps));
@@ -544,17 +598,17 @@ public sealed class McpWorkspaceAdapter
         string name,
         IReadOnlyList<Guid> collectionIds,
         int delayMs,
-        bool stopOnError)
+        bool stopOnError
+    )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
         {
             var requests = new List<RequestItem>();
             foreach (var collectionId in collectionIds)
             {
-                var collection = _viewModel.Collections.FirstOrDefault(
-                                     candidate => candidate.Id == collectionId)
-                                 ?? throw new KeyNotFoundException(
-                                     $"没有找到 id 为 {collectionId} 的集合。");
+                var collection =
+                    _viewModel.Collections.FirstOrDefault(candidate => candidate.Id == collectionId)
+                    ?? throw new KeyNotFoundException($"没有找到 id 为 {collectionId} 的集合。");
                 requests.AddRange(collection.Requests);
             }
 
@@ -569,13 +623,14 @@ public sealed class McpWorkspaceAdapter
                     null,
                     null,
                     delayMs,
-                    Array.Empty<McpSuiteMappingInput>()))
+                    Array.Empty<McpSuiteMappingInput>()
+                ))
                 .ToList();
 
             var suite = new TestSuite
             {
                 Name = string.IsNullOrWhiteSpace(name) ? "MCP 集合套件" : name.Trim(),
-                StopOnError = stopOnError
+                StopOnError = stopOnError,
             };
             suite.Steps.AddRange(BuildSuiteSteps(stepInputs));
 
@@ -590,12 +645,14 @@ public sealed class McpWorkspaceAdapter
         Guid id,
         string? name,
         bool? stopOnError,
-        IReadOnlyList<McpSuiteStepInput>? steps)
+        IReadOnlyList<McpSuiteStepInput>? steps
+    )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            var suite = _viewModel.Suites.FirstOrDefault(candidate => candidate.Id == id)
-                        ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的套件。");
+            var suite =
+                _viewModel.Suites.FirstOrDefault(candidate => candidate.Id == id)
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的套件。");
 
             if (!string.IsNullOrWhiteSpace(name))
             {
@@ -644,7 +701,8 @@ public sealed class McpWorkspaceAdapter
     public async Task<TestRunResult> RunSuiteAsync(
         Guid id,
         McpCallContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         return await _viewModel.RunSuiteForMcpAsync(id, context.Client, cancellationToken);
     }
@@ -652,38 +710,45 @@ public sealed class McpWorkspaceAdapter
     public async Task<IReadOnlyList<McpHistoryInfo>> ListHistoryAsync(int limit)
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
-            (IReadOnlyList<McpHistoryInfo>)_viewModel.History
-                .Take(Math.Clamp(limit, 1, 200))
-                .Select(entry => new McpHistoryInfo(
-                    entry.Timestamp,
-                    entry.Name,
-                    entry.Method,
-                    entry.Url,
-                    entry.StatusCode,
-                    entry.DurationMs))
-                .ToList());
+            (IReadOnlyList<McpHistoryInfo>)
+                _viewModel
+                    .History.Take(Math.Clamp(limit, 1, 200))
+                    .Select(entry => new McpHistoryInfo(
+                        entry.Timestamp,
+                        entry.Name,
+                        entry.Method,
+                        entry.Url,
+                        entry.StatusCode,
+                        entry.DurationMs
+                    ))
+                    .ToList()
+        );
     }
 
     public async Task<IReadOnlyList<McpEnvironmentInfo>> ListEnvironmentsAsync()
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
-            (IReadOnlyList<McpEnvironmentInfo>)_viewModel.Environments
-                .Select(environment => new McpEnvironmentInfo(
-                    environment.Id,
-                    environment.Name,
-                    ReferenceEquals(environment, _viewModel.ActiveEnvironment),
-                    environment.Variables
-                        .Where(row => !string.IsNullOrWhiteSpace(row.Key))
-                        .Select(ToInfo)
-                        .ToList()))
-                .ToList());
+            (IReadOnlyList<McpEnvironmentInfo>)
+                _viewModel
+                    .Environments.Select(environment => new McpEnvironmentInfo(
+                        environment.Id,
+                        environment.Name,
+                        ReferenceEquals(environment, _viewModel.ActiveEnvironment),
+                        environment
+                            .Variables.Where(row => !string.IsNullOrWhiteSpace(row.Key))
+                            .Select(ToInfo)
+                            .ToList()
+                    ))
+                    .ToList()
+        );
     }
 
     public async Task<McpEnvironmentInfo> SetVariableAsync(
         Guid? environmentId,
         string key,
         string value,
-        bool? enabled)
+        bool? enabled
+    )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -696,8 +761,9 @@ public sealed class McpWorkspaceAdapter
                 throw new KeyNotFoundException("没有找到目标环境。");
             }
 
-            var row = environment.Variables.FirstOrDefault(
-                candidate => candidate.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+            var row = environment.Variables.FirstOrDefault(candidate =>
+                candidate.Key.Equals(key, StringComparison.OrdinalIgnoreCase)
+            );
 
             if (row is null)
             {
@@ -720,10 +786,11 @@ public sealed class McpWorkspaceAdapter
                 environment.Id,
                 environment.Name,
                 ReferenceEquals(environment, _viewModel.ActiveEnvironment),
-                environment.Variables
-                    .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Key))
+                environment
+                    .Variables.Where(candidate => !string.IsNullOrWhiteSpace(candidate.Key))
                     .Select(ToInfo)
-                    .ToList());
+                    .ToList()
+            );
         });
     }
 
@@ -737,22 +804,24 @@ public sealed class McpWorkspaceAdapter
         var built = new List<TestStep>(steps.Count);
         foreach (var stepInput in steps)
         {
-            var request = FindRequest(stepInput.RequestId)
-                          ?? throw new KeyNotFoundException(
-                              $"没有找到 id 为 {stepInput.RequestId} 的请求。");
+            var request =
+                FindRequest(stepInput.RequestId)
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {stepInput.RequestId} 的请求。");
 
-            built.Add(new TestStep
-            {
-                RequestId = request.Id,
-                RequestName = request.Name,
-                Method = request.Method,
-                Url = request.Url,
-                DelayMs = Math.Clamp(stepInput.DelayMs ?? 200, 0, 60_000),
-                ExpectedStatus = stepInput.ExpectedStatus,
-                BodyContains = string.IsNullOrWhiteSpace(stepInput.BodyContains)
-                    ? null
-                    : stepInput.BodyContains
-            });
+            built.Add(
+                new TestStep
+                {
+                    RequestId = request.Id,
+                    RequestName = request.Name,
+                    Method = request.Method,
+                    Url = request.Url,
+                    DelayMs = Math.Clamp(stepInput.DelayMs ?? 200, 0, 60_000),
+                    ExpectedStatus = stepInput.ExpectedStatus,
+                    BodyContains = string.IsNullOrWhiteSpace(stepInput.BodyContains)
+                        ? null
+                        : stepInput.BodyContains,
+                }
+            );
         }
 
         for (var stepIndex = 0; stepIndex < steps.Count; stepIndex++)
@@ -772,18 +841,22 @@ public sealed class McpWorkspaceAdapter
                     if (sourceIndex < 0 || sourceIndex >= stepIndex)
                     {
                         throw new InvalidOperationException(
-                            $"第 {stepIndex + 1} 步的映射只能引用更早的步骤，sourceStepIndex={sourceIndex} 无效。");
+                            $"第 {stepIndex + 1} 步的映射只能引用更早的步骤，sourceStepIndex={sourceIndex} 无效。"
+                        );
                     }
 
                     sourceStepId = built[sourceIndex].Id;
                 }
                 else if (mapping.SourceStepId is { } requestedSourceId)
                 {
-                    var resolvedIndex = built.FindIndex(candidate => candidate.Id == requestedSourceId);
+                    var resolvedIndex = built.FindIndex(candidate =>
+                        candidate.Id == requestedSourceId
+                    );
                     if (resolvedIndex < 0 || resolvedIndex >= stepIndex)
                     {
                         throw new InvalidOperationException(
-                            $"第 {stepIndex + 1} 步的映射只能引用更早的步骤，sourceStepId={requestedSourceId} 无效。");
+                            $"第 {stepIndex + 1} 步的映射只能引用更早的步骤，sourceStepId={requestedSourceId} 无效。"
+                        );
                     }
 
                     sourceStepId = requestedSourceId;
@@ -791,37 +864,46 @@ public sealed class McpWorkspaceAdapter
                 else
                 {
                     throw new InvalidOperationException(
-                        $"第 {stepIndex + 1} 步的映射缺少 sourceStepIndex 或 sourceStepId。");
+                        $"第 {stepIndex + 1} 步的映射缺少 sourceStepIndex 或 sourceStepId。"
+                    );
                 }
 
                 var targetKind = string.IsNullOrWhiteSpace(mapping.TargetKind)
                     ? "Body"
                     : mapping.TargetKind.Trim();
-                if (!targetKind.Equals("Body", StringComparison.OrdinalIgnoreCase)
+                if (
+                    !targetKind.Equals("Body", StringComparison.OrdinalIgnoreCase)
                     && !targetKind.Equals("Header", StringComparison.OrdinalIgnoreCase)
                     && !targetKind.Equals("Query", StringComparison.OrdinalIgnoreCase)
-                    && !targetKind.Equals("Path", StringComparison.OrdinalIgnoreCase))
+                    && !targetKind.Equals("Path", StringComparison.OrdinalIgnoreCase)
+                )
                 {
                     throw new InvalidOperationException(
-                        $"第 {stepIndex + 1} 步的映射目标类型必须是 Body、Header、Query 或 Path。");
+                        $"第 {stepIndex + 1} 步的映射目标类型必须是 Body、Header、Query 或 Path。"
+                    );
                 }
 
                 if (string.IsNullOrWhiteSpace(mapping.TargetPath))
                 {
                     throw new InvalidOperationException(
-                        $"第 {stepIndex + 1} 步的映射缺少 targetPath。");
+                        $"第 {stepIndex + 1} 步的映射缺少 targetPath。"
+                    );
                 }
 
-                step.InputMappings.Add(new InputMapping
-                {
-                    SourceStepId = sourceStepId,
-                    SourcePath = mapping.SourcePath?.Trim() ?? string.Empty,
-                    TargetKind = char.ToUpperInvariant(targetKind[0]) + targetKind[1..].ToLowerInvariant(),
-                    TargetPath = mapping.TargetPath.Trim(),
-                    Template = string.IsNullOrWhiteSpace(mapping.Template)
-                        ? "{value}"
-                        : mapping.Template
-                });
+                step.InputMappings.Add(
+                    new InputMapping
+                    {
+                        SourceStepId = sourceStepId,
+                        SourcePath = mapping.SourcePath?.Trim() ?? string.Empty,
+                        TargetKind =
+                            char.ToUpperInvariant(targetKind[0])
+                            + targetKind[1..].ToLowerInvariant(),
+                        TargetPath = mapping.TargetPath.Trim(),
+                        Template = string.IsNullOrWhiteSpace(mapping.Template)
+                            ? "{value}"
+                            : mapping.Template,
+                    }
+                );
             }
         }
 
@@ -829,52 +911,55 @@ public sealed class McpWorkspaceAdapter
     }
 
     private RequestItem? FindRequest(Guid id) =>
-        _viewModel.Collections
-            .SelectMany(collection => collection.Requests)
+        _viewModel
+            .Collections.SelectMany(collection => collection.Requests)
             .FirstOrDefault(request => request.Id == id);
 
-    private static McpRequestInfo ToInfo(RequestItem request) => new(
-        request.Id,
-        request.Name,
-        request.Method,
-        request.Url,
-        request.BodyMode,
-        request.Body,
-        request.Owner?.Id,
-        request.Owner?.Name ?? string.Empty,
-        request.Params
-            .Where(row => !string.IsNullOrWhiteSpace(row.Key))
-            .Select(ToInfo)
-            .ToList(),
-        request.Headers
-            .Where(row => !string.IsNullOrWhiteSpace(row.Key))
-            .Select(ToInfo)
-            .ToList(),
-        request.Owner?.Requests.IndexOf(request) ?? -1,
-        request.IsFavorite,
-        request.FormFields
-            .Where(row => !string.IsNullOrWhiteSpace(row.Key))
-            .Select(ToInfo)
-            .ToList(),
-        request.UploadFilePath,
-        request.UploadFieldName);
+    private static McpRequestInfo ToInfo(RequestItem request) =>
+        new(
+            request.Id,
+            request.Name,
+            request.Method,
+            request.Url,
+            request.BodyMode,
+            request.Body,
+            request.Owner?.Id,
+            request.Owner?.Name ?? string.Empty,
+            request
+                .Params.Where(row => !string.IsNullOrWhiteSpace(row.Key))
+                .Select(ToInfo)
+                .ToList(),
+            request
+                .Headers.Where(row => !string.IsNullOrWhiteSpace(row.Key))
+                .Select(ToInfo)
+                .ToList(),
+            request.Owner?.Requests.IndexOf(request) ?? -1,
+            request.IsFavorite,
+            request
+                .FormFields.Where(row => !string.IsNullOrWhiteSpace(row.Key))
+                .Select(ToInfo)
+                .ToList(),
+            request.UploadFilePath,
+            request.UploadFieldName
+        );
 
-    private McpCollectionInfo ToCollectionInfo(RequestCollection collection) => new(
-        collection.Id,
-        collection.Name,
-        collection.Parent?.Id,
-        collection.Depth,
-        CollectionOrder(collection),
-        collection.IsFavorite,
-        collection.Requests.Select(ToInfo).ToList());
+    private McpCollectionInfo ToCollectionInfo(RequestCollection collection) =>
+        new(
+            collection.Id,
+            collection.Name,
+            collection.Parent?.Id,
+            collection.Depth,
+            CollectionOrder(collection),
+            collection.IsFavorite,
+            collection.Requests.Select(ToInfo).ToList()
+        );
 
     private int CollectionOrder(RequestCollection collection)
     {
         IList<RequestCollection> siblings = collection.Parent is { } parent
             ? parent.Children
-            : (IList<RequestCollection>)_viewModel.Collections
-                .Where(candidate => candidate.Parent is null)
-                .ToList();
+            : (IList<RequestCollection>)
+                _viewModel.Collections.Where(candidate => candidate.Parent is null).ToList();
         return siblings.IndexOf(collection);
     }
 
@@ -933,7 +1018,7 @@ public sealed class McpWorkspaceAdapter
             "json" => "Json",
             "text" => "Text",
             "multipart" or "form-data" or "formdata" => "Multipart",
-            _ => "None"
+            _ => "None",
         };
     }
 

@@ -10,43 +10,56 @@ public sealed class SettingsStore
     {
         WriteIndented = true,
         PropertyNameCaseInsensitive = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     public string FilePath { get; }
 
     public SettingsStore()
     {
-        var root = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "PostSharp");
-        Directory.CreateDirectory(root);
-        FilePath = Path.Combine(root, "settings.json");
+        AppPaths.EnsureRoot();
+        FilePath = AppPaths.SettingsFile;
     }
 
     public AppSettings Load()
     {
         try
         {
-            return File.Exists(FilePath)
-                ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOptions) ?? new AppSettings()
-                : new AppSettings();
+            if (!File.Exists(FilePath))
+            {
+                return new AppSettings();
+            }
+
+            var settings =
+                JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOptions)
+                ?? new AppSettings();
+
+            if (string.IsNullOrWhiteSpace(settings.LogDirectory))
+            {
+                settings.LogDirectory = AppPaths.DefaultLogDirectory;
+            }
+
+            return settings;
         }
-        catch
+        catch (Exception exception)
         {
+            Log.Warning(exception, "读取设置文件失败，使用默认设置 {SettingsFile}", FilePath);
             return new AppSettings();
         }
     }
 
-    public void Save(AppSettings settings)
+    public bool Save(AppSettings settings)
     {
         try
         {
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, JsonOptions));
+            var json = JsonSerializer.Serialize(settings, JsonOptions);
+            File.WriteAllText(FilePath, json);
+            return true;
         }
-        catch
+        catch (Exception exception)
         {
-            // Preferences are best-effort.
+            Log.Error(exception, "保存设置文件失败 {SettingsFile}", FilePath);
+            return false;
         }
     }
 }

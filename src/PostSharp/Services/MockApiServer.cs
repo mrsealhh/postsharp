@@ -17,14 +17,14 @@ public sealed class MockApiServer : IDisposable
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     private static readonly JsonSerializerOptions SseJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     private static readonly MockUser[] Users =
@@ -33,7 +33,7 @@ public sealed class MockApiServer : IDisposable
         new(2, "陈一鸣", "yiming.chen@example.com", "editor", true),
         new(3, "周宁", "ning.zhou@example.com", "viewer", true),
         new(4, "许知远", "zhiyuan.xu@example.com", "editor", false),
-        new(5, "顾清和", "qinghe.gu@example.com", "viewer", true)
+        new(5, "顾清和", "qinghe.gu@example.com", "viewer", true),
     };
 
     private TcpListener? _listener;
@@ -50,8 +50,14 @@ public sealed class MockApiServer : IDisposable
     /// Optional HTTP handler that gets the first look at every request. It returns null to let the mock
     /// routes handle the request, which is how the MCP endpoint shares this listener with the mock API.
     /// </summary>
-    public Func<string, string, IReadOnlyDictionary<string, string>, string, CancellationToken, Task<RawHttpResponse?>>
-        ? CustomHandler { get; set; }
+    public Func<
+        string,
+        string,
+        IReadOnlyDictionary<string, string>,
+        string,
+        CancellationToken,
+        Task<RawHttpResponse?>
+    >? CustomHandler { get; set; }
 
     public void Start(int preferredPort = 5199)
     {
@@ -70,9 +76,10 @@ public sealed class MockApiServer : IDisposable
                 Port = port;
                 break;
             }
-            catch (SocketException)
+            catch (SocketException exception)
             {
                 // Port busy: try the next one.
+                Log.Debug(exception, "Mock 端口 {Port} 不可用，尝试下一个端口", port);
             }
         }
 
@@ -94,18 +101,23 @@ public sealed class MockApiServer : IDisposable
             TcpClient client;
             try
             {
-                client = await _listener!.AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false);
+                client = await _listener!
+                    .AcceptTcpClientAsync(cancellationToken)
+                    .ConfigureAwait(false);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException exception)
             {
+                Log.Debug(exception, "Mock 接收循环已取消");
                 break;
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException exception)
             {
+                Log.Debug(exception, "Mock 监听器已释放，接收循环结束");
                 break;
             }
-            catch (SocketException)
+            catch (SocketException exception)
             {
+                Log.Warning(exception, "Mock 接收连接失败，继续监听");
                 continue;
             }
 
@@ -123,7 +135,9 @@ public sealed class MockApiServer : IDisposable
                 await using var stream = client.GetStream();
                 var reader = new ConnectionReader(stream);
 
-                var requestLine = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                var requestLine = await reader
+                    .ReadLineAsync(cancellationToken)
+                    .ConfigureAwait(false);
                 if (string.IsNullOrWhiteSpace(requestLine))
                 {
                     return;
@@ -132,7 +146,13 @@ public sealed class MockApiServer : IDisposable
                 var parts = requestLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length < 2)
                 {
-                    await WriteResponseAsync(stream, 400, "Bad Request", new { error = "invalid_request_line" }, cancellationToken);
+                    await WriteResponseAsync(
+                        stream,
+                        400,
+                        "Bad Request",
+                        new { error = "invalid_request_line" },
+                        cancellationToken
+                    );
                     return;
                 }
 
@@ -164,18 +184,34 @@ public sealed class MockApiServer : IDisposable
                 var body = string.Empty;
                 if (contentLength > 0)
                 {
-                    var bodyBytes = await reader.ReadExactAsync(contentLength, cancellationToken).ConfigureAwait(false);
-                    var charset = headers.TryGetValue("Content-Type", out var contentType)
+                    var bodyBytes = await reader
+                        .ReadExactAsync(contentLength, cancellationToken)
+                        .ConfigureAwait(false);
+                    var charset =
+                        headers.TryGetValue("Content-Type", out var contentType)
                         && contentType.Contains("charset=", StringComparison.OrdinalIgnoreCase)
-                        ? contentType[(contentType.IndexOf("charset=", StringComparison.OrdinalIgnoreCase) + 8)..].Trim('"', ' ', ';')
-                        : "utf-8";
+                            ? contentType[
+                                (
+                                    contentType.IndexOf(
+                                        "charset=",
+                                        StringComparison.OrdinalIgnoreCase
+                                    ) + 8
+                                )..
+                            ]
+                                .Trim('"', ' ', ';')
+                            : "utf-8";
 
                     try
                     {
                         body = Encoding.GetEncoding(charset).GetString(bodyBytes);
                     }
-                    catch
+                    catch (Exception exception)
                     {
+                        Log.Warning(
+                            exception,
+                            "Mock 请求字符集无法解码，回退到 UTF-8 {Charset}",
+                            charset
+                        );
                         body = Encoding.UTF8.GetString(bodyBytes);
                     }
                 }
@@ -186,11 +222,18 @@ public sealed class MockApiServer : IDisposable
 
                 if (CustomHandler is not null)
                 {
-                    var custom = await CustomHandler(method, target, headers, body, cancellationToken)
+                    var custom = await CustomHandler(
+                            method,
+                            target,
+                            headers,
+                            body,
+                            cancellationToken
+                        )
                         .ConfigureAwait(false);
                     if (custom is not null)
                     {
-                        await WriteRawResponseAsync(stream, custom, cancellationToken).ConfigureAwait(false);
+                        await WriteRawResponseAsync(stream, custom, cancellationToken)
+                            .ConfigureAwait(false);
                         return;
                     }
                 }
@@ -204,57 +247,84 @@ public sealed class MockApiServer : IDisposable
                 switch (path)
                 {
                     case "/api/health":
-                        await WriteResponseAsync(stream, 200, "OK", new
-                        {
-                            status = "ok",
-                            service = "postsharp-mock",
-                            version = "0.1.0",
-                            time = DateTimeOffset.Now
-                        }, cancellationToken);
+                        await WriteResponseAsync(
+                            stream,
+                            200,
+                            "OK",
+                            new
+                            {
+                                status = "ok",
+                                service = "postsharp-mock",
+                                version = "0.1.0",
+                                time = DateTimeOffset.Now,
+                            },
+                            cancellationToken
+                        );
                         return;
 
                     case "/api/users" when method == "GET":
-                        await WriteResponseAsync(stream, 200, "OK", new
-                        {
-                            total = Users.Length,
-                            users = Users
-                        }, cancellationToken);
+                        await WriteResponseAsync(
+                            stream,
+                            200,
+                            "OK",
+                            new { total = Users.Length, users = Users },
+                            cancellationToken
+                        );
                         return;
 
                     case "/api/error":
-                        await WriteResponseAsync(stream, 500, "Internal Server Error", new
-                        {
-                            code = 500,
-                            message = "这是一条模拟的错误响应。",
-                            hint = "用状态徽标和响应头验证错误排查流程。"
-                        }, cancellationToken);
+                        await WriteResponseAsync(
+                            stream,
+                            500,
+                            "Internal Server Error",
+                            new
+                            {
+                                code = 500,
+                                message = "这是一条模拟的错误响应。",
+                                hint = "用状态徽标和响应头验证错误排查流程。",
+                            },
+                            cancellationToken
+                        );
                         return;
 
                     case "/api/slow":
-                        var delay = query.TryGetValue("ms", out var msText) && int.TryParse(msText, out var ms)
-                            ? Math.Clamp(ms, 0, 5000)
-                            : 1200;
+                        var delay =
+                            query.TryGetValue("ms", out var msText)
+                            && int.TryParse(msText, out var ms)
+                                ? Math.Clamp(ms, 0, 5000)
+                                : 1200;
                         await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-                        await WriteResponseAsync(stream, 200, "OK", new
-                        {
-                            message = "慢响应完成。",
-                            delayMs = delay
-                        }, cancellationToken);
+                        await WriteResponseAsync(
+                            stream,
+                            200,
+                            "OK",
+                            new { message = "慢响应完成。", delayMs = delay },
+                            cancellationToken
+                        );
                         return;
 
                     case "/api/large":
-                        var sizeKb = query.TryGetValue("kb", out var kbText) && int.TryParse(kbText, out var kb)
-                            ? Math.Clamp(kb, 1, 4096)
-                            : 200;
-                        await WriteResponseAsync(stream, 200, "OK", new
-                        {
-                            message = "大响应测试。",
-                            sizeKb,
-                            data = new string('A', sizeKb * 1024),
-                            items = Enumerable.Range(1, 50)
-                                .Select(index => new { id = index, name = $"item-{index}" })
-                                .ToArray()
-                        }, cancellationToken);
+                        var sizeKb =
+                            query.TryGetValue("kb", out var kbText)
+                            && int.TryParse(kbText, out var kb)
+                                ? Math.Clamp(kb, 1, 4096)
+                                : 200;
+                        await WriteResponseAsync(
+                            stream,
+                            200,
+                            "OK",
+                            new
+                            {
+                                message = "大响应测试。",
+                                sizeKb,
+                                data = new string('A', sizeKb * 1024),
+                                items = Enumerable
+                                    .Range(1, 50)
+                                    .Select(index => new { id = index, name = $"item-{index}" })
+                                    .ToArray(),
+                            },
+                            cancellationToken
+                        );
                         return;
 
                     case "/api/ai/stream":
@@ -262,49 +332,72 @@ public sealed class MockApiServer : IDisposable
                         return;
 
                     case "/api/upload" when method == "POST":
-                        await WriteResponseAsync(stream, 200, "OK", new
-                        {
-                            receivedBytes = contentLength,
-                            fileName = MultipartFileName(body) ?? "unknown",
-                            contentType = headers.GetValueOrDefault("Content-Type") ?? string.Empty,
-                            message = "文件已接收（Mock 服务不会落盘）。"
-                        }, cancellationToken);
+                        await WriteResponseAsync(
+                            stream,
+                            200,
+                            "OK",
+                            new
+                            {
+                                receivedBytes = contentLength,
+                                fileName = MultipartFileName(body) ?? "unknown",
+                                contentType = headers.GetValueOrDefault("Content-Type")
+                                    ?? string.Empty,
+                                message = "文件已接收（Mock 服务不会落盘）。",
+                            },
+                            cancellationToken
+                        );
                         return;
 
                     case "/api/orders" when method == "POST":
-                        await WriteResponseAsync(stream, 201, "Created", new
-                        {
-                            id = "ord_2026_1042",
-                            status = "created",
-                            received = TryParseJson(body),
-                            createdAt = DateTimeOffset.Now
-                        }, cancellationToken);
+                        await WriteResponseAsync(
+                            stream,
+                            201,
+                            "Created",
+                            new
+                            {
+                                id = "ord_2026_1042",
+                                status = "created",
+                                received = TryParseJson(body),
+                                createdAt = DateTimeOffset.Now,
+                            },
+                            cancellationToken
+                        );
                         return;
 
                     case "/api/echo":
-                        await WriteResponseAsync(stream, 200, "OK", new
-                        {
-                            method,
-                            path,
-                            query,
-                            headers,
-                            body = TryParseJson(body),
-                            receivedAt = DateTimeOffset.Now
-                        }, cancellationToken);
+                        await WriteResponseAsync(
+                            stream,
+                            200,
+                            "OK",
+                            new
+                            {
+                                method,
+                                path,
+                                query,
+                                headers,
+                                body = TryParseJson(body),
+                                receivedAt = DateTimeOffset.Now,
+                            },
+                            cancellationToken
+                        );
                         return;
                 }
 
-                if (path.StartsWith("/api/users/", StringComparison.OrdinalIgnoreCase)
-                    && int.TryParse(path["/api/users/".Length..], out var userId))
+                if (
+                    path.StartsWith("/api/users/", StringComparison.OrdinalIgnoreCase)
+                    && int.TryParse(path["/api/users/".Length..], out var userId)
+                )
                 {
                     var user = Users.FirstOrDefault(candidate => candidate.id == userId);
                     if (user is null)
                     {
-                        await WriteResponseAsync(stream, 404, "Not Found", new
-                        {
-                            code = 404,
-                            message = $"没有 id 为 {userId} 的用户。"
-                        }, cancellationToken);
+                        await WriteResponseAsync(
+                            stream,
+                            404,
+                            "Not Found",
+                            new { code = 404, message = $"没有 id 为 {userId} 的用户。" },
+                            cancellationToken
+                        );
                         return;
                     }
 
@@ -312,32 +405,44 @@ public sealed class MockApiServer : IDisposable
                     return;
                 }
 
-                await WriteResponseAsync(stream, 200, "OK", new
-                {
-                    message = "PostSharp mock API",
-                    method,
-                    path,
-                    query,
-                    body = TryParseJson(body),
-                    endpoints = new[]
+                await WriteResponseAsync(
+                    stream,
+                    200,
+                    "OK",
+                    new
                     {
-                        "GET /api/health",
-                        "GET /api/users",
-                        "GET /api/users/{id}",
-                        "POST /api/orders",
-                        "POST /api/echo",
-                        "GET /api/error",
-                        "GET /api/slow?ms=1200"
-                    }
-                }, cancellationToken);
+                        message = "PostSharp mock API",
+                        method,
+                        path,
+                        query,
+                        body = TryParseJson(body),
+                        endpoints = new[]
+                        {
+                            "GET /api/health",
+                            "GET /api/users",
+                            "GET /api/users/{id}",
+                            "POST /api/orders",
+                            "POST /api/echo",
+                            "GET /api/error",
+                            "GET /api/slow?ms=1200",
+                        },
+                    },
+                    cancellationToken
+                );
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException exception)
             {
                 // Server stopping.
+                Log.Debug(exception, "Mock 请求处理已取消");
             }
-            catch
+            catch (Exception exception)
             {
                 // A mock request must never take the app down.
+                Log.Error(
+                    exception,
+                    "Mock 请求处理失败 {RemoteEndPoint}",
+                    client.Client.RemoteEndPoint
+                );
             }
         }
     }
@@ -353,8 +458,9 @@ public sealed class MockApiServer : IDisposable
         {
             return JsonNode.Parse(body);
         }
-        catch
+        catch (JsonException exception)
         {
+            Log.Debug(exception, "Mock 请求体不是 JSON，按文本回显");
             return body;
         }
     }
@@ -371,8 +477,9 @@ public sealed class MockApiServer : IDisposable
             }
             else
             {
-                values[Uri.UnescapeDataString(pair[..separator])] =
-                    Uri.UnescapeDataString(pair[(separator + 1)..].Replace('+', ' '));
+                values[Uri.UnescapeDataString(pair[..separator])] = Uri.UnescapeDataString(
+                    pair[(separator + 1)..].Replace('+', ' ')
+                );
             }
         }
 
@@ -400,22 +507,29 @@ public sealed class MockApiServer : IDisposable
         return end > start ? body[start..end].Trim() : body[start..].Trim();
     }
 
-    private static async Task WriteSseAsync(NetworkStream stream, CancellationToken cancellationToken)
-    {        var head = "HTTP/1.1 200 OK\r\n"
-                   + "Content-Type: text/event-stream; charset=utf-8\r\n"
-                   + "Cache-Control: no-cache\r\n"
-                   + "Access-Control-Allow-Origin: *\r\n"
-                   + "Connection: close\r\n"
-                   + "\r\n";
+    private static async Task WriteSseAsync(
+        NetworkStream stream,
+        CancellationToken cancellationToken
+    )
+    {
+        var head =
+            "HTTP/1.1 200 OK\r\n"
+            + "Content-Type: text/event-stream; charset=utf-8\r\n"
+            + "Cache-Control: no-cache\r\n"
+            + "Access-Control-Allow-Origin: *\r\n"
+            + "Connection: close\r\n"
+            + "\r\n";
 
-        await stream.WriteAsync(Encoding.ASCII.GetBytes(head), cancellationToken).ConfigureAwait(false);
+        await stream
+            .WriteAsync(Encoding.ASCII.GetBytes(head), cancellationToken)
+            .ConfigureAwait(false);
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
 
         var thinkingChunks = new[]
         {
             "先拆解问题：",
             "确认接口、审计和聚合链路，",
-            "再给出完整回答。"
+            "再给出完整回答。",
         };
 
         var contentChunks = new[]
@@ -424,30 +538,34 @@ public sealed class MockApiServer : IDisposable
             "这是一条流式响应。\n\n",
             "- thinking 和 content 会被自动聚合\n",
             "- 原始事件仍然保留在响应体中\n\n",
-            "你可以直接复制内容，或在审计中回看完整输出。"
+            "你可以直接复制内容，或在审计中回看完整输出。",
         };
 
         foreach (var chunk in thinkingChunks)
         {
-            var payload = JsonSerializer.Serialize(new
-            {
-                choices = new[] { new { delta = new { reasoning_content = chunk } } }
-            }, SseJsonOptions);
+            var payload = JsonSerializer.Serialize(
+                new { choices = new[] { new { delta = new { reasoning_content = chunk } } } },
+                SseJsonOptions
+            );
             await WriteSseEventAsync(stream, payload, cancellationToken).ConfigureAwait(false);
             await Task.Delay(70, cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var chunk in contentChunks)
         {
-            var payload = JsonSerializer.Serialize(new
-            {
-                choices = new[] { new { delta = new { content = chunk } } }
-            }, SseJsonOptions);
+            var payload = JsonSerializer.Serialize(
+                new { choices = new[] { new { delta = new { content = chunk } } } },
+                SseJsonOptions
+            );
             await WriteSseEventAsync(stream, payload, cancellationToken).ConfigureAwait(false);
             await Task.Delay(70, cancellationToken).ConfigureAwait(false);
         }
 
-        await WriteSseEventAsync(stream, "{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}", cancellationToken)
+        await WriteSseEventAsync(
+                stream,
+                "{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}",
+                cancellationToken
+            )
             .ConfigureAwait(false);
         await WriteSseEventAsync(stream, "[DONE]", cancellationToken).ConfigureAwait(false);
     }
@@ -455,7 +573,8 @@ public sealed class MockApiServer : IDisposable
     private static async Task WriteSseEventAsync(
         NetworkStream stream,
         string data,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var bytes = Encoding.UTF8.GetBytes($"data: {data}\n\n");
         await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
@@ -467,23 +586,32 @@ public sealed class MockApiServer : IDisposable
         int statusCode,
         string reason,
         object? payload,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var bodyBytes = payload is null
             ? Array.Empty<byte>()
             : Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, JsonOptions));
 
         var head = new StringBuilder()
-            .Append("HTTP/1.1 ").Append(statusCode).Append(' ').Append(reason).Append("\r\n")
+            .Append("HTTP/1.1 ")
+            .Append(statusCode)
+            .Append(' ')
+            .Append(reason)
+            .Append("\r\n")
             .Append("Content-Type: application/json; charset=utf-8\r\n")
-            .Append("Content-Length: ").Append(bodyBytes.Length).Append("\r\n")
+            .Append("Content-Length: ")
+            .Append(bodyBytes.Length)
+            .Append("\r\n")
             .Append("Access-Control-Allow-Origin: *\r\n")
             .Append("Access-Control-Allow-Headers: *\r\n")
             .Append("Connection: close\r\n")
             .Append("\r\n")
             .ToString();
 
-        await stream.WriteAsync(Encoding.ASCII.GetBytes(head), cancellationToken).ConfigureAwait(false);
+        await stream
+            .WriteAsync(Encoding.ASCII.GetBytes(head), cancellationToken)
+            .ConfigureAwait(false);
         if (bodyBytes.Length > 0)
         {
             await stream.WriteAsync(bodyBytes, cancellationToken).ConfigureAwait(false);
@@ -495,13 +623,22 @@ public sealed class MockApiServer : IDisposable
     private static async Task WriteRawResponseAsync(
         NetworkStream stream,
         RawHttpResponse response,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var bodyBytes = Encoding.UTF8.GetBytes(response.Body ?? string.Empty);
         var head = new StringBuilder()
-            .Append("HTTP/1.1 ").Append(response.StatusCode).Append(' ').Append(response.ReasonPhrase).Append("\r\n")
-            .Append("Content-Type: ").Append(response.ContentType).Append("\r\n")
-            .Append("Content-Length: ").Append(bodyBytes.Length).Append("\r\n")
+            .Append("HTTP/1.1 ")
+            .Append(response.StatusCode)
+            .Append(' ')
+            .Append(response.ReasonPhrase)
+            .Append("\r\n")
+            .Append("Content-Type: ")
+            .Append(response.ContentType)
+            .Append("\r\n")
+            .Append("Content-Length: ")
+            .Append(bodyBytes.Length)
+            .Append("\r\n")
             .Append("Access-Control-Allow-Origin: *\r\n")
             .Append("Access-Control-Allow-Headers: *\r\n")
             .Append("Access-Control-Expose-Headers: Mcp-Session-Id\r\n")
@@ -516,7 +653,9 @@ public sealed class MockApiServer : IDisposable
         }
 
         head.Append("\r\n");
-        await stream.WriteAsync(Encoding.ASCII.GetBytes(head.ToString()), cancellationToken).ConfigureAwait(false);
+        await stream
+            .WriteAsync(Encoding.ASCII.GetBytes(head.ToString()), cancellationToken)
+            .ConfigureAwait(false);
         if (bodyBytes.Length > 0)
         {
             await stream.WriteAsync(bodyBytes, cancellationToken).ConfigureAwait(false);
@@ -533,9 +672,10 @@ public sealed class MockApiServer : IDisposable
             _listener?.Stop();
             _acceptLoop?.Wait(TimeSpan.FromSeconds(1));
         }
-        catch
+        catch (Exception exception)
         {
             // Ignore shutdown races.
+            Log.Debug(exception, "Mock 服务停止时出现竞争");
         }
         finally
         {
@@ -622,7 +762,9 @@ public sealed class MockApiServer : IDisposable
                 return false;
             }
 
-            var read = await _stream.ReadAsync(_buffer.AsMemory(_end), cancellationToken).ConfigureAwait(false);
+            var read = await _stream
+                .ReadAsync(_buffer.AsMemory(_end), cancellationToken)
+                .ConfigureAwait(false);
             if (read == 0)
             {
                 return false;
@@ -641,4 +783,5 @@ public sealed record RawHttpResponse(
     string ReasonPhrase,
     string ContentType,
     string Body,
-    IReadOnlyDictionary<string, string>? Headers = null);
+    IReadOnlyDictionary<string, string>? Headers = null
+);

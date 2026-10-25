@@ -15,14 +15,20 @@ public static partial class VariableResolver
             return text;
         }
 
-        var values = environment.Variables
-            .Where(row => row.IsEnabled && !string.IsNullOrWhiteSpace(row.Key))
+        var values = environment
+            .Variables.Where(row => row.IsEnabled && !string.IsNullOrWhiteSpace(row.Key))
             .GroupBy(row => row.Key.Trim(), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.Last().Value, StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(
+                group => group.Key,
+                group => group.Last().Value,
+                StringComparer.OrdinalIgnoreCase
+            );
 
-        return VariablePattern().Replace(text, match =>
-            values.TryGetValue(match.Groups[1].Value, out var value)
-                ? value
-                : match.Value);
+        return VariablePattern()
+            .Replace(
+                text,
+                match =>
+                    values.TryGetValue(match.Groups[1].Value, out var value) ? value : match.Value
+            );
     }
 }

@@ -1,14 +1,16 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
-        x:Class="PostSharp.Views.TextViewerWindow"
-        Title="响应详情"
-        Width="1100"
-        Height="800"
-        MinWidth="700"
-        MinHeight="500"
-        WindowStartupLocation="CenterOwner"
-        Background="{arc:ArcDesignTokenResource Background}">
+<Window
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+    x:Class="PostSharp.Views.TextViewerWindow"
+    Title="响应详情"
+    Width="1100"
+    Height="800"
+    MinWidth="700"
+    MinHeight="500"
+    WindowStartupLocation="CenterOwner"
+    Background="{arc:ArcDesignTokenResource Background}"
+>
     <Window.Styles>
         <Style Selector="TextBlock">
             <Setter Property="FontFamily" Value="{DynamicResource PostSharpBodyFont}" />
@@ -18,58 +20,73 @@
     <Grid Margin="16" RowDefinitions="Auto,*,Auto" RowSpacing="12">
         <Grid ColumnDefinitions="*,Auto">
             <StackPanel Spacing="2">
-                <TextBlock x:Name="TitleText"
-                           FontSize="{arc:ArcDesignTokenResource TypeXL}"
-                           FontWeight="SemiBold"
-                           Foreground="{arc:ArcDesignTokenResource Foreground}" />
-                <TextBlock x:Name="InfoText"
-                           FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                           Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                           TextWrapping="Wrap" />
+                <TextBlock
+                    x:Name="TitleText"
+                    FontSize="{arc:ArcDesignTokenResource TypeXL}"
+                    FontWeight="SemiBold"
+                    Foreground="{arc:ArcDesignTokenResource Foreground}"
+                />
+                <TextBlock
+                    x:Name="InfoText"
+                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                    TextWrapping="Wrap"
+                />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
-                <arc:Button Content="复制全部"
-                            Variant="Secondary"
-                            Click="OnCopyClick" />
-                <arc:Button Content="关闭"
-                            Variant="Ghost"
-                            Click="OnCloseClick" />
+            <StackPanel
+                Grid.Column="1"
+                Orientation="Horizontal"
+                Spacing="8"
+                VerticalAlignment="Top"
+            >
+                <arc:Button Content="复制全部" Variant="Secondary" Click="OnCopyClick" />
+                <arc:Button Content="关闭" Variant="Ghost" Click="OnCloseClick" />
             </StackPanel>
         </Grid>
 
-        <Border Grid.Row="1"
-                Background="{arc:ArcDesignTokenResource SurfaceMuted}"
-                BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
-                BorderThickness="1"
-                CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
-                Padding="12">
+        <Border
+            Grid.Row="1"
+            Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+            BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+            BorderThickness="1"
+            CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+            Padding="12"
+        >
             <arc:ScrollArea Orientation="Both">
-                <SelectableTextBlock x:Name="BodyText"
-                                     TextWrapping="NoWrap"
-                                     FontFamily="{DynamicResource PostSharpCodeFont}"
-                                     FontSize="{DynamicResource PostSharpCodeFontSize}"
-                                     Foreground="{arc:ArcDesignTokenResource Foreground}" />
+                <SelectableTextBlock
+                    x:Name="BodyText"
+                    TextWrapping="NoWrap"
+                    FontFamily="{DynamicResource PostSharpCodeFont}"
+                    FontSize="{DynamicResource PostSharpCodeFontSize}"
+                    Foreground="{arc:ArcDesignTokenResource Foreground}"
+                />
             </arc:ScrollArea>
         </Border>
 
         <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto">
-            <arc:Button x:Name="PreviousButton"
-                        Content="上一页"
-                        Variant="Secondary"
-                        Size="Small"
-                        Click="OnPreviousClick" />
-            <TextBlock x:Name="PageText"
-                       Grid.Column="1"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                       Foreground="{arc:ArcDesignTokenResource TextSecondary}" />
-            <arc:Button x:Name="NextButton"
-                        Grid.Column="2"
-                        Content="下一页"
-                        Variant="Secondary"
-                        Size="Small"
-                        Click="OnNextClick" />
+            <arc:Button
+                x:Name="PreviousButton"
+                Content="上一页"
+                Variant="Secondary"
+                Size="Small"
+                Click="OnPreviousClick"
+            />
+            <TextBlock
+                x:Name="PageText"
+                Grid.Column="1"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+            />
+            <arc:Button
+                x:Name="NextButton"
+                Grid.Column="2"
+                Content="下一页"
+                Variant="Secondary"
+                Size="Small"
+                Click="OnNextClick"
+            />
         </Grid>
     </Grid>
 </Window>
