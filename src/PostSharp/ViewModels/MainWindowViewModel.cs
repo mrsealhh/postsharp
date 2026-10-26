@@ -64,6 +64,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
     private CancellationTokenSource? _suiteCts;
+    private CancellationTokenSource? _updateCts;
     private ComposedRequest? _lastComposedRequest;
     private SseResumeSnapshot? _sseResume;
     private readonly DispatcherTimer _suiteScheduleTimer = new()
@@ -199,6 +200,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         UpdateSelectionFlags();
         _suiteScheduleTimer.Tick += OnSuiteScheduleTick;
         _suiteScheduleTimer.Start();
+
+        _updateCts = new CancellationTokenSource();
+        _ = RunUpdateLoopAsync(_updateCts.Token);
 
         Persist();
     }
@@ -500,6 +504,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [ObservableProperty]
     private bool _isWorkspaceSideBySide;
+
+    [ObservableProperty]
+    private bool _isCheckingUpdates;
+
+    public string UpdateButtonTooltip => IsCheckingUpdates ? "正在检查更新…" : "检查更新";
 
     public string WorkspaceLayoutMode
     {
@@ -1592,6 +1601,45 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     partial void OnIsWorkspaceSideBySideChanged(bool value) =>
         OnPropertyChanged(nameof(WorkspaceLayoutMode));
+
+    partial void OnIsCheckingUpdatesChanged(bool value) =>
+        OnPropertyChanged(nameof(UpdateButtonTooltip));
+
+    [RelayCommand]
+    private async Task CheckForUpdatesAsync()
+    {
+        if (IsCheckingUpdates)
+        {
+            return;
+        }
+
+        IsCheckingUpdates = true;
+        try
+        {
+            var result = await UpdateService.CheckAndStageAsync(
+                Settings,
+                force: true,
+                CancellationToken.None
+            );
+            if (result.Status == UpdateCheckStatus.Failed)
+            {
+                DataNotice.Warn(result.Message);
+            }
+            else
+            {
+                ShowToast(result.Message);
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "手动检查更新失败");
+            DataNotice.Warn("检查更新失败，请确认网络可以访问 GitHub 后重试。");
+        }
+        finally
+        {
+            IsCheckingUpdates = false;
+        }
+    }
 
     partial void OnIsManagementOpenChanged(bool value)
     {
@@ -4955,8 +5003,32 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         _suiteScheduleTimer.Stop();
         _suiteScheduleTimer.Tick -= OnSuiteScheduleTick;
+        _updateCts?.Cancel();
+        _updateCts?.Dispose();
         Persist();
         _mockServer.Dispose();
+    }
+
+    private async Task RunUpdateLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await UpdateService
+                .RunBackgroundLoopAsync(
+                    Settings,
+                    result => Dispatcher.UIThread.Post(() => ShowToast(result.Message)),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Application shutdown.
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "后台更新检查意外终止");
+        }
     }
 
     private async void OnSuiteScheduleTick(object? sender, EventArgs e)

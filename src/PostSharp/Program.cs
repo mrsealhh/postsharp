@@ -39,6 +39,14 @@ internal static class Program
             AppLog.Shutdown();
             return;
         }
+
+        if (settings.AutoCheckUpdates && UpdateService.TryApplyPendingUpdate())
+        {
+            Log.Information("更新包已就绪，退出当前进程以安装新版本");
+            AppLog.Shutdown();
+            return;
+        }
+
         AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
             Log.Fatal(
                 eventArgs.ExceptionObject as Exception,

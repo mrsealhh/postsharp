@@ -440,6 +440,53 @@
                     </Border>
 
                     <Border Classes="settingsSection">
+                        <StackPanel Spacing="10">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock
+                                        Text="更新"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        FontWeight="Medium"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <TextBlock
+                                        Text="{Binding CurrentVersionText}"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    />
+                                </StackPanel>
+                                <arc:Switch
+                                    Grid.Column="1"
+                                    Content="自动检查更新"
+                                    IsChecked="{Binding Draft.AutoCheckUpdates, Mode=TwoWay}"
+                                    AutomationProperties.Name="自动检查更新"
+                                />
+                            </Grid>
+                            <TextBlock
+                                Text="{Binding UpdateStatusMessage}"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                TextWrapping="Wrap"
+                            />
+                            <arc:Button
+                                HorizontalAlignment="Left"
+                                Variant="Secondary"
+                                Size="Small"
+                                Content="{Binding CheckUpdateButtonText}"
+                                Command="{Binding CheckForUpdatesCommand}"
+                                IsEnabled="{Binding !IsCheckingUpdates}"
+                                AutomationProperties.Name="检查更新"
+                            />
+                            <TextBlock
+                                Text="更新包从 GitHub Releases 下载并校验 SHA256；下载完成后下次启动自动应用，失败时保留旧版本。"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                TextWrapping="Wrap"
+                            />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="settingsSection">
                         <StackPanel Spacing="6">
                             <TextBlock
                                 Text="配置文件"

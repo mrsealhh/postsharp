@@ -68,4 +68,8 @@ public partial class AppSettings : ObservableObject
 
     [ObservableProperty]
     private bool _historyCollapsed;
+
+    /// <summary>Checks GitHub Releases in the background and stages newer builds for the next launch.</summary>
+    [ObservableProperty]
+    private bool _autoCheckUpdates = true;
 }

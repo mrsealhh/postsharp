@@ -27,6 +27,14 @@ public static class AppPaths
             "webview"
         );
 
+    /// <summary>Downloaded update packages and the pending-update marker.</summary>
+    public static string UpdateDirectory { get; } =
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "PostSharp",
+            "updates"
+        );
+
     public static string EnsureRoot()
     {
         try

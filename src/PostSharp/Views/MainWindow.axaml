@@ -324,6 +324,22 @@
                                 </arc:Button>
                                 <arc:Button
                                     Variant="Secondary"
+                                    Width="30"
+                                    Height="30"
+                                    Padding="0"
+                                    Command="{Binding CheckForUpdatesCommand}"
+                                    IsEnabled="{Binding !IsCheckingUpdates}"
+                                    ToolTip.Tip="{Binding UpdateButtonTooltip}"
+                                    AutomationProperties.Name="检查更新"
+                                >
+                                    <arc:ArcGlyph
+                                        Data="{x:Static arc:ArcIcons.RefreshCw}"
+                                        Size="15"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                </arc:Button>
+                                <arc:Button
+                                    Variant="Secondary"
                                     Click="OnOpenSettingsClick"
                                     AutomationProperties.Name="打开设置"
                                 >

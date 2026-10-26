@@ -10,3 +10,6 @@
 
 # Local workspace snapshots
 workspace.json
+
+# Release packages
+artifacts/
