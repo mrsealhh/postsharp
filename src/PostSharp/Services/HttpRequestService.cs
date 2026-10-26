@@ -88,18 +88,36 @@ public sealed class HttpRequestService
                     multipart.Add(new StringContent(field.Value, Encoding.UTF8), field.Key);
                 }
 
-                if (!string.IsNullOrWhiteSpace(composed.UploadFilePath))
+                if (
+                    composed.UploadFiles is { Count: > 0 }
+                    || !string.IsNullOrWhiteSpace(composed.UploadFilePath)
+                )
                 {
-                    var fileStream = File.OpenRead(composed.UploadFilePath);
-                    var fileContent = new StreamContent(fileStream);
-                    fileContent.Headers.ContentType = new MediaTypeHeaderValue(
-                        GuessContentType(composed.UploadFilePath)
-                    );
-                    multipart.Add(
-                        fileContent,
-                        composed.UploadFieldName ?? "file",
-                        Path.GetFileName(composed.UploadFilePath)
-                    );
+                    var uploadFiles = composed.UploadFiles;
+                    if (uploadFiles is null || uploadFiles.Count == 0)
+                    {
+                        uploadFiles = new[]
+                        {
+                            new ComposedUploadFile(
+                                composed.UploadFieldName ?? "file",
+                                composed.UploadFilePath ?? string.Empty
+                            ),
+                        };
+                    }
+
+                    foreach (var file in uploadFiles)
+                    {
+                        var fileStream = File.OpenRead(file.FilePath);
+                        var fileContent = new StreamContent(fileStream);
+                        fileContent.Headers.ContentType = new MediaTypeHeaderValue(
+                            GuessContentType(file.FilePath)
+                        );
+                        multipart.Add(
+                            fileContent,
+                            string.IsNullOrWhiteSpace(file.FieldName) ? "file" : file.FieldName,
+                            Path.GetFileName(file.FilePath)
+                        );
+                    }
                 }
 
                 content = multipart;

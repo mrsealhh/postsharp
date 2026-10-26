@@ -221,7 +221,23 @@ public static class PostmanExportService
             formData.Add(field);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
+        if (request.UploadFiles.Count > 0)
+        {
+            foreach (var file in request.UploadFiles)
+            {
+                formData.Add(
+                    new JsonObject
+                    {
+                        ["key"] = string.IsNullOrWhiteSpace(file.FieldName)
+                            ? "file"
+                            : file.FieldName,
+                        ["type"] = "file",
+                        ["src"] = file.FilePath,
+                    }
+                );
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
         {
             formData.Add(
                 new JsonObject

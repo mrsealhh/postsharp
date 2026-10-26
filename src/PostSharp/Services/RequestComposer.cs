@@ -13,8 +13,11 @@ public sealed record ComposedRequest(
     bool IsMultipart = false,
     IReadOnlyList<KeyValuePair<string, string>>? FormFields = null,
     string? UploadFilePath = null,
-    string? UploadFieldName = null
+    string? UploadFieldName = null,
+    IReadOnlyList<ComposedUploadFile>? UploadFiles = null
 );
+
+public sealed record ComposedUploadFile(string FieldName, string FilePath);
 
 public static class RequestComposer
 {
@@ -57,6 +60,7 @@ public static class RequestComposer
         List<KeyValuePair<string, string>>? formFields = null;
         string? uploadFilePath = null;
         string? uploadFieldName = null;
+        List<ComposedUploadFile>? uploadFiles = null;
 
         if (isMultipart)
         {
@@ -71,15 +75,45 @@ public static class RequestComposer
                 ? "file"
                 : request.UploadFieldName.Trim();
 
-            var filePath = VariableResolver.Resolve(request.UploadFilePath, environment).Trim();
-            if (!string.IsNullOrEmpty(filePath))
-            {
-                if (!File.Exists(filePath))
-                {
-                    throw new InvalidOperationException($"上传文件不存在：{filePath}");
-                }
+            var candidates =
+                request.UploadFiles.Count > 0
+                    ? request
+                        .UploadFiles.Select(file => new ComposedUploadFile(
+                            string.IsNullOrWhiteSpace(file.FieldName) ? "file" : file.FieldName,
+                            VariableResolver.Resolve(file.FilePath, environment).Trim()
+                        ))
+                        .Where(file => file.FilePath.Length > 0)
+                        .ToList()
+                    : new List<ComposedUploadFile>();
 
-                uploadFilePath = filePath;
+            if (
+                candidates.Count == 0
+                && !string.IsNullOrWhiteSpace(
+                    VariableResolver.Resolve(request.UploadFilePath, environment)
+                )
+            )
+            {
+                candidates.Add(
+                    new ComposedUploadFile(
+                        uploadFieldName,
+                        VariableResolver.Resolve(request.UploadFilePath, environment).Trim()
+                    )
+                );
+            }
+
+            foreach (var file in candidates)
+            {
+                if (!File.Exists(file.FilePath))
+                {
+                    throw new InvalidOperationException($"上传文件不存在：{file.FilePath}");
+                }
+            }
+
+            uploadFiles = candidates;
+            if (candidates.Count > 0)
+            {
+                uploadFilePath = candidates[0].FilePath;
+                uploadFieldName = candidates[0].FieldName;
             }
         }
 
@@ -93,7 +127,8 @@ public static class RequestComposer
             isMultipart,
             formFields,
             uploadFilePath,
-            uploadFieldName
+            uploadFieldName,
+            uploadFiles
         );
     }
 
@@ -127,12 +162,26 @@ public static class RequestComposer
                 lines.Add($"  -F {Quote($"{field.Key}={field.Value}")}");
             }
 
-            if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
+            var uploadFiles = request.UploadFiles;
+            if (
+                (uploadFiles is null || uploadFiles.Count == 0)
+                && !string.IsNullOrWhiteSpace(request.UploadFilePath)
+            )
             {
-                var fieldName = string.IsNullOrWhiteSpace(request.UploadFieldName)
-                    ? "file"
-                    : request.UploadFieldName;
-                lines.Add($"  -F {Quote($"{fieldName}=@{request.UploadFilePath}")}");
+                uploadFiles = new[]
+                {
+                    new ComposedUploadFile(
+                        string.IsNullOrWhiteSpace(request.UploadFieldName)
+                            ? "file"
+                            : request.UploadFieldName,
+                        request.UploadFilePath
+                    ),
+                };
+            }
+
+            foreach (var file in uploadFiles ?? Array.Empty<ComposedUploadFile>())
+            {
+                lines.Add($"  -F {Quote($"{file.FieldName}=@{file.FilePath}")}");
             }
         }
         else if (request.Body is not null)
@@ -191,10 +240,24 @@ public static class RequestComposer
             return null;
         }
 
-        var filePath = VariableResolver.Resolve(request.UploadFilePath, environment).Trim();
-        if (!string.IsNullOrEmpty(filePath) && !File.Exists(filePath))
+        if (request.UploadFiles.Count > 0)
         {
-            return $"上传文件不存在：{filePath}";
+            foreach (var file in request.UploadFiles)
+            {
+                var filePath = VariableResolver.Resolve(file.FilePath, environment).Trim();
+                if (filePath.Length > 0 && !File.Exists(filePath))
+                {
+                    return $"上传文件不存在：{filePath}";
+                }
+            }
+
+            return null;
+        }
+
+        var legacyPath = VariableResolver.Resolve(request.UploadFilePath, environment).Trim();
+        if (legacyPath.Length > 0 && !File.Exists(legacyPath))
+        {
+            return $"上传文件不存在：{legacyPath}";
         }
 
         return null;
