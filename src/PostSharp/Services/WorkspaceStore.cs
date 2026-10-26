@@ -148,12 +148,24 @@ public sealed class WorkspaceStore
             TimeoutSeconds = dto.TimeoutSeconds,
             BodyMode = dto.BodyMode,
             Body = dto.Body,
-            UploadFilePath = dto.UploadFilePath,
+            UploadFilePath = dto.UploadFiles.Count == 0 ? dto.UploadFilePath : string.Empty,
             UploadFieldName = string.IsNullOrWhiteSpace(dto.UploadFieldName)
                 ? "file"
                 : dto.UploadFieldName,
             IsFavorite = dto.IsFavorite,
         };
+
+        foreach (var file in dto.UploadFiles)
+        {
+            request.UploadFiles.Add(
+                new UploadFileItem
+                {
+                    FilePath = file.FilePath,
+                    FieldName = string.IsNullOrWhiteSpace(file.FieldName) ? "file" : file.FieldName,
+                    SizeBytes = file.SizeBytes,
+                }
+            );
+        }
 
         FillRows(request.Params, dto.Params);
         FillRows(request.Headers, dto.Headers);
@@ -210,6 +222,14 @@ public sealed class WorkspaceStore
             Body = request.Body,
             UploadFilePath = request.UploadFilePath,
             UploadFieldName = request.UploadFieldName,
+            UploadFiles = request
+                .UploadFiles.Select(file => new UploadFileDto
+                {
+                    FilePath = file.FilePath,
+                    FieldName = file.FieldName,
+                    SizeBytes = file.SizeBytes,
+                })
+                .ToList(),
             IsFavorite = request.IsFavorite,
             Params = ToRows(request.Params),
             Headers = ToRows(request.Headers),
@@ -290,6 +310,8 @@ public sealed class RequestDto
 
     public string UploadFieldName { get; set; } = "file";
 
+    public List<UploadFileDto> UploadFiles { get; set; } = new();
+
     public bool IsFavorite { get; set; }
 
     public List<RowDto> Params { get; set; } = new();
@@ -297,6 +319,15 @@ public sealed class RequestDto
     public List<RowDto> Headers { get; set; } = new();
 
     public List<RowDto> FormFields { get; set; } = new();
+}
+
+public sealed class UploadFileDto
+{
+    public string FilePath { get; set; } = string.Empty;
+
+    public string FieldName { get; set; } = "file";
+
+    public long SizeBytes { get; set; }
 }
 
 public sealed class EnvironmentDto

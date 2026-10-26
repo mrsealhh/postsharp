@@ -55,7 +55,7 @@ PostSharp 的定位是：
 - **请求体**：无 / JSON / 文本 / 表单上传。
   - JSON/XML 一键格式化，JSON 一键压缩。
   - 单行切换与单行预览，长文本不再占满编辑区。
-  - multipart/form-data：表单字段 + 文件选择（支持直接粘贴本地路径）。
+  - multipart/form-data：表单字段 + 多文件选择 / 拖拽，每个文件可编辑字段名。
 - **cURL 导入 / 导出**：按当前环境解析变量，生成可直接执行的 bash cURL；支持从 Postman、浏览器或 PostSharp 生成的 `-X` / `-H` / `-d` / `--data-raw` / `-F` / `-u` 命令导入请求，并可把当前 cURL 保存为 `.sh`。
 - **Postman Collection 导入 / 导出**：读取 Postman Collection v2.0 / v2.1 的嵌套文件夹、请求、查询参数、请求头、Bearer / Basic / API Key 认证、raw / urlencoded / formdata 请求体和集合变量；导出选中集合或整个工作区为标准 v2.1 文件。
 - **Postman 环境文件**：独立导入 `values` 或 `variable` 数组，创建或合并同名环境并激活。
@@ -353,7 +353,7 @@ http://127.0.0.1:5199/mcp
 - **请求体**
   - JSON/XML 格式化与 JSON 压缩。
   - 单行开关与单行预览。
-  - 表单上传：文件字段名、文件选择/路径、表单字段；自动构造 multipart。
+  - 表单上传：多文件列表、每个文件的字段名、拖拽添加、表单字段；自动构造 multipart。
 - **请求超时**：每个请求可单独设置超时秒数（0–3600，0 表示跟随设置中的全局超时）；请求级超时优先于全局值。
 - **cURL**：按当前环境解析变量，支持 `-H`、`--data-raw`、`-F`。
 - **响应**
@@ -531,6 +531,7 @@ docs/
 | SSE | 10 个事件，聚合 content 98 字、thinking 27 字；AI 标签自动打开；接收中每 150ms 增量刷新，取消保留已收内容 |
 | SSE 取消 | 取消后状态显示「已取消 · 保留已接收内容」，已收 thinking/content 不清空 |
 | multipart 上传 | `200 OK`，receivedBytes 107111，fileName `screenshot.png` |
+| multipart 多文件 | 两个文件分别配置字段名并写入 multipart；cURL/Postman 导出均保留全部文件；拖拽添加与单文件移除验证通过 |
 | MCP `send_request` SSE | 返回 `isSse=true`、`sseEventCount=10`、完整 content/thinking |
 | MCP 审计 | `list_audit` 来源/客户端/工具正确；`get_audit` 含 AI 输出 |
 | MCP 套件 | create/run/delete 通过；断言 3/3 |
@@ -585,7 +586,7 @@ docs/
 | 粘贴区 | 长 JSON 在固定高度内自适应滚动；底部边框完整，不再被外层裁切 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：57 个测试全部通过 |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：60 个测试全部通过 |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
@@ -679,13 +680,16 @@ master                 稳定可发布
 - 批量导入：多选文件、自动识别格式、逐文件成功/失败结果。
 - 导入反馈：请求/分组/环境统计；结果和兼容性提示默认折叠，可展开。
 - OpenAPI：`x-apifox-folder` 分组、securitySchemes 占位头、多服务器选择、外部 `$ref` 自动下载。
+- SSE：接收中 150ms 增量刷新，取消保留已接收内容。
+- 套件：JSONPath / 响应头断言、失败重试与尝试次数。
+- multipart：多文件、拖拽添加、单文件移除，导出保留全部文件。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：57 个 xUnit 测试。
+- 自测：60 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
 - SSE 支持接收中增量刷新和取消保留内容；断线重连/从上次事件继续未实现。
-- multipart 每个请求支持一个文件；多文件、文件拖拽、取消上传未实现。
+- multipart 支持多文件与拖拽；上传进度、取消上传和大文件分片未实现。
 - 套件断言目前支持状态码、响应体包含、JSONPath 和响应头；字段提取已支持直接映射到下一步请求，失败重试支持次数/间隔，条件分支、并行、定时任务在路线图。
 - cURL 为 bash 风格；PowerShell 专用格式未提供。
 - Postman 导入支持 Collection v2.0 / v2.1 与环境文件；脚本/测试、OAuth2/Digest/NTLM 认证、多文件字段不会完整转换，导入后会以提示列出。
@@ -703,7 +707,7 @@ master                 稳定可发布
 2. OpenAPI 更多安全方案与回调/Webhook 提示。
 3. Apifox 原生格式评估：先收集官方导出样本和 schema，不做无样本逆向。
 4. 套件工作流增强：条件分支、并行、定时触发、CLI 运行。
-5. 多文件上传、拖拽上传、进度与取消；JMeter / WSDL / SOAP 等重格式按需求立项。
+5. 上传进度、取消上传与大文件分片；JMeter / WSDL / SOAP 等重格式按需求立项。
 
 ## 许可证
 

@@ -1081,7 +1081,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public bool IsTextBody => !IsMultipartBody;
 
-    public bool HasUploadFile => !string.IsNullOrWhiteSpace(Editing.UploadFilePath);
+    public bool HasUploadFile => Editing.UploadFiles.Count > 0;
 
     public string SseSummary =>
         IsSseResponse
@@ -2573,7 +2573,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         var lines = request.FormFields.ActiveRows.Select(row => $"{row.Key}: {row.Value}").ToList();
-        if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
+        if (request.UploadFiles.Count > 0)
+        {
+            lines.AddRange(
+                request.UploadFiles.Select(file =>
+                    $"[file] {file.FieldName}: {file.FilePath} ({file.SizeText})"
+                )
+            );
+        }
+        else if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
         {
             lines.Add($"[file] {request.UploadFieldName}: {request.UploadFilePath}");
         }

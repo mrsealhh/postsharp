@@ -283,7 +283,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnPickUploadFileClick(
+    private async void OnPickUploadFilesClick(
         object? sender,
         Avalonia.Interactivity.RoutedEventArgs e
     )
@@ -294,28 +294,108 @@ public partial class MainWindow : Window
         }
 
         var files = await StorageProvider.OpenFilePickerAsync(
-            new FilePickerOpenOptions { Title = "选择上传文件", AllowMultiple = false }
+            new FilePickerOpenOptions { Title = "选择上传文件", AllowMultiple = true }
         );
 
-        var path = files.FirstOrDefault()?.TryGetLocalPath();
-        if (string.IsNullOrWhiteSpace(path))
+        AddUploadFiles(
+            files
+                .Select(file => file.TryGetLocalPath())
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path!)
+        );
+    }
+
+    private void OnClearUploadFilesClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null || _viewModel.Editing.UploadFiles.Count == 0)
         {
             return;
         }
 
-        _viewModel.Editing.UploadFilePath = path;
+        _viewModel.Editing.UploadFiles.Clear();
         _viewModel.NotifyUploadChanged();
     }
 
-    private void OnClearUploadFileClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void OnRemoveUploadFileClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (_viewModel is null || string.IsNullOrWhiteSpace(_viewModel.Editing.UploadFilePath))
+        if (_viewModel is null || sender is not Button { CommandParameter: UploadFileItem file })
         {
             return;
         }
 
-        _viewModel.Editing.UploadFilePath = string.Empty;
+        _viewModel.Editing.UploadFiles.Remove(file);
         _viewModel.NotifyUploadChanged();
+    }
+
+    private void OnUploadDragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = e.DataTransfer.Contains(DataFormat.File)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnUploadDrop(object? sender, DragEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var paths = e
+            .DataTransfer.TryGetFiles()
+            ?.Select(file => file.TryGetLocalPath())
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!);
+        if (paths is not null)
+        {
+            AddUploadFiles(paths);
+        }
+
+        e.Handled = true;
+    }
+
+    private void AddUploadFiles(IEnumerable<string> paths)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var added = false;
+        foreach (var path in paths)
+        {
+            if (
+                _viewModel.Editing.UploadFiles.Any(file =>
+                    string.Equals(file.FilePath, path, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            {
+                continue;
+            }
+
+            var item = new UploadFileItem { FilePath = path, FieldName = "file" };
+            try
+            {
+                item.SizeBytes = new FileInfo(path).Length;
+            }
+            catch (IOException)
+            {
+                item.SizeBytes = 0;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                item.SizeBytes = 0;
+            }
+
+            _viewModel.Editing.UploadFiles.Add(item);
+            added = true;
+        }
+
+        if (added)
+        {
+            _viewModel.NotifyUploadChanged();
+        }
     }
 
     private void OnSuiteBuilderDialogOpened(object? sender, EventArgs e) =>

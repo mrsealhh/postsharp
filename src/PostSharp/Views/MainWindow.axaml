@@ -1245,70 +1245,113 @@
                                                 RowSpacing="8"
                                             >
                                                 <Grid
-                                                    ColumnDefinitions="Auto,170,Auto,Auto"
+                                                    ColumnDefinitions="*,Auto,Auto"
                                                     ColumnSpacing="8"
                                                 >
                                                     <TextBlock
-                                                        Text="文件字段"
+                                                        Text="上传文件"
                                                         VerticalAlignment="Center"
                                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                                     />
-                                                    <arc:Input
-                                                        Grid.Column="1"
-                                                        Text="{Binding Editing.UploadFieldName, Mode=TwoWay}"
-                                                        IsLabelVisible="False"
-                                                        Size="Small"
-                                                        Placeholder="file"
-                                                        AutomationProperties.Name="上传文件字段名"
-                                                    />
                                                     <arc:Button
-                                                        Grid.Column="2"
+                                                        Grid.Column="1"
                                                         Variant="Secondary"
                                                         Size="Small"
-                                                        Click="OnPickUploadFileClick"
+                                                        Click="OnPickUploadFilesClick"
                                                     >
                                                         <controls:IconLabel
                                                             Icon="{x:Static arc:ArcIcons.Upload}"
-                                                            Text="选择文件"
+                                                            Text="选择文件…"
                                                             IconSize="13"
                                                         />
                                                     </arc:Button>
                                                     <arc:Button
-                                                        Grid.Column="3"
+                                                        Grid.Column="2"
                                                         Variant="Ghost"
                                                         Size="Small"
-                                                        Click="OnClearUploadFileClick"
+                                                        Click="OnClearUploadFilesClick"
+                                                        IsEnabled="{Binding HasUploadFile}"
                                                     >
                                                         <controls:IconLabel
                                                             Icon="{x:Static arc:ArcIcons.X}"
-                                                            Text="清除"
+                                                            Text="清空"
                                                             IconSize="13"
                                                         />
                                                     </arc:Button>
                                                 </Grid>
-                                                <Grid
+                                                <Border
                                                     Grid.Row="1"
-                                                    ColumnDefinitions="*,Auto"
-                                                    ColumnSpacing="8"
+                                                    Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                                                    BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                                                    Padding="8"
+                                                    MinHeight="64"
+                                                    DragDrop.AllowDrop="True"
+                                                    DragDrop.DragOver="OnUploadDragOver"
+                                                    DragDrop.Drop="OnUploadDrop"
                                                 >
-                                                    <arc:Input
-                                                        Text="{Binding Editing.UploadFilePath, Mode=TwoWay}"
-                                                        IsLabelVisible="False"
-                                                        Size="Small"
-                                                        Placeholder="选择文件或粘贴本地路径"
-                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
-                                                        AutomationProperties.Name="上传文件路径"
-                                                    />
-                                                    <TextBlock
-                                                        Grid.Column="1"
-                                                        Text="multipart/form-data"
-                                                        VerticalAlignment="Center"
-                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                    />
-                                                </Grid>
+                                                    <Grid>
+                                                        <TextBlock
+                                                            IsVisible="{Binding !HasUploadFile}"
+                                                            Text="拖拽文件到这里，或点击「选择文件…」"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                        />
+                                                        <arc:ScrollArea
+                                                            MaxHeight="140"
+                                                            IsVisible="{Binding HasUploadFile}"
+                                                        >
+                                                            <ItemsControl ItemsSource="{Binding Editing.UploadFiles}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate x:DataType="models:UploadFileItem">
+                                                                        <Grid
+                                                                            ColumnDefinitions="150,*,Auto"
+                                                                            ColumnSpacing="8"
+                                                                            Margin="0,0,0,4"
+                                                                        >
+                                                                            <arc:Input
+                                                                                Text="{Binding FieldName, Mode=TwoWay}"
+                                                                                IsLabelVisible="False"
+                                                                                Size="Small"
+                                                                                Placeholder="file"
+                                                                                AutomationProperties.Name="文件字段名"
+                                                                            />
+                                                                            <TextBlock
+                                                                                Grid.Column="1"
+                                                                                Text="{Binding DisplayLabel}"
+                                                                                VerticalAlignment="Center"
+                                                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                                TextTrimming="CharacterEllipsis"
+                                                                                ToolTip.Tip="{Binding FilePath}"
+                                                                            />
+                                                                            <arc:Button
+                                                                                Grid.Column="2"
+                                                                                Variant="Ghost"
+                                                                                Size="Small"
+                                                                                Click="OnRemoveUploadFileClick"
+                                                                                CommandParameter="{Binding}"
+                                                                                AutomationProperties.Name="移除上传文件"
+                                                                            >
+                                                                                <controls:IconLabel
+                                                                                    Icon="{x:Static arc:ArcIcons.Trash2}"
+                                                                                    Text="移除"
+                                                                                    IconSize="13"
+                                                                                    TextForeground="{arc:ArcDesignTokenResource Danger}"
+                                                                                    IconForeground="{arc:ArcDesignTokenResource Danger}"
+                                                                                />
+                                                                            </arc:Button>
+                                                                        </Grid>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </arc:ScrollArea>
+                                                    </Grid>
+                                                </Border>
                                                 <Grid
                                                     Grid.Row="2"
                                                     RowDefinitions="Auto,*"
