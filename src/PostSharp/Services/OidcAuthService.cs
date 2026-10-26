@@ -15,6 +15,9 @@ public sealed class OidcException : Exception
 
     public OidcException(string message, Exception innerException)
         : base(message, innerException) { }
+
+    /// <summary>The OAuth error code, when the authorization server supplied one.</summary>
+    public string? ErrorCode { get; init; }
 }
 
 public sealed record OidcEndpoints(
@@ -418,7 +421,7 @@ public sealed class OidcAuthService
             error,
             description
         );
-        return new OidcException(message);
+        return new OidcException(message) { ErrorCode = error };
     }
 
     private static async Task<string> GetStringAsync(Uri uri, CancellationToken cancellationToken)

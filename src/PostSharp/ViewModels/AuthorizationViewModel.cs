@@ -259,7 +259,7 @@ public sealed partial class AuthorizationViewModel : ObservableObject
         {
             if (!await _authorization.EnsureFreshAsync(Profile, cancellationToken))
             {
-                SetError("刷新失败，refresh_token 可能已失效，请重新登录。");
+                SetError("刷新失败，请检查网络后重试；如仍失败，请重新登录。");
                 return;
             }
 
