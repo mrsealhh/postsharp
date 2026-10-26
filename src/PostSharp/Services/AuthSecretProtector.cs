@@ -40,9 +40,15 @@ public static class AuthSecretProtector
             return string.Empty;
         }
 
-        if (!OperatingSystem.IsWindows() || !value.StartsWith(Prefix, StringComparison.Ordinal))
+        if (!value.StartsWith(Prefix, StringComparison.Ordinal))
         {
             return value;
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            // A DPAPI ciphertext cannot be used as a plain credential on another OS.
+            return string.Empty;
         }
 
         try

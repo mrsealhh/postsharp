@@ -13,6 +13,8 @@ public sealed partial class AuthorizationProfile : ObservableObject
     private string _refreshTokenCipher = string.Empty;
     private string _idToken = string.Empty;
     private string _idTokenCipher = string.Empty;
+    private string _clientSecret = string.Empty;
+    private string _clientSecretCipher = string.Empty;
 
     [ObservableProperty]
     private string _discoveryUrl = string.Empty;
@@ -26,8 +28,44 @@ public sealed partial class AuthorizationProfile : ObservableObject
     [ObservableProperty]
     private string _scopes = "openid profile offline_access";
 
-    [ObservableProperty]
-    private string _clientSecret = string.Empty;
+    [JsonIgnore]
+    public string ClientSecret
+    {
+        get => _clientSecret;
+        set
+        {
+            if (SetProperty(ref _clientSecret, value))
+            {
+                _clientSecretCipher = AuthSecretProtector.Protect(value);
+            }
+        }
+    }
+
+    /// <summary>落盘字段：DPAPI 加密后的客户端密钥，只在加载时解密。</summary>
+    public string ClientSecretCipher
+    {
+        get => _clientSecretCipher;
+        set
+        {
+            _clientSecretCipher = value;
+            SetTokenFromCipher(value, ref _clientSecret, nameof(ClientSecret));
+        }
+    }
+
+    /// <summary>兼容旧工作区中仍以明文字段保存的客户端密钥；新版本只写加密字段。</summary>
+    [JsonPropertyName("ClientSecret")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ClientSecretLegacy
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrEmpty(value))
+            {
+                ClientSecret = value;
+            }
+        }
+    }
 
     [ObservableProperty]
     private string _tokenType = "Bearer";

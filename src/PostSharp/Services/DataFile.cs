@@ -62,6 +62,9 @@ public static class DataFile
 
     public static string BackupPath(string path) => path + ".bak";
 
+    /// <summary>True while writes to this file are blocked after an unreadable startup file.</summary>
+    public static bool IsBlocked(string path) => BlockedPaths.ContainsKey(Path.GetFullPath(path));
+
     /// <summary>Serializes and writes a data file; a failure is logged and reported, never thrown.</summary>
     public static SaveResult Save(string path, Func<string> serialize)
     {
