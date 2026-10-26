@@ -1586,6 +1586,7 @@
                                 >
                                     <arc:TabItem Header="响应体">
                                         <Grid
+                                            x:Name="ResponseBodyPanel"
                                             RowDefinitions="Auto,Auto,*"
                                             Margin="0,6,0,0"
                                             RowSpacing="8"
@@ -1673,6 +1674,7 @@
                                                         AutomationProperties.Name="JSON 响应"
                                                     />
                                                     <ScrollViewer
+                                                        x:Name="ResponseRawScroll"
                                                         IsVisible="{Binding ShowRawResponse}"
                                                         HorizontalScrollBarVisibility="Auto"
                                                         VerticalScrollBarVisibility="Auto"

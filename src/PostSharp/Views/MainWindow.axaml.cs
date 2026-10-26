@@ -70,6 +70,14 @@ public partial class MainWindow : Window
                 420
             );
         };
+        ResponsePane.SizeChanged += (_, _) =>
+        {
+            // Arc Tabs measures its content without a finite height. Cap the raw viewer so
+            // long responses scroll inside the pane instead of being clipped by its border.
+            var available = Math.Max(120, ResponsePane.Bounds.Height - 220);
+            ResponseRawScroll.MaxHeight = available;
+            ResponseBodyPanel.MaxHeight = available + 80;
+        };
         RequestTabs.SizeChanged += (_, _) =>
         {
             var available = RequestTabs.Bounds.Height;
