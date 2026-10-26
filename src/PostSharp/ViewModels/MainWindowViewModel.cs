@@ -856,9 +856,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         PersistAudit();
 
-        if (e.PropertyName == nameof(AppSettings.Theme))
+        if (
+            e.PropertyName == nameof(AppSettings.Theme)
+            || e.PropertyName == nameof(AppSettings.CornerScale)
+        )
         {
-            _ = ThemeService.ApplyAsync(Settings.Theme);
+            _ = ThemeService.ApplyAsync(Settings.Theme, cornerScale: Settings.CornerScale);
         }
 
         if (

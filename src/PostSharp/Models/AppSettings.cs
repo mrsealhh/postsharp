@@ -8,6 +8,10 @@ public partial class AppSettings : ObservableObject
     [ObservableProperty]
     private string _theme = "跟随系统";
 
+    /// <summary>Global corner multiplier: 0 is square, 1 keeps Arc defaults, 2 doubles the radii.</summary>
+    [ObservableProperty]
+    private double _cornerScale = 1;
+
     [ObservableProperty]
     private string _uiFont = "Inter";
 

@@ -92,6 +92,25 @@
                                     AutomationProperties.Name="代码字号"
                                 />
                             </Grid>
+                            <Grid ColumnDefinitions="1.4*,1*" ColumnSpacing="12">
+                                <arc:Slider
+                                    Label="全局圆角"
+                                    Minimum="0"
+                                    Maximum="2"
+                                    SmallChange="0.1"
+                                    Value="{Binding Draft.CornerScale, Mode=TwoWay}"
+                                    IsValueVisible="True"
+                                    AutomationProperties.Name="全局圆角"
+                                />
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Text="0 = 直角，1 = Arc 默认，2 = 双倍圆角。保存后立即应用到所有 Arc 控件。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                    VerticalAlignment="Center"
+                                />
+                            </Grid>
                         </StackPanel>
                     </Border>
 

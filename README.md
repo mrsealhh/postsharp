@@ -2,7 +2,7 @@
 
 <img src="src/PostSharp/Assets/logo.png" width="110" align="right" alt="PostSharp logo" />
 
-> 面向 AI 的本地接口调试工作台。基于 **Avalonia 12.1.4** 与 **TKCode.Arc 0.3.0-preview.2**，把「AI 通过 MCP 触发请求 → 审计留痕 → 自动化回归」串成一条闭环，同时保留完整的 Postman 式手动调试能力。
+> 面向 AI 的本地接口调试工作台。基于 **Avalonia 12.1.4** 与 **TKCode.Arc 0.3.1-preview.2**，把「AI 通过 MCP 触发请求 → 审计留痕 → 自动化回归」串成一条闭环，同时保留完整的 Postman 式手动调试能力。
 
 ![PostSharp 主界面](docs/screenshot.png)
 
@@ -82,6 +82,7 @@ PostSharp 的定位是：
 - 顶栏「设置」直达独立设置窗口；外观、日志和请求默认值分组展示，保存后立即生效。
 - **Serilog 文件日志**：默认写入 `%APPDATA%\PostSharp\logs\postsharp-YYYYMMDD.log`，按天滚动，保留最近 30 个文件；日志目录与最低日志级别可在设置窗口修改，保存后立即生效。所有 `catch` 都会留下结构化异常日志。
 - 界面字体、代码字体、代码字号、窗口自适应；设置窗口可导入本地字体或添加字体目录，导入后的字体会出现在界面/代码字体选项中。
+- 设置窗口新增「全局圆角」滑杆：0 = 直角、1 = Arc 默认、2 = 双倍圆角，保存后立即应用到全部 Arc 控件。
 - 左侧集合栏与编辑区之间有可拖拽分隔条（240–520 DIP），双击恢复默认 320 DIP；宽度随设置持久化。
 - 列表统一列布局：来源/方法/状态/时间固定对齐，长文本省略并在悬浮时显示完整内容。
 - Tooltip 统一为浮层卡片：`SurfaceRaised` 背景、1px 边框、圆角与悬浮阴影，最大宽度 380，长文本自动换行；按钮、历史 URL、分隔条和树节点共用同一套样式。
@@ -116,7 +117,9 @@ PostSharp 的定位是：
 | --- | --- |
 | .NET | `net10.0` |
 | Avalonia | `12.1.4` |
-| TKCode.Arc | `0.3.0-preview.2` |
+| TKCode.Arc | `0.3.1-preview.2` |
+| TKCode.Arc.Fonts | `0.3.1-preview.2` |
+| TKCode.Arc.Themes.Corners | `0.3.1-preview.2` |
 | AtomUI | 由 TKCode.Arc 带入，`6.2.8` |
 | MVVM | CommunityToolkit.Mvvm `8.4.0` |
 | 持久化 | `System.Text.Json`，本地文件 |
@@ -333,16 +336,17 @@ http://127.0.0.1:5199/mcp
 
 1. 按 SSE 规范读取 `event:` / `data:` 事件。
 2. 兼容常见 AI 协议：
-   - OpenAI：`choices[].delta.reasoning_content` / `delta.content`。
+   - OpenAI / OpenRouter：`choices[].delta.content`、`reasoning_content`、`reasoning` 和 `reasoning_details[]`。
    - Anthropic：`content_block_delta` 的 `thinking_delta` / `text_delta`。
    - Gemini：`candidates[].content.parts[].text`（含 `thought`）。
+   - 阿里云 DashScope / 百炼：OpenAI 兼容模式；原生 `output.choices[].message`、`output.text` 也会自动识别。
    - 常见通用字段 `thinking` / `reasoning` / `content` / `text` / `response`。
 3. 将 thinking 和 content 分别追加聚合，保留原始事件流。
 4. 自动切到「AI 聚合」标签，提供内容 / 思考过程 / 原始事件三视图和复制按钮。
 5. 流式接收时每 150ms 增量刷新内容，取消后保留已接收部分并标记「已取消」。
 6. 审计和 MCP `send_request` 都返回聚合后的完整输出。
 
-> 当前版本在流结束后展示最终聚合结果；逐 token 实时渲染在路线图中。
+> 适配按事件 JSON 结构自动判断，不需要选择供应商；非 JSON 的 SSE 事件仍保留在「原始事件」中，但不会参与内容聚合。
 
 ## 请求与响应能力
 
@@ -376,6 +380,7 @@ http://127.0.0.1:5199/mcp
 顶栏「设置」打开独立设置窗口。窗口内编辑的是草稿，点「保存设置」后写入 `%APPDATA%\PostSharp\settings.json`，并立即更新内存中的设置；下次启动重新读取该文件。
 
 - **主题**：跟随系统 / 浅色 / 深色。跟随系统会在启动时读取 Windows 主题，并在系统切换时同步。
+- **全局圆角**：0–2 倍滑杆，0 = 直角，1 = Arc 默认，2 = 双倍圆角；通过 `TKCode.Arc.Themes.Corners` 统一覆盖 Arc 设计令牌，不改变颜色、边框、阴影和动效。
 - **日志目录**：默认 `%APPDATA%\PostSharp\logs`；可浏览选择其他目录或直接打开。保存时会校验目录可写，校验失败会保留原设置并给出原因；若写入配置文件失败，当前会话仍会应用新值，但重启后回到上次成功保存的设置。
 - **日志级别**：调试 / 信息 / 警告 / 错误，默认「调试」。低于所选级别的日志不会写入文件，更严重的日志始终保留；保存后立即作用于当前会话，并写入 `settings.json` 供下次启动读取。
 - **界面字体 / 代码字体**：内置 Inter、系统默认、微软雅黑、Geist Mono、Consolas、Cascadia Mono；导入或扫描到的自定义字体会追加到列表。
@@ -530,6 +535,8 @@ docs/
 | 大响应 200KB | 主视图折叠，详情分页可读 |
 | SSE | 10 个事件，聚合 content 98 字、thinking 27 字；AI 标签自动打开；接收中每 150ms 增量刷新，取消保留已收内容 |
 | SSE 取消 | 取消后状态显示「已取消 · 保留已接收内容」，已收 thinking/content 不清空 |
+| SSE 供应商适配 | OpenRouter `reasoning_details[]`、阿里云 DashScope 原生 `output.choices[].message` / `output.text` 聚合通过；OpenAI 兼容模式保持 |
+| 全局圆角 | 设置滑杆 0 / 1 / 2 保存后立即重绘 Arc 控件；0 为直角、1 为默认、2 为双倍圆角 |
 | multipart 上传 | `200 OK`，receivedBytes 107111，fileName `screenshot.png` |
 | multipart 多文件 | 两个文件分别配置字段名并写入 multipart；cURL/Postman 导出均保留全部文件；拖拽添加与单文件移除验证通过 |
 | MCP `send_request` SSE | 返回 `isSse=true`、`sseEventCount=10`、完整 content/thinking |
@@ -586,7 +593,7 @@ docs/
 | 粘贴区 | 长 JSON 在固定高度内自适应滚动；底部边框完整，不再被外层裁切 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：60 个测试全部通过 |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：62 个测试全部通过 |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
@@ -639,7 +646,7 @@ master                 稳定可发布
 - 每个字段有可见 `Label`；图标按钮有 `AutomationProperties.Name`。
 - 长文本列表使用 `TextTrimming="CharacterEllipsis"` + `ToolTip.Tip`。
 - `.editorconfig` / `.gitattributes` 统一 UTF-8 + LF。
-- 不随意升级 Avalonia / TKCode.Arc；两者版本锁定。
+- Avalonia 固定 `12.1.4`；升级 TKCode.Arc 前确认其 Avalonia 依赖仍为 `12.1.4`，不同时改 `global.json`。
 
 ## 常见问题
 
@@ -684,7 +691,7 @@ master                 稳定可发布
 - 套件：JSONPath / 响应头断言、失败重试与尝试次数。
 - multipart：多文件、拖拽添加、单文件移除，导出保留全部文件。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：60 个 xUnit 测试。
+- 自测：62 个 xUnit 测试。
 
 ### 当前 MVP 限制
 

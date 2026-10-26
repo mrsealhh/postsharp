@@ -48,6 +48,78 @@ public sealed class HttpRequestServiceTests
     }
 
     [Fact]
+    public async Task AliyunDashScopeNativeSseIsAggregated()
+    {
+        const string body = """
+            data: {"output":{"choices":[{"message":{"role":"assistant","reasoning_content":"思考","content":"你"}}]}}
+
+            data: {"output":{"text":"好"}}
+
+            data: [DONE]
+
+            """;
+        using var client = new HttpClient(
+            new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "text/event-stream"),
+            })
+        );
+        var service = new HttpRequestService(client);
+
+        var result = await service.SendAsync(
+            new ComposedRequest(
+                "POST",
+                "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
+                Array.Empty<KeyValuePair<string, string>>(),
+                null,
+                null,
+                null
+            ),
+            CancellationToken.None
+        );
+
+        Assert.True(result.IsSse);
+        Assert.Equal("思考", result.SseThinking);
+        Assert.Equal("你好", result.SseContent);
+    }
+
+    [Fact]
+    public async Task OpenRouterReasoningDetailsAreAggregated()
+    {
+        const string body = """
+            data: {"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.text","text":"想"}]}}]}
+
+            data: {"choices":[{"delta":{"content":"答"}}]}
+
+            data: [DONE]
+
+            """;
+        using var client = new HttpClient(
+            new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "text/event-stream"),
+            })
+        );
+        var service = new HttpRequestService(client);
+
+        var result = await service.SendAsync(
+            new ComposedRequest(
+                "POST",
+                "https://openrouter.ai/api/v1/chat/completions",
+                Array.Empty<KeyValuePair<string, string>>(),
+                null,
+                null,
+                null
+            ),
+            CancellationToken.None
+        );
+
+        Assert.True(result.IsSse);
+        Assert.Equal("想", result.SseThinking);
+        Assert.Equal("答", result.SseContent);
+    }
+
+    [Fact]
     public async Task NonSseResponseDoesNotReportSseProgress()
     {
         using var client = new HttpClient(

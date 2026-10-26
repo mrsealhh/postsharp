@@ -670,6 +670,46 @@ public sealed class HttpRequestService
             return;
         }
 
+        // Aliyun DashScope / Bailian native streams wrap choices and text in output.
+        if (TryGetObject(root, "output", out var output))
+        {
+            if (
+                output.TryGetProperty("choices", out var outputChoices)
+                && outputChoices.ValueKind == JsonValueKind.Array
+            )
+            {
+                foreach (var choice in outputChoices.EnumerateArray())
+                {
+                    if (choice.ValueKind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    if (TryGetObject(choice, "delta", out var delta))
+                    {
+                        AppendThinking(delta, thinking);
+                        AppendContent(delta, content);
+                    }
+
+                    if (TryGetObject(choice, "message", out var message))
+                    {
+                        AppendThinking(message, thinking);
+                        AppendContent(message, content);
+                    }
+
+                    AppendString(choice, "text", content);
+                }
+            }
+
+            AppendThinking(output, thinking);
+            if (!AppendString(output, "text", content))
+            {
+                AppendContent(output, content);
+            }
+
+            return;
+        }
+
         AppendThinking(root, thinking);
         if (!AppendString(root, "content", content))
         {
@@ -681,12 +721,35 @@ public sealed class HttpRequestService
 
     private static void AppendThinking(JsonElement element, StringBuilder target)
     {
+        var appended =
+            AppendString(element, "reasoning_content", target)
+            || AppendString(element, "reasoning", target)
+            || AppendString(element, "thinking", target);
+        if (appended)
+        {
+            return;
+        }
+
         if (
-            !AppendString(element, "reasoning_content", target)
-            && !AppendString(element, "reasoning", target)
+            element.TryGetProperty("reasoning_details", out var details)
+            && details.ValueKind == JsonValueKind.Array
         )
         {
-            AppendString(element, "thinking", target);
+            foreach (var detail in details.EnumerateArray())
+            {
+                if (detail.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (
+                    !AppendString(detail, "text", target)
+                    && !AppendString(detail, "summary", target)
+                )
+                {
+                    AppendString(detail, "content", target);
+                }
+            }
         }
     }
 
