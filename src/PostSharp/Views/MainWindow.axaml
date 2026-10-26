@@ -1072,7 +1072,7 @@
                                         Variant="Primary"
                                         IsDefault="True"
                                         MinWidth="88"
-                                        IsLoading="{Binding IsSending}"
+                                        IsLoading="{Binding Editing.IsSending}"
                                         Command="{Binding SendCommand}"
                                     >
                                         <controls:IconLabel
@@ -1082,7 +1082,7 @@
                                     </arc:Button>
                                     <arc:Button
                                         Variant="Secondary"
-                                        IsVisible="{Binding IsSending}"
+                                        IsVisible="{Binding Editing.IsSending}"
                                         Command="{Binding CancelSendCommand}"
                                     >
                                         <controls:IconLabel

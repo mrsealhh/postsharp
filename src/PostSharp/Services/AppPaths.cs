@@ -19,6 +19,9 @@ public static class AppPaths
 
     public static string AuditTrashFile => Path.Combine(Root, "audit-trash.json");
 
+    /// <summary>SQLite database for audit records and their recycle bin.</summary>
+    public static string DatabaseFile => Path.Combine(Root, "postsharp.db");
+
     /// <summary>内嵌 WebView2 的配置与缓存目录，放在 LocalAppData 以免污染程序目录。</summary>
     public static string WebViewDataDirectory { get; } =
         Path.Combine(

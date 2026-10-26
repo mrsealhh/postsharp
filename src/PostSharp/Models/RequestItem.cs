@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace PostSharp.Models;
@@ -94,6 +95,10 @@ public partial class RequestItem : ObservableObject
 
     [ObservableProperty]
     private bool _isFavorite;
+
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private bool _isSending;
 
     public Guid Id { get; set; } = Guid.NewGuid();
 
