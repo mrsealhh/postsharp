@@ -1238,7 +1238,7 @@ public sealed class McpWorkspaceAdapter
 
             if (draft.AuditLimit is { } auditLimit)
             {
-                settings.AuditLimit = Math.Clamp(auditLimit, 20, 5000);
+                settings.AuditLimit = Math.Clamp(auditLimit, 0, 50000);
             }
 
             if (!string.IsNullOrWhiteSpace(draft.LogDirectory))

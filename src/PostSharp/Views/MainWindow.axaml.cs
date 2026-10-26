@@ -1434,6 +1434,17 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnTreeMenuSuiteClick(object? sender, RoutedEventArgs e)
+    {
+        var collection = _viewModel?.SelectedCollection;
+        HideTreeMenu();
+
+        if (_viewModel is not null && collection is not null)
+        {
+            _viewModel.OpenSuiteBuilderForCollection(collection);
+        }
+    }
+
     private void OnTreeMenuMoveUpClick(object? sender, RoutedEventArgs e)
     {
         var target = _viewModel?.SelectedRequest ?? (object?)_viewModel?.SelectedCollection;

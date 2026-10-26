@@ -57,8 +57,9 @@ public partial class AppSettings : ObservableObject
     [ObservableProperty]
     private int _largeResponseThresholdKb = 64;
 
+    /// <summary>Maximum retained audit entries; 0 means unlimited.</summary>
     [ObservableProperty]
-    private int _auditLimit = 500;
+    private int _auditLimit;
 
     [ObservableProperty]
     private string _logDirectory = AppPaths.DefaultLogDirectory;
