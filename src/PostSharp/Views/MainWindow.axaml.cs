@@ -625,6 +625,66 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnPickBatchImportFilesClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "批量导入文件",
+                    AllowMultiple = true,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("支持的导入文件")
+                        {
+                            Patterns = new[]
+                            {
+                                "*.json",
+                                "*.har",
+                                "*.yaml",
+                                "*.yml",
+                                "*.sh",
+                                "*.txt",
+                            },
+                            MimeTypes = new[]
+                            {
+                                "application/json",
+                                "application/yaml",
+                                "text/yaml",
+                                "text/plain",
+                            },
+                        },
+                    },
+                }
+            );
+
+            var paths = files
+                .Select(file => file.TryGetLocalPath())
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path!)
+                .ToList();
+            if (paths.Count > 0)
+            {
+                await _viewModel.ImportBatchFilesAsync(paths);
+            }
+        }
+        catch (Exception exception)
+        {
+            _viewModel.HasImportError = true;
+            _viewModel.ImportStatus = "无法打开批量文件选择器，请稍后重试。";
+            Log.Error(exception, "打开批量导入文件选择器失败");
+        }
+    }
+
     private async void OnExportPostmanClick(
         object? sender,
         Avalonia.Interactivity.RoutedEventArgs e

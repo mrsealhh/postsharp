@@ -3050,59 +3050,78 @@
                     Size="Large"
                     Opened="OnImportDialogOpened"
                 >
-                    <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="12">
-                        <arc:RadioCards
-                            Grid.Row="0"
-                            SelectedValue="{Binding ImportSource, Mode=TwoWay}"
-                            MinColumnWidth="180"
-                            AutomationProperties.Name="导入来源"
-                        >
-                            <arc:RadioCardOption
-                                Value="OpenApi"
-                                Label="OpenAPI / Swagger"
-                                Description="已支持 · 标准文档 / Knife4j"
-                            />
-                            <arc:RadioCardOption
-                                Value="PostmanCollection"
-                                Label="Postman Collection"
-                                Description="已支持 · 文件夹 / 认证"
-                            />
-                            <arc:RadioCardOption
-                                Value="PostmanEnvironment"
-                                Label="Postman Environment"
-                                Description="已支持 · 环境变量 JSON"
-                            />
-                            <arc:RadioCardOption
-                                Value="Curl"
-                                Label="cURL"
-                                Description="已支持 · bash 命令"
-                            />
-                            <arc:RadioCardOption
-                                Value="Har"
-                                Label="HAR 1.2"
-                                Description="已支持 · 浏览器 / Apifox"
-                            />
-                            <arc:RadioCardOption
-                                Value="Insomnia"
-                                Label="Insomnia V4"
-                                Description="新增 · 请求组 / 环境"
-                            />
-                            <arc:RadioCardOption
-                                Value="Hoppscotch"
-                                Label="Hoppscotch"
-                                Description="新增 · Collection JSON"
-                            />
-                            <arc:RadioCardOption
-                                Value="OtherTools"
-                                Label="YApi / ApiPost / Eolink"
-                                Description="指南 · 先导出 OpenAPI / Postman"
-                            />
-                            <arc:RadioCardOption
-                                Value="Apifox"
-                                Label="Apifox"
-                                Description="指南 · Postman / OpenAPI / HAR"
-                            />
-                        </arc:RadioCards>
+                    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+                        <StackPanel Grid.Row="0" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock
+                                    Text="导入来源"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    VerticalAlignment="Center"
+                                />
+                                <arc:Button
+                                    Grid.Column="1"
+                                    Content="{Binding ImportSourceToggleLabel}"
+                                    Variant="Ghost"
+                                    Size="Small"
+                                    Command="{Binding ToggleImportSourceCommand}"
+                                    AutomationProperties.Name="展开或收起导入来源"
+                                />
+                            </Grid>
+                            <arc:RadioCards
+                                SelectedValue="{Binding ImportSource, Mode=TwoWay}"
+                                MinColumnWidth="150"
+                                IsVisible="{Binding IsImportSourceExpanded}"
+                                AutomationProperties.Name="导入来源"
+                            >
+                                <arc:RadioCardOption
+                                    Value="OpenApi"
+                                    Label="OpenAPI"
+                                    Description="Swagger · Knife4j"
+                                />
+                                <arc:RadioCardOption
+                                    Value="PostmanCollection"
+                                    Label="Postman"
+                                    Description="Collection · 文件夹 / 认证"
+                                />
+                                <arc:RadioCardOption
+                                    Value="PostmanEnvironment"
+                                    Label="Environment"
+                                    Description="Postman 环境变量"
+                                />
+                                <arc:RadioCardOption
+                                    Value="Curl"
+                                    Label="cURL"
+                                    Description="bash 命令"
+                                />
+                                <arc:RadioCardOption
+                                    Value="Har"
+                                    Label="HAR"
+                                    Description="浏览器 / Apifox"
+                                />
+                                <arc:RadioCardOption
+                                    Value="Insomnia"
+                                    Label="Insomnia"
+                                    Description="V4 JSON · 请求组 / 环境"
+                                />
+                                <arc:RadioCardOption
+                                    Value="Hoppscotch"
+                                    Label="Hoppscotch"
+                                    Description="Collection JSON"
+                                />
+                                <arc:RadioCardOption
+                                    Value="OtherTools"
+                                    Label="其他工具"
+                                    Description="YApi / ApiPost / Eolink 指南"
+                                />
+                                <arc:RadioCardOption
+                                    Value="Apifox"
+                                    Label="Apifox"
+                                    Description="Postman / OpenAPI / HAR"
+                                />
+                            </arc:RadioCards>
+                        </StackPanel>
 
                         <Panel Grid.Row="1">
                             <StackPanel IsVisible="{Binding IsOpenApiImport}" Spacing="12">
@@ -3221,12 +3240,12 @@
                                         TextWrapping="Wrap"
                                     />
                                 </StackPanel>
-                                <Border Height="150" ClipToBounds="True">
+                                <Border Height="120" ClipToBounds="True">
                                     <arc:Textarea
                                         Label="或者粘贴 Collection JSON"
                                         Text="{Binding PostmanJson, Mode=TwoWay}"
                                         Placeholder="粘贴 Postman Collection v2.1 JSON"
-                                        FrameHeight="150"
+                                        FrameHeight="120"
                                         IsResizable="False"
                                         AutomationProperties.Name="Postman Collection JSON"
                                     />
@@ -3282,12 +3301,12 @@
                                     Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                     TextWrapping="Wrap"
                                 />
-                                <Border Height="150" ClipToBounds="True">
+                                <Border Height="120" ClipToBounds="True">
                                     <arc:Textarea
                                         Label="cURL 命令"
                                         Text="{Binding CurlCommand, Mode=TwoWay}"
                                         Placeholder="curl -X POST 'https://api.example.com/health' -H 'Accept: application/json'"
-                                        FrameHeight="150"
+                                        FrameHeight="120"
                                         IsResizable="False"
                                         AutomationProperties.Name="cURL 命令"
                                     />
@@ -3345,12 +3364,12 @@
                                         VerticalAlignment="Center"
                                     />
                                 </StackPanel>
-                                <Border Height="150" ClipToBounds="True">
+                                <Border Height="120" ClipToBounds="True">
                                     <arc:Textarea
                                         Label="或者粘贴 HAR JSON"
                                         Text="{Binding HarJson, Mode=TwoWay}"
                                         Placeholder="粘贴 HAR 1.2 JSON"
-                                        FrameHeight="150"
+                                        FrameHeight="120"
                                         IsResizable="False"
                                         AutomationProperties.Name="HAR JSON"
                                     />
@@ -3396,12 +3415,12 @@
                                         TextWrapping="Wrap"
                                     />
                                 </StackPanel>
-                                <Border Height="140" ClipToBounds="True">
+                                <Border Height="120" ClipToBounds="True">
                                     <arc:Textarea
                                         Label="或者粘贴 Insomnia JSON"
                                         Text="{Binding InsomniaJson, Mode=TwoWay}"
                                         Placeholder="粘贴 Insomnia v4 JSON"
-                                        FrameHeight="140"
+                                        FrameHeight="120"
                                         IsResizable="False"
                                         AutomationProperties.Name="Insomnia JSON"
                                     />
@@ -3447,12 +3466,12 @@
                                         TextWrapping="Wrap"
                                     />
                                 </StackPanel>
-                                <Border Height="140" ClipToBounds="True">
+                                <Border Height="120" ClipToBounds="True">
                                     <arc:Textarea
                                         Label="或者粘贴 Hoppscotch JSON"
                                         Text="{Binding HoppscotchJson, Mode=TwoWay}"
                                         Placeholder="粘贴 Hoppscotch Collection JSON"
-                                        FrameHeight="140"
+                                        FrameHeight="120"
                                         IsResizable="False"
                                         AutomationProperties.Name="Hoppscotch JSON"
                                     />
@@ -3557,6 +3576,53 @@
 
                         <Border
                             Grid.Row="3"
+                            IsVisible="{Binding HasImportReport}"
+                            BorderBrush="{arc:ArcDesignTokenResource Success}"
+                            BorderThickness="1"
+                            CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                            Padding="12"
+                        >
+                            <StackPanel Spacing="6">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock
+                                        Text="导入结果"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        FontWeight="Medium"
+                                        Foreground="{arc:ArcDesignTokenResource Success}"
+                                        VerticalAlignment="Center"
+                                    />
+                                    <arc:Button
+                                        Grid.Column="1"
+                                        Content="{Binding ImportReportToggleLabel}"
+                                        Variant="Ghost"
+                                        Size="Small"
+                                        Command="{Binding ToggleImportReportCommand}"
+                                        AutomationProperties.Name="展开或收起导入结果"
+                                    />
+                                </Grid>
+                                <arc:ScrollArea
+                                    Height="80"
+                                    IsVisible="{Binding IsImportReportExpanded}"
+                                >
+                                    <ItemsControl ItemsSource="{Binding ImportReport}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock
+                                                    Text="{Binding}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                    TextWrapping="Wrap"
+                                                    Margin="0,0,0,4"
+                                                />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </arc:ScrollArea>
+                            </StackPanel>
+                        </Border>
+
+                        <Border
+                            Grid.Row="4"
                             IsVisible="{Binding HasImportWarnings}"
                             BorderBrush="{arc:ArcDesignTokenResource Warning}"
                             BorderThickness="1"
@@ -3564,13 +3630,27 @@
                             Padding="12"
                         >
                             <StackPanel Spacing="6">
-                                <TextBlock
-                                    Text="兼容性提示"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    FontWeight="Medium"
-                                    Foreground="{arc:ArcDesignTokenResource Warning}"
-                                />
-                                <arc:ScrollArea Height="110">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock
+                                        Text="兼容性提示"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        FontWeight="Medium"
+                                        Foreground="{arc:ArcDesignTokenResource Warning}"
+                                        VerticalAlignment="Center"
+                                    />
+                                    <arc:Button
+                                        Grid.Column="1"
+                                        Content="{Binding ImportWarningsToggleLabel}"
+                                        Variant="Ghost"
+                                        Size="Small"
+                                        Command="{Binding ToggleImportWarningsCommand}"
+                                        AutomationProperties.Name="展开或收起兼容性提示"
+                                    />
+                                </Grid>
+                                <arc:ScrollArea
+                                    Height="80"
+                                    IsVisible="{Binding IsImportWarningsExpanded}"
+                                >
                                     <ItemsControl ItemsSource="{Binding ImportWarnings}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
@@ -3590,17 +3670,34 @@
                     </Grid>
 
                     <arc:Dialog.Actions>
-                        <StackPanel
-                            Orientation="Horizontal"
-                            Spacing="8"
-                            HorizontalAlignment="Right"
-                        >
+                        <Grid ColumnDefinitions="*,Auto" HorizontalAlignment="Stretch">
+                            <StackPanel
+                                Orientation="Horizontal"
+                                Spacing="8"
+                                VerticalAlignment="Center"
+                            >
+                                <arc:Button
+                                    Content="批量导入文件…"
+                                    Variant="Secondary"
+                                    Click="OnPickBatchImportFilesClick"
+                                    IsEnabled="{Binding !IsImporting}"
+                                    AutomationProperties.Name="批量导入文件"
+                                />
+                                <TextBlock
+                                    Text="可多选，自动识别格式"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    VerticalAlignment="Center"
+                                />
+                            </StackPanel>
                             <arc:Button
+                                Grid.Column="1"
                                 Content="关闭"
                                 Variant="Secondary"
                                 Command="{Binding CloseImportDialogCommand}"
+                                HorizontalAlignment="Right"
                             />
-                        </StackPanel>
+                        </Grid>
                     </arc:Dialog.Actions>
                 </arc:Dialog>
 

@@ -63,7 +63,9 @@ PostSharp 的定位是：
 - **Insomnia V4 导入**：读取 `resources` 数组中的 workspace、request_group、request 和 environment；脚本/测试不执行。
 - **Hoppscotch 导入**：读取 Collection JSON 的 folders、requests、params、headers、body 和基础认证。
 - **springdoc / Knife4j**：OpenAPI 来源可一键补全 `/v3/api-docs` 地址。
-- **来源选择**：导入对话框直接展示 OpenAPI、Postman Collection、Postman Environment、cURL、HAR、Insomnia、Hoppscotch、YApi/ApiPost/Eolink、Apifox 等小分类卡片。
+- **来源选择**：导入对话框直接展示 OpenAPI、Postman、Environment、cURL、HAR、Insomnia、Hoppscotch、其他工具、Apifox 等小分类卡片，可收起。
+- **批量导入**：一次选择多个文件，自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL；逐文件显示成功或失败结果，单个失败不会中断其他文件。
+- **导入反馈**：导入完成后显示请求数、分组数、环境数和逐文件结果；结果与兼容性提示可展开/收起，全部成功时使用 Toast。
 - **响应**：
   - 状态、耗时、大小、内容类型、响应头。
   - JSON 使用 Arc JsonViewer（搜索、展开、复制值/路径）。
@@ -180,7 +182,7 @@ Apifox 的原生格式暂未直接解析；当前推荐两条官方导出路径�
    - **自动化**：运行「内置 Mock 冒烟测试」。
    - **指南**：一分钟了解全部核心功能。
 4. 顶栏「设置」打开独立设置窗口：主题、日志目录、字体、超时、默认请求体等。
-5. 集合树顶部的「导入」打开导入/导出对话框，先选择来源卡片（OpenAPI、Postman Collection、Postman Environment、cURL、HAR、Insomnia、Hoppscotch、YApi/ApiPost/Eolink、Apifox），再选择文件或粘贴内容。
+5. 集合树顶部的「导入」打开导入/导出对话框，先选择来源卡片，再选择文件或粘贴内容；底部「批量导入文件…」可以一次选择多个文件并自动识别格式。
 
 ![一分钟指南](docs/guide.png)
 
@@ -449,6 +451,7 @@ src/PostSharp/
     HarImportService.cs   HAR 1.2 请求提取、静态资源过滤、请求体转换与提示
     InsomniaImportService.cs Insomnia v4 workspace/request_group/request/environment 解析
     HoppscotchImportService.cs Hoppscotch Collection JSON 解析
+    ImportFileDetector.cs 批量导入文件格式自动识别
     CurlImportService.cs   bash 风格 cURL 参数解析与请求还原
     RequestComposer.cs    环境变量、URL、cURL、multipart 组合
     HttpRequestService.cs HTTP、超时、格式化、SSE 解析聚合
@@ -480,6 +483,7 @@ tests/
     InsomniaImportServiceTests.cs
     HoppscotchImportServiceTests.cs
     OpenApiImportServiceTests.cs
+    ImportFileDetectorTests.cs
     CurlImportServiceTests.cs
 docs/
   screenshot.png
@@ -571,8 +575,10 @@ docs/
 | Hoppscotch 导入 | Collection JSON：文件夹、params、headers、JSON body、bearer 认证解析通过 |
 | OpenAPI 增强 | `x-apifox-folder` 分组、securitySchemes 占位 Authorization、多服务器/多 tag/外部 `$ref` 提示通过 |
 | 导入来源卡片 | OpenAPI、Postman Collection、Postman Environment、cURL、HAR、Insomnia、Hoppscotch、YApi/ApiPost/Eolink、Apifox 九张卡片同屏展示，选中态清晰 |
-| 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片和粘贴区、环境入口、提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：22 个测试全部通过 |
+| 批量导入 | 文件选择器允许多选；自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL，逐文件成功/失败互不影响 |
+| 导入反馈 | 单文件成功 Toast；批量或有提示时显示「导入结果」绿色结果区和「兼容性提示」橙色提示区，含请求/分组/环境数量，默认折叠可展开 |
+| 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：30 个测试全部通过 |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
