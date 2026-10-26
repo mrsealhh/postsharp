@@ -42,6 +42,7 @@ internal static class Program
             AppLog.Shutdown();
             return;
         }
+
         AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
             Log.Fatal(
                 eventArgs.ExceptionObject as Exception,

@@ -37,6 +37,7 @@ public partial class SettingsViewModel : ObservableObject
         );
         SuitesStorageProfile = FindProfile(_storage.Config.ProfileFor(StorageCategories.Suites));
         SelectedStorageProfile = StorageProfiles.FirstOrDefault();
+        _updateStatusMessage = InitialUpdateStatus();
         RefreshFontState();
     }
 
@@ -83,6 +84,12 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasStorageError;
 
+    [ObservableProperty]
+    private bool _isCheckingUpdates;
+
+    [ObservableProperty]
+    private string _updateStatusMessage = string.Empty;
+
     public ObservableCollection<StorageProfile> StorageProfiles { get; } = new();
 
     public IReadOnlyList<StorageProviderOption> StorageProviderOptions { get; } =
@@ -96,6 +103,10 @@ public partial class SettingsViewModel : ObservableObject
     public bool IsStorageProfileEditable => SelectedStorageProfile?.IsRemote == true;
 
     public string LocalDatabasePath => AppPaths.DatabaseFile;
+
+    public string CurrentVersionText => $"当前版本 {UpdateService.CurrentVersionText}";
+
+    public string CheckUpdateButtonText => IsCheckingUpdates ? "检查中…" : "检查更新";
 
     public IReadOnlyList<string> ThemeOptions => ThemeService.Options;
 
@@ -126,6 +137,51 @@ public partial class SettingsViewModel : ObservableObject
         Draft.LogDirectory = directory;
         StatusMessage = "日志目录已选择，点击「保存设置」后生效。";
         HasError = false;
+    }
+
+    partial void OnIsCheckingUpdatesChanged(bool value) =>
+        OnPropertyChanged(nameof(CheckUpdateButtonText));
+
+    [RelayCommand]
+    private async Task CheckForUpdatesAsync()
+    {
+        if (IsCheckingUpdates)
+        {
+            return;
+        }
+
+        IsCheckingUpdates = true;
+        UpdateStatusMessage = "正在检查 GitHub 更新…";
+        try
+        {
+            var result = await UpdateService.CheckAndStageAsync(
+                _current,
+                force: true,
+                CancellationToken.None
+            );
+            UpdateStatusMessage = result.Message;
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "手动检查更新失败");
+            UpdateStatusMessage = "检查更新失败，请确认网络可以访问 GitHub 后重试。";
+        }
+        finally
+        {
+            IsCheckingUpdates = false;
+        }
+    }
+
+    private static string InitialUpdateStatus()
+    {
+        if (UpdateService.PendingVersion is { } pending)
+        {
+            return $"新版本 {pending} 已下载，点击顶栏「安装更新」应用。";
+        }
+
+        return UpdateService.IsEnabledLayout
+            ? "启动后会自动检查 GitHub 更新；下载完成后由你决定何时安装。"
+            : "当前为开发运行目录，自动更新仅在已发布安装包中启用。";
     }
 
     public async Task ImportFontsAsync(
@@ -429,6 +485,7 @@ public partial class SettingsViewModel : ObservableObject
         Draft.FontDirectories = new List<string>();
         Draft.TreePaneWidth = defaults.TreePaneWidth;
         Draft.HistoryCollapsed = defaults.HistoryCollapsed;
+        Draft.AutoCheckUpdates = defaults.AutoCheckUpdates;
         _fontDirectoriesPreviewActive = true;
         FontService.Reload(Draft.FontDirectories);
         RefreshFontState();
@@ -806,6 +863,7 @@ public partial class SettingsViewModel : ObservableObject
         }
         _current.TreePaneWidth = Draft.TreePaneWidth;
         _current.HistoryCollapsed = Draft.HistoryCollapsed;
+        _current.AutoCheckUpdates = Draft.AutoCheckUpdates;
     }
 
     private static AppSettings Clone(AppSettings source)
@@ -831,6 +889,7 @@ public partial class SettingsViewModel : ObservableObject
             TreePaneWidth = source.TreePaneWidth,
             RequestPaneRatio = source.RequestPaneRatio,
             HistoryCollapsed = source.HistoryCollapsed,
+            AutoCheckUpdates = source.AutoCheckUpdates,
         };
     }
 

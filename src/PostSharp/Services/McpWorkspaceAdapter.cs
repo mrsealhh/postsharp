@@ -140,7 +140,8 @@ public sealed record McpSettingsInfo(
     string LogDirectory,
     string LogLevel,
     string SseThinkingPath,
-    string SseContentPath
+    string SseContentPath,
+    bool AutoCheckUpdates
 );
 
 public sealed record McpSettingsDraft(
@@ -158,7 +159,8 @@ public sealed record McpSettingsDraft(
     string? LogDirectory,
     string? LogLevel,
     string? SseThinkingPath,
-    string? SseContentPath
+    string? SseContentPath,
+    bool? AutoCheckUpdates
 );
 
 public sealed record McpStorageProfileInfo(
@@ -1170,7 +1172,8 @@ public sealed class McpWorkspaceAdapter
                 settings.LogDirectory,
                 settings.LogLevel,
                 settings.SseThinkingPath,
-                settings.SseContentPath
+                settings.SseContentPath,
+                settings.AutoCheckUpdates
             );
         });
     }
@@ -1250,6 +1253,10 @@ public sealed class McpWorkspaceAdapter
 
             settings.SseThinkingPath = draft.SseThinkingPath ?? settings.SseThinkingPath;
             settings.SseContentPath = draft.SseContentPath ?? settings.SseContentPath;
+            if (draft.AutoCheckUpdates is { } autoCheckUpdates)
+            {
+                settings.AutoCheckUpdates = autoCheckUpdates;
+            }
 
             if (_viewModel.SaveSettingsForMcp() != SaveResult.Saved)
             {
@@ -1259,6 +1266,13 @@ public sealed class McpWorkspaceAdapter
             return GetSettingsCore(settings);
         });
     }
+
+    public async Task<UpdateCheckResult> CheckForUpdatesAsync(
+        CancellationToken cancellationToken = default
+    ) =>
+        await UpdateService
+            .CheckAndStageAsync(_viewModel.Settings, force: true, cancellationToken)
+            .ConfigureAwait(false);
 
     public async Task<McpStorageConfigInfo> GetStorageConfigAsync()
     {
@@ -1645,7 +1659,8 @@ public sealed class McpWorkspaceAdapter
             settings.LogDirectory,
             settings.LogLevel,
             settings.SseThinkingPath,
-            settings.SseContentPath
+            settings.SseContentPath,
+            settings.AutoCheckUpdates
         );
 
     private static McpStorageConfigInfo ToStorageInfo(StorageConfig config) =>

@@ -282,17 +282,14 @@
                                 />
                                 <arc:Button
                                     Variant="Secondary"
-                                    Width="30"
-                                    Height="30"
-                                    Padding="0"
                                     Click="OnOpenAuthorizationClick"
                                     ToolTip.Tip="{Binding AuthScopeSummary}"
                                     AutomationProperties.Name="{Binding AuthScopeSummary}"
                                 >
-                                    <arc:ArcGlyph
-                                        Data="{x:Static arc:ArcIcons.Key}"
-                                        Size="15"
-                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    <controls:IconLabel
+                                        Icon="{x:Static arc:ArcIcons.Key}"
+                                        Text="授权"
+                                        IconSize="13"
                                     />
                                 </arc:Button>
                                 <arc:Button
@@ -320,6 +317,19 @@
                                     <controls:IconLabel
                                         Icon="{x:Static arc:ArcIcons.SlidersHorizontal}"
                                         Text="管理层"
+                                    />
+                                </arc:Button>
+                                <arc:Button
+                                    Variant="Secondary"
+                                    Command="{Binding UpdateCommand}"
+                                    IsEnabled="{Binding !IsCheckingUpdates}"
+                                    ToolTip.Tip="{Binding UpdateButtonTooltip}"
+                                    AutomationProperties.Name="{Binding UpdateButtonText}"
+                                >
+                                    <controls:IconLabel
+                                        Icon="{x:Static arc:ArcIcons.RefreshCw}"
+                                        Text="{Binding UpdateButtonText}"
+                                        IconSize="13"
                                     />
                                 </arc:Button>
                                 <arc:Button

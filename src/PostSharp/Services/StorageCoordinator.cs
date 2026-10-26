@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Microsoft.Data.Sqlite;
 using PostSharp.Models;
 
@@ -18,7 +19,13 @@ public sealed class StorageCoordinator
     private readonly ConcurrentDictionary<string, IDocumentBackend> _backends = new(
         StringComparer.OrdinalIgnoreCase
     );
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _remoteLocks = new(
+    private readonly ConcurrentDictionary<string, Channel<string>> _remoteChannels = new(
+        StringComparer.OrdinalIgnoreCase
+    );
+    private readonly ConcurrentDictionary<string, bool> _remoteReady = new(
+        StringComparer.OrdinalIgnoreCase
+    );
+    private readonly ConcurrentDictionary<string, bool> _remoteBlocked = new(
         StringComparer.OrdinalIgnoreCase
     );
     private StorageConfig _config;
@@ -38,7 +45,74 @@ public sealed class StorageCoordinator
     {
         try
         {
-            return LocalBackend.ReadAsync(category).GetAwaiter().GetResult();
+            var local = LocalBackend.ReadAsync(category).GetAwaiter().GetResult();
+            if (local is not null)
+            {
+                if (_config.IsRemoteBlocked(category))
+                {
+                    _remoteReady.TryRemove(category, out _);
+                    _remoteBlocked[category] = true;
+                }
+                else
+                {
+                    _remoteReady[category] = true;
+                    _remoteBlocked.TryRemove(category, out _);
+                }
+
+                return local;
+            }
+
+            var profile = _config.ProfileFor(category);
+            if (profile.IsLocal)
+            {
+                _remoteReady[category] = true;
+                return null;
+            }
+
+            // A remote binding with no local cache must be read before the app saves seed/default data. Otherwise
+            // a fresh checkout with an existing storage.json could overwrite the remote database with defaults.
+            try
+            {
+                var remoteTask = Task.Run(() => Backend(profile).ReadAsync(category));
+                if (!remoteTask.Wait(TimeSpan.FromSeconds(3)))
+                {
+                    _ = remoteTask.ContinueWith(task => _ = task.Exception, TaskScheduler.Default);
+                    SetRemoteBlocked(category, true);
+                    _remoteReady.TryRemove(category, out _);
+                    Log.Warning("远程存储读取超时，已暂停自动回写 {Category}", category);
+                    return null;
+                }
+
+                var remote = remoteTask.GetAwaiter().GetResult();
+                if (remote is not null)
+                {
+                    LocalBackend
+                        .WriteAsync(category, remote.Payload, remote.Revision + 1)
+                        .GetAwaiter()
+                        .GetResult();
+                }
+
+                _remoteReady[category] = true;
+                _remoteBlocked.TryRemove(category, out _);
+                SetRemoteBlocked(category, false);
+                return remote;
+            }
+            catch (Exception exception)
+            {
+                SetRemoteBlocked(category, true);
+                _remoteReady.TryRemove(category, out _);
+                Log.Warning(
+                    exception,
+                    "远程存储不可用，已暂停自动回写 {Category} {Profile}",
+                    category,
+                    profile.Name
+                );
+                StatusChanged?.Invoke(
+                    this,
+                    $"{StorageCategories.Label(category)}远程存储不可用，已暂停自动回写"
+                );
+                return null;
+            }
         }
         catch (Exception exception)
         {
@@ -56,7 +130,11 @@ public sealed class StorageCoordinator
                 .WriteAsync(category, payload, (current?.Revision ?? 0) + 1)
                 .GetAwaiter()
                 .GetResult();
-            QueueRemote(category, payload);
+            if (_remoteReady.ContainsKey(category) && !_remoteBlocked.ContainsKey(category))
+            {
+                QueueRemote(category, payload);
+            }
+
             return SaveResult.Saved;
         }
         catch (Exception exception)
@@ -102,7 +180,7 @@ public sealed class StorageCoordinator
         string? backup = null;
         if (target.IsLocal)
         {
-            backup = BackupLocalDatabase();
+            backup = await Task.Run(BackupLocalDatabase, cancellationToken).ConfigureAwait(false);
         }
 
         var sourceBackend = Backend(source);
@@ -122,6 +200,13 @@ public sealed class StorageCoordinator
             await targetBackend
                 .WriteAsync(category, document.Payload, nextRevision++, cancellationToken)
                 .ConfigureAwait(false);
+            if (target.IsRemote)
+            {
+                _remoteReady[category] = true;
+                _remoteBlocked.TryRemove(category, out _);
+                SetRemoteBlocked(category, false);
+            }
+
             copied++;
         }
 
@@ -148,7 +233,7 @@ public sealed class StorageCoordinator
     {
         var normalizedCategories = NormalizeCategories(categories);
         var target = FindProfile(targetProfileId);
-        var backup = BackupLocalDatabase();
+        var backup = await Task.Run(BackupLocalDatabase, cancellationToken).ConfigureAwait(false);
         var copied = 0;
         var revision = 1;
 
@@ -166,6 +251,13 @@ public sealed class StorageCoordinator
             await Backend(target)
                 .WriteAsync(category, sourceDocument.Payload, revision++, cancellationToken)
                 .ConfigureAwait(false);
+            if (target.IsRemote)
+            {
+                _remoteReady[category] = true;
+                _remoteBlocked.TryRemove(category, out _);
+                SetRemoteBlocked(category, false);
+            }
+
             // Local SQLite is the offline cache even when the selected profile is remote.
             await LocalBackend
                 .WriteAsync(category, sourceDocument.Payload, revision++, cancellationToken)
@@ -178,6 +270,7 @@ public sealed class StorageCoordinator
         foreach (var category in normalizedCategories)
         {
             next.SetBinding(category, target.Id);
+            next.SetRemoteBlocked(category, false);
         }
 
         if (_configStore.Save(next) != SaveResult.Saved)
@@ -196,13 +289,65 @@ public sealed class StorageCoordinator
         );
     }
 
+    private void SetRemoteBlocked(string category, bool blocked)
+    {
+        if (_config.IsRemoteBlocked(category) == blocked)
+        {
+            return;
+        }
+
+        _config.SetRemoteBlocked(category, blocked);
+        _configStore.Save(_config);
+    }
+
     public SaveResult SaveConfig(StorageConfig config)
     {
-        var saved = _configStore.Save(config);
+        var previous = _config;
+        var next = config.Clone().Normalize();
+        foreach (var category in StorageCategories.All)
+        {
+            var previousId = previous.Bindings.TryGetValue(category, out var oldId)
+                ? oldId
+                : StorageConfig.LocalProfileId;
+            var nextProfile = next.ProfileFor(category);
+            if (
+                previous.IsRemoteBlocked(category)
+                && string.Equals(previousId, nextProfile.Id, StringComparison.OrdinalIgnoreCase)
+                && nextProfile.IsRemote
+            )
+            {
+                next.SetRemoteBlocked(category, true);
+            }
+            else if (!string.Equals(previousId, nextProfile.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                next.SetRemoteBlocked(category, false);
+            }
+        }
+
+        var saved = _configStore.Save(next);
         if (saved == SaveResult.Saved)
         {
-            _config = config.Normalize();
+            _config = next.Normalize();
             _backends.Clear();
+            foreach (var category in StorageCategories.All)
+            {
+                var profile = _config.ProfileFor(category);
+                if (profile.IsRemote && !_config.IsRemoteBlocked(category))
+                {
+                    _remoteReady[category] = true;
+                    _remoteBlocked.TryRemove(category, out _);
+                }
+                else if (!profile.IsRemote)
+                {
+                    _remoteReady.TryRemove(category, out _);
+                    _remoteBlocked.TryRemove(category, out _);
+                }
+                else
+                {
+                    _remoteReady.TryRemove(category, out _);
+                    _remoteBlocked[category] = true;
+                }
+            }
         }
 
         return saved;
@@ -272,15 +417,47 @@ public sealed class StorageCoordinator
     private void QueueRemote(string category, string payload)
     {
         var profile = _config.ProfileFor(category);
-        if (profile.IsLocal)
+        if (
+            profile.IsLocal
+            || !_remoteReady.ContainsKey(category)
+            || _remoteBlocked.ContainsKey(category)
+        )
         {
             return;
         }
 
-        _ = Task.Run(async () =>
+        var channel = _remoteChannels.GetOrAdd(category, CreateRemoteChannel);
+        channel.Writer.TryWrite(payload);
+    }
+
+    private Channel<string> CreateRemoteChannel(string category)
+    {
+        var channel = Channel.CreateBounded<string>(
+            new BoundedChannelOptions(1)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false,
+            }
+        );
+        _ = ProcessRemoteChannelAsync(category, channel.Reader);
+        return channel;
+    }
+
+    private async Task ProcessRemoteChannelAsync(string category, ChannelReader<string> reader)
+    {
+        await foreach (var payload in reader.ReadAllAsync().ConfigureAwait(false))
         {
-            var gate = _remoteLocks.GetOrAdd(category, _ => new SemaphoreSlim(1, 1));
-            await gate.WaitAsync().ConfigureAwait(false);
+            var profile = _config.ProfileFor(category);
+            if (
+                profile.IsLocal
+                || !_remoteReady.ContainsKey(category)
+                || _remoteBlocked.ContainsKey(category)
+            )
+            {
+                continue;
+            }
+
             try
             {
                 var backend = Backend(profile);
@@ -307,11 +484,7 @@ public sealed class StorageCoordinator
                     $"{StorageCategories.Label(category)}同步失败：{exception.Message}"
                 );
             }
-            finally
-            {
-                gate.Release();
-            }
-        });
+        }
     }
 
     private static IReadOnlyList<string> NormalizeCategories(IReadOnlyList<string> categories)
