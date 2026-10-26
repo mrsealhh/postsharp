@@ -44,7 +44,7 @@ PostSharp 的定位是：
 
 - **MCP 工具**：接口 CRUD、发送请求、获取 cURL、审计查询、自动化套件创建/运行/删除。
 - **完整审计**：来源 `UI` / `MCP`、MCP 客户端名称、工具名、时间、状态、耗时、大小、cURL、请求头和请求/响应预览。
-- **SSE / AI 输出聚合**：自动解析 `text/event-stream`，聚合常见 AI 协议的 thinking 与 content，不再只保留最后一条推送。
+- **SSE / AI 输出聚合**：自动解析 `text/event-stream`，聚合常见 AI 协议的 thinking 与 content，接收中增量刷新，取消后保留已接收内容。
 - **自动化套件**：步骤支持 `expectedStatus` 与 `bodyContains` 断言，支持失败停止；运行结果进入审计。
 - **管理层**：一个窗口内切换审计、自动化、指南。
 
@@ -339,7 +339,8 @@ http://127.0.0.1:5199/mcp
    - 常见通用字段 `thinking` / `reasoning` / `content` / `text` / `response`。
 3. 将 thinking 和 content 分别追加聚合，保留原始事件流。
 4. 自动切到「AI 聚合」标签，提供内容 / 思考过程 / 原始事件三视图和复制按钮。
-5. 审计和 MCP `send_request` 都返回聚合后的完整输出。
+5. 流式接收时每 150ms 增量刷新内容，取消后保留已接收部分并标记「已取消」。
+6. 审计和 MCP `send_request` 都返回聚合后的完整输出。
 
 > 当前版本在流结束后展示最终聚合结果；逐 token 实时渲染在路线图中。
 
@@ -527,7 +528,8 @@ docs/
 | 模拟错误 | `500` |
 | 用户详情 | `200 OK` |
 | 大响应 200KB | 主视图折叠，详情分页可读 |
-| SSE | 10 个事件，聚合 content 98 字、thinking 27 字；AI 标签自动打开 |
+| SSE | 10 个事件，聚合 content 98 字、thinking 27 字；AI 标签自动打开；接收中每 150ms 增量刷新，取消保留已收内容 |
+| SSE 取消 | 取消后状态显示「已取消 · 保留已接收内容」，已收 thinking/content 不清空 |
 | multipart 上传 | `200 OK`，receivedBytes 107111，fileName `screenshot.png` |
 | MCP `send_request` SSE | 返回 `isSse=true`、`sseEventCount=10`、完整 content/thinking |
 | MCP 审计 | `list_audit` 来源/客户端/工具正确；`get_audit` 含 AI 输出 |
@@ -581,7 +583,7 @@ docs/
 | 粘贴区 | 长 JSON 在固定高度内自适应滚动；底部边框完整，不再被外层裁切 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：45 个测试全部通过 |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：48 个测试全部通过 |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
@@ -676,11 +678,11 @@ master                 稳定可发布
 - 导入反馈：请求/分组/环境统计；结果和兼容性提示默认折叠，可展开。
 - OpenAPI：`x-apifox-folder` 分组、securitySchemes 占位头、多服务器选择、外部 `$ref` 自动下载。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：45 个 xUnit 测试。
+- 自测：48 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
-- SSE 结果为流结束后聚合展示，逐 token 实时渲染未实现。
+- SSE 支持接收中增量刷新和取消保留内容；断线重连/从上次事件继续未实现。
 - multipart 每个请求支持一个文件；多文件、文件拖拽、取消上传未实现。
 - 套件断言目前是状态码 + 响应体包含；字段提取已支持直接映射到下一步请求，JSONPath 断言、条件分支、重试、并行、定时任务在路线图。
 - cURL 为 bash 风格；PowerShell 专用格式未提供。
@@ -698,9 +700,8 @@ master                 稳定可发布
 1. 导入对话框 XAML 独立拆分，继续降低 `MainWindow.axaml` 体积。
 2. OpenAPI 更多安全方案与回调/Webhook 提示。
 3. Apifox 原生格式评估：先收集官方导出样本和 schema，不做无样本逆向。
-4. SSE 逐 token 实时渲染 + 中断/继续。
-5. 套件工作流增强：JSONPath/响应头断言、条件分支、重试/轮询、并行、定时触发、CLI 运行。
-6. 多文件上传、拖拽上传、进度与取消；JMeter / WSDL / SOAP 等重格式按需求立项。
+4. 套件工作流增强：JSONPath/响应头断言、条件分支、重试/轮询、并行、定时触发、CLI 运行。
+5. 多文件上传、拖拽上传、进度与取消；JMeter / WSDL / SOAP 等重格式按需求立项。
 
 ## 许可证
 
