@@ -1671,22 +1671,22 @@
                                                         SearchPlaceholder="搜索键和值"
                                                         AutomationProperties.Name="JSON 响应"
                                                     />
-                                                    <TextBox
+                                                    <ScrollViewer
                                                         IsVisible="{Binding ShowRawResponse}"
-                                                        Text="{Binding ResponseBody}"
-                                                        IsReadOnly="True"
-                                                        AcceptsReturn="True"
-                                                        TextWrapping="NoWrap"
-                                                        ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                                        ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                                        Background="Transparent"
-                                                        BorderThickness="0"
-                                                        Padding="8"
-                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
-                                                        FontSize="{DynamicResource PostSharpCodeFontSize}"
-                                                        Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                        HorizontalScrollBarVisibility="Auto"
+                                                        VerticalScrollBarVisibility="Auto"
                                                         AutomationProperties.Name="响应原始文本"
-                                                    />
+                                                    >
+                                                        <SelectableTextBlock
+                                                            Text="{Binding ResponseBody}"
+                                                            Width="{Binding ResponseTextWidth}"
+                                                            FontFamily="{DynamicResource PostSharpCodeFont}"
+                                                            FontSize="{DynamicResource PostSharpCodeFontSize}"
+                                                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                            TextWrapping="NoWrap"
+                                                            Margin="8"
+                                                        />
+                                                    </ScrollViewer>
                                                 </Grid>
                                             </Border>
                                         </Grid>

@@ -470,6 +470,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private int _responseTabIndex;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResponseTextWidth))]
     private string _responseBody = string.Empty;
 
     [ObservableProperty]
@@ -1150,6 +1151,20 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         HasResponse && IsJsonResponse && !IsLargeResponse && IsResponseJsonView;
 
     public bool ShowRawResponse => HasResponse && !ShowJsonResponse;
+
+    public double ResponseTextWidth
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(ResponseBody))
+            {
+                return 600;
+            }
+
+            var longest = ResponseBody.Split('\n').Max(line => line.Length);
+            return Math.Clamp(longest * 12.0, 600, 80000);
+        }
+    }
 
     public bool ShowEmptyResponse => !HasResponse && !HasResponseError;
 
