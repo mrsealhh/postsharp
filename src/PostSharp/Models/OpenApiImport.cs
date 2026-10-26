@@ -11,6 +11,8 @@ public sealed class OpenApiImportDocument
 
     public required IReadOnlyList<OpenApiImportGroup> Groups { get; init; }
 
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+
     public int RequestCount => Groups.Sum(group => group.Requests.Count);
 }
 
