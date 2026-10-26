@@ -10,6 +10,8 @@ public sealed class HttpRequestServiceTests
     public async Task SseResponseReportsProgressAndFinalContent()
     {
         const string body = """
+            id: evt-1
+
             data: {"choices":[{"delta":{"content":"Hello"}}]}
 
             data: {"choices":[{"delta":{"content":" world"}}]}
@@ -42,6 +44,7 @@ public sealed class HttpRequestServiceTests
         Assert.True(result.IsSse);
         Assert.False(result.SseCancelled);
         Assert.Equal("Hello world", result.SseContent);
+        Assert.Equal("evt-1", result.SseLastEventId);
         Assert.Equal(3, result.SseEventCount);
         Assert.NotEmpty(progress.Items);
         Assert.Equal("Hello world", progress.Items[^1].Content);
@@ -117,6 +120,44 @@ public sealed class HttpRequestServiceTests
         Assert.True(result.IsSse);
         Assert.Equal("想", result.SseThinking);
         Assert.Equal("答", result.SseContent);
+    }
+
+    [Fact]
+    public async Task SendsLastEventIdHeaderWhenResuming()
+    {
+        string? seen = null;
+        using var client = new HttpClient(
+            new StubHttpHandler(request =>
+            {
+                seen = request.Headers.TryGetValues("Last-Event-ID", out var values)
+                    ? values.FirstOrDefault()
+                    : null;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
+                        Encoding.UTF8,
+                        "text/event-stream"
+                    ),
+                };
+            })
+        );
+        var service = new HttpRequestService(client);
+
+        await service.SendAsync(
+            new ComposedRequest(
+                "GET",
+                "https://example.com/events",
+                Array.Empty<KeyValuePair<string, string>>(),
+                null,
+                null,
+                null
+            ),
+            CancellationToken.None,
+            lastEventId: "evt-42"
+        );
+
+        Assert.Equal("evt-42", seen);
     }
 
     [Fact]

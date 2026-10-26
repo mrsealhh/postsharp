@@ -34,6 +34,7 @@ public sealed class ImportProviderRegistry
                 new InsomniaImportProvider(),
                 new HoppscotchImportProvider(),
                 new CurlImportProvider(),
+                new PowerShellImportProvider(),
             }
         );
     }
@@ -129,5 +130,17 @@ public sealed class CurlImportProvider : IImportProvider
     public ImportPayload Parse(string fileName, string content, ImportProviderContext context)
     {
         return new CurlImportPayload(CurlImportService.Parse(content));
+    }
+}
+
+public sealed class PowerShellImportProvider : IImportProvider
+{
+    public ImportFileKind Kind => ImportFileKind.PowerShell;
+
+    public string FormatName => "PowerShell";
+
+    public ImportPayload Parse(string fileName, string content, ImportProviderContext context)
+    {
+        return new CurlImportPayload(PowerShellImportService.Parse(content));
     }
 }

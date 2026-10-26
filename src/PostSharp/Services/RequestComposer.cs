@@ -192,6 +192,90 @@ public static class RequestComposer
         return string.Join(" \\\n", lines);
     }
 
+    /// <summary>Builds a PowerShell Invoke-RestMethod command for the current request.</summary>
+    public static string BuildPowerShell(RequestItem request, EnvironmentModel? environment)
+    {
+        var blocker = FindCurlBlocker(request, environment);
+        if (blocker is not null)
+        {
+            return $"# 无法生成 PowerShell：{blocker}";
+        }
+
+        try
+        {
+            return BuildPowerShell(Compose(request, environment));
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "生成 PowerShell 时出现意外错误 {RequestName}", request.Name);
+            return "# 无法生成 PowerShell：请求配置不完整";
+        }
+    }
+
+    public static string BuildPowerShell(ComposedRequest request)
+    {
+        var lines = new List<string> { "$headers = @{" };
+        foreach (var (key, value) in request.Headers)
+        {
+            lines.Add($"    '{EscapePowerShell(key)}' = '{EscapePowerShell(value)}'");
+        }
+
+        lines.Add("}");
+        lines.Add(
+            $"Invoke-RestMethod -Uri '{EscapePowerShell(request.Url)}' -Method {request.Method} -Headers $headers"
+        );
+
+        if (request.IsMultipart)
+        {
+            lines.Add("-Form @{");
+            foreach (var field in request.FormFields ?? Array.Empty<KeyValuePair<string, string>>())
+            {
+                lines.Add(
+                    $"    '{EscapePowerShell(field.Key)}' = '{EscapePowerShell(field.Value)}'"
+                );
+            }
+
+            var uploadFiles = request.UploadFiles;
+            if (
+                (uploadFiles is null || uploadFiles.Count == 0)
+                && !string.IsNullOrWhiteSpace(request.UploadFilePath)
+            )
+            {
+                uploadFiles = new[]
+                {
+                    new ComposedUploadFile(
+                        string.IsNullOrWhiteSpace(request.UploadFieldName)
+                            ? "file"
+                            : request.UploadFieldName,
+                        request.UploadFilePath
+                    ),
+                };
+            }
+
+            foreach (var file in uploadFiles ?? Array.Empty<ComposedUploadFile>())
+            {
+                lines.Add(
+                    $"    '{EscapePowerShell(file.FieldName)}' = Get-Item '{EscapePowerShell(file.FilePath)}'"
+                );
+            }
+
+            lines.Add("}");
+        }
+        else if (request.Body is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(request.ContentType))
+            {
+                lines.Add($"-ContentType '{EscapePowerShell(request.ContentType)}'");
+            }
+
+            lines.Add("-Body @'");
+            lines.Add(request.Body);
+            lines.Add("'@");
+        }
+
+        return string.Join("\n", lines);
+    }
+
     /// <summary>Builds a cURL command for the current request, or a comment explaining why it cannot.</summary>
     public static string BuildCurl(RequestItem request, EnvironmentModel? environment)
     {
@@ -333,4 +417,6 @@ public static class RequestComposer
     }
 
     private static string Quote(string value) => "'" + value.Replace("'", "'\\''") + "'";
+
+    private static string EscapePowerShell(string value) => value.Replace("'", "''");
 }

@@ -21,6 +21,9 @@ public partial class MainWindow : Window
     private const double DefaultSidebarWidth = 320;
     private const double MinSidebarWidth = 240;
     private const double MaxSidebarWidth = 520;
+    private const double DefaultRequestPaneRatio = 0.6;
+    private const double MinRequestPaneRatio = 0.25;
+    private const double MaxRequestPaneRatio = 0.8;
 
     private MainWindowViewModel? _viewModel;
     private SettingsWindow? _settingsWindow;
@@ -824,6 +827,36 @@ public partial class MainWindow : Window
         );
     }
 
+    private async void OnExportPowerShellClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var document = _viewModel.BuildPowerShellExport();
+        if (document is null)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
+                "当前请求还没有可导出的 PowerShell 命令，请先选择请求并填写有效地址。";
+            return;
+        }
+
+        await SaveExportAsync(
+            document,
+            "保存 PowerShell",
+            new FilePickerFileType("PowerShell 脚本")
+            {
+                Patterns = new[] { "*.ps1" },
+                MimeTypes = new[] { "text/plain" },
+            }
+        );
+    }
+
     private async Task SaveExportAsync(
         ExportDocument document,
         string title,
@@ -1333,6 +1366,7 @@ public partial class MainWindow : Window
         {
             _viewModel.AppearanceChanged += OnAppearanceChanged;
             ApplyAppearance();
+            ApplyRequestResponseLayout();
         }
     }
 
@@ -1341,6 +1375,7 @@ public partial class MainWindow : Window
         if (_viewModel is not null)
         {
             SaveSidebarWidth();
+            SaveRequestResponseRatio();
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
             _viewModel.Shutdown();
             _viewModel = null;
@@ -1440,6 +1475,70 @@ public partial class MainWindow : Window
     private void OnSidebarSplitterDragCompleted(object? sender, VectorEventArgs e)
     {
         SaveSidebarWidth();
+    }
+
+    private void OnRequestResponseSplitterDragCompleted(object? sender, VectorEventArgs e)
+    {
+        SaveRequestResponseRatio();
+    }
+
+    private void OnRequestResponseSplitterDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        _viewModel.Settings.RequestPaneRatio = DefaultRequestPaneRatio;
+        ApplyRequestResponseLayout();
+        e.Handled = true;
+    }
+
+    private void ApplyRequestResponseLayout()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var ratio = Math.Clamp(
+            _viewModel.Settings.RequestPaneRatio,
+            MinRequestPaneRatio,
+            MaxRequestPaneRatio
+        );
+        EditorResponseLayout.RowDefinitions[2].Height = new GridLength(ratio, GridUnitType.Star);
+        EditorResponseLayout.RowDefinitions[4].Height = new GridLength(
+            1 - ratio,
+            GridUnitType.Star
+        );
+    }
+
+    private void SaveRequestResponseRatio()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var total =
+            EditorResponseLayout.RowDefinitions[2].ActualHeight
+            + EditorResponseLayout.RowDefinitions[4].ActualHeight;
+        if (total <= 0)
+        {
+            return;
+        }
+
+        var ratio = Math.Clamp(
+            EditorResponseLayout.RowDefinitions[2].ActualHeight / total,
+            MinRequestPaneRatio,
+            MaxRequestPaneRatio
+        );
+        if (Math.Abs(_viewModel.Settings.RequestPaneRatio - ratio) < 0.005)
+        {
+            return;
+        }
+
+        _viewModel.Settings.RequestPaneRatio = ratio;
     }
 
     private void OnSidebarSplitterDoubleTapped(object? sender, TappedEventArgs e)

@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PostSharp.Models;
@@ -53,6 +54,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private AuditEntry? _pendingAuditPurge;
     private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
+    private ComposedRequest? _lastComposedRequest;
+    private SseResumeSnapshot? _sseResume;
+    private readonly DispatcherTimer _suiteScheduleTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(30),
+    };
+    private readonly Dictionary<Guid, DateTimeOffset> _lastScheduledRuns = new();
     private bool _initializing = true;
     private IReadOnlyList<SuiteStepOption> _mappingSourceOptions = Array.Empty<SuiteStepOption>();
 
@@ -143,6 +151,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         RefreshDerivedState();
         RefreshTree();
         UpdateSelectionFlags();
+        _suiteScheduleTimer.Tick += OnSuiteScheduleTick;
+        _suiteScheduleTimer.Start();
 
         Persist();
     }
@@ -208,6 +218,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _isSending;
 
     [ObservableProperty]
+    private double _uploadProgressValue;
+
+    [ObservableProperty]
+    private string _uploadProgressText = string.Empty;
+
+    [ObservableProperty]
+    private bool _isUploading;
+
+    [ObservableProperty]
     private bool _isEnvironmentDialogOpen;
 
     [ObservableProperty]
@@ -239,6 +258,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [ObservableProperty]
     private string _suiteBuilderName = string.Empty;
+
+    [ObservableProperty]
+    private string _suiteScheduleMinutesText = "0";
+
+    [ObservableProperty]
+    private bool _suiteRunInParallel;
+
+    [ObservableProperty]
+    private bool _suiteStopOnError = true;
 
     [ObservableProperty]
     private bool _isMappingEditorOpen;
@@ -403,6 +431,16 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SseSummary))]
     private int _sseEventCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanResumeSse))]
+    private string _sseLastEventId = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanResumeSse))]
+    private bool _sseCanResume;
+
+    public bool CanResumeSse => SseCanResume && !string.IsNullOrWhiteSpace(SseLastEventId);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSseContent))]
@@ -731,6 +769,31 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         return new ExportDocument(CurlPreview, $"{safeName}.sh");
+    }
+
+    public ExportDocument? BuildPowerShellExport()
+    {
+        if (!CanExportCurl)
+        {
+            return null;
+        }
+
+        var name = string.IsNullOrWhiteSpace(Editing.Name) ? "request" : Editing.Name.Trim();
+        var invalid = Path.GetInvalidFileNameChars();
+        var safeName = new string(
+            name.Select(character => invalid.Contains(character) ? '-' : character).ToArray()
+        )
+            .Trim()
+            .TrimEnd('.');
+        if (string.IsNullOrEmpty(safeName))
+        {
+            safeName = "request";
+        }
+
+        return new ExportDocument(
+            RequestComposer.BuildPowerShell(Editing, ActiveEnvironment),
+            $"{safeName}.ps1"
+        );
     }
 
     public CollectionImportOutcome ApplyOpenApiImport(OpenApiImportDocument document)
@@ -1210,6 +1273,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         IsSending = true;
+        IsUploading = false;
+        UploadProgressValue = 0;
+        UploadProgressText = string.Empty;
+        _sseResume = null;
+        SseCanResume = false;
+        SseLastEventId = string.Empty;
         _sendCts = new CancellationTokenSource();
         ComposedRequest? composed = null;
 
@@ -1219,13 +1288,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             try
             {
                 composed = RequestComposer.Compose(Editing, ActiveEnvironment);
+                _lastComposedRequest = composed;
                 var sseProgress = new Progress<SseProgress>(ApplySseProgress);
+                var uploadProgress = new Progress<UploadProgress>(ApplyUploadProgress);
                 result = await _http.SendAsync(
                     composed,
                     _sendCts.Token,
                     Editing.TimeoutSeconds,
-                    sseProgress
+                    sseProgress,
+                    uploadProgress
                 );
+                result = MergeSseResume(result);
             }
             catch (Exception exception)
             {
@@ -1246,6 +1319,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         finally
         {
             IsSending = false;
+            IsUploading = false;
             _sendCts?.Dispose();
             _sendCts = null;
         }
@@ -1253,6 +1327,70 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [RelayCommand]
     private void CancelSend() => _sendCts?.Cancel();
+
+    [RelayCommand]
+    private async Task ResumeSseAsync()
+    {
+        if (IsSending || !CanResumeSse || _lastComposedRequest is not { } composed)
+        {
+            return;
+        }
+
+        _sseResume = new SseResumeSnapshot(SseRaw, SseThinking, SseContent, SseEventCount);
+        IsSending = true;
+        SseCanResume = false;
+        _sendCts = new CancellationTokenSource();
+        try
+        {
+            var sseProgress = new Progress<SseProgress>(ApplySseProgress);
+            var result = await _http.SendAsync(
+                composed,
+                _sendCts.Token,
+                Editing.TimeoutSeconds,
+                sseProgress,
+                lastEventId: SseLastEventId
+            );
+            result = MergeSseResume(result);
+            ApplyResponse(result);
+            if (result.HasResponse)
+            {
+                AddHistory(Editing, result);
+            }
+
+            RecordAudit(Editing, composed, result, "UI", null, null);
+            Persist();
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "继续接收 SSE 失败 {RequestName}", Editing.Name);
+            ApplyResponse(HttpRequestService.Failure(exception.Message));
+        }
+        finally
+        {
+            IsSending = false;
+            _sendCts?.Dispose();
+            _sendCts = null;
+            _sseResume = null;
+        }
+    }
+
+    private HttpResult MergeSseResume(HttpResult result)
+    {
+        if (_sseResume is not { } resume || !result.IsSse)
+        {
+            return result;
+        }
+
+        return result with
+        {
+            SseRaw = resume.Raw + result.SseRaw,
+            SseThinking = resume.Thinking + result.SseThinking,
+            SseContent = resume.Content + result.SseContent,
+            SseEventCount = resume.Count + result.SseEventCount,
+        };
+    }
+
+    private sealed record SseResumeSnapshot(string Raw, string Thinking, string Content, int Count);
 
     [RelayCommand]
     private void Save()
@@ -2872,6 +3010,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         RebuildSuiteBuilderSteps();
         SuiteBuilderName = $"组装套件 {Suites.Count + 1}";
+        SuiteScheduleMinutesText = "0";
+        SuiteRunInParallel = false;
+        SuiteStopOnError = true;
         IsSuiteBuilderOpen = true;
     }
 
@@ -3152,6 +3293,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 retryDelay = 500;
             }
 
+            if (!int.TryParse(wrapper.ParallelGroupText, out var parallelGroup))
+            {
+                parallelGroup = 0;
+            }
+
             foreach (var mapping in wrapper.Step.InputMappings)
             {
                 if (!previousStepIds.Contains(mapping.SourceStepId))
@@ -3164,6 +3310,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             wrapper.Step.DelayMs = Math.Clamp(delay, 0, 60_000);
             wrapper.Step.RetryCount = Math.Clamp(retryCount, 0, SuiteRetryPolicy.MaxRetries);
             wrapper.Step.RetryDelayMs = Math.Clamp(retryDelay, 0, 60_000);
+            wrapper.Step.Condition = wrapper.Condition;
+            wrapper.Step.ParallelGroup = Math.Clamp(parallelGroup, 0, 9);
             previousStepIds.Add(wrapper.Step.Id);
             steps.Add(wrapper.Step);
         }
@@ -3180,7 +3328,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             name = $"组装套件 {Suites.Count + 1}";
         }
 
-        var suite = new TestSuite { Name = name, StopOnError = true };
+        if (!int.TryParse(SuiteScheduleMinutesText, out var scheduleMinutes))
+        {
+            scheduleMinutes = 0;
+        }
+
+        var suite = new TestSuite
+        {
+            Name = name,
+            StopOnError = SuiteStopOnError,
+            ScheduleMinutes = Math.Clamp(scheduleMinutes, 0, 1440),
+            RunInParallel = SuiteRunInParallel,
+        };
 
         foreach (var step in steps)
         {
@@ -3291,6 +3450,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         CancellationToken cancellationToken
     )
     {
+        if (
+            suite.RunInParallel
+            && suite.Steps.All(step => step.InputMappings.Count == 0 && step.Condition == "Always")
+        )
+        {
+            return await RunSuiteInParallelAsync(suite, source, tool, client, cancellationToken);
+        }
+
         var steps = new List<TestStepResult>();
         var stopped = false;
         var stepResults = new Dictionary<Guid, HttpResult>();
@@ -3298,6 +3465,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         for (var index = 0; index < suite.Steps.Count; index++)
         {
             var step = suite.Steps[index];
+
+            if (!ShouldRunStep(step, steps.LastOrDefault()))
+            {
+                steps.Add(CreateSkippedStepResult(step));
+                continue;
+            }
 
             if (index > 0 && suite.Steps[index - 1].DelayMs > 0)
             {
@@ -3496,13 +3669,23 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             }
         }
 
+        return CompleteSuiteRun(suite, steps, stopped);
+    }
+
+    private TestRunResult CompleteSuiteRun(
+        TestSuite suite,
+        List<TestStepResult> steps,
+        bool stopped
+    )
+    {
         var run = new TestRunResult
         {
             SuiteId = suite.Id,
             SuiteName = suite.Name,
             Total = steps.Count,
-            Passed = steps.Count(step => step.Passed),
-            Failed = steps.Count(step => !step.Passed),
+            Passed = steps.Count(step => step.Passed && !step.Skipped),
+            Failed = steps.Count(step => !step.Passed && !step.Skipped),
+            Skipped = steps.Count(step => step.Skipped),
             Stopped = stopped,
             Steps = steps,
         };
@@ -3516,6 +3699,156 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         Persist();
         return run;
+    }
+
+    private async Task<TestRunResult> RunSuiteInParallelAsync(
+        TestSuite suite,
+        string source,
+        string tool,
+        string? client,
+        CancellationToken cancellationToken
+    )
+    {
+        Log.Warning("套件启用并行执行，步骤延迟和映射依赖将被忽略 {SuiteName}", suite.Name);
+        var tasks = suite
+            .Steps.Select(step =>
+                RunParallelStepAsync(suite, step, source, tool, client, cancellationToken)
+            )
+            .ToList();
+        var results = await Task.WhenAll(tasks);
+        return CompleteSuiteRun(suite, results.ToList(), false);
+    }
+
+    private async Task<TestStepResult> RunParallelStepAsync(
+        TestSuite suite,
+        TestStep step,
+        string source,
+        string tool,
+        string? client,
+        CancellationToken cancellationToken
+    )
+    {
+        var request = Collections
+            .SelectMany(collection => collection.Requests)
+            .FirstOrDefault(candidate => candidate.Id == step.RequestId);
+        if (request is null)
+        {
+            return new TestStepResult
+            {
+                StepId = step.Id,
+                RequestId = step.RequestId,
+                Name = step.RequestName,
+                Method = step.Method,
+                Url = step.Url,
+                StatusText = "请求已删除",
+                Error = "请求已删除",
+                Passed = false,
+            };
+        }
+
+        ComposedRequest? composed = null;
+        HttpResult result = HttpRequestService.Failure("步骤未执行。");
+        var attempts = 0;
+        var passed = false;
+        var assertionResults = new List<TestAssertionResult>();
+        string? error = null;
+        var maxAttempts = SuiteRetryPolicy.MaxAttempts(step.RetryCount);
+
+        while (true)
+        {
+            attempts++;
+            try
+            {
+                composed = RequestComposer.Compose(request, ActiveEnvironment);
+                result = await _http.SendAsync(composed, cancellationToken, request.TimeoutSeconds);
+            }
+            catch (Exception exception)
+            {
+                result = HttpRequestService.Failure(exception.Message);
+            }
+
+            var statusMatches = step.ExpectedStatus is null
+                ? result.StatusCode is >= 200 and < 400
+                : result.StatusCode == step.ExpectedStatus;
+            var bodyMatches =
+                string.IsNullOrWhiteSpace(step.BodyContains)
+                || result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
+            assertionResults = SuiteAssertionEvaluator.Evaluate(step.Assertions, result).ToList();
+            passed =
+                result.HasResponse
+                && statusMatches
+                && bodyMatches
+                && assertionResults.All(assertion => assertion.Passed);
+            error = result.Error;
+            if (!passed && error is null)
+            {
+                error =
+                    !statusMatches
+                        ? $"期望状态 {step.ExpectedStatus?.ToString() ?? "2xx/3xx"}，实际 {result.StatusCode}"
+                    : !bodyMatches ? $"响应不包含 \"{step.BodyContains}\""
+                    : assertionResults.FirstOrDefault(assertion => !assertion.Passed)?.Detail;
+            }
+
+            if (!SuiteRetryPolicy.ShouldRetry(passed, attempts, step.RetryCount))
+            {
+                break;
+            }
+
+            try
+            {
+                await Task.Delay(SuiteRetryPolicy.Delay(step.RetryDelayMs), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+
+        AddHistory(request, result);
+        RecordAudit(request, composed, result, source, tool, client);
+        var stepResult = new TestStepResult
+        {
+            StepId = step.Id,
+            RequestId = request.Id,
+            Name = request.Name,
+            Method = request.Method,
+            Url = composed?.Url ?? request.Url,
+            StatusCode = result.StatusCode,
+            StatusText = result.ReasonPhrase,
+            ElapsedMs = result.ElapsedMs,
+            Attempts = attempts,
+            Passed = passed,
+            Error = error,
+            ResponsePreview = Truncate(result.Body, 500),
+        };
+        stepResult.Assertions.AddRange(assertionResults);
+        return stepResult;
+    }
+
+    private static bool ShouldRunStep(TestStep step, TestStepResult? previous)
+    {
+        return step.Condition switch
+        {
+            "OnPreviousSuccess" => previous is null || (previous.Passed && !previous.Skipped),
+            "OnPreviousFailure" => previous is { } result && !result.Passed && !result.Skipped,
+            _ => true,
+        };
+    }
+
+    private static TestStepResult CreateSkippedStepResult(TestStep step)
+    {
+        return new TestStepResult
+        {
+            StepId = step.Id,
+            RequestId = step.RequestId,
+            Name = step.RequestName,
+            Method = step.Method,
+            Url = step.Url,
+            Passed = true,
+            Skipped = true,
+            StatusText = "已跳过",
+            Error = $"条件 {step.Condition} 不满足",
+        };
     }
 
     private static string? ApplyInputMappings(
@@ -4114,8 +4447,64 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public void Shutdown()
     {
+        _suiteScheduleTimer.Stop();
+        _suiteScheduleTimer.Tick -= OnSuiteScheduleTick;
         Persist();
         _mockServer.Dispose();
+    }
+
+    private async void OnSuiteScheduleTick(object? sender, EventArgs e)
+    {
+        if (IsRunningSuite)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.Now;
+        foreach (var suite in Suites.Where(candidate => candidate.ScheduleMinutes > 0).ToList())
+        {
+            var last = _lastScheduledRuns.TryGetValue(suite.Id, out var value)
+                ? value
+                : DateTimeOffset.MinValue;
+            if (last == DateTimeOffset.MinValue)
+            {
+                _lastScheduledRuns[suite.Id] = now;
+                continue;
+            }
+
+            if (now - last < TimeSpan.FromMinutes(Math.Clamp(suite.ScheduleMinutes, 1, 1440)))
+            {
+                continue;
+            }
+
+            _lastScheduledRuns[suite.Id] = now;
+            try
+            {
+                IsRunningSuite = true;
+                await RunSuiteCoreAsync(suite, "定时", "schedule", null, CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                Log.Error(exception, "定时运行套件失败 {SuiteName}", suite.Name);
+            }
+            finally
+            {
+                IsRunningSuite = false;
+            }
+        }
+    }
+
+    private void ApplyUploadProgress(UploadProgress progress)
+    {
+        IsUploading = progress.SentBytes < progress.TotalBytes;
+        UploadProgressValue =
+            progress.TotalBytes <= 0
+                ? 0
+                : Math.Clamp(progress.SentBytes * 100d / progress.TotalBytes, 0, 100);
+        UploadProgressText =
+            progress.TotalBytes <= 0
+                ? $"已上传 {FormatSize(progress.SentBytes)}"
+                : $"上传 {FormatSize(progress.SentBytes)} / {FormatSize(progress.TotalBytes)}";
     }
 
     private void ApplySseProgress(SseProgress progress)
@@ -4141,10 +4530,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             ResponseTone = BadgeTone.Info;
         }
 
-        SseThinking = progress.Thinking;
-        SseContent = progress.Content;
-        SseRaw = progress.Raw;
-        SseEventCount = progress.EventCount;
+        SseThinking = _sseResume is { } resumeThinking
+            ? resumeThinking.Thinking + progress.Thinking
+            : progress.Thinking;
+        SseContent = _sseResume is { } resumeContent
+            ? resumeContent.Content + progress.Content
+            : progress.Content;
+        SseRaw = _sseResume is { } resumeRaw ? resumeRaw.Raw + progress.Raw : progress.Raw;
+        SseEventCount = (_sseResume?.Count ?? 0) + progress.EventCount;
+        if (!string.IsNullOrWhiteSpace(progress.LastEventId))
+        {
+            SseLastEventId = progress.LastEventId;
+        }
     }
 
     private void ApplyResponse(HttpResult result)
@@ -4172,6 +4569,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             SseContent = string.Empty;
             SseRaw = string.Empty;
             SseEventCount = 0;
+            SseLastEventId = string.Empty;
+            SseCanResume = false;
             ResponseTabIndex = 0;
             return;
         }
@@ -4193,6 +4592,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         SseContent = result.SseContent;
         SseRaw = result.SseRaw;
         SseEventCount = result.SseEventCount;
+        SseLastEventId = result.SseLastEventId;
+        SseCanResume =
+            result.IsSse
+            && result.SseCancelled
+            && !string.IsNullOrWhiteSpace(result.SseLastEventId);
         SseViewMode = "内容";
         ResponseTabIndex = result.IsSse ? 2 : 0;
         LargeResponseNotice = isLarge
@@ -4244,6 +4648,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         SseContent = string.Empty;
         SseRaw = string.Empty;
         SseEventCount = 0;
+        SseLastEventId = string.Empty;
+        SseCanResume = false;
         ResponseTabIndex = 0;
         ResponseStatusText = string.Empty;
         ResponseTimeText = string.Empty;
@@ -4645,6 +5051,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 Id = suiteDto.Id == Guid.Empty ? Guid.NewGuid() : suiteDto.Id,
                 Name = suiteDto.Name,
                 StopOnError = suiteDto.StopOnError,
+                RunInParallel = suiteDto.RunInParallel,
+                ScheduleMinutes = suiteDto.ScheduleMinutes,
                 LastSummary = string.IsNullOrWhiteSpace(suiteDto.LastSummary)
                     ? "尚未运行"
                     : suiteDto.LastSummary,
@@ -4662,6 +5070,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                     DelayMs = stepDto.DelayMs,
                     RetryCount = stepDto.RetryCount,
                     RetryDelayMs = stepDto.RetryDelayMs,
+                    Condition = string.IsNullOrWhiteSpace(stepDto.Condition)
+                        ? "Always"
+                        : stepDto.Condition,
+                    ParallelGroup = stepDto.ParallelGroup,
                     ExpectedStatus = stepDto.ExpectedStatus,
                     BodyContains = stepDto.BodyContains,
                 };

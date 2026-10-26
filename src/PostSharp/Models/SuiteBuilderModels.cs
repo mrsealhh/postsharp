@@ -18,6 +18,15 @@ public sealed partial class SuiteBuilderStep : ObservableObject
     [ObservableProperty]
     private string _retryDelayText = "500";
 
+    [ObservableProperty]
+    private string _condition = "Always";
+
+    [ObservableProperty]
+    private string _parallelGroupText = "0";
+
+    public IReadOnlyList<string> ConditionOptions { get; } =
+        new[] { "Always", "OnPreviousSuccess", "OnPreviousFailure" };
+
     public string RequestName => Step.RequestName;
 
     public string Method => Step.Method;

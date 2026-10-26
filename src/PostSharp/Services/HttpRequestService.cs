@@ -9,7 +9,15 @@ using PostSharp.Models;
 
 namespace PostSharp.Services;
 
-public sealed record SseProgress(string Raw, string Thinking, string Content, int EventCount);
+public sealed record SseProgress(
+    string Raw,
+    string Thinking,
+    string Content,
+    int EventCount,
+    string LastEventId = ""
+);
+
+public sealed record UploadProgress(long SentBytes, long TotalBytes);
 
 public sealed record HttpResult(
     bool HasResponse,
@@ -27,7 +35,8 @@ public sealed record HttpResult(
     string SseContent = "",
     int SseEventCount = 0,
     string SseRaw = "",
-    bool SseCancelled = false
+    bool SseCancelled = false,
+    string SseLastEventId = ""
 );
 
 public sealed class HttpRequestService
@@ -61,7 +70,9 @@ public sealed class HttpRequestService
         ComposedRequest composed,
         CancellationToken cancellationToken,
         int timeoutSeconds = 0,
-        IProgress<SseProgress>? sseProgress = null
+        IProgress<SseProgress>? sseProgress = null,
+        IProgress<UploadProgress>? uploadProgress = null,
+        string? lastEventId = null
     )
     {
         var stopwatch = Stopwatch.StartNew();
@@ -105,9 +116,20 @@ public sealed class HttpRequestService
                         };
                     }
 
+                    var totalBytes = uploadFiles.Sum(file => TryGetFileLength(file.FilePath));
+                    long sentBytes = 0;
                     foreach (var file in uploadFiles)
                     {
-                        var fileStream = File.OpenRead(file.FilePath);
+                        var length = TryGetFileLength(file.FilePath);
+                        var fileStream = new ProgressStream(
+                            File.OpenRead(file.FilePath),
+                            length,
+                            delta =>
+                            {
+                                sentBytes += delta;
+                                uploadProgress?.Report(new UploadProgress(sentBytes, totalBytes));
+                            }
+                        );
                         var fileContent = new StreamContent(fileStream);
                         fileContent.Headers.ContentType = new MediaTypeHeaderValue(
                             GuessContentType(file.FilePath)
@@ -174,6 +196,16 @@ public sealed class HttpRequestService
                 message.Headers.TryAddWithoutValidation("User-Agent", "PostSharp/0.1");
             }
 
+            if (
+                !string.IsNullOrWhiteSpace(lastEventId)
+                && !composed.Headers.Any(pair =>
+                    pair.Key.Equals("Last-Event-ID", StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            {
+                message.Headers.TryAddWithoutValidation("Last-Event-ID", lastEventId);
+            }
+
             using var timeout = new CancellationTokenSource(
                 TimeSpan.FromSeconds(effectiveTimeoutSeconds)
             );
@@ -220,7 +252,8 @@ public sealed class HttpRequestService
                     SseContent: sse.Content,
                     SseEventCount: sse.Count,
                     SseRaw: sse.Raw,
-                    SseCancelled: cancelled
+                    SseCancelled: cancelled,
+                    SseLastEventId: sse.LastEventId
                 );
             }
 
@@ -420,12 +453,20 @@ public sealed class HttpRequestService
         var dataLines = new List<string>();
         var eventCount = 0;
         var cancelled = false;
+        var currentEventId = string.Empty;
+        var lastEventId = string.Empty;
         var lastReport = Stopwatch.StartNew();
 
         void Report()
         {
             progress?.Report(
-                new SseProgress(raw.ToString(), thinking.ToString(), content.ToString(), eventCount)
+                new SseProgress(
+                    raw.ToString(),
+                    thinking.ToString(),
+                    content.ToString(),
+                    eventCount,
+                    lastEventId
+                )
             );
             lastReport.Restart();
         }
@@ -459,6 +500,11 @@ public sealed class HttpRequestService
                         eventCount++;
                         AppendSsePayload(payload, thinking, content);
                         dataLines.Clear();
+                        if (!string.IsNullOrWhiteSpace(currentEventId))
+                        {
+                            lastEventId = currentEventId;
+                        }
+
                         if (lastReport.ElapsedMilliseconds >= SseProgressIntervalMs)
                         {
                             Report();
@@ -486,7 +532,11 @@ public sealed class HttpRequestService
                     value = value[1..];
                 }
 
-                if (field == "data")
+                if (field == "id")
+                {
+                    currentEventId = value;
+                }
+                else if (field == "data")
                 {
                     dataLines.Add(value);
                 }
@@ -501,6 +551,10 @@ public sealed class HttpRequestService
         {
             eventCount++;
             AppendSsePayload(string.Join("\n", dataLines), thinking, content);
+            if (!string.IsNullOrWhiteSpace(currentEventId))
+            {
+                lastEventId = currentEventId;
+            }
         }
 
         Report();
@@ -509,7 +563,8 @@ public sealed class HttpRequestService
             thinking.ToString(),
             content.ToString(),
             eventCount,
-            cancelled
+            cancelled,
+            lastEventId
         );
     }
 
@@ -831,11 +886,124 @@ public sealed class HttpRequestService
             : null;
     }
 
+    private static long TryGetFileLength(string path)
+    {
+        try
+        {
+            return new FileInfo(path).Length;
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return 0;
+        }
+    }
+
+    private sealed class ProgressStream : Stream
+    {
+        private const int ReportThreshold = 64 * 1024;
+
+        private readonly Stream _inner;
+        private readonly long _length;
+        private readonly Action<long> _report;
+        private long _sent;
+        private long _reported;
+
+        public ProgressStream(Stream inner, long length, Action<long> report)
+        {
+            _inner = inner;
+            _length = length;
+            _report = report;
+        }
+
+        public override bool CanRead => _inner.CanRead;
+
+        public override bool CanSeek => _inner.CanSeek;
+
+        public override bool CanWrite => false;
+
+        public override long Length => _inner.Length;
+
+        public override long Position
+        {
+            get => _inner.Position;
+            set => _inner.Position = value;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = _inner.Read(buffer, offset, count);
+            Report(read);
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var read = await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            Report(read);
+            return read;
+        }
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken
+        )
+        {
+            return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+        }
+
+        public override void Flush() => _inner.Flush();
+
+        public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        private void Report(int read)
+        {
+            if (read <= 0)
+            {
+                return;
+            }
+
+            _sent += read;
+            if (_sent - _reported < ReportThreshold && (_length <= 0 || _sent < _length))
+            {
+                return;
+            }
+
+            var delta = _sent - _reported;
+            _reported = _sent;
+            _report(delta);
+        }
+    }
+
     private sealed record SseReadResult(
         string Raw,
         string Thinking,
         string Content,
         int Count,
-        bool Cancelled
+        bool Cancelled,
+        string LastEventId
     );
 }

@@ -45,7 +45,7 @@ PostSharp 的定位是：
 - **MCP 工具**：接口 CRUD、发送请求、获取 cURL、审计查询、自动化套件创建/运行/删除。
 - **完整审计**：来源 `UI` / `MCP`、MCP 客户端名称、工具名、时间、状态、耗时、大小、cURL、请求头和请求/响应预览。
 - **SSE / AI 输出聚合**：自动解析 `text/event-stream`，聚合常见 AI 协议的 thinking 与 content，接收中增量刷新，取消后保留已接收内容。
-- **自动化套件**：步骤支持 `expectedStatus` / `bodyContains`，以及 JSONPath、响应头断言；支持失败重试与失败停止；运行结果进入审计。
+- **自动化套件**：步骤支持 `expectedStatus` / `bodyContains`，以及 JSONPath、响应头断言；支持失败重试、条件执行、并行组、定时运行与失败停止；运行结果进入审计。
 - **管理层**：一个窗口内切换审计、自动化、指南。
 
 ### 调试能力
@@ -56,7 +56,8 @@ PostSharp 的定位是：
   - JSON/XML 一键格式化，JSON 一键压缩。
   - 单行切换与单行预览，长文本不再占满编辑区。
   - multipart/form-data：表单字段 + 多文件选择 / 拖拽，每个文件可编辑字段名。
-- **cURL 导入 / 导出**：按当前环境解析变量，生成可直接执行的 bash cURL；支持从 Postman、浏览器或 PostSharp 生成的 `-X` / `-H` / `-d` / `--data-raw` / `-F` / `-u` 命令导入请求，并可把当前 cURL 保存为 `.sh`。
+  - 大文件按 64KB 流式读取并显示上传进度；发送中的「取消」可中断上传。
+- **cURL / PowerShell 导入 / 导出**：按当前环境解析变量，生成可执行的 bash cURL 或 PowerShell `Invoke-RestMethod`；支持从 Postman、浏览器或 PostSharp 生成的 `-X` / `-H` / `-d` / `--data-raw` / `-F` / `-u` 命令，以及 PowerShell `-Uri` / `-Method` / `-Headers` / `-Body` / `-Form` / `-TimeoutSec` 命令导入请求；可保存为 `.sh` 或 `.ps1`。
 - **Postman Collection 导入 / 导出**：读取 Postman Collection v2.0 / v2.1 的嵌套文件夹、请求、查询参数、请求头、Bearer / Basic / API Key 认证、raw / urlencoded / formdata 请求体和集合变量；导出选中集合或整个工作区为标准 v2.1 文件。
 - **Postman 环境文件**：独立导入 `values` 或 `variable` 数组，创建或合并同名环境并激活。
 - **HAR 1.2 导入**：读取浏览器、Postman、Apifox 导出的 HTTP Archive；默认只保留 XHR / Fetch，支持 query、headers、cookies、JSON / text / form-data 请求体，可切换包含静态资源。
@@ -85,6 +86,7 @@ PostSharp 的定位是：
 - 界面字体、代码字体、代码字号、窗口自适应；设置窗口可导入本地字体或添加字体目录，导入后的字体会出现在界面/代码字体选项中。
 - 设置窗口新增「全局圆角」滑杆：0 = 直角、1 = Arc 默认、2 = 双倍圆角，保存后立即应用到全部 Arc 控件。
 - 左侧集合栏与编辑区之间有可拖拽分隔条（240–520 DIP），双击恢复默认 320 DIP；宽度随设置持久化。
+- 请求区与响应区之间有独立拖拽条（上下方向），可分别调整高度并持久化；双击恢复 3:2 默认比例。
 - 列表统一列布局：来源/方法/状态/时间固定对齐，长文本省略并在悬浮时显示完整内容。
 - Tooltip 统一为浮层卡片：`SurfaceRaised` 背景、1px 边框、圆角与悬浮阴影，最大宽度 380，长文本自动换行；按钮、历史 URL、分隔条和树节点共用同一套样式。
 - 类型化视觉：来源 `UI` / `AI · MCP` 使用不同图标与色调；状态成功/警告/失败使用勾/警告/叉图标；`GET` / `POST` / `PUT` / `PATCH` / `DELETE` 使用不同方法徽标。
@@ -309,7 +311,7 @@ http://127.0.0.1:5199/mcp
 
 - **组装套件**：在自动化页勾选任意集合（含二级集合），把各集合中的请求组装成一个套件；步骤顺序沿用集合/请求排序，也可通过 MCP `create_suite` / `create_suite_from_collections` 创建。
 - **AI 自主编排**：MCP 可完整创建/更新/重排/删除套件；`get_suite` 返回稳定步骤 id，`update_suite` 可整体替换步骤，运行结果带 `stepId` 和解析后的 URL，便于 AI 对照规则迭代。
-- **工作流定位**：套件目前是线性请求工作流（顺序、延迟、状态码/响应体/JSONPath/响应头断言、出参映射、失败重试、失败停止）；条件分支、并行和 DAG 依赖属于下一步增强。
+- **工作流定位**：套件支持顺序/并行组、延迟、状态码/响应体/JSONPath/响应头断言、出参映射、失败重试、条件执行（上一步成功/失败）、失败停止和定时运行；DAG 依赖和条件跳转表达式属于下一步增强。
 - **下一步延迟**：每个步骤可设置当前步骤结束到下一请求的延迟，默认 200ms；用于维护接口依赖的调用间隔。
 - **前序出参映射**：每个步骤可配置多条映射规则，从前序某个步骤的响应中提取字段，写入当前请求的：
   - 请求体（支持 `data.token` 这类嵌套路径）
@@ -345,7 +347,8 @@ http://127.0.0.1:5199/mcp
 3. 将 thinking 和 content 分别追加聚合，保留原始事件流。
 4. 自动切到「AI 聚合」标签，提供内容 / 思考过程 / 原始事件三视图和复制按钮。
 5. 流式接收时每 150ms 增量刷新内容，取消后保留已接收部分并标记「已取消」。
-6. 审计和 MCP `send_request` 都返回聚合后的完整输出。
+6. 取消后若服务端返回过 `id:`，可通过「继续」带 `Last-Event-ID` 重连并追加新事件。
+7. 审计和 MCP `send_request` 都返回聚合后的完整输出。
 
 > 适配按事件 JSON 结构自动判断，不需要选择供应商；非 JSON 的 SSE 事件仍保留在「原始事件」中，但不会参与内容聚合。
 
@@ -539,9 +542,11 @@ docs/
 | SSE | 10 个事件，聚合 content 98 字、thinking 27 字；AI 标签自动打开；接收中每 150ms 增量刷新，取消保留已收内容 |
 | SSE 取消 | 取消后状态显示「已取消 · 保留已接收内容」，已收 thinking/content 不清空 |
 | SSE 供应商适配 | OpenRouter `reasoning_details[]`、阿里云 DashScope 原生 `output.choices[].message` / `output.text` 聚合通过；OpenAI 兼容模式保持 |
+| SSE 继续 | 取消后带 `Last-Event-ID` 的「继续」请求重连并追加内容；无 id 时按钮隐藏 |
 | 全局圆角 | 设置滑杆 0 / 1 / 2 保存后立即重绘 Arc 控件；0 为直角、1 为默认、2 为双倍圆角 |
 | multipart 上传 | `200 OK`，receivedBytes 107111，fileName `screenshot.png` |
 | multipart 多文件 | 两个文件分别配置字段名并写入 multipart；cURL/Postman 导出均保留全部文件；拖拽添加与单文件移除验证通过 |
+| multipart 进度 | 文件按 64KB 流式读取；发送中显示已上传/总大小和百分比，取消按钮可中断 |
 | MCP `send_request` SSE | 返回 `isSse=true`、`sseEventCount=10`、完整 content/thinking |
 | MCP 审计 | `list_audit` 来源/客户端/工具正确；`get_audit` 含 AI 输出 |
 | MCP 套件 | create/run/delete 通过；断言 3/3 |
@@ -556,6 +561,8 @@ docs/
 | 出参映射 | 健康检查 `status` 映射到回显请求体 `fromHealth`，运行结果 2/2，回显体包含 `fromHealth: ok` |
 | 套件断言 | JSONPath `$.data.token`、`items[0].id` 与响应头 `X-Trace` 断言通过；失败路径显示实际值 |
 | 套件重试 | 失败步骤按配置重试，结果区显示尝试次数；重试次数上限 10 次 |
+| 套件条件/并行/定时 | 上一步成功/失败条件、并行组、定时分钟数写入工作区；条件不满足显示「跳过」，并行组忽略延迟/映射 |
+| PowerShell | `Invoke-RestMethod` 的 URI/Method/Headers/Body/Form/TimeoutSec 导入通过；导出 `.ps1` 与 bash cURL 并存 |
 | 二级集合 | 3 点菜单创建二级集合、父子缩进、ParentId 持久化验证 |
 | 拖拽 | 请求上下拖动调整同级顺序；集合拖入集合/拖到上边缘排序；自动阻止自身/后代循环 |
 | 收藏筛选 | 收藏请求/集合显示星标；「收藏」筛选独立展示；重启后保留 |
@@ -598,7 +605,7 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：62 个测试全部通过 |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：69 个测试全部通过 |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
@@ -612,6 +619,7 @@ docs/
 | 回收站对齐 | 方法、名称、状态、时间、恢复/永久删除列固定对齐 |
 | 右键菜单 | 请求/集合菜单可用，复制请求/URL 已验证 |
 | 侧栏拖拽 | 拖动分隔条从 320 调到 400 DIP，`settings.json` 写入 `TreePaneWidth=400`；重启后保持；双击分隔条恢复 320 DIP |
+| 请求/响应拖拽 | 拖动中间分隔条改变上下高度，`settings.json` 写入 `RequestPaneRatio`；重启后保持；双击恢复 3:2 |
 | 历史折叠 | 点击箭头后历史列表收起、集合树占满侧栏，`HistoryCollapsed=true` 持久化；重启后保持折叠，再次点击恢复展开 |
 | 字体导入 | 设置窗口导入 `MapleMono-NF-CN-Bold.ttf`，文件复制到 `%APPDATA%\PostSharp\fonts`，状态显示成功且字体列表刷新 |
 | 字体目录 | 「添加字体目录…」扫描目录并加载 7 个字体族；外部目录可从列表移除，保存后 `FontDirectories=[]` |
@@ -686,24 +694,25 @@ master                 稳定可发布
 
 ### 已完成（导入升级）
 
-- OpenAPI / Swagger、Postman Collection、Postman Environment、cURL、HAR 1.2、Insomnia V4、Hoppscotch 导入。
-- Postman Collection 与 cURL 导出。
+- OpenAPI / Swagger、Postman Collection、Postman Environment、cURL、PowerShell、HAR 1.2、Insomnia V4、Hoppscotch 导入。
+- Postman Collection、cURL、PowerShell 导出。
 - 导入来源小分类卡片：可收起，避免大分类隐藏入口。
 - 批量导入：多选文件、自动识别格式、逐文件成功/失败结果。
 - 导入反馈：请求/分组/环境统计；结果和兼容性提示默认折叠，可展开。
 - OpenAPI：`x-apifox-folder` 分组、securitySchemes 占位头、多服务器选择、外部 `$ref` 自动下载。
-- SSE：接收中 150ms 增量刷新，取消保留已接收内容。
-- 套件：JSONPath / 响应头断言、失败重试与尝试次数。
-- multipart：多文件、拖拽添加、单文件移除，导出保留全部文件。
+- SSE：接收中 150ms 增量刷新，取消保留已接收内容，支持 `Last-Event-ID` 继续。
+- 套件：JSONPath / 响应头断言、失败重试、上下步条件、并行组、定时运行。
+- multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
+- 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：62 个 xUnit 测试。
+- 自测：69 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
-- SSE 支持接收中增量刷新和取消保留内容；断线重连/从上次事件继续未实现。
-- multipart 支持多文件与拖拽；上传进度、取消上传和大文件分片未实现。
-- 套件断言目前支持状态码、响应体包含、JSONPath 和响应头；字段提取已支持直接映射到下一步请求，失败重试支持次数/间隔，条件分支、并行、定时任务在路线图。
-- cURL 为 bash 风格；PowerShell 专用格式未提供。
+- SSE 取消后可用 `Last-Event-ID` 手动「继续」；自动重连和从任意断点恢复仍依赖服务端支持。
+- multipart 已支持多文件、64KB 流式上传、进度和取消；断点续传、分片上传协议和超大文件校验未实现。
+- 套件已支持上一步成功/失败条件、并行组和定时运行；复杂条件表达式、DAG 依赖和任意跳转未实现。
+- PowerShell 导入/导出覆盖常见 Invoke-RestMethod / Invoke-WebRequest 参数；`-Credential`、证书、代理等高级参数需要手工补充。
 - Postman 导入支持 Collection v2.0 / v2.1 与环境文件；脚本/测试、OAuth2/Digest/NTLM 认证、多文件字段不会完整转换，导入后会以提示列出。
 - HAR 导入不保存响应、脚本和二进制文件内容；静态资源默认过滤，multipart 文件字段需要重新选择文件。
 - Insomnia 目前支持 v4 JSON；Insomnia v5 YAML 需要先从 Insomnia 导出为 v4 JSON。
@@ -718,8 +727,8 @@ master                 稳定可发布
 1. 导入对话框 XAML 独立拆分，继续降低 `MainWindow.axaml` 体积。
 2. OpenAPI 更多安全方案与回调/Webhook 提示。
 3. Apifox 原生格式评估：先收集官方导出样本和 schema，不做无样本逆向。
-4. 套件工作流增强：条件分支、并行、定时触发、CLI 运行。
-5. 上传进度、取消上传与大文件分片；JMeter / WSDL / SOAP 等重格式按需求立项。
+4. 套件复杂条件表达式、DAG 依赖、CLI 运行。
+5. 上传断点续传；JMeter / WSDL / SOAP 等重格式按需求立项。
 
 ## 许可证
 

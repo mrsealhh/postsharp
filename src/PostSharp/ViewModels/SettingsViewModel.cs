@@ -498,6 +498,7 @@ public partial class SettingsViewModel : ObservableObject
             LogLevel = source.LogLevel,
             FontDirectories = new List<string>(source.FontDirectories),
             TreePaneWidth = source.TreePaneWidth,
+            RequestPaneRatio = source.RequestPaneRatio,
             HistoryCollapsed = source.HistoryCollapsed,
         };
     }

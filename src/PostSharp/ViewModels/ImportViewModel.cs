@@ -198,7 +198,7 @@ public partial class ImportViewModel : ObservableObject
                 "选择 Postman Collection v2.1 JSON 文件，或把集合导出内容粘贴到下方。支持嵌套文件夹、认证、查询参数和常见请求体。",
             "PostmanEnvironment" => "选择 Postman Environment JSON；变量会创建或合并到同名环境。",
             "Curl" =>
-                "粘贴以 curl 开头的 bash 命令。支持 -X、-H、-d、--data-raw、-F、-u、--max-time 等常用参数。",
+                "粘贴以 curl 开头的 bash 命令，或以 Invoke-RestMethod / Invoke-WebRequest 开头的 PowerShell 命令。支持常用参数。",
             "Har" =>
                 "选择浏览器、Postman 或 Apifox 导出的 .har 文件，或粘贴 HAR JSON。默认只导入 XHR / Fetch，响应内容会被忽略。",
             "Insomnia" =>
@@ -917,7 +917,11 @@ public partial class ImportViewModel : ObservableObject
         {
             ImportWarnings.Clear();
             ImportReport.Clear();
-            var result = CurlImportService.Parse(CurlCommand);
+            var result = CurlCommand
+                .TrimStart()
+                .StartsWith("Invoke-", StringComparison.OrdinalIgnoreCase)
+                ? PowerShellImportService.Parse(CurlCommand)
+                : CurlImportService.Parse(CurlCommand);
             ApplyCurlResult(result);
         }
         catch (Exception exception)
