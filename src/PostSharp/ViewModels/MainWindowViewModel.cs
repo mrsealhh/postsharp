@@ -2427,6 +2427,9 @@ public partial class MainWindowViewModel : ObservableObject
         IsSending = true;
         _sendCts = new CancellationTokenSource();
         var secrets = SecretMasker.CollectSecrets(Environments);
+
+        // Another request may be opened while this one is on its way; history and audit describe this one.
+        var request = Editing;
         ComposedRequest? stored = null;
 
         try
@@ -2434,20 +2437,20 @@ public partial class MainWindowViewModel : ObservableObject
             HttpResult result;
             try
             {
-                var composed = RequestComposer.Compose(Editing, ActiveEnvironment);
+                var composed = RequestComposer.Compose(request, ActiveEnvironment);
 
                 // Masked before the await: the request and environment can be edited while it is on its way.
-                stored = SecretMasker.MaskComposed(Editing, ActiveEnvironment, composed, secrets);
+                stored = SecretMasker.MaskComposed(request, ActiveEnvironment, composed, secrets);
                 result = await _http.SendAsync(
                     composed,
                     stored.Url,
                     _sendCts.Token,
-                    Editing.TimeoutSeconds
+                    request.TimeoutSeconds
                 );
             }
             catch (Exception exception)
             {
-                Log.Error(exception, "UI 发送请求失败 {RequestName}", Editing.Name);
+                Log.Error(exception, "UI 发送请求失败 {RequestName}", request.Name);
                 result = HttpRequestService.Failure(exception.Message);
             }
 
@@ -2455,10 +2458,10 @@ public partial class MainWindowViewModel : ObservableObject
 
             if (result.HasResponse)
             {
-                AddHistory(Editing, result);
+                AddHistory(request, result);
             }
 
-            RecordAudit(Editing, stored, result, "UI", null, null, secrets);
+            RecordAudit(request, stored, result, "UI", null, null, secrets);
             Persist();
         }
         finally
@@ -4022,18 +4025,25 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>Returns false when either audit file could not be written.</summary>
-    private bool PersistAudit()
+    /// <summary>
+    /// Writes both audit files. Failed when either write failed, Blocked when either is protected after a failed
+    /// read at startup (the startup notice explains that), Saved otherwise.
+    /// </summary>
+    private SaveResult PersistAudit()
     {
         var saved = _auditStore.Save(Audit);
         var trashSaved = _auditStore.SaveTrash(AuditTrash);
         if (saved == SaveResult.Failed || trashSaved == SaveResult.Failed)
         {
             DataNotice.Warn(
-                "审计记录保存失败：无法写入 audit.json，新的审计记录暂时只在界面中。请检查数据目录是否可写；下次发送请求时会自动重试。"
+                "审计记录保存失败：无法写入 audit.json 或 audit-trash.json，新的审计记录暂时只在界面中。请检查数据目录是否可写；下次发送请求时会自动重试。"
             );
+            return SaveResult.Failed;
         }
 
-        return saved == SaveResult.Saved && trashSaved == SaveResult.Saved;
+        return saved == SaveResult.Saved && trashSaved == SaveResult.Saved
+            ? SaveResult.Saved
+            : SaveResult.Blocked;
     }
 
     /// <summary>Masks stored audit records again when a variable may have become secret.</summary>

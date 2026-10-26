@@ -1,4 +1,5 @@
 using PostSharp.Models;
+using PostSharp.Services;
 using PostSharp.ViewModels;
 
 namespace PostSharp.Tests;
@@ -14,7 +15,7 @@ public sealed class AuditScrubberTests
 
     private readonly List<EnvironmentModel> _environments = new();
     private readonly DataNoticeViewModel _notice = new();
-    private readonly Queue<bool> _persistResults = new();
+    private readonly Queue<SaveResult> _persistResults = new();
     private int _persistCalls;
     private int _deleteCalls;
 
@@ -29,8 +30,8 @@ public sealed class AuditScrubberTests
     public void RetriesTheWriteAfterAFailedSave()
     {
         var scrubber = CreateScrubber();
-        _persistResults.Enqueue(false);
-        _persistResults.Enqueue(true);
+        _persistResults.Enqueue(SaveResult.Failed);
+        _persistResults.Enqueue(SaveResult.Saved);
 
         scrubber.Scrub();
 
@@ -48,11 +49,25 @@ public sealed class AuditScrubberTests
     public void SkipsWhenTheSecretsHaveNotChanged()
     {
         var scrubber = CreateScrubber();
-        _persistResults.Enqueue(true);
+        _persistResults.Enqueue(SaveResult.Saved);
 
         scrubber.Scrub();
         scrubber.Scrub();
 
+        Assert.Equal(1, _persistCalls);
+    }
+
+    [Fact]
+    public void BlockedFileIsNotReportedAsFailureAndKeepsItsBackups()
+    {
+        var scrubber = CreateScrubber();
+        _persistResults.Enqueue(SaveResult.Blocked);
+
+        scrubber.Scrub();
+        scrubber.Scrub();
+
+        Assert.False(_notice.IsOpen);
+        Assert.Equal(0, _deleteCalls);
         Assert.Equal(1, _persistCalls);
     }
 
