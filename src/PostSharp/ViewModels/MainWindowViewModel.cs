@@ -1187,7 +1187,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             try
             {
                 composed = RequestComposer.Compose(Editing, ActiveEnvironment);
-                result = await _http.SendAsync(composed, _sendCts.Token, Editing.TimeoutSeconds);
+                var sseProgress = new Progress<SseProgress>(ApplySseProgress);
+                result = await _http.SendAsync(
+                    composed,
+                    _sendCts.Token,
+                    Editing.TimeoutSeconds,
+                    sseProgress
+                );
             }
             catch (Exception exception)
             {
@@ -3931,6 +3937,35 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         _mockServer.Dispose();
     }
 
+    private void ApplySseProgress(SseProgress progress)
+    {
+        if (!IsSseResponse)
+        {
+            HasResponse = true;
+            HasResponseError = false;
+            ResponseError = null;
+            ResponseBody = string.Empty;
+            FullResponseBody = string.Empty;
+            ResponseClipboardText = string.Empty;
+            LargeResponseNotice = string.Empty;
+            IsJsonResponse = false;
+            IsLargeResponse = false;
+            IsSseResponse = true;
+            SseViewMode = "内容";
+            ResponseTabIndex = 2;
+            ResponseStatusText = "流式接收中…";
+            ResponseTimeText = string.Empty;
+            ResponseSizeText = string.Empty;
+            ResponseContentType = "text/event-stream";
+            ResponseTone = BadgeTone.Info;
+        }
+
+        SseThinking = progress.Thinking;
+        SseContent = progress.Content;
+        SseRaw = progress.Raw;
+        SseEventCount = progress.EventCount;
+    }
+
     private void ApplyResponse(HttpResult result)
     {
         ResponseHeaders.Clear();
@@ -3982,21 +4017,29 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         LargeResponseNotice = isLarge
             ? $"响应体 {FormatSize(result.SizeBytes)}，已折叠显示前 {ResponsePreviewLimit / 1024} KB。完整内容可在详情页分页查看或复制。"
             : string.Empty;
-        ResponseStatusText = string.IsNullOrWhiteSpace(result.ReasonPhrase)
-            ? result.StatusCode.ToString()
+        ResponseStatusText =
+            result.SseCancelled
+                ? (
+                    result.ReasonPhrase == "超时"
+                        ? "超时 · 保留已接收内容"
+                        : "已取消 · 保留已接收内容"
+                )
+            : string.IsNullOrWhiteSpace(result.ReasonPhrase) ? result.StatusCode.ToString()
             : $"{result.StatusCode} {result.ReasonPhrase}";
         ResponseTimeText = $"耗时 {result.ElapsedMs} ms";
         ResponseSizeText = $"大小 {FormatSize(result.SizeBytes)}";
         ResponseContentType = string.IsNullOrWhiteSpace(result.MediaType)
             ? "未知内容类型"
             : result.MediaType;
-        ResponseTone = result.StatusCode switch
-        {
-            >= 200 and < 300 => BadgeTone.Success,
-            >= 300 and < 400 => BadgeTone.Info,
-            >= 400 and < 500 => BadgeTone.Warning,
-            _ => BadgeTone.Danger,
-        };
+        ResponseTone = result.SseCancelled
+            ? BadgeTone.Warning
+            : result.StatusCode switch
+            {
+                >= 200 and < 300 => BadgeTone.Success,
+                >= 300 and < 400 => BadgeTone.Info,
+                >= 400 and < 500 => BadgeTone.Warning,
+                _ => BadgeTone.Danger,
+            };
 
         foreach (var header in result.Headers)
         {
