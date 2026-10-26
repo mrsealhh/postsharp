@@ -1586,11 +1586,47 @@
                                 >
                                     <arc:TabItem Header="响应体">
                                         <Grid
-                                            RowDefinitions="Auto,*"
+                                            RowDefinitions="Auto,Auto,*"
                                             Margin="0,6,0,0"
                                             RowSpacing="8"
                                         >
+                                            <WrapPanel ItemSpacing="10" LineSpacing="6">
+                                                <arc:Switch
+                                                    Content="单行"
+                                                    IsChecked="{Binding IsResponseSingleLine, Mode=TwoWay}"
+                                                    AutomationProperties.Name="响应单行"
+                                                />
+                                                <arc:Switch
+                                                    Content="JSON 视图"
+                                                    IsChecked="{Binding IsResponseJsonView, Mode=TwoWay}"
+                                                    IsVisible="{Binding IsJsonResponse}"
+                                                    AutomationProperties.Name="响应 JSON 视图"
+                                                />
+                                                <arc:Button
+                                                    Variant="Ghost"
+                                                    Size="Small"
+                                                    Command="{Binding FormatResponseCommand}"
+                                                >
+                                                    <controls:IconLabel
+                                                        Icon="{x:Static arc:ArcIcons.Code}"
+                                                        Text="格式化"
+                                                        IconSize="13"
+                                                    />
+                                                </arc:Button>
+                                                <arc:Button
+                                                    Variant="Ghost"
+                                                    Size="Small"
+                                                    Command="{Binding MinifyResponseCommand}"
+                                                >
+                                                    <controls:IconLabel
+                                                        Icon="{x:Static arc:ArcIcons.Shrink}"
+                                                        Text="压缩"
+                                                        IconSize="13"
+                                                    />
+                                                </arc:Button>
+                                            </WrapPanel>
                                             <Border
+                                                Grid.Row="1"
                                                 IsVisible="{Binding ShowLargeResponseBanner}"
                                                 Background="{arc:ArcDesignTokenResource SurfaceMuted}"
                                                 BorderBrush="{arc:ArcDesignTokenResource Border}"
@@ -1621,7 +1657,7 @@
                                                     </arc:Button>
                                                 </Grid>
                                             </Border>
-                                            <Grid Grid.Row="1" ClipToBounds="True">
+                                            <Grid Grid.Row="2" ClipToBounds="True">
                                                 <arc:JsonViewer
                                                     x:Name="JsonResponseViewer"
                                                     Json="{Binding ResponseBody}"
@@ -1634,6 +1670,15 @@
                                                 <arc:ScrollArea IsVisible="{Binding ShowRawResponse}">
                                                     <SelectableTextBlock
                                                         Text="{Binding ResponseBody}"
+                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
+                                                        FontSize="{DynamicResource PostSharpCodeFontSize}"
+                                                        Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                        TextWrapping="NoWrap"
+                                                    />
+                                                </arc:ScrollArea>
+                                                <arc:ScrollArea IsVisible="{Binding ShowResponseSingleLine}">
+                                                    <SelectableTextBlock
+                                                        Text="{Binding ResponseSingleLineText}"
                                                         FontFamily="{DynamicResource PostSharpCodeFont}"
                                                         FontSize="{DynamicResource PostSharpCodeFontSize}"
                                                         Foreground="{arc:ArcDesignTokenResource Foreground}"

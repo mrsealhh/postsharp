@@ -43,6 +43,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    private static readonly JsonSerializerOptions CompactJsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
     private int _auditLimit = 500;
     private int _largeResponseThreshold = 64 * 1024;
 
@@ -383,6 +388,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
     [NotifyPropertyChangedFor(nameof(ShowEmptyResponse))]
     [NotifyPropertyChangedFor(nameof(ShowLargeResponseBanner))]
+    [NotifyPropertyChangedFor(nameof(ShowResponseSingleLine))]
     private bool _hasResponse;
 
     [ObservableProperty]
@@ -400,7 +406,20 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [NotifyPropertyChangedFor(nameof(ShowJsonResponse))]
     [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
     [NotifyPropertyChangedFor(nameof(ShowEmptyResponse))]
+    [NotifyPropertyChangedFor(nameof(ResponseSingleLineText))]
     private bool _isJsonResponse;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowJsonResponse))]
+    [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
+    private bool _isResponseJsonView = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowJsonResponse))]
+    [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
+    [NotifyPropertyChangedFor(nameof(ShowResponseSingleLine))]
+    [NotifyPropertyChangedFor(nameof(ResponseSingleLineText))]
+    private bool _isResponseSingleLine;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowJsonResponse))]
@@ -455,6 +474,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private string _responseBody = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResponseSingleLineText))]
     private string _fullResponseBody = string.Empty;
 
     [ObservableProperty]
@@ -1126,9 +1146,42 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public int SuiteCount => Suites.Count;
 
-    public bool ShowJsonResponse => HasResponse && IsJsonResponse && !IsLargeResponse;
+    public bool ShowJsonResponse =>
+        HasResponse
+        && IsJsonResponse
+        && !IsLargeResponse
+        && IsResponseJsonView
+        && !IsResponseSingleLine;
 
-    public bool ShowRawResponse => HasResponse && !ShowJsonResponse;
+    public bool ShowRawResponse => HasResponse && !ShowJsonResponse && !ShowResponseSingleLine;
+
+    public bool ShowResponseSingleLine => HasResponse && IsResponseSingleLine;
+
+    public string ResponseSingleLineText
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(FullResponseBody))
+            {
+                return string.Empty;
+            }
+
+            if (IsJsonResponse)
+            {
+                try
+                {
+                    using var document = JsonDocument.Parse(FullResponseBody);
+                    return JsonSerializer.Serialize(document.RootElement, CompactJsonOptions);
+                }
+                catch (JsonException)
+                {
+                    // Fall back to the raw text below.
+                }
+            }
+
+            return FullResponseBody.ReplaceLineEndings(" ");
+        }
+    }
 
     public bool ShowEmptyResponse => !HasResponse && !HasResponseError;
 
@@ -4278,6 +4331,48 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     }
 
     [RelayCommand]
+    private void FormatResponse()
+    {
+        TransformResponse(indented: true);
+    }
+
+    [RelayCommand]
+    private void MinifyResponse()
+    {
+        TransformResponse(indented: false);
+    }
+
+    private void TransformResponse(bool indented)
+    {
+        if (!HasResponse || string.IsNullOrWhiteSpace(FullResponseBody))
+        {
+            return;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(FullResponseBody);
+            var text = JsonSerializer.Serialize(
+                document.RootElement,
+                indented ? MappingJsonOptions : CompactJsonOptions
+            );
+            ResponseBody = text;
+            FullResponseBody = text;
+            ResponseClipboardText = text;
+            IsJsonResponse = true;
+            IsLargeResponse = false;
+            IsResponseJsonView = true;
+            IsResponseSingleLine = !indented;
+            ShowToast(indented ? "响应 JSON 已格式化" : "响应 JSON 已压缩");
+        }
+        catch (JsonException exception)
+        {
+            Log.Debug(exception, "响应不是 JSON，无法格式化");
+            ShowToast("当前响应不是合法 JSON");
+        }
+    }
+
+    [RelayCommand]
     private void AddJsonContentType()
     {
         Editing.Headers.AddRow("Content-Type", "application/json");
@@ -4520,6 +4615,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             LargeResponseNotice = string.Empty;
             IsJsonResponse = false;
             IsLargeResponse = false;
+            IsResponseJsonView = true;
+            IsResponseSingleLine = false;
             IsSseResponse = true;
             SseViewMode = "内容";
             ResponseTabIndex = 2;
@@ -4564,6 +4661,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             LargeResponseNotice = string.Empty;
             IsJsonResponse = false;
             IsLargeResponse = false;
+            IsResponseJsonView = true;
+            IsResponseSingleLine = false;
             IsSseResponse = false;
             SseThinking = string.Empty;
             SseContent = string.Empty;
@@ -4587,6 +4686,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         ResponseClipboardText = body;
         IsJsonResponse = result.IsJson;
         IsLargeResponse = isLarge;
+        IsResponseJsonView = true;
+        IsResponseSingleLine = false;
         IsSseResponse = result.IsSse;
         SseThinking = result.SseThinking;
         SseContent = result.SseContent;
@@ -4643,6 +4744,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         LargeResponseNotice = string.Empty;
         IsJsonResponse = false;
         IsLargeResponse = false;
+        IsResponseJsonView = true;
+        IsResponseSingleLine = false;
         IsSseResponse = false;
         SseThinking = string.Empty;
         SseContent = string.Empty;
