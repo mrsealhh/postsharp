@@ -322,9 +322,26 @@ public sealed class OidcAuthService
 
         using (response)
         {
-            var body = await response
-                .Content.ReadAsStringAsync(timeout.Token)
-                .ConfigureAwait(false);
+            string body;
+            try
+            {
+                body = await response
+                    .Content.ReadAsStringAsync(timeout.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new OidcException("读取令牌响应超时，请检查授权服务器后重试。");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (HttpRequestException exception)
+            {
+                Log.Warning(exception, "读取令牌响应失败 {TokenEndpoint}", tokenEndpoint);
+                throw new OidcException("无法读取令牌响应，请检查网络后重试。", exception);
+            }
 
             if (!response.IsSuccessStatusCode)
             {

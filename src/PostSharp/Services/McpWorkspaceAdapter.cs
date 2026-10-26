@@ -434,7 +434,9 @@ public sealed class McpWorkspaceAdapter
             id,
             snapshot.Request.Name,
             composed?.Method ?? snapshot.Request.Method,
-            composed?.Url ?? snapshot.Request.Url,
+            composed is null
+                ? snapshot.Request.Url
+                : RequestComposer.MaskAuthorization(composed).Url,
             result.StatusCode,
             string.IsNullOrWhiteSpace(result.ReasonPhrase)
                 ? result.StatusCode.ToString()

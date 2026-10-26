@@ -65,6 +65,7 @@ public sealed class HttpRequestService
     )
     {
         var stopwatch = Stopwatch.StartNew();
+        var logUrl = RequestComposer.MaskAuthorization(composed).Url;
         var effectiveTimeoutSeconds =
             timeoutSeconds > 0
                 ? Math.Clamp(timeoutSeconds, 1, 3600)
@@ -248,7 +249,7 @@ public sealed class HttpRequestService
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             stopwatch.Stop();
-            Log.Debug("请求被取消 {Method} {Url}", composed.Method, composed.Url);
+            Log.Debug("请求被取消 {Method} {Url}", composed.Method, logUrl);
             return Failure("请求已取消。");
         }
         catch (OperationCanceledException)
@@ -257,7 +258,7 @@ public sealed class HttpRequestService
             Log.Warning(
                 "请求超时 {Method} {Url} {TimeoutSeconds}",
                 composed.Method,
-                composed.Url,
+                logUrl,
                 effectiveTimeoutSeconds
             );
             return Failure($"请求超时，{effectiveTimeoutSeconds} 秒内没有收到响应。");
@@ -265,7 +266,7 @@ public sealed class HttpRequestService
         catch (Exception ex)
         {
             stopwatch.Stop();
-            Log.Error(ex, "发送请求失败 {Method} {Url}", composed.Method, composed.Url);
+            Log.Error(ex, "发送请求失败 {Method} {Url}", composed.Method, logUrl);
             return Failure($"无法完成请求：{ex.Message}");
         }
     }

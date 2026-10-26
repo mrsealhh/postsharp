@@ -250,8 +250,11 @@ public static class RequestComposer
     {
         var headers = request
             .Headers.Select(pair =>
-                pair.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
-                    ? new KeyValuePair<string, string>(pair.Key, MaskToken(pair.Value))
+                IsSensitiveHeader(pair.Key)
+                    ? new KeyValuePair<string, string>(
+                        pair.Key,
+                        MaskHeaderValue(pair.Key, pair.Value)
+                    )
                     : pair
             )
             .ToList();
@@ -262,6 +265,23 @@ public static class RequestComposer
             Url = MaskQuery(request.Url),
         };
     }
+
+    private static bool IsSensitiveHeader(string name) =>
+        name.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Cookie", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Set-Cookie", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("token", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("api-key", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("apikey", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("secret", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("password", StringComparison.OrdinalIgnoreCase);
+
+    private static string MaskHeaderValue(string name, string value) =>
+        name.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)
+            ? MaskToken(value)
+            : "****";
 
     private static string MaskToken(string value)
     {

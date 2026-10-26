@@ -265,6 +265,15 @@ public sealed partial class AuthorizationViewModel : ObservableObject
 
             refreshed = true;
         }
+        catch (OperationCanceledException)
+        {
+            SetError("刷新已取消，请重试。");
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "刷新授权令牌时出现意外错误");
+            SetError("刷新令牌失败，请检查网络后重试；如仍失败请重新登录。");
+        }
         finally
         {
             IsBusy = false;

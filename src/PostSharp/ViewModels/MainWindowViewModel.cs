@@ -2815,7 +2815,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         return string.Join("\n", lines);
     }
 
-    private void RecordAudit(
+    private string RecordAudit(
         RequestItem request,
         ComposedRequest? composed,
         HttpResult result,
@@ -2850,7 +2850,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             RequestId = request.Id,
             RequestName = request.Name,
             Method = composed?.Method ?? request.Method,
-            Url = composed?.Url ?? request.Url,
+            Url = auditedComposed?.Url ?? request.Url,
             Environment = composed?.EnvironmentName ?? ActiveEnvironment?.Name,
             StatusCode = result.StatusCode,
             StatusText = result.ReasonPhrase,
@@ -2861,7 +2861,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Curl = auditedComposed is null ? null : RequestComposer.BuildCurl(auditedComposed),
             RequestHeaders = Truncate(requestHeaders, AuditPreviewLimit),
             RequestBodyPreview = Truncate(
-                composed?.Body ?? BuildMultipartPreview(request),
+                auditedComposed?.Body ?? BuildMultipartPreview(request),
                 AuditPreviewLimit
             ),
             ResponseHeaders = Truncate(
@@ -2885,6 +2885,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         PersistAudit();
+        return auditedComposed?.Url ?? request.Url;
     }
 
     private void RefreshAuditView()
@@ -3685,7 +3686,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
             stepResults[step.Id] = result;
             AddHistory(effectiveRequest, result);
-            RecordAudit(effectiveRequest, composed, result, source, tool, client);
+            var auditedUrl = RecordAudit(effectiveRequest, composed, result, source, tool, client);
 
             var stepResult = new TestStepResult
             {
@@ -3693,7 +3694,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 RequestId = request.Id,
                 Name = request.Name,
                 Method = request.Method,
-                Url = composed?.Url ?? request.Url,
+                Url = auditedUrl,
                 StatusCode = result.StatusCode,
                 StatusText = result.ReasonPhrase,
                 ElapsedMs = result.ElapsedMs,
