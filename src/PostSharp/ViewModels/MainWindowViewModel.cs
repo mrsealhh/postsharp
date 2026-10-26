@@ -171,6 +171,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public ObservableCollection<InputMappingEditor> MappingEditors { get; } = new();
 
+    public ObservableCollection<AssertionEditor> AssertionEditors { get; } = new();
+
     public ObservableCollection<ResponseHeaderView> ResponseHeaders { get; } = new();
 
     public ImportViewModel Import { get; }
@@ -246,6 +248,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [ObservableProperty]
     private string _mappingTitle = string.Empty;
+
+    [ObservableProperty]
+    private bool _isAssertionEditorOpen;
+
+    [ObservableProperty]
+    private SuiteBuilderStep? _assertionStep;
+
+    [ObservableProperty]
+    private string _assertionTitle = string.Empty;
 
     [ObservableProperty]
     private bool _isBodySingleLine;
@@ -876,6 +887,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         || IsMcpDialogOpen
         || IsSuiteBuilderOpen
         || IsMappingEditorOpen
+        || IsAssertionEditorOpen
         || IsRenameDialogOpen
         || IsDeleteDialogOpen
         || IsHistoryTrashConfirmOpen
@@ -940,6 +952,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (IsMappingEditorOpen)
         {
             CancelMappingEditorCommand.Execute(null);
+            return true;
+        }
+
+        if (IsAssertionEditorOpen)
+        {
+            CancelAssertionEditorCommand.Execute(null);
             return true;
         }
 
@@ -2894,6 +2912,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             }
 
             wrapper.EditMappingsCommand = new RelayCommand(() => OpenMappingEditor(wrapper));
+            wrapper.EditAssertionsCommand = new RelayCommand(() => OpenAssertionEditor(wrapper));
             next.Add(wrapper);
         }
 
@@ -2909,6 +2928,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         IsSuiteBuilderOpen = false;
         IsMappingEditorOpen = false;
+        IsAssertionEditorOpen = false;
     }
 
     [RelayCommand]
@@ -3009,6 +3029,85 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         IsMappingEditorOpen = false;
     }
 
+    private AssertionEditor CreateAssertionEditor(TestAssertion source)
+    {
+        var editor = new AssertionEditor
+        {
+            Kind = string.IsNullOrWhiteSpace(source.Kind) ? "JSONPath" : source.Kind,
+            Path = source.Path,
+            Expected = source.Expected,
+        };
+        editor.RemoveCommand = new RelayCommand(() => AssertionEditors.Remove(editor));
+        return editor;
+    }
+
+    private void OpenAssertionEditor(SuiteBuilderStep step)
+    {
+        AssertionEditors.Clear();
+        foreach (var assertion in step.Step.Assertions)
+        {
+            AssertionEditors.Add(CreateAssertionEditor(assertion));
+        }
+
+        if (AssertionEditors.Count == 0)
+        {
+            AssertionEditors.Add(CreateAssertionEditor(new TestAssertion()));
+        }
+
+        AssertionStep = step;
+        AssertionTitle = $"断言 · {step.RequestName}";
+        IsAssertionEditorOpen = true;
+    }
+
+    [RelayCommand]
+    private void AddAssertionRule()
+    {
+        AssertionEditors.Add(CreateAssertionEditor(new TestAssertion()));
+    }
+
+    [RelayCommand]
+    private void CancelAssertionEditor() => IsAssertionEditorOpen = false;
+
+    [RelayCommand]
+    private void SaveAssertionEditor()
+    {
+        if (AssertionStep is not { } step)
+        {
+            return;
+        }
+
+        foreach (var editor in AssertionEditors)
+        {
+            if (string.IsNullOrWhiteSpace(editor.Path))
+            {
+                editor.Error = editor.Kind == "Header" ? "请填写响应头名称" : "请填写 JSONPath";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(editor.Expected))
+            {
+                editor.Error = "请填写期望值";
+                return;
+            }
+        }
+
+        step.Step.Assertions.Clear();
+        foreach (var editor in AssertionEditors)
+        {
+            step.Step.Assertions.Add(
+                new TestAssertion
+                {
+                    Kind = editor.Kind == "Header" ? "Header" : "JSONPath",
+                    Path = editor.Path.Trim(),
+                    Expected = editor.Expected.Trim(),
+                }
+            );
+        }
+
+        step.RefreshAssertionLabel();
+        IsAssertionEditorOpen = false;
+    }
+
     [RelayCommand]
     private void CreateSuiteFromSources()
     {
@@ -3021,6 +3120,16 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 delay = 200;
             }
 
+            if (!int.TryParse(wrapper.RetryCountText, out var retryCount))
+            {
+                retryCount = 0;
+            }
+
+            if (!int.TryParse(wrapper.RetryDelayText, out var retryDelay))
+            {
+                retryDelay = 500;
+            }
+
             foreach (var mapping in wrapper.Step.InputMappings)
             {
                 if (!previousStepIds.Contains(mapping.SourceStepId))
@@ -3031,6 +3140,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             }
 
             wrapper.Step.DelayMs = Math.Clamp(delay, 0, 60_000);
+            wrapper.Step.RetryCount = Math.Clamp(retryCount, 0, SuiteRetryPolicy.MaxRetries);
+            wrapper.Step.RetryDelayMs = Math.Clamp(retryDelay, 0, 60_000);
             previousStepIds.Add(wrapper.Step.Id);
             steps.Add(wrapper.Step);
         }
@@ -3254,62 +3365,107 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             }
 
             ComposedRequest? composed = null;
-            HttpResult result;
-            try
+            HttpResult result = HttpRequestService.Failure("步骤未执行。");
+            var assertionResults = new List<TestAssertionResult>();
+            var attempts = 0;
+            var passed = false;
+            string? error = null;
+            var maxAttempts = SuiteRetryPolicy.MaxAttempts(step.RetryCount);
+
+            while (true)
             {
-                composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment);
-                result = await _http.SendAsync(
-                    composed,
-                    cancellationToken,
-                    effectiveRequest.TimeoutSeconds
-                );
-            }
-            catch (Exception exception)
-            {
-                Log.Error(
-                    exception,
-                    "套件步骤发送失败 {SuiteName} {StepName}",
+                attempts++;
+                try
+                {
+                    composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment);
+                    result = await _http.SendAsync(
+                        composed,
+                        cancellationToken,
+                        effectiveRequest.TimeoutSeconds
+                    );
+                }
+                catch (Exception exception)
+                {
+                    Log.Error(
+                        exception,
+                        "套件步骤发送失败 {SuiteName} {StepName}",
+                        suite.Name,
+                        step.RequestName
+                    );
+                    result = HttpRequestService.Failure(exception.Message);
+                }
+
+                var statusMatches = step.ExpectedStatus is null
+                    ? result.StatusCode is >= 200 and < 400
+                    : result.StatusCode == step.ExpectedStatus;
+                var bodyMatches =
+                    string.IsNullOrWhiteSpace(step.BodyContains)
+                    || result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
+                assertionResults = SuiteAssertionEvaluator
+                    .Evaluate(step.Assertions, result)
+                    .ToList();
+                var assertionsMatch = assertionResults.All(assertion => assertion.Passed);
+                passed = result.HasResponse && statusMatches && bodyMatches && assertionsMatch;
+                error = result.Error;
+                if (passed is false && error is null)
+                {
+                    error =
+                        !statusMatches
+                            ? $"期望状态 {step.ExpectedStatus?.ToString() ?? "2xx/3xx"}，实际 {result.StatusCode}"
+                        : !bodyMatches ? $"响应不包含 \"{step.BodyContains}\""
+                        : assertionResults.FirstOrDefault(assertion => !assertion.Passed)?.Detail;
+                }
+
+                if (!SuiteRetryPolicy.ShouldRetry(passed, attempts, step.RetryCount))
+                {
+                    break;
+                }
+
+                Log.Information(
+                    "套件步骤失败准备重试 {SuiteName} {StepName} {Attempt}/{MaxAttempts}",
                     suite.Name,
-                    step.RequestName
+                    step.RequestName,
+                    attempts,
+                    maxAttempts
                 );
-                result = HttpRequestService.Failure(exception.Message);
+                try
+                {
+                    await Task.Delay(SuiteRetryPolicy.Delay(step.RetryDelayMs), cancellationToken);
+                }
+                catch (OperationCanceledException exception)
+                {
+                    Log.Debug(
+                        exception,
+                        "套件重试等待被取消 {SuiteName} {StepName}",
+                        suite.Name,
+                        step.RequestName
+                    );
+                    stopped = true;
+                    break;
+                }
             }
 
             stepResults[step.Id] = result;
             AddHistory(effectiveRequest, result);
             RecordAudit(effectiveRequest, composed, result, source, tool, client);
 
-            var statusMatches = step.ExpectedStatus is null
-                ? result.StatusCode is >= 200 and < 400
-                : result.StatusCode == step.ExpectedStatus;
-            var bodyMatches =
-                string.IsNullOrWhiteSpace(step.BodyContains)
-                || result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
-            var passed = result.HasResponse && statusMatches && bodyMatches;
-            var error = result.Error;
-            if (passed is false && error is null)
+            var stepResult = new TestStepResult
             {
-                error = !statusMatches
-                    ? $"期望状态 {step.ExpectedStatus?.ToString() ?? "2xx/3xx"}，实际 {result.StatusCode}"
-                    : $"响应不包含 \"{step.BodyContains}\"";
-            }
-
-            steps.Add(
-                new TestStepResult
-                {
-                    StepId = step.Id,
-                    RequestId = request.Id,
-                    Name = request.Name,
-                    Method = request.Method,
-                    Url = composed?.Url ?? request.Url,
-                    StatusCode = result.StatusCode,
-                    StatusText = result.ReasonPhrase,
-                    ElapsedMs = result.ElapsedMs,
-                    Passed = passed,
-                    Error = error,
-                    ResponsePreview = Truncate(result.Body, 500),
-                }
-            );
+                StepId = step.Id,
+                RequestId = request.Id,
+                Name = request.Name,
+                Method = request.Method,
+                Url = composed?.Url ?? request.Url,
+                StatusCode = result.StatusCode,
+                StatusText = result.ReasonPhrase,
+                ElapsedMs = result.ElapsedMs,
+                Attempts = attempts,
+                Passed = passed,
+                Error = error,
+                ResponsePreview = Truncate(result.Body, 500),
+            };
+            stepResult.Assertions.AddRange(assertionResults);
+            steps.Add(stepResult);
 
             if (!passed && suite.StopOnError)
             {
@@ -4479,6 +4635,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                     Method = stepDto.Method,
                     Url = stepDto.Url,
                     DelayMs = stepDto.DelayMs,
+                    RetryCount = stepDto.RetryCount,
+                    RetryDelayMs = stepDto.RetryDelayMs,
                     ExpectedStatus = stepDto.ExpectedStatus,
                     BodyContains = stepDto.BodyContains,
                 };
@@ -4493,6 +4651,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                             TargetKind = mappingDto.TargetKind,
                             TargetPath = mappingDto.TargetPath,
                             Template = mappingDto.Template,
+                        }
+                    );
+                }
+
+                foreach (var assertionDto in stepDto.Assertions)
+                {
+                    step.Assertions.Add(
+                        new TestAssertion
+                        {
+                            Kind = assertionDto.Kind,
+                            Path = assertionDto.Path,
+                            Expected = assertionDto.Expected,
                         }
                     );
                 }

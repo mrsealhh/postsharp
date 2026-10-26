@@ -107,8 +107,18 @@ public sealed class WorkspaceStore
                             Method = step.Method,
                             Url = step.Url,
                             DelayMs = step.DelayMs,
+                            RetryCount = step.RetryCount,
+                            RetryDelayMs = step.RetryDelayMs,
                             ExpectedStatus = step.ExpectedStatus,
                             BodyContains = step.BodyContains,
+                            Assertions = step
+                                .Assertions.Select(assertion => new SuiteAssertionDto
+                                {
+                                    Kind = assertion.Kind,
+                                    Path = assertion.Path,
+                                    Expected = assertion.Expected,
+                                })
+                                .ToList(),
                             InputMappings = step
                                 .InputMappings.Select(mapping => new SuiteMappingDto
                                 {
@@ -359,11 +369,26 @@ public sealed class SuiteStepDto
 
     public int DelayMs { get; set; } = 200;
 
+    public int RetryCount { get; set; }
+
+    public int RetryDelayMs { get; set; } = 500;
+
     public int? ExpectedStatus { get; set; }
 
     public string? BodyContains { get; set; }
 
+    public List<SuiteAssertionDto> Assertions { get; set; } = new();
+
     public List<SuiteMappingDto> InputMappings { get; set; } = new();
+}
+
+public sealed class SuiteAssertionDto
+{
+    public string Kind { get; set; } = "JSONPath";
+
+    public string Path { get; set; } = string.Empty;
+
+    public string Expected { get; set; } = string.Empty;
 }
 
 public sealed class SuiteMappingDto

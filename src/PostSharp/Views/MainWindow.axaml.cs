@@ -324,6 +324,9 @@ public partial class MainWindow : Window
     private void OnMappingDialogOpened(object? sender, EventArgs e) =>
         ApplyWideDialog(MappingDialog);
 
+    private void OnAssertionDialogOpened(object? sender, EventArgs e) =>
+        ApplyWideDialog(AssertionDialog);
+
     private void OnImportDialogOpened(object? sender, EventArgs e) =>
         ApplyImportDialog(ImportDialog);
 

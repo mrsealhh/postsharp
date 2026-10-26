@@ -2537,7 +2537,7 @@
                                                                             >
                                                                                 <Grid
                                                                                     ColumnDefinitions="Auto,*,Auto"
-                                                                                    RowDefinitions="Auto,Auto"
+                                                                                    RowDefinitions="Auto,Auto,Auto"
                                                                                     ColumnSpacing="8"
                                                                                     RowSpacing="2"
                                                                                 >
@@ -2554,12 +2554,23 @@
                                                                                         TextTrimming="CharacterEllipsis"
                                                                                         ToolTip.Tip="{Binding Name}"
                                                                                     />
-                                                                                    <TextBlock
+                                                                                    <StackPanel
                                                                                         Grid.Column="2"
-                                                                                        Text="{Binding StatusCode}"
-                                                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                                                                    />
+                                                                                        Orientation="Horizontal"
+                                                                                        Spacing="4"
+                                                                                        VerticalAlignment="Center"
+                                                                                    >
+                                                                                        <TextBlock
+                                                                                            Text="{Binding StatusCode}"
+                                                                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                                        />
+                                                                                        <TextBlock
+                                                                                            Text="{Binding AttemptText}"
+                                                                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                                        />
+                                                                                    </StackPanel>
                                                                                     <TextBlock
                                                                                         Grid.Row="1"
                                                                                         Grid.Column="1"
@@ -2569,6 +2580,45 @@
                                                                                         Foreground="{arc:ArcDesignTokenResource Danger}"
                                                                                         TextWrapping="Wrap"
                                                                                     />
+                                                                                    <ItemsControl
+                                                                                        Grid.Row="2"
+                                                                                        Grid.Column="1"
+                                                                                        Grid.ColumnSpan="2"
+                                                                                        ItemsSource="{Binding Assertions}"
+                                                                                        IsVisible="{Binding HasAssertions}"
+                                                                                    >
+                                                                                        <ItemsControl.ItemTemplate>
+                                                                                            <DataTemplate x:DataType="models:TestAssertionResult">
+                                                                                                <Grid
+                                                                                                    ColumnDefinitions="Auto,*"
+                                                                                                    RowDefinitions="Auto,Auto"
+                                                                                                    ColumnSpacing="6"
+                                                                                                    Margin="0,2,0,0"
+                                                                                                >
+                                                                                                    <arc:Badge
+                                                                                                        Content="{Binding ResultLabel}"
+                                                                                                        Tone="{Binding ResultTone}"
+                                                                                                        Size="Small"
+                                                                                                    />
+                                                                                                    <TextBlock
+                                                                                                        Grid.Column="1"
+                                                                                                        Text="{Binding Label}"
+                                                                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                                                        TextWrapping="Wrap"
+                                                                                                    />
+                                                                                                    <TextBlock
+                                                                                                        Grid.Row="1"
+                                                                                                        Grid.Column="1"
+                                                                                                        Text="{Binding Detail}"
+                                                                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                                                        TextWrapping="Wrap"
+                                                                                                    />
+                                                                                                </Grid>
+                                                                                            </DataTemplate>
+                                                                                        </ItemsControl.ItemTemplate>
+                                                                                    </ItemsControl>
                                                                                 </Grid>
                                                                             </Border>
                                                                         </DataTemplate>
@@ -4456,20 +4506,68 @@
                                                                     Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                                                     VerticalAlignment="Center"
                                                                 />
+                                                                <TextBlock
+                                                                    Text="重试"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                    VerticalAlignment="Center"
+                                                                    Margin="6,0,0,0"
+                                                                />
+                                                                <arc:Input
+                                                                    Text="{Binding RetryCountText, Mode=TwoWay}"
+                                                                    IsLabelVisible="False"
+                                                                    Size="Small"
+                                                                    Width="48"
+                                                                    AutomationProperties.Name="失败重试次数"
+                                                                />
+                                                                <TextBlock
+                                                                    Text="次 · 间隔"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                    VerticalAlignment="Center"
+                                                                />
+                                                                <arc:Input
+                                                                    Text="{Binding RetryDelayText, Mode=TwoWay}"
+                                                                    IsLabelVisible="False"
+                                                                    Size="Small"
+                                                                    Width="64"
+                                                                    AutomationProperties.Name="重试间隔（毫秒）"
+                                                                />
+                                                                <TextBlock
+                                                                    Text="ms"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                    VerticalAlignment="Center"
+                                                                />
                                                             </StackPanel>
-                                                            <arc:Button
+                                                            <StackPanel
                                                                 Grid.RowSpan="2"
                                                                 Grid.Column="2"
-                                                                Variant="Ghost"
-                                                                Size="Small"
-                                                                Command="{Binding EditMappingsCommand}"
+                                                                Spacing="3"
                                                             >
-                                                                <controls:IconLabel
-                                                                    Icon="{x:Static arc:ArcIcons.Link2}"
-                                                                    Text="{Binding MappingLabel}"
-                                                                    IconSize="13"
-                                                                />
-                                                            </arc:Button>
+                                                                <arc:Button
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Command="{Binding EditMappingsCommand}"
+                                                                >
+                                                                    <controls:IconLabel
+                                                                        Icon="{x:Static arc:ArcIcons.Link2}"
+                                                                        Text="{Binding MappingLabel}"
+                                                                        IconSize="13"
+                                                                    />
+                                                                </arc:Button>
+                                                                <arc:Button
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Command="{Binding EditAssertionsCommand}"
+                                                                >
+                                                                    <controls:IconLabel
+                                                                        Icon="{x:Static arc:ArcIcons.Check}"
+                                                                        Text="{Binding AssertionLabel}"
+                                                                        IconSize="13"
+                                                                    />
+                                                                </arc:Button>
+                                                            </StackPanel>
                                                         </Grid>
                                                     </Border>
                                                 </DataTemplate>
@@ -4656,6 +4754,133 @@
                                 <controls:IconLabel
                                     Icon="{x:Static arc:ArcIcons.Check}"
                                     Text="保存映射"
+                                />
+                            </arc:Button>
+                        </StackPanel>
+                    </arc:Dialog.Actions>
+                </arc:Dialog>
+
+                <arc:Dialog
+                    x:Name="AssertionDialog"
+                    IsOpen="{Binding IsAssertionEditorOpen, Mode=TwoWay}"
+                    Title="{Binding AssertionTitle}"
+                    Description="对当前步骤的响应增加 JSONPath 或响应头断言；任一断言失败则该步骤失败。"
+                    Size="Large"
+                    Opened="OnAssertionDialogOpened"
+                >
+                    <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+                        <arc:Button
+                            Variant="Secondary"
+                            Size="Small"
+                            HorizontalAlignment="Left"
+                            Command="{Binding AddAssertionRuleCommand}"
+                        >
+                            <controls:IconLabel
+                                Icon="{x:Static arc:ArcIcons.Plus}"
+                                Text="添加断言"
+                                IconSize="13"
+                            />
+                        </arc:Button>
+                        <arc:ScrollArea Grid.Row="1" MaxHeight="520">
+                            <ItemsControl ItemsSource="{Binding AssertionEditors}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:AssertionEditor">
+                                        <Border
+                                            Background="{arc:ArcDesignTokenResource Surface}"
+                                            CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
+                                            Padding="10,8"
+                                            Margin="0,0,0,6"
+                                        >
+                                            <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
+                                                <Grid
+                                                    ColumnDefinitions="0.8*,1.4*,1.4*,Auto"
+                                                    ColumnSpacing="8"
+                                                >
+                                                    <arc:Select
+                                                        Label="类型"
+                                                        SelectedValue="{Binding Kind, Mode=TwoWay}"
+                                                        AutomationProperties.Name="断言类型"
+                                                    >
+                                                        <arc:SelectItem
+                                                            Content="JSONPath"
+                                                            Value="JSONPath"
+                                                        />
+                                                        <arc:SelectItem
+                                                            Content="响应头"
+                                                            Value="Header"
+                                                        />
+                                                    </arc:Select>
+                                                    <arc:Input
+                                                        Grid.Column="1"
+                                                        Label="字段 / 路径"
+                                                        Text="{Binding Path, Mode=TwoWay}"
+                                                        Placeholder="$.data.token / Authorization"
+                                                        AutomationProperties.Name="断言字段或路径"
+                                                    />
+                                                    <arc:Input
+                                                        Grid.Column="2"
+                                                        Label="期望值"
+                                                        Text="{Binding Expected, Mode=TwoWay}"
+                                                        Placeholder="200 / Bearer xxx / 成功"
+                                                        AutomationProperties.Name="断言期望值"
+                                                    />
+                                                    <arc:Button
+                                                        Grid.Column="3"
+                                                        Variant="Ghost"
+                                                        Size="Small"
+                                                        Margin="0,0,0,2"
+                                                        VerticalAlignment="Bottom"
+                                                        Command="{Binding RemoveCommand}"
+                                                    >
+                                                        <controls:IconLabel
+                                                            Icon="{x:Static arc:ArcIcons.Trash2}"
+                                                            Text="删除"
+                                                            IconSize="13"
+                                                            TextForeground="{arc:ArcDesignTokenResource Danger}"
+                                                            IconForeground="{arc:ArcDesignTokenResource Danger}"
+                                                        />
+                                                    </arc:Button>
+                                                </Grid>
+                                                <TextBlock
+                                                    Grid.Row="1"
+                                                    Text="{Binding Error}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource Danger}"
+                                                    TextWrapping="Wrap"
+                                                />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </arc:ScrollArea>
+                        <TextBlock
+                            Grid.Row="2"
+                            Text="JSONPath 支持 $.data.token、items[0].id；响应头按名称匹配，值不区分大小写。"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                            TextWrapping="Wrap"
+                        />
+                    </Grid>
+
+                    <arc:Dialog.Actions>
+                        <StackPanel
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            HorizontalAlignment="Right"
+                        >
+                            <arc:Button
+                                Content="取消"
+                                Variant="Secondary"
+                                Command="{Binding CancelAssertionEditorCommand}"
+                            />
+                            <arc:Button
+                                Variant="Primary"
+                                Command="{Binding SaveAssertionEditorCommand}"
+                            >
+                                <controls:IconLabel
+                                    Icon="{x:Static arc:ArcIcons.Check}"
+                                    Text="保存断言"
                                 />
                             </arc:Button>
                         </StackPanel>
