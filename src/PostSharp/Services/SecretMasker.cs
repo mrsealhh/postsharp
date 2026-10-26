@@ -346,6 +346,11 @@ public static partial class SecretMasker
         }
 
         entry.Url = Apply(entry.Url, value => MaskSecrets(value, secrets));
+        entry.StatusText = Apply(entry.StatusText, value => MaskSecrets(value, secrets));
+        entry.ResponseContentType = Apply(
+            entry.ResponseContentType,
+            value => MaskSecrets(value, secrets)
+        );
         entry.RequestHeaders = Apply(
             entry.RequestHeaders,
             value => MaskHeaderLines(value, secrets)

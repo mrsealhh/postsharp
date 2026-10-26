@@ -166,6 +166,9 @@ public partial class TreeTrashViewModel(
                 oldest.Name,
                 oldest.DeletedAt
             );
+            toast(
+                $"集合回收站超过 {Capacity} 项，已永久删除最早的{oldest.KindLabel}「{oldest.Name}」。"
+            );
         }
 
         NotifyItemsChanged();
@@ -179,6 +182,33 @@ public partial class TreeTrashViewModel(
 
     private void Restore(TrashedNode node)
     {
+        if (!Items.Contains(node))
+        {
+            return;
+        }
+
+        if (node.Collection is { } existingCollection && collections.Contains(existingCollection))
+        {
+            Items.Remove(node);
+            NotifyItemsChanged();
+            changed();
+            toast($"集合「{existingCollection.Name}」已经在工作区中。");
+            return;
+        }
+
+        if (
+            node.Request is { } existingRequest
+            && existingRequest.Owner is { } owner
+            && owner.Requests.Contains(existingRequest)
+        )
+        {
+            Items.Remove(node);
+            NotifyItemsChanged();
+            changed();
+            toast($"请求「{existingRequest.Name}」已经在工作区中。");
+            return;
+        }
+
         string message;
         if (node.Collection is { } collection)
         {

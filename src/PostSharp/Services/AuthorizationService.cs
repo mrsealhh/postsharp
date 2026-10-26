@@ -137,8 +137,17 @@ public sealed class AuthorizationService
         }
         catch (OidcException exception)
         {
-            Log.Warning(exception, "刷新授权令牌失败，需要重新登录");
-            profile.ClearTokens();
+            if (exception.ErrorCode is "invalid_grant" or "invalid_client")
+            {
+                Log.Warning(exception, "刷新令牌已失效，需要重新登录");
+                profile.ClearTokens();
+            }
+            else
+            {
+                // Network, timeout and server errors are not proof that the refresh token is dead.
+                Log.Warning(exception, "刷新授权令牌暂时失败，保留 refresh_token 等待重试");
+            }
+
             return false;
         }
         finally

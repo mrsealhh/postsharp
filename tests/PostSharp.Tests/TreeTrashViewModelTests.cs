@@ -82,6 +82,21 @@ public sealed class TreeTrashViewModelTests
         Assert.Equal(TreeTrashViewModel.Capacity, _trash.Items.Count);
         Assert.Equal($"请求 {TreeTrashViewModel.Capacity}", _trash.Items[0].Name);
         Assert.DoesNotContain(_trash.Items, node => node.Name == "请求 0");
+        Assert.Contains(_toasts, toast => toast.Contains("请求 0", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RestoringTheSameNodeTwiceDoesNotInsertItTwice()
+    {
+        var request = AddRequest(_second, "一次");
+        _trash.TrashRequest(request, "UI");
+        var node = _trash.Items[0];
+
+        node.RestoreCommand!.Execute(null);
+        node.RestoreCommand!.Execute(null);
+
+        Assert.Single(_second.Requests, candidate => candidate.Id == request.Id);
+        Assert.Empty(_trash.Items);
     }
 
     [Fact]

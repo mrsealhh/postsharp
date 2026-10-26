@@ -46,7 +46,9 @@ public sealed class AuditStore
     public IReadOnlyList<string> DeleteBackups()
     {
         return new[] { FilePath, TrashFilePath }
-            .Where(path => !DataFile.DeleteBackup(path))
+            .Where(path =>
+                File.Exists(path) && !DataFile.IsBlocked(path) && !DataFile.DeleteBackup(path)
+            )
             .Select(DataFile.BackupPath)
             .ToList();
     }

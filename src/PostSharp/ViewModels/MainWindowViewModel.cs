@@ -1092,7 +1092,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         {
             if (profile.IsTokenExpired && profile.CanRefresh)
             {
-                await _authorizationService.EnsureFreshAsync(profile, cancellationToken);
+                var refreshed = await _authorizationService.EnsureFreshAsync(
+                    profile,
+                    cancellationToken
+                );
+                if (!refreshed && profile.IsTokenExpired)
+                {
+                    throw new OidcException("授权令牌已过期且刷新失败，请重新登录后再发送。");
+                }
+            }
+            else if (profile.IsTokenExpired || !profile.HasAccessToken)
+            {
+                throw new OidcException("授权令牌不可用，请先在授权配置中登录。");
             }
 
             return AuthorizationService.BuildInjection(profile, auth.Target);
@@ -3131,7 +3142,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Url = stored?.Url ?? SecretMasker.MaskSecrets(request.Url, secrets),
             Environment = stored?.EnvironmentName ?? ActiveEnvironment?.Name,
             StatusCode = result.StatusCode,
-            StatusText = result.ReasonPhrase,
+            StatusText = SecretMasker.MaskSecrets(result.ReasonPhrase, secrets),
             ElapsedMs = result.ElapsedMs,
             SizeBytes = result.SizeBytes,
             IsSuccess = result.HasResponse && result.StatusCode < 400,
@@ -3153,7 +3164,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 AuditPreviewLimit
             ),
             ResponseBodyPreview = SecretMasker.MaskPreview(result.Body, AuditPreviewLimit, secrets),
-            ResponseContentType = result.MediaType,
+            ResponseContentType = SecretMasker.MaskSecrets(result.MediaType, secrets),
             IsSse = result.IsSse,
             SseEventCount = result.SseEventCount,
             AiThinking = SecretMasker.MaskSecrets(result.SseThinking, secrets),
@@ -4095,7 +4106,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 Method = request.Method,
                 Url = audited.Url,
                 StatusCode = result.StatusCode,
-                StatusText = result.ReasonPhrase,
+                StatusText = SecretMasker.MaskSecrets(result.ReasonPhrase, secrets),
                 ElapsedMs = result.ElapsedMs,
                 Attempts = attempts,
                 Passed = passed,
@@ -4269,7 +4280,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Method = request.Method,
             Url = audited.Url,
             StatusCode = result.StatusCode,
-            StatusText = result.ReasonPhrase,
+            StatusText = SecretMasker.MaskSecrets(result.ReasonPhrase, secrets),
             ElapsedMs = result.ElapsedMs,
             Attempts = attempts,
             Passed = passed,

@@ -159,6 +159,8 @@ public sealed class SecretMaskerTests
             RequestHeaders = "Authorization: Bearer abc\nAccept: */*",
             ResponseHeaders = "Set-Cookie: session=xyz",
             ResponseBodyPreview = "{\"echo\":\"secret-token-1\"}",
+            StatusText = "reflected secret-token-1",
+            ResponseContentType = "application/secret-token-1",
         };
 
         var changed = SecretMasker.MaskAuditEntry(entry, ["secret-token-1"]);
@@ -168,6 +170,8 @@ public sealed class SecretMaskerTests
         Assert.Equal("Authorization: Bearer ******\nAccept: */*", entry.RequestHeaders);
         Assert.Equal("Set-Cookie: ******", entry.ResponseHeaders);
         Assert.DoesNotContain("secret-token-1", entry.ResponseBodyPreview);
+        Assert.DoesNotContain("secret-token-1", entry.StatusText);
+        Assert.DoesNotContain("secret-token-1", entry.ResponseContentType);
         Assert.False(SecretMasker.MaskAuditEntry(entry, ["secret-token-1"]));
     }
 }

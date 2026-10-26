@@ -456,12 +456,12 @@ public sealed class McpWorkspaceAdapter
             result.StatusCode,
             string.IsNullOrWhiteSpace(result.ReasonPhrase)
                 ? result.StatusCode.ToString()
-                : $"{result.StatusCode} {result.ReasonPhrase}",
+                : $"{result.StatusCode} {SecretMasker.MaskSecrets(result.ReasonPhrase, secrets)}",
             result.Error is null ? null : SecretMasker.MaskSecrets(result.Error, secrets),
             result.ElapsedMs,
             result.SizeBytes,
             result.IsJson,
-            result.MediaType,
+            SecretMasker.MaskSecrets(result.MediaType, secrets),
             body,
             headers,
             result.IsSse,
