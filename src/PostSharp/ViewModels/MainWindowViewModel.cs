@@ -121,6 +121,7 @@ public partial class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(AuditCount));
             RefreshAuditView();
         };
+        ImportWarnings.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasImportWarnings));
         AuditTrash.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(HasAuditTrash));
@@ -252,6 +253,7 @@ public partial class MainWindowViewModel : ObservableObject
     private string _bodyPreview = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanExportCurl))]
     private string _curlPreview = string.Empty;
 
     [ObservableProperty]
@@ -324,7 +326,16 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isImportDialogOpen;
 
     [ObservableProperty]
+    private string _importTab = "Postman";
+
+    [ObservableProperty]
     private string _importUrl = string.Empty;
+
+    [ObservableProperty]
+    private string _postmanJson = string.Empty;
+
+    [ObservableProperty]
+    private string _curlCommand = string.Empty;
 
     [ObservableProperty]
     private string _importStatus =
@@ -335,6 +346,21 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isImporting;
+
+    public ObservableCollection<string> ImportWarnings { get; } = new();
+
+    public bool HasImportWarnings => ImportWarnings.Count > 0;
+
+    public bool IsOpenApiImport => ImportTab == "OpenAPI";
+
+    public bool IsPostmanImport => ImportTab == "Postman";
+
+    public bool IsCurlImport => ImportTab == "cURL";
+
+    public bool CanExportCurl =>
+        IsRequestSelected
+        && !string.IsNullOrWhiteSpace(Editing.Url)
+        && !CurlPreview.StartsWith('#');
 
     [ObservableProperty]
     private bool _isToastOpen;
@@ -475,11 +501,36 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void OpenImportDialog()
     {
+        ImportTab = "Postman";
         ImportUrl = string.Empty;
-        ImportStatus =
-            "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。";
+        PostmanJson = string.Empty;
+        CurlCommand = string.Empty;
+        ImportWarnings.Clear();
+        ImportStatus = ImportStatusForTab(ImportTab);
         HasImportError = false;
         IsImportDialogOpen = true;
+    }
+
+    partial void OnImportTabChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsOpenApiImport));
+        OnPropertyChanged(nameof(IsPostmanImport));
+        OnPropertyChanged(nameof(IsCurlImport));
+        ImportWarnings.Clear();
+        HasImportError = false;
+        ImportStatus = ImportStatusForTab(value);
+    }
+
+    private static string ImportStatusForTab(string tab)
+    {
+        return tab switch
+        {
+            "Postman" =>
+                "选择 Postman Collection v2.1 JSON 文件，或把集合导出内容粘贴到下方。支持嵌套文件夹、认证、查询参数和常见请求体。",
+            "cURL" =>
+                "粘贴以 curl 开头的 bash 命令。支持 -X、-H、-d、--data-raw、-F、-u、--max-time 等常用参数。",
+            _ => "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。",
+        };
     }
 
     [RelayCommand]
@@ -587,10 +638,433 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    public async Task ImportPostmanFileAsync(
+        string path,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (IsImporting)
+        {
+            return;
+        }
+
+        if (!File.Exists(path))
+        {
+            HasImportError = true;
+            ImportStatus = "Postman Collection 文件不存在，请重新选择。";
+            return;
+        }
+
+        _importCts?.Dispose();
+        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        IsImporting = true;
+        HasImportError = false;
+        ImportWarnings.Clear();
+        ImportStatus = "正在读取并解析 Postman Collection 文件…";
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
+            var result = await Task.Run(
+                    () => PostmanImportService.Parse(content, Path.GetFileName(path)),
+                    _importCts.Token
+                )
+                .ConfigureAwait(true);
+            ApplyPostmanImport(result);
+        }
+        catch (OperationCanceledException exception)
+        {
+            Log.Debug(exception, "从文件导入 Postman 已取消 {FilePath}", path);
+            ImportStatus = "导入已取消。";
+            HasImportError = true;
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "从文件导入 Postman 失败 {FilePath}", path);
+        }
+        finally
+        {
+            IsImporting = false;
+            _importCts?.Dispose();
+            _importCts = null;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportPostmanTextAsync()
+    {
+        if (IsImporting)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(PostmanJson))
+        {
+            HasImportError = true;
+            ImportStatus = "请粘贴 Postman Collection JSON，或改为选择文件。";
+            return;
+        }
+
+        _importCts?.Dispose();
+        _importCts = new CancellationTokenSource();
+        IsImporting = true;
+        HasImportError = false;
+        ImportWarnings.Clear();
+        ImportStatus = "正在解析粘贴的 Postman Collection…";
+
+        try
+        {
+            var result = await Task.Run(
+                    () => PostmanImportService.Parse(PostmanJson, "粘贴的 Postman Collection"),
+                    _importCts.Token
+                )
+                .ConfigureAwait(true);
+            ApplyPostmanImport(result);
+        }
+        catch (OperationCanceledException exception)
+        {
+            Log.Debug(exception, "导入粘贴的 Postman 已取消");
+            ImportStatus = "导入已取消。";
+            HasImportError = true;
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "导入粘贴的 Postman 失败");
+        }
+        finally
+        {
+            IsImporting = false;
+            _importCts?.Dispose();
+            _importCts = null;
+        }
+    }
+
+    [RelayCommand]
+    private void ImportCurl()
+    {
+        if (string.IsNullOrWhiteSpace(CurlCommand))
+        {
+            HasImportError = true;
+            ImportStatus = "请粘贴以 curl 开头的命令。";
+            return;
+        }
+
+        try
+        {
+            var result = CurlImportService.Parse(CurlCommand);
+            ApplyCurlImport(result);
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "导入 cURL 失败");
+        }
+    }
+
+    private void ApplyPostmanImport(ImportResult result)
+    {
+        var root = new RequestCollection
+        {
+            Name = string.IsNullOrWhiteSpace(result.Root.Name) ? "Postman 集合" : result.Root.Name,
+            IsExpanded = true,
+        };
+        Collections.Insert(0, root);
+
+        RequestItem? firstRequest = null;
+        var requestCount = 0;
+        var folderCount = 0;
+        AddImportedCollectionContent(
+            root,
+            result.Root,
+            1,
+            string.Empty,
+            ref firstRequest,
+            ref requestCount,
+            ref folderCount
+        );
+
+        var environmentName = ApplyImportedEnvironment(result.Environment);
+        SetImportWarnings(result.Warnings);
+
+        SyncRootCollections();
+        if (firstRequest is not null)
+        {
+            OpenRequest(firstRequest);
+        }
+        else
+        {
+            SelectedCollection = root;
+            SelectedRequest = null;
+        }
+
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
+        RefreshDerivedState();
+
+        var environmentText = environmentName is null
+            ? string.Empty
+            : $"，并激活环境「{environmentName}」";
+        var warningText =
+            result.Warnings.Count > 0
+                ? $"；{result.Warnings.Count} 条兼容性提示见下方"
+                : string.Empty;
+        ImportStatus =
+            $"导入完成：{result.Root.Name}，{requestCount} 个请求，{folderCount} 个分组{environmentText}{warningText}。";
+        HasImportError = false;
+
+        if (result.Warnings.Count == 0)
+        {
+            IsImportDialogOpen = false;
+            ShowToast($"已导入「{result.Root.Name}」：{requestCount} 个请求");
+        }
+
+        Log.Information(
+            "Postman 导入完成 {Source}：{Title}，{RequestCount} 个请求，{FolderCount} 个分组，{WarningCount} 条提示",
+            result.Source,
+            result.Root.Name,
+            requestCount,
+            folderCount,
+            result.Warnings.Count
+        );
+    }
+
+    private void ApplyCurlImport(CurlImportResult result)
+    {
+        var target =
+            SelectedCollection
+            ?? Editing.Owner
+            ?? Collections.FirstOrDefault(collection => collection.Parent is null)
+            ?? Collections.FirstOrDefault();
+        if (target is null)
+        {
+            target = new RequestCollection { Name = "导入的 cURL 请求" };
+            Collections.Add(target);
+        }
+
+        var request = AddImportedRequest(target, result.Request, string.Empty);
+        SyncRootCollections();
+        OpenRequest(request);
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
+        RefreshDerivedState();
+
+        foreach (var warning in result.Warnings)
+        {
+            Log.Warning("cURL 导入提示：{Warning}", warning);
+        }
+
+        ImportWarnings.Clear();
+        IsImportDialogOpen = false;
+        var warningText =
+            result.Warnings.Count > 0
+                ? $"；{result.Warnings.Count} 条提示已写入日志"
+                : string.Empty;
+        ShowToast($"已导入 cURL「{request.Name}」{warningText}");
+        Log.Information(
+            "cURL 导入完成 {Method} {Url}，{WarningCount} 条提示",
+            request.Method,
+            request.Url,
+            result.Warnings.Count
+        );
+    }
+
+    private void AddImportedCollectionContent(
+        RequestCollection target,
+        ImportedCollection source,
+        int depth,
+        string namePrefix,
+        ref RequestItem? firstRequest,
+        ref int requestCount,
+        ref int folderCount
+    )
+    {
+        foreach (var imported in source.Requests)
+        {
+            var request = AddImportedRequest(target, imported, namePrefix);
+            firstRequest ??= request;
+            requestCount++;
+        }
+
+        foreach (var child in source.Children)
+        {
+            if (depth >= MaxCollectionDepth)
+            {
+                AddImportedCollectionContent(
+                    target,
+                    child,
+                    depth,
+                    namePrefix + child.Name + " / ",
+                    ref firstRequest,
+                    ref requestCount,
+                    ref folderCount
+                );
+                continue;
+            }
+
+            var collection = new RequestCollection
+            {
+                Name = child.Name,
+                Parent = target,
+                IsExpanded = true,
+            };
+            target.Children.Add(collection);
+            Collections.Add(collection);
+            folderCount++;
+            AddImportedCollectionContent(
+                collection,
+                child,
+                depth + 1,
+                string.Empty,
+                ref firstRequest,
+                ref requestCount,
+                ref folderCount
+            );
+        }
+    }
+
+    private static RequestItem AddImportedRequest(
+        RequestCollection target,
+        ImportedRequest imported,
+        string namePrefix
+    )
+    {
+        var request = new RequestItem
+        {
+            Name = namePrefix + imported.Name,
+            Method = imported.Method,
+            Url = imported.Url,
+            TimeoutSeconds = imported.TimeoutSeconds,
+            BodyMode = imported.BodyMode,
+            Body = imported.Body,
+            UploadFilePath = imported.UploadFilePath,
+            UploadFieldName = string.IsNullOrWhiteSpace(imported.UploadFieldName)
+                ? "file"
+                : imported.UploadFieldName,
+            Owner = target,
+        };
+
+        foreach (var field in imported.Params)
+        {
+            request.Params.AddRow(field.Key, field.Value, field.IsEnabled);
+        }
+
+        foreach (var field in imported.Headers)
+        {
+            request.Headers.AddRow(field.Key, field.Value, field.IsEnabled);
+        }
+
+        foreach (var field in imported.FormFields)
+        {
+            request.FormFields.AddRow(field.Key, field.Value, field.IsEnabled);
+        }
+
+        request.Params.EnsureTrailingRow();
+        request.Headers.EnsureTrailingRow();
+        request.FormFields.EnsureTrailingRow();
+        target.Requests.Add(request);
+        return request;
+    }
+
+    private string? ApplyImportedEnvironment(ImportedEnvironment? imported)
+    {
+        if (imported is null || imported.Variables.Count == 0)
+        {
+            return null;
+        }
+
+        var environment =
+            Environments.FirstOrDefault(candidate =>
+                candidate.Name.Equals(imported.Name, StringComparison.OrdinalIgnoreCase)
+            ) ?? new EnvironmentModel { Name = imported.Name };
+        if (!Environments.Contains(environment))
+        {
+            Environments.Add(environment);
+        }
+
+        foreach (var variable in imported.Variables)
+        {
+            if (
+                environment.Variables.Any(row =>
+                    row.Key.Equals(variable.Key, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            {
+                continue;
+            }
+
+            environment.Variables.AddRow(variable.Key, variable.Value, variable.IsEnabled);
+        }
+
+        environment.Variables.EnsureTrailingRow();
+        ActiveEnvironment = environment;
+        return environment.Name;
+    }
+
+    private void SetImportWarnings(IReadOnlyList<string> warnings)
+    {
+        ImportWarnings.Clear();
+        foreach (var warning in warnings)
+        {
+            ImportWarnings.Add(warning);
+        }
+    }
+
+    public ExportDocument? BuildPostmanExport()
+    {
+        var collection = SelectedCollection ?? SelectedRequest?.Owner;
+        if (collection is not null)
+        {
+            return new ExportDocument(
+                PostmanExportService.ExportCollection(collection),
+                PostmanExportService.SuggestFileName(collection.Name)
+            );
+        }
+
+        var roots = Collections.Where(candidate => candidate.Parent is null).ToList();
+        if (roots.Count == 0)
+        {
+            return null;
+        }
+
+        return new ExportDocument(
+            PostmanExportService.ExportWorkspace(roots),
+            PostmanExportService.SuggestFileName("PostSharp 工作区")
+        );
+    }
+
+    public ExportDocument? BuildCurlExport()
+    {
+        if (!CanExportCurl)
+        {
+            return null;
+        }
+
+        var name = string.IsNullOrWhiteSpace(Editing.Name) ? "request" : Editing.Name.Trim();
+        var invalid = Path.GetInvalidFileNameChars();
+        var safeName = new string(
+            name.Select(character => invalid.Contains(character) ? '-' : character).ToArray()
+        )
+            .Trim()
+            .TrimEnd('.');
+        if (string.IsNullOrEmpty(safeName))
+        {
+            safeName = "request";
+        }
+
+        return new ExportDocument(CurlPreview, $"{safeName}.sh");
+    }
+
     private void ApplyOpenApiImport(OpenApiImportDocument document)
     {
         var root = new RequestCollection { Name = document.Title, IsExpanded = true };
-        Collections.Add(root);
+        Collections.Insert(0, root);
 
         var groupCount = 0;
         var requestCount = 0;
@@ -682,7 +1156,7 @@ public partial class MainWindowViewModel : ObservableObject
             UnauthorizedAccessException => "没有读取该文件的权限，请换一个位置。",
             FileNotFoundException => "文件不存在，请重新选择。",
             InvalidOperationException => exception.Message,
-            _ => "文档格式无法识别，请确认是合法的 OpenAPI JSON 或 YAML。",
+            _ => "内容格式无法识别，请确认文件或命令格式。",
         };
     }
 
@@ -3995,6 +4469,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsRequestSelected));
         OnPropertyChanged(nameof(IsDraft));
         OnPropertyChanged(nameof(EditorHint));
+        OnPropertyChanged(nameof(CanExportCurl));
     }
 
     private void UpdateSelectionFlags()

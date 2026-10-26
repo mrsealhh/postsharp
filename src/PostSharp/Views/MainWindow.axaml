@@ -428,8 +428,8 @@
                                         Size="Small"
                                         Padding="8,0"
                                         Command="{Binding OpenImportDialogCommand}"
-                                        ToolTip.Tip="导入 OpenAPI 文档并创建分组"
-                                        AutomationProperties.Name="导入 OpenAPI 文档"
+                                        ToolTip.Tip="导入或导出 OpenAPI、Postman Collection、cURL"
+                                        AutomationProperties.Name="导入或导出"
                                     >
                                         <controls:IconLabel
                                             Icon="{x:Static arc:ArcIcons.Upload}"
@@ -1334,7 +1334,7 @@
 
                                 <arc:TabItem Header="cURL">
                                     <Grid RowDefinitions="Auto,*" Margin="0,6,0,0" RowSpacing="10">
-                                        <Grid ColumnDefinitions="*,Auto">
+                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                                             <TextBlock
                                                 Text="已按当前环境解析变量，可直接复制到终端执行（bash / Git Bash / WSL）。"
                                                 FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -1342,8 +1342,17 @@
                                                 VerticalAlignment="Center"
                                                 TextWrapping="Wrap"
                                             />
-                                            <arc:CopyButton
+                                            <arc:Button
                                                 Grid.Column="1"
+                                                Content="保存 cURL…"
+                                                Variant="Ghost"
+                                                Size="Small"
+                                                Click="OnExportCurlClick"
+                                                IsEnabled="{Binding CanExportCurl}"
+                                                AutomationProperties.Name="保存当前请求 cURL"
+                                            />
+                                            <arc:CopyButton
+                                                Grid.Column="2"
                                                 Value="{Binding CurlPreview}"
                                                 Label="复制 cURL"
                                                 Variant="Plain"
@@ -3034,62 +3043,187 @@
                 />
 
                 <arc:Dialog
+                    x:Name="ImportDialog"
                     IsOpen="{Binding IsImportDialogOpen, Mode=TwoWay}"
-                    Title="导入 OpenAPI"
-                    Description="导入后会新建同名集合，并按第一个 tag 创建子分组；请求会带上服务器地址、查询参数和 JSON 请求体示例。"
+                    Title="导入 / 导出"
+                    Description="支持 OpenAPI 文档、Postman Collection v2.1 和 bash cURL；导入成功后可以继续手工调整请求。"
                     Size="Large"
+                    Opened="OnImportDialogOpened"
                 >
-                    <StackPanel Spacing="12">
-                        <TextBlock
-                            Text="从 URL 导入"
-                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                            FontWeight="Medium"
-                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                        />
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                            <arc:Input
-                                Label="文档 URL"
-                                Text="{Binding ImportUrl, Mode=TwoWay}"
-                                Placeholder="https://petstore3.swagger.io/api/v3/openapi.json"
-                                AutomationProperties.Name="OpenAPI 文档地址"
-                            />
-                            <arc:Button
-                                Grid.Column="1"
-                                Content="下载并导入"
-                                Variant="Primary"
-                                VerticalAlignment="Bottom"
-                                Command="{Binding ImportFromUrlCommand}"
-                                IsEnabled="{Binding !IsImporting}"
-                                IsLoading="{Binding IsImporting}"
-                                AutomationProperties.Name="下载并导入 OpenAPI 文档"
-                            />
-                        </Grid>
+                    <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="12">
+                        <arc:SegmentedControl
+                            Grid.Row="0"
+                            SelectedValue="{Binding ImportTab, Mode=TwoWay}"
+                            AutomationProperties.Name="导入格式"
+                        >
+                            <arc:SegmentedOption Value="OpenAPI" Label="OpenAPI" />
+                            <arc:SegmentedOption Value="Postman" Label="Postman" />
+                            <arc:SegmentedOption Value="cURL" Label="cURL" />
+                        </arc:SegmentedControl>
 
-                        <Border Height="1" Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+                        <Panel Grid.Row="1">
+                            <StackPanel IsVisible="{Binding IsOpenApiImport}" Spacing="12">
+                                <TextBlock
+                                    Text="从 URL 导入"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <arc:Input
+                                        Label="文档 URL"
+                                        Text="{Binding ImportUrl, Mode=TwoWay}"
+                                        Placeholder="https://petstore3.swagger.io/api/v3/openapi.json"
+                                        AutomationProperties.Name="OpenAPI 文档地址"
+                                    />
+                                    <arc:Button
+                                        Grid.Column="1"
+                                        Content="下载并导入"
+                                        Variant="Primary"
+                                        VerticalAlignment="Bottom"
+                                        Command="{Binding ImportFromUrlCommand}"
+                                        IsEnabled="{Binding !IsImporting}"
+                                        IsLoading="{Binding IsImporting}"
+                                        AutomationProperties.Name="下载并导入 OpenAPI 文档"
+                                    />
+                                </Grid>
 
-                        <TextBlock
-                            Text="从文件导入"
-                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                            FontWeight="Medium"
-                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                        />
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <arc:Button
-                                Content="选择 JSON / YAML 文件…"
-                                Variant="Secondary"
-                                Click="OnPickOpenApiFileClick"
-                                IsEnabled="{Binding !IsImporting}"
-                                AutomationProperties.Name="选择 OpenAPI 文件"
-                            />
-                            <TextBlock
-                                Text="支持 .json、.yaml、.yml，也兼容 Swagger 2.0。"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                VerticalAlignment="Center"
-                            />
-                        </StackPanel>
+                                <Border
+                                    Height="1"
+                                    Background="{arc:ArcDesignTokenResource BorderSubtle}"
+                                />
 
-                        <Grid MinHeight="40">
+                                <TextBlock
+                                    Text="从文件导入"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <arc:Button
+                                        Content="选择 JSON / YAML 文件…"
+                                        Variant="Secondary"
+                                        Click="OnPickOpenApiFileClick"
+                                        IsEnabled="{Binding !IsImporting}"
+                                        AutomationProperties.Name="选择 OpenAPI 文件"
+                                    />
+                                    <TextBlock
+                                        Text="支持 .json、.yaml、.yml，也兼容 Swagger 2.0。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        VerticalAlignment="Center"
+                                    />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <StackPanel IsVisible="{Binding IsPostmanImport}" Spacing="10">
+                                <TextBlock
+                                    Text="从 Postman 迁移"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <TextBlock
+                                    Text="支持嵌套文件夹、查询参数、请求头、Bearer / Basic / API Key 认证、raw / urlencoded / formdata 请求体和集合变量。脚本与测试不会执行。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <TextBlock
+                                    Text="Apifox 迁移：在 Apifox「项目设置 → 导出数据」选择 Postman 或 OpenAPI，再在这里导入。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <arc:Button
+                                        Content="选择 Collection 文件…"
+                                        Variant="Primary"
+                                        Click="OnPickPostmanFileClick"
+                                        IsEnabled="{Binding !IsImporting}"
+                                        IsLoading="{Binding IsImporting}"
+                                        AutomationProperties.Name="选择 Postman Collection 文件"
+                                    />
+                                    <arc:Button
+                                        Content="导出当前集合…"
+                                        Variant="Secondary"
+                                        Click="OnExportPostmanClick"
+                                        IsEnabled="{Binding !IsImporting}"
+                                        AutomationProperties.Name="导出 Postman Collection"
+                                    />
+                                    <TextBlock
+                                        Text="导出选中集合；未选中时导出整个工作区。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        VerticalAlignment="Center"
+                                        TextWrapping="Wrap"
+                                    />
+                                </StackPanel>
+                                <Border Height="150" ClipToBounds="True">
+                                    <arc:Textarea
+                                        Label="或者粘贴 Collection JSON"
+                                        Text="{Binding PostmanJson, Mode=TwoWay}"
+                                        Placeholder="粘贴 Postman Collection v2.1 JSON"
+                                        FrameHeight="150"
+                                        IsResizable="False"
+                                        AutomationProperties.Name="Postman Collection JSON"
+                                    />
+                                </Border>
+                                <arc:Button
+                                    Content="导入粘贴内容"
+                                    Variant="Primary"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding ImportPostmanTextCommand}"
+                                    IsEnabled="{Binding !IsImporting}"
+                                    IsLoading="{Binding IsImporting}"
+                                    AutomationProperties.Name="导入粘贴的 Postman Collection"
+                                />
+                            </StackPanel>
+
+                            <StackPanel IsVisible="{Binding IsCurlImport}" Spacing="10">
+                                <TextBlock
+                                    Text="从 cURL 导入"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <TextBlock
+                                    Text="支持 Postman、浏览器和 PostSharp 生成的 bash 风格命令；PowerShell 专用格式暂不解析。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <Border Height="150" ClipToBounds="True">
+                                    <arc:Textarea
+                                        Label="cURL 命令"
+                                        Text="{Binding CurlCommand, Mode=TwoWay}"
+                                        Placeholder="curl -X POST 'https://api.example.com/health' -H 'Accept: application/json'"
+                                        FrameHeight="150"
+                                        IsResizable="False"
+                                        AutomationProperties.Name="cURL 命令"
+                                    />
+                                </Border>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <arc:Button
+                                        Content="导入 cURL"
+                                        Variant="Primary"
+                                        Command="{Binding ImportCurlCommand}"
+                                        IsEnabled="{Binding !IsImporting}"
+                                        IsLoading="{Binding IsImporting}"
+                                        AutomationProperties.Name="导入 cURL 命令"
+                                    />
+                                    <arc:Button
+                                        Content="保存当前请求 cURL…"
+                                        Variant="Secondary"
+                                        Click="OnExportCurlClick"
+                                        IsEnabled="{Binding CanExportCurl}"
+                                        AutomationProperties.Name="保存当前请求 cURL"
+                                    />
+                                </StackPanel>
+                            </StackPanel>
+                        </Panel>
+
+                        <Grid Grid.Row="2" MinHeight="40">
                             <TextBlock
                                 IsVisible="{Binding !HasImportError}"
                                 Text="{Binding ImportStatus}"
@@ -3105,7 +3239,40 @@
                                 TextWrapping="Wrap"
                             />
                         </Grid>
-                    </StackPanel>
+
+                        <Border
+                            Grid.Row="3"
+                            IsVisible="{Binding HasImportWarnings}"
+                            BorderBrush="{arc:ArcDesignTokenResource Warning}"
+                            BorderThickness="1"
+                            CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                            Padding="12"
+                        >
+                            <StackPanel Spacing="6">
+                                <TextBlock
+                                    Text="兼容性提示"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource Warning}"
+                                />
+                                <arc:ScrollArea Height="110">
+                                    <ItemsControl ItemsSource="{Binding ImportWarnings}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock
+                                                    Text="{Binding}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                    TextWrapping="Wrap"
+                                                    Margin="0,0,0,4"
+                                                />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </arc:ScrollArea>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
 
                     <arc:Dialog.Actions>
                         <StackPanel

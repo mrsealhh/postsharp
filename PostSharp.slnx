@@ -2,4 +2,7 @@
     <Folder Name="/src/">
         <Project Path="src/PostSharp/PostSharp.csproj" />
     </Folder>
+    <Folder Name="/tests/">
+        <Project Path="tests/PostSharp.Tests/PostSharp.Tests.csproj" />
+    </Folder>
 </Solution>

@@ -324,6 +324,9 @@ public partial class MainWindow : Window
     private void OnMappingDialogOpened(object? sender, EventArgs e) =>
         ApplyWideDialog(MappingDialog);
 
+    private void OnImportDialogOpened(object? sender, EventArgs e) =>
+        ApplyImportDialog(ImportDialog);
+
     private void ApplyWideDialog(TKCode.Arc.Dialog dialog)
     {
         if (dialog.Surface is not { } surface)
@@ -332,6 +335,18 @@ public partial class MainWindow : Window
         }
 
         var width = Math.Clamp(Bounds.Width - 64, 680, 1180);
+        surface.Width = width;
+        surface.MaxWidth = width;
+    }
+
+    private void ApplyImportDialog(TKCode.Arc.Dialog dialog)
+    {
+        if (dialog.Surface is not { } surface)
+        {
+            return;
+        }
+
+        var width = Math.Clamp(Bounds.Width - 160, 720, 900);
         surface.Width = width;
         surface.MaxWidth = width;
     }
@@ -396,6 +411,153 @@ public partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(path))
         {
             await _viewModel.ImportFromFileAsync(path);
+        }
+    }
+
+    private async void OnPickPostmanFileClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "导入 Postman Collection",
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("Postman Collection")
+                        {
+                            Patterns = new[] { "*.json" },
+                            MimeTypes = new[] { "application/json", "text/plain" },
+                        },
+                    },
+                }
+            );
+
+            var path = files.FirstOrDefault()?.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                await _viewModel.ImportPostmanFileAsync(path);
+            }
+        }
+        catch (Exception exception)
+        {
+            _viewModel.HasImportError = true;
+            _viewModel.ImportStatus =
+                "无法打开文件选择器，请稍后重试或把 Collection JSON 粘贴到下方。";
+            Log.Error(exception, "打开 Postman Collection 文件选择器失败");
+        }
+    }
+
+    private async void OnExportPostmanClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var document = _viewModel.BuildPostmanExport();
+        if (document is null)
+        {
+            _viewModel.HasImportError = true;
+            _viewModel.ImportStatus = "当前工作区没有可导出的集合。请先创建或导入集合。";
+            return;
+        }
+
+        await SaveExportAsync(
+            document,
+            "导出 Postman Collection",
+            new FilePickerFileType("Postman Collection")
+            {
+                Patterns = new[] { "*.json" },
+                MimeTypes = new[] { "application/json" },
+            }
+        );
+    }
+
+    private async void OnExportCurlClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var document = _viewModel.BuildCurlExport();
+        if (document is null)
+        {
+            _viewModel.HasImportError = true;
+            _viewModel.ImportStatus = "当前请求还没有可导出的 cURL，请先选择请求并填写有效地址。";
+            return;
+        }
+
+        await SaveExportAsync(
+            document,
+            "保存 cURL",
+            new FilePickerFileType("Shell 脚本")
+            {
+                Patterns = new[] { "*.sh" },
+                MimeTypes = new[] { "text/x-shellscript", "text/plain" },
+            }
+        );
+    }
+
+    private async Task SaveExportAsync(
+        ExportDocument document,
+        string title,
+        FilePickerFileType fileType
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var file = await StorageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions
+                {
+                    Title = title,
+                    SuggestedFileName = document.FileName,
+                    DefaultExtension = Path.GetExtension(document.FileName).TrimStart('.'),
+                    ShowOverwritePrompt = true,
+                    FileTypeChoices = new[] { fileType },
+                }
+            );
+            if (file is null)
+            {
+                return;
+            }
+
+            var path = file.TryGetLocalPath();
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                _viewModel.HasImportError = true;
+                _viewModel.ImportStatus = "无法写入所选位置，请换一个本地文件夹。";
+                return;
+            }
+
+            await File.WriteAllTextAsync(path, document.Content);
+            _viewModel.HasImportError = false;
+            _viewModel.ImportStatus = $"已导出：{Path.GetFileName(path)}";
+            Log.Information("导出文件完成 {FilePath}", path);
+        }
+        catch (Exception exception)
+        {
+            _viewModel.HasImportError = true;
+            _viewModel.ImportStatus = "导出失败，请检查目标文件夹是否可写后重试。";
+            Log.Error(exception, "导出文件失败 {Title}", title);
         }
     }
 
