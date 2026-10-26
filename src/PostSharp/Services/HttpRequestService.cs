@@ -43,8 +43,13 @@ public sealed class HttpRequestService
 
     public bool AutoFormatResponse { get; set; } = true;
 
+    /// <param name="composed">The request to send.</param>
+    /// <param name="logUrl">The URL as it may appear in the log, with secret values masked.</param>
+    /// <param name="cancellationToken">Cancels the send.</param>
+    /// <param name="timeoutSeconds">Overrides the global timeout when above zero.</param>
     public async Task<HttpResult> SendAsync(
         ComposedRequest composed,
+        string logUrl,
         CancellationToken cancellationToken,
         int timeoutSeconds = 0
     )
@@ -209,7 +214,7 @@ public sealed class HttpRequestService
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             stopwatch.Stop();
-            Log.Debug("请求被取消 {Method} {Url}", composed.Method, composed.Url);
+            Log.Debug("请求被取消 {Method} {Url}", composed.Method, logUrl);
             return Failure("请求已取消。");
         }
         catch (OperationCanceledException)
@@ -218,7 +223,7 @@ public sealed class HttpRequestService
             Log.Warning(
                 "请求超时 {Method} {Url} {TimeoutSeconds}",
                 composed.Method,
-                composed.Url,
+                logUrl,
                 effectiveTimeoutSeconds
             );
             return Failure($"请求超时，{effectiveTimeoutSeconds} 秒内没有收到响应。");
@@ -226,7 +231,7 @@ public sealed class HttpRequestService
         catch (Exception ex)
         {
             stopwatch.Stop();
-            Log.Error(ex, "发送请求失败 {Method} {Url}", composed.Method, composed.Url);
+            Log.Error(ex, "发送请求失败 {Method} {Url}", composed.Method, logUrl);
             return Failure($"无法完成请求：{ex.Message}");
         }
     }

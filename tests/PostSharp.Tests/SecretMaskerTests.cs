@@ -125,6 +125,20 @@ public sealed class SecretMaskerTests
         Assert.EndsWith("（已截断）", preview);
     }
 
+    [Theory]
+    [InlineData("{\"token\":\"ab+c\\/d==xyz\"}")]
+    [InlineData("{\"token\":\"ab\\u002Bc/d==xyz\"}")]
+    [InlineData("{\"token\":\"ab+c/d==xyz\"}")]
+    public void MasksSecretsEchoedWithJsonEscaping(string body)
+    {
+        var environment = new EnvironmentModel();
+        environment.Variables.AddRow("token", "ab+c/d==xyz", isSecret: true);
+
+        var masked = SecretMasker.MaskSecrets(body, SecretMasker.CollectSecrets([environment]));
+
+        Assert.Equal("{\"token\":\"******\"}", masked);
+    }
+
     [Fact]
     public void MasksOnlyTheHeadOfLargeText()
     {

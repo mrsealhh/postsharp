@@ -25,6 +25,18 @@ public enum DataFileState
     Inaccessible,
 }
 
+/// <summary>The outcome of saving a data file.</summary>
+public enum SaveResult
+{
+    Saved,
+
+    /// <summary>Not written on purpose: the file could not be read at startup and must not be overwritten.</summary>
+    Blocked,
+
+    /// <summary>The write failed; the reason is in the log.</summary>
+    Failed,
+}
+
 /// <summary>
 /// The outcome of reading a data file. <see cref="SetAsidePath"/> names the copy an unreadable file was moved to.
 /// </summary>
@@ -50,8 +62,22 @@ public static class DataFile
 
     public static string BackupPath(string path) => path + ".bak";
 
+    /// <summary>Serializes and writes a data file; a failure is logged and reported, never thrown.</summary>
+    public static SaveResult Save(string path, Func<string> serialize)
+    {
+        try
+        {
+            return WriteAllText(path, serialize()) ? SaveResult.Saved : SaveResult.Blocked;
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "保存数据文件失败 {DataFile}", path);
+            return SaveResult.Failed;
+        }
+    }
+
     /// <summary>Returns false without writing when the file is protected after a failed read.</summary>
-    public static bool WriteAllText(string path, string content)
+    private static bool WriteAllText(string path, string content)
     {
         if (BlockedPaths.ContainsKey(Path.GetFullPath(path)))
         {
@@ -79,9 +105,24 @@ public static class DataFile
                         or PlatformNotSupportedException
             )
         {
-            // Some file systems (network shares, certain sync folders) do not support File.Replace.
+            // Some file systems (network shares, certain sync folders) do not support File.Replace, and another
+            // program may hold the backup open.
             Log.Warning(exception, "原子替换数据文件失败，改为备份后覆盖 {DataFile}", path);
-            File.Copy(path, BackupPath(path), overwrite: true);
+            try
+            {
+                File.Copy(path, BackupPath(path), overwrite: true);
+            }
+            catch (Exception backupException)
+                when (backupException is IOException or UnauthorizedAccessException)
+            {
+                // Keeping the save matters more than refreshing the backup.
+                Log.Warning(
+                    backupException,
+                    "无法更新数据文件备份，本次保存不更新备份 {DataFile}",
+                    path
+                );
+            }
+
             File.Move(temporaryPath, path, overwrite: true);
         }
 
@@ -94,8 +135,20 @@ public static class DataFile
         if (!File.Exists(path))
         {
             // A backup without its main file means an earlier start moved the file aside or a save stopped midway.
-            return TryLoadBackup(path, parse, setAsidePath: null)
-                ?? new DataFileLoad<T>(null, DataFileState.Missing, null);
+            var orphan = ReadBackup(path, parse);
+            if (orphan.Value is not null)
+            {
+                return new DataFileLoad<T>(orphan.Value, DataFileState.RestoredFromBackup, null);
+            }
+
+            if (orphan.Blocked)
+            {
+                return new DataFileLoad<T>(null, DataFileState.Inaccessible, null);
+            }
+
+            return orphan.SetAside is null
+                ? new DataFileLoad<T>(null, DataFileState.Missing, null)
+                : new DataFileLoad<T>(null, DataFileState.Unreadable, orphan.SetAside);
         }
 
         if (TryRead(path) is not { } text)
@@ -115,8 +168,19 @@ public static class DataFile
             return Protect(path, parse);
         }
 
-        return TryLoadBackup(path, parse, setAsidePath)
-            ?? new DataFileLoad<T>(null, DataFileState.Unreadable, setAsidePath);
+        var backup = ReadBackup(path, parse);
+        if (backup.Value is not null)
+        {
+            return new DataFileLoad<T>(
+                backup.Value,
+                DataFileState.RestoredFromBackup,
+                setAsidePath
+            );
+        }
+
+        return backup.Blocked
+            ? new DataFileLoad<T>(null, DataFileState.Inaccessible, setAsidePath)
+            : new DataFileLoad<T>(null, DataFileState.Unreadable, setAsidePath);
     }
 
     /// <summary>Removes the previous version, for example after secrets were scrubbed from the file.</summary>
@@ -138,39 +202,48 @@ public static class DataFile
     private static DataFileLoad<T> Protect<T>(string path, Func<string, T?> parse)
         where T : class
     {
-        BlockedPaths[Path.GetFullPath(path)] = true;
-        var backup = TryLoadBackup(path, parse, setAsidePath: null);
-        return new DataFileLoad<T>(backup?.Value, DataFileState.Inaccessible, null);
+        Block(path);
+        return new DataFileLoad<T>(ReadBackup(path, parse).Value, DataFileState.Inaccessible, null);
     }
 
-    private static DataFileLoad<T>? TryLoadBackup<T>(
+    private static void Block(string path) => BlockedPaths[Path.GetFullPath(path)] = true;
+
+    /// <summary>
+    /// Reads the backup of a file that is missing or unusable. A backup that exists but cannot be used is moved
+    /// aside; when it is locked or cannot be moved, writing the main file is blocked, because the second save would
+    /// replace this backup with whatever the first one wrote.
+    /// </summary>
+    private static (T? Value, bool Blocked, string? SetAside) ReadBackup<T>(
         string path,
-        Func<string, T?> parse,
-        string? setAsidePath
+        Func<string, T?> parse
     )
         where T : class
     {
         var backupPath = BackupPath(path);
         if (!File.Exists(backupPath))
         {
-            return null;
+            return (null, false, null);
         }
 
-        if (
-            TryRead(backupPath) is not { } text
-            || TryParse(backupPath, text, parse) is not { } value
-        )
+        if (TryRead(backupPath) is not { } text)
         {
-            return null;
+            Block(path);
+            return (null, true, null);
         }
 
-        Log.Warning(
-            "数据文件不可用，已改用备份 {DataFile} {BackupFile} {SetAsideFile}",
-            path,
-            backupPath,
-            setAsidePath
-        );
-        return new DataFileLoad<T>(value, DataFileState.RestoredFromBackup, setAsidePath);
+        if (TryParse(backupPath, text, parse) is { } value)
+        {
+            Log.Warning("数据文件不可用，已改用备份 {DataFile} {BackupFile}", path, backupPath);
+            return (value, false, null);
+        }
+
+        if (SetAside(backupPath) is { } setAside)
+        {
+            return (null, false, setAside);
+        }
+
+        Block(path);
+        return (null, true, null);
     }
 
     /// <summary>Reads the file, retrying briefly because scanners and sync clients hold files for a moment.</summary>

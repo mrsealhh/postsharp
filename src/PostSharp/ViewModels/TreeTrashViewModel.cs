@@ -19,6 +19,9 @@ public partial class TreeTrashViewModel(
     Action<string> toast
 ) : ObservableObject
 {
+    /// <summary>The bin keeps the newest items; older ones are dropped so the workspace file stays small.</summary>
+    public const int Capacity = 200;
+
     private TrashedNode? _pendingPurge;
     private bool _purgeAllPending;
 
@@ -52,14 +55,14 @@ public partial class TreeTrashViewModel(
     }
 
     /// <summary>
-    /// Takes a request out of its collection into the bin. The caller saves and moves the selection, since it
-    /// knows whether the request was open.
+    /// Takes a request out of its collection into the bin; false when it is in no collection. The caller saves and
+    /// moves the selection, since it knows whether the request was open.
     /// </summary>
-    public void TrashRequest(RequestItem request, string source)
+    public bool TrashRequest(RequestItem request, string source)
     {
         if (request.Owner is not { } owner)
         {
-            return;
+            return false;
         }
 
         var node = new TrashedNode
@@ -75,6 +78,7 @@ public partial class TreeTrashViewModel(
         request.Owner = null;
         request.IsSelected = false;
         Add(node);
+        return true;
     }
 
     /// <summary>Takes a collection, with its sub-collections and requests, out of the tree into the bin.</summary>
@@ -152,6 +156,18 @@ public partial class TreeTrashViewModel(
     {
         Wire(node);
         Items.Insert(0, node);
+        while (Items.Count > Capacity)
+        {
+            var oldest = Items[^1];
+            Items.RemoveAt(Items.Count - 1);
+            Log.Information(
+                "集合回收站超过上限，自动永久删除最早的一项 {Kind} {Name} {DeletedAt}",
+                oldest.KindLabel,
+                oldest.Name,
+                oldest.DeletedAt
+            );
+        }
+
         NotifyItemsChanged();
     }
 

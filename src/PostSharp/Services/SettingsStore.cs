@@ -59,17 +59,6 @@ public sealed class SettingsStore
         return settings;
     }
 
-    public bool Save(AppSettings settings)
-    {
-        try
-        {
-            // False for a file protected after a failed read; the startup notice already says so.
-            return DataFile.WriteAllText(FilePath, JsonSerializer.Serialize(settings, JsonOptions));
-        }
-        catch (Exception exception)
-        {
-            Log.Error(exception, "保存设置文件失败 {SettingsFile}", FilePath);
-            return false;
-        }
-    }
+    public SaveResult Save(AppSettings settings) =>
+        DataFile.Save(FilePath, () => JsonSerializer.Serialize(settings, JsonOptions));
 }

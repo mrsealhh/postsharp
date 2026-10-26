@@ -27,19 +27,9 @@ public sealed class WorkspaceStore
             text => JsonSerializer.Deserialize<WorkspaceDto>(text, JsonOptions)
         );
 
-    public void Save(WorkspaceDto workspace)
-    {
-        try
-        {
-            // A file protected after a failed read is skipped; the startup notice already says so.
-            DataFile.WriteAllText(FilePath, JsonSerializer.Serialize(workspace, JsonOptions));
-        }
-        catch (Exception exception)
-        {
-            // A failed autosave must never break the request the person is sending.
-            Log.Error(exception, "保存工作区失败 {WorkspaceFile}", FilePath);
-        }
-    }
+    /// <summary>Never throws: a failed autosave must not break the request being sent.</summary>
+    public SaveResult Save(WorkspaceDto workspace) =>
+        DataFile.Save(FilePath, () => JsonSerializer.Serialize(workspace, JsonOptions));
 
     public static WorkspaceDto Capture(
         IEnumerable<RequestCollection> collections,

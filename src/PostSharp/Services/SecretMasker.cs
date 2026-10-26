@@ -157,7 +157,10 @@ public static partial class SecretMasker
 
     public static bool IsCredentialHeader(string name) => CredentialHeaders.Contains(name.Trim());
 
-    /// <summary>The forms a value takes in text (raw, URL-encoded, JSON-escaped, shell-quoted), longest first.</summary>
+    /// <summary>
+    /// The forms a value takes in text, longest first: raw, URL-encoded, JSON-escaped (relaxed and strict, as
+    /// System.Text.Json writes them, and with escaped slashes, as PHP does) and shell-quoted.
+    /// </summary>
     private static IReadOnlyList<string> Variants(IEnumerable<KeyValueRow> rows) =>
         rows.Where(row => !string.IsNullOrWhiteSpace(row.Key))
             .SelectMany(row =>
@@ -166,6 +169,11 @@ public static partial class SecretMasker
                     row.Value,
                     Uri.EscapeDataString(row.Value),
                     JsonEncodedText.Encode(row.Value, JsonText).ToString(),
+                    JsonEncodedText.Encode(row.Value).ToString(),
+                    JsonEncodedText
+                        .Encode(row.Value, JsonText)
+                        .ToString()
+                        .Replace("/", "\\/", StringComparison.Ordinal),
                     row.Value.Replace("'", "'\\''", StringComparison.Ordinal),
                 }
             )

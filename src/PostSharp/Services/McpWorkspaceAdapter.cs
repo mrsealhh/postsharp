@@ -217,7 +217,7 @@ public sealed class McpWorkspaceAdapter
 
     public async Task<bool> DeleteCollectionAsync(Guid id)
     {
-        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.DeleteCollection(id));
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.DeleteCollection(id, "MCP"));
     }
 
     public async Task<McpRequestInfo> MoveRequestAsync(Guid id, Guid collectionId, int? position)
@@ -411,6 +411,7 @@ public sealed class McpWorkspaceAdapter
             );
             result = await _http.SendAsync(
                 composed,
+                stored.Url,
                 cancellationToken,
                 snapshot.Request.TimeoutSeconds
             );
@@ -429,19 +430,22 @@ public sealed class McpWorkspaceAdapter
                 result,
                 "MCP",
                 context.Tool,
-                context.Client
+                context.Client,
+                secrets
             );
             return true;
         });
 
         // Secret values never go back to the AI client, even when a server echoes them.
+        // Credential headers such as Set-Cookie are masked by name, the same as in the audit.
         var headers = result
             .Headers.Select(header => new McpRowInfo(
                 header.Key,
-                SecretMasker.MaskSecrets(header.Value, secrets),
+                SecretMasker.MaskHeaderValue(header.Key, header.Value, secrets),
                 true
             ))
             .ToList();
+        var body = SecretMasker.MaskHead(result.Body, McpSendResult.BodyLimit, secrets);
 
         return new McpSendResult(
             id,
@@ -457,13 +461,14 @@ public sealed class McpWorkspaceAdapter
             result.SizeBytes,
             result.IsJson,
             result.MediaType,
-            SecretMasker.MaskHead(result.Body, McpSendResult.BodyLimit, secrets),
+            body,
             headers,
             result.IsSse,
             result.SseEventCount,
             SecretMasker.MaskSecrets(result.SseThinking, secrets),
             SecretMasker.MaskSecrets(result.SseContent, secrets),
-            result.Body.Length > McpSendResult.BodyLimit
+            // MaskHead returns more than the limit exactly when it had to cut.
+            body.Length > McpSendResult.BodyLimit
         );
     }
 

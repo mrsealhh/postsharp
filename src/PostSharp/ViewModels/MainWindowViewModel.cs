@@ -2084,7 +2084,13 @@ public partial class MainWindowViewModel : ObservableObject
             FontService.Reload(Settings.FontDirectories);
         }
 
-        _settingsStore.Save(Settings);
+        if (_settingsStore.Save(Settings) == SaveResult.Failed)
+        {
+            DataNotice.Warn(
+                "设置保存失败：无法写入 settings.json，修改只在本次运行中有效。请检查数据目录是否可写、settings.json 是否被其他程序占用。"
+            );
+        }
+
         AppearanceChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -2420,6 +2426,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         IsSending = true;
         _sendCts = new CancellationTokenSource();
+        var secrets = SecretMasker.CollectSecrets(Environments);
         ComposedRequest? stored = null;
 
         try
@@ -2428,8 +2435,15 @@ public partial class MainWindowViewModel : ObservableObject
             try
             {
                 var composed = RequestComposer.Compose(Editing, ActiveEnvironment);
-                stored = MaskForAudit(Editing, ActiveEnvironment, composed);
-                result = await _http.SendAsync(composed, _sendCts.Token, Editing.TimeoutSeconds);
+
+                // Masked before the await: the request and environment can be edited while it is on its way.
+                stored = SecretMasker.MaskComposed(Editing, ActiveEnvironment, composed, secrets);
+                result = await _http.SendAsync(
+                    composed,
+                    stored.Url,
+                    _sendCts.Token,
+                    Editing.TimeoutSeconds
+                );
             }
             catch (Exception exception)
             {
@@ -2444,7 +2458,7 @@ public partial class MainWindowViewModel : ObservableObject
                 AddHistory(Editing, result);
             }
 
-            RecordAudit(Editing, stored, result, "UI", null, null);
+            RecordAudit(Editing, stored, result, "UI", null, null, secrets);
             Persist();
         }
         finally
@@ -2705,8 +2719,10 @@ public partial class MainWindowViewModel : ObservableObject
         return collection;
     }
 
-    /// <summary>Moves a collection and everything under it to the recycle bin (the MCP delete).</summary>
-    public bool DeleteCollection(Guid id)
+    /// <summary>
+    /// Moves a collection and everything under it to the recycle bin. Returns false when it does not exist.
+    /// </summary>
+    public bool DeleteCollection(Guid id, string source)
     {
         var collection = Collections.FirstOrDefault(candidate => candidate.Id == id);
         if (collection is null)
@@ -2718,7 +2734,7 @@ public partial class MainWindowViewModel : ObservableObject
             Editing.Owner is not null && IsSelfOrDescendant(Editing.Owner, collection);
         var selectedRemoved =
             SelectedCollection is not null && IsSelfOrDescendant(SelectedCollection, collection);
-        TreeTrash.TrashCollection(collection, "MCP");
+        TreeTrash.TrashCollection(collection, source);
 
         if (editingRemoved)
         {
@@ -2738,7 +2754,7 @@ public partial class MainWindowViewModel : ObservableObject
         return true;
     }
 
-    /// <summary>Moves a request to the recycle bin (the MCP delete). Returns false when it does not exist.</summary>
+    /// <summary>Moves a request to the recycle bin. Returns false when it is not in the tree.</summary>
     public bool DeleteRequest(Guid requestId, string source)
     {
         var request = Collections
@@ -2751,7 +2767,11 @@ public partial class MainWindowViewModel : ObservableObject
 
         var wasOpen =
             ReferenceEquals(Editing, request) || ReferenceEquals(SelectedRequest, request);
-        TreeTrash.TrashRequest(request, source);
+        if (!TreeTrash.TrashRequest(request, source))
+        {
+            return false;
+        }
+
         if (wasOpen)
         {
             SelectFirstRequestOrBlank();
@@ -3337,45 +3357,16 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void ConfirmDelete()
     {
-        if (_pendingDelete is RequestItem request)
+        var deleted = _pendingDelete switch
         {
-            var wasOpen =
-                ReferenceEquals(SelectedRequest, request) || ReferenceEquals(Editing, request);
-            TreeTrash.TrashRequest(request, "UI");
-            if (wasOpen)
-            {
-                SelectFirstRequestOrBlank();
-            }
-        }
-        else if (_pendingDelete is RequestCollection collection)
-        {
-            var editingRemoved =
-                Editing.Owner is not null && IsSelfOrDescendant(Editing.Owner, collection);
-            var selectedRemoved =
-                SelectedCollection is not null
-                && IsSelfOrDescendant(SelectedCollection, collection);
-
-            TreeTrash.TrashCollection(collection, "UI");
-
-            if (editingRemoved)
-            {
-                SelectedCollection = null;
-                SelectedRequest = null;
-                SelectFirstRequestOrBlank();
-            }
-            else if (selectedRemoved)
-            {
-                SelectedCollection = Editing.Owner;
-                SelectedRequest = Editing.Owner is null ? null : Editing;
-            }
-        }
+            RequestItem request => DeleteRequest(request.Id, "UI"),
+            RequestCollection collection => DeleteCollection(collection.Id, "UI"),
+            _ => false,
+        };
 
         _pendingDelete = null;
         IsDeleteDialogOpen = false;
-        NotifySelectionChanged();
-        Persist();
-        NotifyTreeChanged();
-        ShowToast("已移入集合回收站");
+        ShowToast(deleted ? "已移入集合回收站" : "没有找到要删除的集合或请求，它可能已被删除");
     }
 
     [RelayCommand]
@@ -3762,11 +3753,12 @@ public partial class MainWindowViewModel : ObservableObject
         HttpResult result,
         string source,
         string? tool,
-        string? client
+        string? client,
+        IReadOnlyList<string> secrets
     )
     {
         AddHistory(request, result);
-        RecordAudit(request, stored, result, source, tool, client);
+        RecordAudit(request, stored, result, source, tool, client, secrets);
         Persist();
     }
 
@@ -3793,24 +3785,8 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The sent request as the audit may keep it. Built before the send, because the request and the environment
-    /// can be edited while the response is on its way.
-    /// </summary>
-    private ComposedRequest MaskForAudit(
-        RequestItem request,
-        EnvironmentModel? environment,
-        ComposedRequest composed
-    ) =>
-        SecretMasker.MaskComposed(
-            request,
-            environment,
-            composed,
-            SecretMasker.CollectSecrets(Environments)
-        );
-
-    /// <summary>
-    /// Stores a record of a send and returns it. <paramref name="stored"/> is the sent request already masked by
-    /// <see cref="MaskForAudit"/>, or null when nothing was sent.
+    /// Stores a record of a send and returns it. <paramref name="stored"/> is the sent request already masked with
+    /// <see cref="SecretMasker.MaskComposed"/> before the send, or null when nothing was sent.
     /// </summary>
     private AuditEntry RecordAudit(
         RequestItem request,
@@ -3818,11 +3794,11 @@ public partial class MainWindowViewModel : ObservableObject
         HttpResult result,
         string source,
         string? tool,
-        string? client
+        string? client,
+        IReadOnlyList<string> secrets
     )
     {
         // The audit file and MCP readers must never see credentials, so everything stored is masked first.
-        var secrets = SecretMasker.CollectSecrets(Environments);
         var requestHeaders = stored is not null
             ? string.Join(
                 "\n",
@@ -4049,7 +4025,15 @@ public partial class MainWindowViewModel : ObservableObject
     private bool PersistAudit()
     {
         var saved = _auditStore.Save(Audit);
-        return _auditStore.SaveTrash(AuditTrash) && saved;
+        var trashSaved = _auditStore.SaveTrash(AuditTrash);
+        if (saved == SaveResult.Failed || trashSaved == SaveResult.Failed)
+        {
+            DataNotice.Warn(
+                "审计记录保存失败：无法写入 audit.json，新的审计记录暂时只在界面中。请检查数据目录是否可写；下次发送请求时会自动重试。"
+            );
+        }
+
+        return saved == SaveResult.Saved && trashSaved == SaveResult.Saved;
     }
 
     /// <summary>Masks stored audit records again when a variable may have become secret.</summary>
@@ -4510,7 +4494,7 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 var failure = HttpRequestService.Failure(mappingError);
                 AddHistory(effectiveRequest, failure);
-                RecordAudit(effectiveRequest, null, failure, source, tool, client);
+                RecordAudit(effectiveRequest, null, failure, source, tool, client, secrets);
                 stepResults[step.Id] = failure;
                 steps.Add(
                     new TestStepResult
@@ -4540,9 +4524,15 @@ public partial class MainWindowViewModel : ObservableObject
             try
             {
                 var composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment);
-                stored = MaskForAudit(effectiveRequest, ActiveEnvironment, composed);
+                stored = SecretMasker.MaskComposed(
+                    effectiveRequest,
+                    ActiveEnvironment,
+                    composed,
+                    secrets
+                );
                 result = await _http.SendAsync(
                     composed,
+                    stored.Url,
                     cancellationToken,
                     effectiveRequest.TimeoutSeconds
                 );
@@ -4562,7 +4552,7 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 // A step cut short by the cancel is not a failed assertion: keep it in the audit like a cancelled
                 // UI send, but leave it out of the step results and the pass/fail counts.
-                RecordAudit(effectiveRequest, stored, result, source, tool, client);
+                RecordAudit(effectiveRequest, stored, result, source, tool, client, secrets);
                 stopped = true;
                 cancelled = true;
                 break;
@@ -4570,17 +4560,29 @@ public partial class MainWindowViewModel : ObservableObject
 
             stepResults[step.Id] = result;
             AddHistory(effectiveRequest, result);
-            var audited = RecordAudit(effectiveRequest, stored, result, source, tool, client);
+            var audited = RecordAudit(
+                effectiveRequest,
+                stored,
+                result,
+                source,
+                tool,
+                client,
+                secrets
+            );
 
             var statusMatches = step.ExpectedStatus is null
                 ? result.StatusCode is >= 200 and < 400
                 : result.StatusCode == step.ExpectedStatus;
-            // Checked on the masked body, so an assertion cannot be used to guess a secret one piece at a time.
+            // Checked on the masked body, so an assertion cannot be used to guess a secret one piece at a time;
+            // the body is masked only when the raw text matches at all.
             var bodyMatches =
                 string.IsNullOrWhiteSpace(step.BodyContains)
-                || SecretMasker
-                    .MaskSecrets(result.Body, secrets)
-                    .Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
+                || (
+                    result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase)
+                    && SecretMasker
+                        .MaskSecrets(result.Body, secrets)
+                        .Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase)
+                );
             var passed = result.HasResponse && statusMatches && bodyMatches;
             var error = result.Error;
             if (passed is false && error is null)
@@ -5616,7 +5618,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        _store.Save(
+        var saved = _store.Save(
             WorkspaceStore.Capture(
                 Collections,
                 Environments,
@@ -5627,6 +5629,12 @@ public partial class MainWindowViewModel : ObservableObject
                 ActiveEnvironment?.Id
             )
         );
+        if (saved == SaveResult.Failed)
+        {
+            DataNotice.Warn(
+                "工作区保存失败：无法写入 workspace.json，最近的修改还没有保存到磁盘。请检查数据目录是否可写、workspace.json 或其备份是否被其他程序打开；下次保存时会自动重试。"
+            );
+        }
     }
 
     private void LoadWorkspace(WorkspaceDto workspace)

@@ -12,7 +12,7 @@
         <arc:Dialog
             IsOpen="{Binding IsOpen, Mode=TwoWay}"
             Title="集合回收站"
-            Description="删除的集合和请求会先进入这里，包括 AI 通过 MCP 删除的；恢复后回到原位置，永久删除后无法恢复。"
+            Description="删除的集合和请求会先进入这里，包括 AI 通过 MCP 删除的；恢复后回到原位置，永久删除后无法恢复。最多保留最近 200 项，更早的会自动永久删除。"
             Size="Large"
         >
             <Grid MinHeight="260">

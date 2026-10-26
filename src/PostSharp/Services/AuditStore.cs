@@ -32,10 +32,12 @@ public sealed class AuditStore
 
     public DataFileLoad<List<AuditEntry>> LoadTrash() => LoadFile(TrashFilePath);
 
-    /// <summary>Returns false when the file could not be written (or is protected after a failed read).</summary>
-    public bool Save(IEnumerable<AuditEntry> entries) => SaveFile(FilePath, entries);
+    /// <summary>Never throws: auditing must not break a request.</summary>
+    public SaveResult Save(IEnumerable<AuditEntry> entries) =>
+        DataFile.Save(FilePath, () => JsonSerializer.Serialize(entries, JsonOptions));
 
-    public bool SaveTrash(IEnumerable<AuditEntry> entries) => SaveFile(TrashFilePath, entries);
+    public SaveResult SaveTrash(IEnumerable<AuditEntry> entries) =>
+        DataFile.Save(TrashFilePath, () => JsonSerializer.Serialize(entries, JsonOptions));
 
     /// <summary>
     /// Drops the previous versions, so scrubbed secrets do not survive in the backups. Returns the backups that
@@ -54,19 +56,4 @@ public sealed class AuditStore
             path,
             text => JsonSerializer.Deserialize<List<AuditEntry>>(text, JsonOptions)
         );
-
-    private static bool SaveFile(string path, IEnumerable<AuditEntry> entries)
-    {
-        try
-        {
-            // False for a file protected after a failed read; the startup notice already says so.
-            return DataFile.WriteAllText(path, JsonSerializer.Serialize(entries, JsonOptions));
-        }
-        catch (Exception exception)
-        {
-            // Auditing must never break a request, but the failure stays visible in the log.
-            Log.Error(exception, "保存审计文件失败 {AuditFile}", path);
-            return false;
-        }
-    }
 }

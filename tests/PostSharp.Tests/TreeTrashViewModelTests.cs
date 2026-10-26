@@ -71,6 +71,26 @@ public sealed class TreeTrashViewModelTests
         Assert.Contains("已不存在", _toasts[^1]);
     }
 
+    [Fact]
+    public void KeepsOnlyTheNewestItemsUpToCapacity()
+    {
+        for (var index = 0; index <= TreeTrashViewModel.Capacity; index++)
+        {
+            _trash.TrashRequest(AddRequest(_second, $"请求 {index}"), "MCP");
+        }
+
+        Assert.Equal(TreeTrashViewModel.Capacity, _trash.Items.Count);
+        Assert.Equal($"请求 {TreeTrashViewModel.Capacity}", _trash.Items[0].Name);
+        Assert.DoesNotContain(_trash.Items, node => node.Name == "请求 0");
+    }
+
+    [Fact]
+    public void RefusesARequestThatIsInNoCollection()
+    {
+        Assert.False(_trash.TrashRequest(new RequestItem { Name = "孤立" }, "UI"));
+        Assert.Empty(_trash.Items);
+    }
+
     private static RequestItem AddRequest(RequestCollection collection, string name)
     {
         var request = new RequestItem { Name = name, Owner = collection };
