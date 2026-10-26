@@ -66,7 +66,7 @@ PostSharp 的定位是：
 - **springdoc / Knife4j**：OpenAPI 来源可一键补全 `/v3/api-docs` 地址。
 - **来源选择**：导入对话框直接展示 OpenAPI、Postman、Environment、cURL、HAR、Insomnia、Hoppscotch、其他工具、Apifox 等小分类卡片，可收起。
 - **批量导入**：一次选择多个文件，自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL；逐文件显示成功或失败结果，单个失败不会中断其他文件。
-- **导入反馈**：导入完成后显示请求数、分组数、环境数和逐文件结果；结果与兼容性提示可展开/收起，全部成功时使用 Toast。
+- **导入反馈**：导入完成后弹出成功对话框，显示请求数、分组数、环境数和失败数；逐文件结果与兼容性提示仍保留在导入窗口，可展开/收起。
 - **响应**：
   - 状态、耗时、大小、内容类型、响应头。
   - JSON 使用 Arc JsonViewer（搜索、展开、复制值/路径）。
@@ -603,7 +603,7 @@ docs/
 | OpenAPI 外部引用 | 相对文档 URL 引用、下载失败降级、20 个/2 MB/10 秒限制通过 |
 | 导入来源卡片 | OpenAPI、Postman Collection、Postman Environment、cURL、HAR、Insomnia、Hoppscotch、YApi/ApiPost/Eolink、Apifox 九张卡片同屏展示，选中态清晰 |
 | 批量导入 | 文件选择器允许多选；自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL，逐文件成功/失败互不影响 |
-| 导入反馈 | 单文件成功 Toast；批量或有提示时显示「导入结果」绿色结果区和「兼容性提示」橙色提示区，含请求/分组/环境数量，默认折叠可展开 |
+| 导入反馈 | 导入完成后弹出成功对话框，显示文件/请求/分组/环境统计和失败数；批量结果与兼容性提示保留在导入窗口可展开 |
 | 粘贴区 | 长 JSON 在固定高度内自适应滚动；底部边框完整，不再被外层裁切 |
 | 请求体 JSON 视图 | JSON 请求体可切换 JsonViewer；搜索、展开、复制路径/值可用；长 JSON 在固定高度内滚动 |
 | 响应 JSON 底部 | 响应区 JsonViewer 高度按 Tab 实际高度收敛，最后一行和底部边界在窗口内可见 |
@@ -706,7 +706,7 @@ master                 稳定可发布
 - Postman Collection、cURL、PowerShell 导出。
 - 导入来源小分类卡片：可收起，避免大分类隐藏入口。
 - 批量导入：多选文件、自动识别格式、逐文件成功/失败结果。
-- 导入反馈：请求/分组/环境统计；结果和兼容性提示默认折叠，可展开。
+- 导入反馈：成功弹出统计对话框；逐文件结果和兼容性提示默认折叠，可展开。
 - OpenAPI：`x-apifox-folder` 分组、securitySchemes 占位头、多服务器选择、外部 `$ref` 自动下载。
 - SSE：接收中 150ms 增量刷新，取消保留已接收内容，支持 `Last-Event-ID` 继续。
 - 套件：JSONPath / 响应头断言、失败重试、上下步条件、并行组、定时运行。

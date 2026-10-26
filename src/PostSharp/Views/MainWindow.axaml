@@ -3964,6 +3964,37 @@
                 </arc:Dialog>
 
                 <arc:Dialog
+                    x:Name="ImportSuccessDialog"
+                    IsOpen="{Binding Import.IsImportSuccessOpen, Mode=TwoWay}"
+                    Title="{Binding Import.ImportSuccessTitle}"
+                    Description="导入已完成，请求已写入当前工作区。"
+                    Size="Small"
+                >
+                    <StackPanel Spacing="10">
+                        <TextBlock
+                            Text="{Binding Import.ImportSuccessSummary}"
+                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                            TextWrapping="Wrap"
+                        />
+                        <TextBlock
+                            Text="{Binding Import.ImportSuccessDetail}"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                            TextWrapping="Wrap"
+                        />
+                    </StackPanel>
+                    <arc:Dialog.Actions>
+                        <arc:Button
+                            Content="知道了"
+                            Variant="Primary"
+                            HorizontalAlignment="Right"
+                            Command="{Binding Import.CloseImportSuccessCommand}"
+                            AutomationProperties.Name="关闭导入成功提示"
+                        />
+                    </arc:Dialog.Actions>
+                </arc:Dialog>
+
+                <arc:Dialog
                     x:Name="EnvironmentDialog"
                     IsOpen="{Binding IsEnvironmentDialogOpen, Mode=TwoWay}"
                     Title="环境变量"

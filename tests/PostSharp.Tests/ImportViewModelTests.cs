@@ -93,6 +93,7 @@ public sealed class ImportViewModelTests
         Assert.Equal("https://example.com/api/orders", host.CurlResult.Request.Url);
         Assert.False(viewModel.HasImportError);
         Assert.False(viewModel.IsImportDialogOpen);
+        Assert.True(viewModel.IsImportSuccessOpen);
         Assert.Contains(
             viewModel.ImportReport,
             line => line.Contains("cURL", StringComparison.Ordinal)

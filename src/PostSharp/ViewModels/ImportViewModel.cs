@@ -78,7 +78,6 @@ public partial class ImportViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ImportSourceToggleLabel))]
     private bool _isImportSourceExpanded = true;
-
     public string ImportSourceToggleLabel => IsImportSourceExpanded ? "收起来源" : "展开来源";
 
     [ObservableProperty]
@@ -110,6 +109,18 @@ public partial class ImportViewModel : ObservableObject
     public bool IsOtherToolsImport => ImportSource == "OtherTools";
 
     public bool IsApifoxImport => ImportSource == "Apifox";
+
+    [ObservableProperty]
+    private bool _isImportSuccessOpen;
+
+    [ObservableProperty]
+    private string _importSuccessTitle = "导入成功";
+
+    [ObservableProperty]
+    private string _importSuccessSummary = string.Empty;
+
+    [ObservableProperty]
+    private string _importSuccessDetail = string.Empty;
 
     public ObservableCollection<OpenApiImportServer> OpenApiServers { get; } = new();
 
@@ -222,6 +233,17 @@ public partial class ImportViewModel : ObservableObject
         }
 
         IsImportDialogOpen = false;
+    }
+
+    [RelayCommand]
+    private void CloseImportSuccess() => IsImportSuccessOpen = false;
+
+    private void ShowImportSuccess(string title, string summary, string? detail = null)
+    {
+        ImportSuccessTitle = title;
+        ImportSuccessSummary = summary;
+        ImportSuccessDetail = detail ?? string.Empty;
+        IsImportSuccessOpen = true;
     }
 
     [RelayCommand]
@@ -787,6 +809,13 @@ public partial class ImportViewModel : ObservableObject
                         ? $"批量导入完成：{succeeded} 个成功，{failed} 个失败"
                         : $"批量导入完成：{succeeded} 个文件，{requests} 个请求"
                 );
+                ShowImportSuccess(
+                    failed > 0 ? "批量导入完成" : "批量导入成功",
+                    $"成功 {succeeded} 个文件，{requests} 个请求，{folders} 个分组，{environments} 个环境。",
+                    failed > 0
+                        ? $"{failed} 个文件失败，逐文件结果保留在导入窗口中。"
+                        : "逐文件结果保留在导入窗口中，可展开查看。"
+                );
             }
 
             Log.Information(
@@ -977,6 +1006,14 @@ public partial class ImportViewModel : ObservableObject
         );
         _host.CompleteImport();
 
+        ShowImportSuccess(
+            "导入成功",
+            $"已导入 OpenAPI「{outcome.RootName}」：{outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组。",
+            document.Warnings.Count > 0
+                ? $"{document.Warnings.Count} 条兼容性提示已保留在导入窗口中。"
+                : null
+        );
+
         if (document.Warnings.Count == 0)
         {
             IsImportDialogOpen = false;
@@ -1029,6 +1066,19 @@ public partial class ImportViewModel : ObservableObject
             $"导入完成：{outcome.RootName}，{outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组{environmentText}{warningText}。";
         HasImportError = false;
 
+        ShowImportSuccess(
+            "导入成功",
+            $"已导入 {result.Format}「{outcome.RootName}」：{outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组。"
+                + (
+                    outcome.EnvironmentName is null
+                        ? string.Empty
+                        : $" 已激活环境「{outcome.EnvironmentName}」。"
+                ),
+            result.Warnings.Count > 0
+                ? $"{result.Warnings.Count} 条兼容性提示已保留在导入窗口中。"
+                : null
+        );
+
         if (result.Warnings.Count == 0)
         {
             IsImportDialogOpen = false;
@@ -1059,6 +1109,13 @@ public partial class ImportViewModel : ObservableObject
         ImportStatus =
             $"环境导入完成：{environmentName}，{result.Environment.Variables.Count} 个变量。";
         HasImportError = false;
+        ShowImportSuccess(
+            "导入成功",
+            $"已导入环境「{environmentName}」，{result.Environment.Variables.Count} 个变量。",
+            result.Warnings.Count > 0
+                ? $"{result.Warnings.Count} 条兼容性提示已保留在导入窗口中。"
+                : null
+        );
         if (result.Warnings.Count == 0)
         {
             IsImportDialogOpen = false;
@@ -1088,6 +1145,11 @@ public partial class ImportViewModel : ObservableObject
         AddImportReport($"已导入 cURL「{request.Name}」：{request.Method} {request.Url}");
         IsImportDialogOpen = false;
         HasImportError = false;
+        ShowImportSuccess(
+            "导入成功",
+            $"已导入 cURL「{request.Name}」：{request.Method} {request.Url}",
+            result.Warnings.Count > 0 ? $"{result.Warnings.Count} 条提示已写入日志。" : null
+        );
         var warningText =
             result.Warnings.Count > 0
                 ? $"；{result.Warnings.Count} 条提示已写入日志"
