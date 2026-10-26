@@ -263,7 +263,8 @@ public sealed class McpServer
                                 + "审计与集合回收站：clear_audit / list_audit_trash / restore_audit / purge_audit / empty_audit_trash；"
                                 + "list_collection_trash / restore_collection_trash / purge_collection_trash / empty_collection_trash。"
                                 + "系统配置和存储：get_settings / update_settings；get_storage_config / upsert_storage_profile / delete_storage_profile / set_storage_binding / test_storage_profile / sync_storage / switch_storage。"
-                                + "导入导出：import_content 支持 Postman/OpenAPI/HAR/Insomnia/Hoppscotch/cURL/PowerShell，export_workspace 导出 Postman Collection。",
+                                + "导入导出：import_content 支持 Postman/OpenAPI/HAR/Insomnia/Hoppscotch/cURL/PowerShell，export_workspace 导出 Postman Collection。"
+                                + "更新：get_settings/update_settings 可读取或设置 autoCheckUpdates，check_updates 立即检查 GitHub Releases（仅已发布安装包可下载）。",
                         }
                     );
 
@@ -401,9 +402,13 @@ public sealed class McpServer
                             OptionalString(arguments, "logDirectory"),
                             OptionalString(arguments, "logLevel"),
                             OptionalString(arguments, "sseThinkingPath"),
-                            OptionalString(arguments, "sseContentPath")
+                            OptionalString(arguments, "sseContentPath"),
+                            OptionalBool(arguments, "autoCheckUpdates")
                         )
                     )
+                    .ConfigureAwait(false),
+                "check_updates" => await _workspace
+                    .CheckForUpdatesAsync(cancellationToken)
                     .ConfigureAwait(false),
                 "get_storage_config" => await _workspace
                     .GetStorageConfigAsync()
@@ -1231,8 +1236,16 @@ public sealed class McpServer
                         ),
                         ["sseThinkingPath"] = StringSchema("SSE 思考节点路径"),
                         ["sseContentPath"] = StringSchema("SSE 内容节点路径"),
+                        ["autoCheckUpdates"] = BooleanSchema(
+                            "是否每 6 小时后台检查 GitHub Releases"
+                        ),
                     }
                 )
+            ),
+            Tool(
+                "check_updates",
+                "立即检查 GitHub Releases；已发布安装包会下载并校验新版本，下载后由用户在顶栏确认安装",
+                ObjectSchema(new JsonObject())
             ),
             Tool(
                 "get_storage_config",

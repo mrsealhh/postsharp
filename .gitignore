@@ -13,3 +13,6 @@ workspace.json
 
 # Project-local PostSharp data (SQLite, backups, imported fonts)
 .postsharp/
+
+# Release packages
+artifacts/

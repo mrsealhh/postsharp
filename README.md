@@ -80,6 +80,7 @@ PostSharp 的定位是：
 - **数据文件保护**：工作区、审计、设置均先写临时文件再替换，并保留上一版 `.bak`；文件损坏时原文件移到旁边保留、自动改用备份，顶部提示条说明发生了什么和原文件位置。
 - **历史记录管理**：单条删除与清空都会先弹出确认，删除项进入回收站；回收站支持恢复、永久删除，永久删除前再次确认。
 - **OpenAPI 导入**：从本地 JSON / YAML 文件或 URL 读取 OpenAPI 3.x / Swagger 2.0；按 `x-apifox-folder` 或第一个 tag 创建分组，支持安全方案占位头、多服务器选择、外部 `$ref` 自动下载（限 20 个、每个 2 MB、10 秒超时），并带出服务器地址、查询参数和请求体示例。
+- **自动更新**：已发布安装包启动后每 6 小时在后台检查 GitHub Releases；发现新版本时下载固定命名包并校验 SHA256。下载完成后只显示「可安装」，由你点击顶栏「安装更新」主动决定何时替换程序并重启，失败时保留旧版本。顶栏和设置窗口都可主动检查更新；设置窗口显示当前版本和更新状态，可关闭自动检查。
 
 ### 授权（OIDC / OAuth 2.0）
 
@@ -299,6 +300,7 @@ http://127.0.0.1:5199/mcp
 | `list_collection_trash` / `restore_collection_trash` / `purge_collection_trash` / `empty_collection_trash` | 集合/请求回收站查询、恢复、永久删除、清空 |
 | `duplicate_request` | 复制请求到同一集合的下一位置 |
 | `get_settings` / `update_settings` | 读取或修改系统配置 |
+| `check_updates` | 立即检查 GitHub Releases，已发布安装包会下载并校验新版 |
 | `get_storage_config` / `upsert_storage_profile` / `delete_storage_profile` / `set_storage_binding` | 查看/新增/删除远程存储配置，绑定三个数据分类 |
 | `test_storage_profile` / `sync_storage` / `switch_storage` | 测试连接、单向同步、备份后切换存储 |
 | `import_content` / `export_workspace` | 导入 Postman/OpenAPI/HAR/Insomnia/Hoppscotch/cURL/PowerShell，导出 Postman Collection |
@@ -504,7 +506,7 @@ Windows 默认: <项目目录>\.postsharp\
 - 删除整个目录即可恢复首次运行的示例。
 - 系统配置、集合与接口记录、套件自动化分别保存为 SQLite 文档 `settings` / `workspace` / `suites`；审计和审计回收站保存在同一数据库的 `AuditEntries` 表。旧版 JSON 会在首次启动导入，原文件保留作兼容副本。
 - SQLite 使用 WAL、事务和参数化 SQL；保存失败会在顶部提示条显示原因，下次保存自动重试。
-- 设置窗口「存储」可为三个分类分别绑定本地 SQLite 或远程 PostgreSQL / MySQL / SQL Server；本地 SQLite 同时作为离线缓存。切换或同步会先备份本地数据库，切换后重启 PostSharp 使用新存储。
+- 设置窗口「存储」可为三个分类分别绑定本地 SQLite 或远程 PostgreSQL / MySQL / SQL Server；本地 SQLite 同时作为离线缓存。切换或同步会先备份本地数据库，切换后重启 PostSharp 使用新存储。远程读取失败时自动回写会暂停，避免新机器上的默认数据覆盖远程库；恢复连接后在设置中执行同步或切换。
 - 机密变量的值仍以明文保存在本机 SQLite 工作区文档中（发送请求需要原值），打码只作用于审计、MCP 返回与套件结果；授权配置跟着请求/集合走，令牌用 DPAPI 以当前用户为范围加密后写入工作区，换机器或换用户后需要重新登录。
 - 日志为 UTF-8 文本，默认保留最近 30 个文件；修改设置中的日志目录或日志级别后立即生效，旧日志不会自动迁移。
 - 字体文件只在本机读取；导入时复制到应用字体库，移除字体目录不会删除已导入的文件。
@@ -725,14 +727,15 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：122 个测试全部通过（含数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置与内存截断） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：130 个测试全部通过（含数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断与更新版本解析） |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
 | 内存诊断 | `dotnet-gcdump` 显示 live heap 约 55 MB；剩余主要是 Avalonia/Skia/ANGLE 原生内存；`dotnet-counters` 的 LOH 在大响应后会延迟回收，故默认软件渲染并限制审计文本 |
 | 存储配置 | 设置窗口「存储」显示本地 SQLite 路径、数据库类型、连接串、三个分类绑定、测试连接、同步和切换按钮；新增远程库后字段可编辑 |
 | 项目数据目录 | 首次启动把旧 `%APPDATA%\PostSharp` 的 settings/workspace/audit/postsharp.db 复制到项目 `.postsharp`，本地文档表看到 settings/workspace/suites 三类 |
-| MCP 语义工具 | `tools/list` 返回 56 个工具；实测 `get_settings`、`update_settings`、`get_storage_config`、`test_storage_profile`、`switch_storage`、集合授权、环境 CRUD、导出工作区均返回结果 |
+| MCP 语义工具 | `tools/list` 返回 57 个工具；实测 `get_settings`、`update_settings`、`check_updates`、`get_storage_config`、`test_storage_profile`、`switch_storage`、集合授权、环境 CRUD、导出工作区均返回结果 |
 | 远程存储错误 | 用不可达 PostgreSQL 配置测试连接，返回 `success=false` 和连接失败原因，未阻塞本地 SQLite |
+| 自动更新入口 | 顶栏「更新」按钮和设置窗口「检查更新」均可主动触发；下载完成后按钮变为「安装」，由用户点击后才应用；版本标签解析、包名/校验文件和开发目录禁用逻辑通过单测 |
 | 发送 loading | 慢响应发送中切换到创建订单，发送按钮不显示其他请求的 loading；两个请求均完成并写入历史 |
 | 审计 SQLite | 旧 `audit.json` 55 条启动导入 `postsharp.db`，新请求写入数据库；`audit.json` 时间戳不再变化；SQLite 读写单测通过 |
 | 审核修复 | 套件映射后的机密不再写入历史；授权查询令牌与 API Key 请求头不进入审计、MCP 返回或日志；授权刷新超时显示错误而不崩溃（单测/构建） |
@@ -846,7 +849,24 @@ master                 稳定可发布
 **深色标题栏？**  
 自绘标题栏使用当前主题的顶栏颜色；Windows DWM 适配仅影响原生窗口边框/阴影。
 
-## 已知限制与路线图
+## 发布与自动更新
+
+自动更新只对带有 `.postsharp-update-enabled` 标记的发布包启用，避免开发目录覆盖自身。
+
+发布新版本：
+
+```powershell
+.\scripts\build-release.ps1 -Version 0.3.0
+```
+
+脚本会生成：
+
+- `artifacts/PostSharp-win-x64.zip`：应用目录内容，根目录包含 `PostSharp.exe`。
+- `artifacts/PostSharp-win-x64.zip.sha256`：SHA256 校验文件。
+
+在 GitHub 创建 tag `v0.3.0` 和 Release，上传上面两个文件。应用启动后每 6 小时检查 `releases/latest`，下载并校验包；下载完成后仅提示「可安装」，由用户点击顶栏「安装更新」确认后再由独立 PowerShell 更新器替换应用目录并重启，失败时恢复备份。更新前会把原应用目录复制到 LocalAppData 的更新区；如果项目数据目录位于应用目录内，会同步复制回新目录，避免更新丢失 SQLite 数据。设置窗口显示当前版本和更新状态，也可手动检查或关闭自动检查。
+
+### 已知限制与路线图
 
 ### 已完成（导入升级）
 
@@ -861,7 +881,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：122 个 xUnit 测试。
+- 自测：130 个 xUnit 测试。
 
 ### 当前 MVP 限制
 

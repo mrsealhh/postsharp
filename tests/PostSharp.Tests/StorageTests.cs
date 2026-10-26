@@ -79,4 +79,27 @@ public sealed class StorageTests
             Assert.Equal(StorageConfig.LocalProfileId, config.Bindings[category]);
         }
     }
+
+    [Fact]
+    public void BlockedRemoteCategorySurvivesCloneAndLocalBindingClearsIt()
+    {
+        var config = StorageConfig.CreateDefault();
+        var remote = new StorageProfile
+        {
+            Id = "remote",
+            Name = "远程",
+            Provider = StorageProviders.PostgreSql,
+            ConnectionString = "Host=127.0.0.1;Database=postsharp",
+        };
+        config.Profiles.Add(remote);
+        config.SetBinding(StorageCategories.Workspace, remote.Id);
+        config.SetRemoteBlocked(StorageCategories.Workspace, true);
+
+        var clone = config.Clone();
+        Assert.True(clone.IsRemoteBlocked(StorageCategories.Workspace));
+
+        clone.SetBinding(StorageCategories.Workspace, StorageConfig.LocalProfileId);
+        clone.Normalize();
+        Assert.False(clone.IsRemoteBlocked(StorageCategories.Workspace));
+    }
 }

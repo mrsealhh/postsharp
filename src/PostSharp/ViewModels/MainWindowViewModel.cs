@@ -65,6 +65,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _auditPurgeAllPending;
     private readonly Dictionary<Guid, CancellationTokenSource> _sendCancellations = new();
     private CancellationTokenSource? _suiteCts;
+    private CancellationTokenSource? _updateCts;
     private ComposedRequest? _lastComposedRequest;
     private SseResumeSnapshot? _sseResume;
     private readonly DispatcherTimer _suiteScheduleTimer = new()
@@ -124,6 +125,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         var suiteLoad = _suiteStore.Load();
         DataNotice.Report(suiteLoad, "套件文档 ", "套件列表从空白开始");
+        if (StorageCoordinator.Current.Config.BlockedRemoteCategories.Count > 0)
+        {
+            DataNotice.Warn(
+                "远程存储暂时不可用，已暂停相关分类的自动回写；本地数据仍会保存。请在设置中测试连接后执行同步或切换。"
+            );
+        }
         if (suiteLoad.Value is { } storedSuites)
         {
             Suites.Clear();
@@ -220,6 +227,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         UpdateSelectionFlags();
         _suiteScheduleTimer.Tick += OnSuiteScheduleTick;
         _suiteScheduleTimer.Start();
+
+        HasPendingUpdate = UpdateService.PendingVersion is not null;
+        _updateCts = new CancellationTokenSource();
+        _ = RunUpdateLoopAsync(_updateCts.Token);
 
         Persist();
     }
@@ -521,6 +532,22 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [ObservableProperty]
     private bool _isWorkspaceSideBySide;
+
+    [ObservableProperty]
+    private bool _isCheckingUpdates;
+
+    [ObservableProperty]
+    private bool _hasPendingUpdate;
+
+    public string UpdateButtonText =>
+        HasPendingUpdate ? "安装"
+        : IsCheckingUpdates ? "检查中"
+        : "更新";
+
+    public string UpdateButtonTooltip =>
+        HasPendingUpdate ? $"安装已下载的 {UpdateService.PendingVersion ?? "新版本"}"
+        : IsCheckingUpdates ? "正在检查更新…"
+        : "检查更新";
 
     public string WorkspaceLayoutMode
     {
@@ -1542,7 +1569,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         + "list_history、clear_history、list_history_trash、restore_history、purge_history、empty_history_trash；"
         + "审计/回收站：list_audit、get_audit、clear_audit、list_audit_trash、restore_audit、purge_audit、empty_audit_trash、"
         + "list_collection_trash、restore_collection_trash、purge_collection_trash、empty_collection_trash；"
-        + "设置/存储：get_settings、update_settings、get_storage_config、upsert_storage_profile、delete_storage_profile、set_storage_binding、test_storage_profile、sync_storage、switch_storage；"
+        + "设置/存储：get_settings、update_settings、check_updates、get_storage_config、upsert_storage_profile、delete_storage_profile、set_storage_binding、test_storage_profile、sync_storage、switch_storage；"
         + "导入导出：import_content、export_workspace、send_request、run_sequence、get_curl。";
 
     public string EditorHint =>
@@ -1618,6 +1645,79 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     partial void OnIsWorkspaceSideBySideChanged(bool value) =>
         OnPropertyChanged(nameof(WorkspaceLayoutMode));
+
+    partial void OnIsCheckingUpdatesChanged(bool value)
+    {
+        OnPropertyChanged(nameof(UpdateButtonText));
+        OnPropertyChanged(nameof(UpdateButtonTooltip));
+    }
+
+    partial void OnHasPendingUpdateChanged(bool value)
+    {
+        OnPropertyChanged(nameof(UpdateButtonText));
+        OnPropertyChanged(nameof(UpdateButtonTooltip));
+    }
+
+    [RelayCommand]
+    private async Task UpdateAsync()
+    {
+        if (HasPendingUpdate)
+        {
+            if (!UpdateService.TryApplyPendingUpdate())
+            {
+                HasPendingUpdate = UpdateService.PendingVersion is not null;
+                DataNotice.Warn("无法启动更新器，请检查更新目录权限或重新下载更新。");
+                return;
+            }
+
+            Log.Information("用户确认安装已下载更新，正在退出以安装新版本");
+            (
+                Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime
+            )?.Shutdown();
+            return;
+        }
+
+        await CheckForUpdatesAsync();
+    }
+
+    [RelayCommand]
+    private async Task CheckForUpdatesAsync()
+    {
+        if (IsCheckingUpdates)
+        {
+            return;
+        }
+
+        IsCheckingUpdates = true;
+        try
+        {
+            var result = await UpdateService.CheckAndStageAsync(
+                Settings,
+                force: true,
+                CancellationToken.None
+            );
+            HasPendingUpdate =
+                result.Status == UpdateCheckStatus.Staged
+                || UpdateService.PendingVersion is not null;
+            if (result.Status == UpdateCheckStatus.Failed)
+            {
+                DataNotice.Warn(result.Message);
+            }
+            else
+            {
+                ShowToast(result.Message);
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "手动检查更新失败");
+            DataNotice.Warn("检查更新失败，请确认网络可以访问 GitHub 后重试。");
+        }
+        finally
+        {
+            IsCheckingUpdates = false;
+        }
+    }
 
     partial void OnIsManagementOpenChanged(bool value)
     {
@@ -5252,8 +5352,37 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         _suiteScheduleTimer.Stop();
         _suiteScheduleTimer.Tick -= OnSuiteScheduleTick;
+        _updateCts?.Cancel();
+        _updateCts?.Dispose();
         Persist();
         _mockServer.Dispose();
+    }
+
+    private async Task RunUpdateLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await UpdateService
+                .RunBackgroundLoopAsync(
+                    Settings,
+                    result =>
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            HasPendingUpdate = UpdateService.PendingVersion is not null;
+                            ShowToast(result.Message);
+                        }),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Application shutdown.
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "后台更新检查意外终止");
+        }
     }
 
     private async void OnSuiteScheduleTick(object? sender, EventArgs e)

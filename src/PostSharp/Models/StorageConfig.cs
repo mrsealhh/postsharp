@@ -34,6 +34,12 @@ public sealed class StorageConfig
     /// <summary>Category name (settings/workspace/suites) to profile id.</summary>
     public Dictionary<string, string> Bindings { get; set; } = new();
 
+    /// <summary>
+    /// Categories whose remote profile could not be read. Local cache changes are kept, but automatic remote
+    /// writes stay paused until a successful sync/switch so a stale/seed cache cannot overwrite the remote data.
+    /// </summary>
+    public List<string> BlockedRemoteCategories { get; set; } = new();
+
     [JsonIgnore]
     public StorageProfile LocalProfile =>
         Profiles.FirstOrDefault(profile => profile.Id == LocalProfileId)
@@ -63,6 +69,7 @@ public sealed class StorageConfig
     {
         Profiles ??= new List<StorageProfile>();
         Bindings ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        BlockedRemoteCategories ??= new List<string>();
 
         var local = Profiles.FirstOrDefault(profile => profile.Id == LocalProfileId);
         if (local is null)
@@ -101,11 +108,32 @@ public sealed class StorageConfig
             }
         }
 
+        BlockedRemoteCategories = BlockedRemoteCategories
+            .Where(category =>
+                StorageCategories.All.Contains(category, StringComparer.OrdinalIgnoreCase)
+                && ProfileFor(category).IsRemote
+            )
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         return this;
     }
 
     public StorageProfile ProfileFor(string category) =>
         Profiles.FirstOrDefault(profile => profile.Id == Bindings[category]) ?? LocalProfile;
+
+    public bool IsRemoteBlocked(string category) =>
+        BlockedRemoteCategories.Contains(category, StringComparer.OrdinalIgnoreCase);
+
+    public void SetRemoteBlocked(string category, bool blocked)
+    {
+        BlockedRemoteCategories.RemoveAll(candidate =>
+            string.Equals(candidate, category, StringComparison.OrdinalIgnoreCase)
+        );
+        if (blocked)
+        {
+            BlockedRemoteCategories.Add(category);
+        }
+    }
 
     public void SetBinding(string category, string profileId)
     {
@@ -122,5 +150,6 @@ public sealed class StorageConfig
         {
             Profiles = Profiles.Select(profile => profile.Clone()).ToList(),
             Bindings = new Dictionary<string, string>(Bindings, StringComparer.OrdinalIgnoreCase),
+            BlockedRemoteCategories = new List<string>(BlockedRemoteCategories),
         };
 }
