@@ -62,7 +62,11 @@ public partial class MainWindow : Window
         PropertyChanged += OnWindowPropertyChanged;
         ResponseTabs.SizeChanged += (_, _) =>
         {
-            JsonResponseViewer.MaxTreeHeight = Math.Max(140, ResponseTabs.Bounds.Height - 150);
+            JsonResponseViewer.MaxTreeHeight = Math.Clamp(
+                ResponseTabs.Bounds.Height - 220,
+                140,
+                420
+            );
         };
         HistoryScrollArea.SizeChanged += (_, _) => UpdateHistoryWidth();
         DataContextChanged += OnDataContextChanged;
