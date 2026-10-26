@@ -13,6 +13,8 @@ public sealed class SettingsStore
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    private static bool _saveBlocked;
+
     public string FilePath { get; }
 
     public SettingsStore()
@@ -21,39 +23,48 @@ public sealed class SettingsStore
         FilePath = AppPaths.SettingsFile;
     }
 
+    /// <summary>
+    /// The first unusual outcome of reading settings in this process. Program reads settings before the main
+    /// window exists, and that first read is the one that moves an unreadable file aside, so the window asks here.
+    /// </summary>
+    public static DataFileLoad<AppSettings>? StartupProblem { get; private set; }
+
     public AppSettings Load()
     {
-        try
+        var load = DataFile.Load(
+            FilePath,
+            text => JsonSerializer.Deserialize<AppSettings>(text, JsonOptions)
+        );
+        if (load.IsProblem)
         {
-            if (!File.Exists(FilePath))
-            {
-                return new AppSettings();
-            }
-
-            var settings =
-                JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOptions)
-                ?? new AppSettings();
-
-            if (string.IsNullOrWhiteSpace(settings.LogDirectory))
-            {
-                settings.LogDirectory = AppPaths.DefaultLogDirectory;
-            }
-
-            return settings;
+            StartupProblem ??= load;
         }
-        catch (Exception exception)
+
+        if (load.State == DataFileState.Inaccessible)
         {
-            Log.Warning(exception, "读取设置文件失败，使用默认设置 {SettingsFile}", FilePath);
-            return new AppSettings();
+            _saveBlocked = true;
         }
+
+        var settings = load.Value ?? new AppSettings();
+        if (string.IsNullOrWhiteSpace(settings.LogDirectory))
+        {
+            settings.LogDirectory = AppPaths.DefaultLogDirectory;
+        }
+
+        return settings;
     }
 
     public bool Save(AppSettings settings)
     {
+        if (_saveBlocked)
+        {
+            Log.Warning("设置文件启动时无法读取，为保护原文件不写入 {SettingsFile}", FilePath);
+            return false;
+        }
+
         try
         {
-            var json = JsonSerializer.Serialize(settings, JsonOptions);
-            File.WriteAllText(FilePath, json);
+            DataFile.WriteAllText(FilePath, JsonSerializer.Serialize(settings, JsonOptions));
             return true;
         }
         catch (Exception exception)

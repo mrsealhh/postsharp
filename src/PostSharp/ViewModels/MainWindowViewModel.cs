@@ -53,12 +53,14 @@ public partial class MainWindowViewModel : ObservableObject
     private AuditEntry? _pendingAuditPurge;
     private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
+    private CancellationTokenSource? _suiteCts;
     private CancellationTokenSource? _importCts;
     private bool _initializing = true;
     private IReadOnlyList<SuiteStepOption> _mappingSourceOptions = Array.Empty<SuiteStepOption>();
 
     public MainWindowViewModel()
     {
+        TreeTrash = new TreeTrashViewModel(RestoreTrashedNode, Persist, ShowToast);
         Settings = _settingsStore.Load();
         FontService.Initialize(Settings);
         AppLog.Reconfigure(Settings.LogDirectory, Settings.LogLevel);
@@ -76,9 +78,18 @@ public partial class MainWindowViewModel : ObservableObject
         _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
 
         _mockServer.Start();
-        LoadWorkspace();
+        if (SettingsStore.StartupProblem is { } settingsProblem)
+        {
+            DataNotice.Report(settingsProblem, "设置文件 settings.json ", "已使用默认设置");
+        }
 
-        if (Collections.Count == 0)
+        var workspaceLoad = _store.Load();
+        DataNotice.Report(workspaceLoad, "工作区文件 workspace.json ", "已用示例工作区启动");
+        if (workspaceLoad.Value is { } workspace)
+        {
+            LoadWorkspace(workspace);
+        }
+        else
         {
             SeedWorkspace();
         }
@@ -129,16 +140,28 @@ public partial class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(AuditTrashLabel));
         };
 
-        foreach (var entry in _auditStore.Load().Take(_auditLimit))
+        var auditLoad = _auditStore.Load();
+        var auditTrashLoad = _auditStore.LoadTrash();
+        DataNotice.Report(auditLoad, "审计文件 audit.json ", "审计列表从空白开始");
+        DataNotice.Report(
+            auditTrashLoad,
+            "审计回收站文件 audit-trash.json ",
+            "审计回收站从空白开始"
+        );
+
+        foreach (var entry in (auditLoad.Value ?? new List<AuditEntry>()).Take(_auditLimit))
         {
             Audit.Add(entry);
         }
 
-        foreach (var entry in _auditStore.LoadTrash())
+        foreach (var entry in auditTrashLoad.Value ?? new List<AuditEntry>())
         {
             WireAuditTrashEntry(entry);
             AuditTrash.Add(entry);
         }
+
+        // Records written before secrets were masked still hold credentials.
+        ScrubAuditSecrets();
 
         RefreshAuditView();
         BindEditingTracking();
@@ -150,6 +173,10 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     public ObservableCollection<RequestCollection> Collections { get; } = new();
+
+    public DataNoticeViewModel DataNotice { get; } = new();
+
+    public TreeTrashViewModel TreeTrash { get; }
 
     public ObservableCollection<TreeDisplayNode> TreeNodes { get; } = new();
 
@@ -2067,7 +2094,9 @@ public partial class MainWindowViewModel : ObservableObject
         || IsAuditTrashConfirmOpen
         || IsAuditTrashOpen
         || IsAuditPurgeConfirmOpen
-        || IsImportDialogOpen;
+        || IsImportDialogOpen
+        || TreeTrash.IsOpen
+        || TreeTrash.IsPurgeConfirmOpen;
 
     /// <summary>Enter in a confirmation or rename dialog; buttons keep their own activation.</summary>
     public bool TryConfirmActiveDialog()
@@ -2108,6 +2137,12 @@ public partial class MainWindowViewModel : ObservableObject
             return true;
         }
 
+        if (TreeTrash.IsPurgeConfirmOpen)
+        {
+            TreeTrash.ConfirmPurgeCommand.Execute(null);
+            return true;
+        }
+
         return false;
     }
 
@@ -2141,6 +2176,12 @@ public partial class MainWindowViewModel : ObservableObject
         if (IsAuditPurgeConfirmOpen)
         {
             CancelAuditPurgeCommand.Execute(null);
+            return true;
+        }
+
+        if (TreeTrash.IsPurgeConfirmOpen)
+        {
+            TreeTrash.CancelPurgeCommand.Execute(null);
             return true;
         }
 
@@ -2189,6 +2230,12 @@ public partial class MainWindowViewModel : ObservableObject
         if (IsAuditTrashOpen)
         {
             CloseAuditTrashCommand.Execute(null);
+            return true;
+        }
+
+        if (TreeTrash.IsOpen)
+        {
+            TreeTrash.CloseCommand.Execute(null);
             return true;
         }
 
@@ -2646,6 +2693,7 @@ public partial class MainWindowViewModel : ObservableObject
         return collection;
     }
 
+    /// <summary>Moves a collection and everything under it to the recycle bin (the MCP delete).</summary>
     public bool DeleteCollection(Guid id)
     {
         var collection = Collections.FirstOrDefault(candidate => candidate.Id == id);
@@ -2658,7 +2706,7 @@ public partial class MainWindowViewModel : ObservableObject
             Editing.Owner is not null && IsSelfOrDescendant(Editing.Owner, collection);
         var selectedRemoved =
             SelectedCollection is not null && IsSelfOrDescendant(SelectedCollection, collection);
-        RemoveCollectionRecursive(collection);
+        TrashCollection(collection, "MCP");
 
         if (editingRemoved)
         {
@@ -2820,13 +2868,14 @@ public partial class MainWindowViewModel : ObservableObject
             case RequestItem request:
                 _pendingDelete = request;
                 DeleteDialogTitle = "删除请求？";
-                DeleteDialogDescription = $"“{request.Name}”将从集合中删除。此操作无法撤销。";
+                DeleteDialogDescription =
+                    $"“{request.Name}”将移入集合回收站，可在回收站中恢复到原位置。";
                 break;
             case RequestCollection collection:
                 _pendingDelete = collection;
                 DeleteDialogTitle = "删除集合？";
                 DeleteDialogDescription =
-                    $"“{collection.Name}”及其子集合、共 {CountRequests(collection)} 个请求将被删除。此操作无法撤销。";
+                    $"“{collection.Name}”及其子集合、共 {CountRequests(collection)} 个请求将移入集合回收站，可在回收站中恢复到原位置。";
                 break;
             default:
                 ShowToast("请先选择集合或请求");
@@ -3273,9 +3322,10 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (_pendingDelete is RequestItem request)
         {
-            var wasSelected = ReferenceEquals(SelectedRequest, request);
-            request.Owner?.Requests.Remove(request);
-            if (wasSelected)
+            var wasOpen =
+                ReferenceEquals(SelectedRequest, request) || ReferenceEquals(Editing, request);
+            TrashRequest(request, "UI");
+            if (wasOpen)
             {
                 SelectFirstRequestOrBlank();
             }
@@ -3288,7 +3338,7 @@ public partial class MainWindowViewModel : ObservableObject
                 SelectedCollection is not null
                 && IsSelfOrDescendant(SelectedCollection, collection);
 
-            RemoveCollectionRecursive(collection);
+            TrashCollection(collection, "UI");
 
             if (editingRemoved)
             {
@@ -3308,7 +3358,7 @@ public partial class MainWindowViewModel : ObservableObject
         NotifySelectionChanged();
         Persist();
         NotifyTreeChanged();
-        ShowToast("已删除");
+        ShowToast("已移入集合回收站");
     }
 
     [RelayCommand]
@@ -3406,11 +3456,17 @@ public partial class MainWindowViewModel : ObservableObject
         IsEnvironmentDialogOpen = false;
         RefreshDerivedState();
         Persist();
+        ScrubAuditSecrets();
         ShowToast("环境变量已保存");
     }
 
     [RelayCommand]
-    private void CancelEnvironmentDialog() => IsEnvironmentDialogOpen = false;
+    private void CancelEnvironmentDialog()
+    {
+        // Edits apply as they are typed, so a variable marked secret here must be masked in the audit as well.
+        IsEnvironmentDialogOpen = false;
+        ScrubAuditSecrets();
+    }
 
     [RelayCommand]
     private void AddEnvironment()
@@ -3637,17 +3693,6 @@ public partial class MainWindowViewModel : ObservableObject
         return false;
     }
 
-    private void RemoveCollectionRecursive(RequestCollection collection)
-    {
-        foreach (var child in collection.Children.ToList())
-        {
-            RemoveCollectionRecursive(child);
-        }
-
-        collection.Parent?.Children.Remove(collection);
-        Collections.Remove(collection);
-    }
-
     private static int CountRequests(RequestCollection collection)
     {
         return collection.Requests.Count + collection.Children.Sum(child => CountRequests(child));
@@ -3749,20 +3794,25 @@ public partial class MainWindowViewModel : ObservableObject
         string? client
     )
     {
-        var requestHeaders = composed is not null
+        // The audit file and MCP readers must never see credentials, so everything stored is masked first.
+        var secrets = SecretMasker.CollectSecrets(Environments);
+        var stored = composed is null ? null : SecretMasker.MaskRequest(composed, secrets);
+        var requestHeaders = stored is not null
             ? string.Join(
                 "\n",
-                composed
+                stored
                     .Headers.Select(pair => $"{pair.Key}: {pair.Value}")
                     .Concat(
-                        composed.ContentType is null
+                        stored.ContentType is null
                             ? Array.Empty<string>()
-                            : new[] { $"Content-Type: {composed.ContentType}" }
+                            : new[] { $"Content-Type: {stored.ContentType}" }
                     )
             )
             : string.Join(
                 "\n",
-                request.Headers.ActiveRows.Select(row => $"{row.Key}: {row.Value}")
+                request.Headers.ActiveRows.Select(row =>
+                    $"{row.Key}: {SecretMasker.MaskHeaderValue(row.Key, row.Value, secrets)}"
+                )
             );
 
         var entry = new AuditEntry
@@ -3773,30 +3823,39 @@ public partial class MainWindowViewModel : ObservableObject
             RequestId = request.Id,
             RequestName = request.Name,
             Method = composed?.Method ?? request.Method,
-            Url = composed?.Url ?? request.Url,
+            Url = stored?.Url ?? SecretMasker.MaskSecrets(request.Url, secrets),
             Environment = composed?.EnvironmentName ?? ActiveEnvironment?.Name,
             StatusCode = result.StatusCode,
             StatusText = result.ReasonPhrase,
             ElapsedMs = result.ElapsedMs,
             SizeBytes = result.SizeBytes,
             IsSuccess = result.HasResponse && result.StatusCode < 400,
-            Error = result.Error,
-            Curl = composed is null ? null : RequestComposer.BuildCurl(composed),
+            Error = result.Error is null ? null : SecretMasker.MaskSecrets(result.Error, secrets),
+            Curl = stored is null ? null : RequestComposer.BuildCurl(stored),
             RequestHeaders = Truncate(requestHeaders, AuditPreviewLimit),
             RequestBodyPreview = Truncate(
-                composed?.Body ?? BuildMultipartPreview(request),
+                stored?.Body ?? SecretMasker.MaskSecrets(BuildMultipartPreview(request), secrets),
                 AuditPreviewLimit
             ),
             ResponseHeaders = Truncate(
-                string.Join("\n", result.Headers.Select(header => $"{header.Key}: {header.Value}")),
+                SecretMasker.MaskHeaderLines(
+                    string.Join(
+                        "\n",
+                        result.Headers.Select(header => $"{header.Key}: {header.Value}")
+                    ),
+                    secrets
+                ),
                 AuditPreviewLimit
             ),
-            ResponseBodyPreview = Truncate(result.Body, AuditPreviewLimit),
+            ResponseBodyPreview = Truncate(
+                SecretMasker.MaskSecrets(result.Body, secrets),
+                AuditPreviewLimit
+            ),
             ResponseContentType = result.MediaType,
             IsSse = result.IsSse,
             SseEventCount = result.SseEventCount,
-            AiThinking = result.SseThinking,
-            AiContent = result.SseContent,
+            AiThinking = SecretMasker.MaskSecrets(result.SseThinking, secrets),
+            AiContent = SecretMasker.MaskSecrets(result.SseContent, secrets),
         };
 
         Audit.Insert(0, entry);
@@ -3962,10 +4021,48 @@ public partial class MainWindowViewModel : ObservableObject
         IsAuditPurgeConfirmOpen = false;
     }
 
-    private void PersistAudit()
+    /// <summary>Returns false when either audit file could not be written.</summary>
+    private bool PersistAudit()
     {
-        _auditStore.Save(Audit);
-        _auditStore.SaveTrash(AuditTrash);
+        var saved = _auditStore.Save(Audit);
+        return _auditStore.SaveTrash(AuditTrash) && saved;
+    }
+
+    /// <summary>
+    /// Masks credentials and current secret values in every stored audit record. Runs at startup and whenever a
+    /// variable may have become secret, so records written earlier stop exposing it to MCP readers.
+    /// </summary>
+    public void ScrubAuditSecrets()
+    {
+        var secrets = SecretMasker.CollectSecrets(Environments);
+        var changed = false;
+        foreach (var entry in Audit.Concat(AuditTrash))
+        {
+            changed |= SecretMasker.MaskAuditEntry(entry, secrets);
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
+        // The backups still hold the old text; drop them only once the scrubbed files are safely on disk.
+        if (!PersistAudit())
+        {
+            DataNotice.Warn(
+                "审计记录已在界面中打码，但写入 audit.json 失败，磁盘上的文件和备份仍含旧的明文凭据。请检查数据目录是否可写后重启 PostSharp。"
+            );
+            return;
+        }
+
+        foreach (var backup in _auditStore.DeleteBackups())
+        {
+            DataNotice.Warn(
+                $"审计备份 {backup} 无法删除，其中仍含打码前的明文凭据。请关闭占用它的程序后手动删除该文件。"
+            );
+        }
+
+        Log.Information("已为审计记录中的凭据和机密变量打码");
     }
 
     [RelayCommand]
@@ -4293,6 +4390,8 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        var cancellation = new CancellationTokenSource();
+        _suiteCts = cancellation;
         try
         {
             IsRunningSuite = true;
@@ -4301,16 +4400,30 @@ public partial class MainWindowViewModel : ObservableObject
                 "UI",
                 $"suite:{suite.Name}",
                 null,
-                CancellationToken.None
+                cancellation.Token
             );
             SelectedSuiteResult = result;
-            ShowToast($"套件完成：{result.Passed}/{result.Total} 通过");
+            ShowToast(
+                result.Cancelled
+                    ? $"套件已取消：{result.Passed}/{result.Total} 通过"
+                    : $"套件完成：{result.Passed}/{result.Total} 通过"
+            );
         }
         finally
         {
             IsRunningSuite = false;
+            _suiteCts = null;
+            cancellation.Dispose();
         }
     }
+
+    [RelayCommand]
+    private void CancelSuiteRun() => _suiteCts?.Cancel();
+
+    public string RunSuiteButtonText => IsRunningSuite ? "运行中…" : "运行套件";
+
+    partial void OnIsRunningSuiteChanged(bool value) =>
+        OnPropertyChanged(nameof(RunSuiteButtonText));
 
     public async Task<TestRunResult> RunSuiteForMcpAsync(
         Guid suiteId,
@@ -4337,7 +4450,9 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var steps = new List<TestStepResult>();
         var stopped = false;
+        var cancelled = false;
         var stepResults = new Dictionary<Guid, HttpResult>();
+        var secrets = SecretMasker.CollectSecrets(Environments);
 
         for (var index = 0; index < suite.Steps.Count; index++)
         {
@@ -4356,6 +4471,7 @@ public partial class MainWindowViewModel : ObservableObject
                 {
                     Log.Debug(exception, "套件运行被取消 {SuiteName}", suite.Name);
                     stopped = true;
+                    cancelled = true;
                     break;
                 }
             }
@@ -4363,6 +4479,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (cancellationToken.IsCancellationRequested)
             {
                 stopped = true;
+                cancelled = true;
                 break;
             }
 
@@ -4452,6 +4569,16 @@ public partial class MainWindowViewModel : ObservableObject
                 result = HttpRequestService.Failure(exception.Message);
             }
 
+            if (!result.HasResponse && cancellationToken.IsCancellationRequested)
+            {
+                // A step cut short by the cancel is not a failed assertion: keep it in the audit like a cancelled
+                // UI send, but leave it out of the step results and the pass/fail counts.
+                RecordAudit(effectiveRequest, composed, result, source, tool, client);
+                stopped = true;
+                cancelled = true;
+                break;
+            }
+
             stepResults[step.Id] = result;
             AddHistory(effectiveRequest, result);
             RecordAudit(effectiveRequest, composed, result, source, tool, client);
@@ -4478,13 +4605,13 @@ public partial class MainWindowViewModel : ObservableObject
                     RequestId = request.Id,
                     Name = request.Name,
                     Method = request.Method,
-                    Url = composed?.Url ?? request.Url,
+                    Url = SecretMasker.MaskSecrets(composed?.Url ?? request.Url, secrets),
                     StatusCode = result.StatusCode,
                     StatusText = result.ReasonPhrase,
                     ElapsedMs = result.ElapsedMs,
                     Passed = passed,
-                    Error = error,
-                    ResponsePreview = Truncate(result.Body, 500),
+                    Error = error is null ? null : SecretMasker.MaskSecrets(error, secrets),
+                    ResponsePreview = Truncate(SecretMasker.MaskSecrets(result.Body, secrets), 500),
                 }
             );
 
@@ -4503,6 +4630,7 @@ public partial class MainWindowViewModel : ObservableObject
             Passed = steps.Count(step => step.Passed),
             Failed = steps.Count(step => !step.Passed),
             Stopped = stopped,
+            Cancelled = cancelled,
             Steps = steps,
         };
 
@@ -5093,21 +5221,6 @@ public partial class MainWindowViewModel : ObservableObject
         return text[..limit] + "\n…（已截断）";
     }
 
-    public void AfterExternalDelete(RequestItem request)
-    {
-        if (!ReferenceEquals(Editing, request))
-        {
-            return;
-        }
-
-        Editing = new RequestItem { Name = "新建请求" };
-        SelectedRequest = null;
-        SelectedCollection = null;
-        IsDraft = true;
-        ClearResponse();
-        NotifySelectionChanged();
-    }
-
     public void Shutdown()
     {
         Persist();
@@ -5517,36 +5630,17 @@ public partial class MainWindowViewModel : ObservableObject
                 History,
                 RecycledHistory,
                 Suites,
+                TreeTrash.Items,
                 ActiveEnvironment?.Id
             )
         );
     }
 
-    private void LoadWorkspace()
+    private void LoadWorkspace(WorkspaceDto workspace)
     {
-        var workspace = _store.Load();
-        if (workspace is null)
-        {
-            return;
-        }
-
         foreach (var collectionDto in workspace.Collections)
         {
-            var collection = new RequestCollection
-            {
-                Id = collectionDto.Id == Guid.Empty ? Guid.NewGuid() : collectionDto.Id,
-                Name = collectionDto.Name,
-                IsFavorite = collectionDto.IsFavorite,
-            };
-
-            foreach (var requestDto in collectionDto.Requests)
-            {
-                var request = WorkspaceStore.ToModel(requestDto);
-                request.Owner = collection;
-                collection.Requests.Add(request);
-            }
-
-            Collections.Add(collection);
+            Collections.Add(WorkspaceStore.ToCollectionModel(collectionDto));
         }
 
         foreach (var collectionDto in workspace.Collections)
@@ -5575,7 +5669,7 @@ public partial class MainWindowViewModel : ObservableObject
 
             foreach (var row in environmentDto.Variables)
             {
-                environment.Variables.AddRow(row.Key, row.Value, row.IsEnabled);
+                environment.Variables.AddRow(row.Key, row.Value, row.IsEnabled, row.IsSecret);
             }
 
             environment.Variables.EnsureTrailingRow();
@@ -5641,6 +5735,14 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             Suites.Add(suite);
+        }
+
+        foreach (var trashedDto in workspace.TrashedNodes)
+        {
+            if (WorkspaceStore.ToTrashedNode(trashedDto) is { } trashed)
+            {
+                TreeTrash.Load(trashed);
+            }
         }
 
         ActiveEnvironment =

@@ -639,9 +639,6 @@ public sealed class MockApiServer : IDisposable
             .Append("Content-Length: ")
             .Append(bodyBytes.Length)
             .Append("\r\n")
-            .Append("Access-Control-Allow-Origin: *\r\n")
-            .Append("Access-Control-Allow-Headers: *\r\n")
-            .Append("Access-Control-Expose-Headers: Mcp-Session-Id\r\n")
             .Append("Connection: close\r\n");
 
         if (response.Headers is not null)

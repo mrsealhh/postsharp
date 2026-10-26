@@ -133,7 +133,13 @@ public sealed class TestRunResult
 
     public bool Stopped { get; set; }
 
+    /// <summary>The run was cancelled before every step finished.</summary>
+    public bool Cancelled { get; set; }
+
     public List<TestStepResult> Steps { get; set; } = new();
 
-    public string Summary => $"{Passed}/{Total} 通过 · {Timestamp.LocalDateTime:HH:mm:ss}";
+    public string Summary =>
+        Cancelled
+            ? $"已取消 · {Passed}/{Total} 通过 · {Timestamp.LocalDateTime:HH:mm:ss}"
+            : $"{Passed}/{Total} 通过 · {Timestamp.LocalDateTime:HH:mm:ss}";
 }
