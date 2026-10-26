@@ -1172,6 +1172,11 @@
                                                 Content="单行"
                                                 IsChecked="{Binding IsBodySingleLine, Mode=TwoWay}"
                                             />
+                                            <arc:Switch
+                                                Content="JSON 视图"
+                                                IsChecked="{Binding IsRequestBodyJsonView, Mode=TwoWay}"
+                                                IsVisible="{Binding IsJsonBody}"
+                                            />
                                             <arc:Button
                                                 Variant="Ghost"
                                                 Size="Small"
@@ -1204,7 +1209,7 @@
 
                                         <Grid Grid.Row="1">
                                             <Grid
-                                                IsVisible="{Binding IsTextBody}"
+                                                IsVisible="{Binding ShowRequestBodyEditor}"
                                                 RowDefinitions="Auto,*"
                                                 RowSpacing="8"
                                             >
@@ -1221,7 +1226,9 @@
                                                         IsVisible="{Binding !IsBodySingleLine}"
                                                         IsLabelVisible="False"
                                                         Placeholder="{}{ &quot;name&quot;: &quot;PostSharp&quot; }"
-                                                        IsResizable="True"
+                                                        IsResizable="False"
+                                                        FrameHeight="360"
+                                                        MinHeight="320"
                                                         FontFamily="{DynamicResource PostSharpCodeFont}"
                                                         FontSize="{DynamicResource PostSharpCodeFontSize}"
                                                         AutomationProperties.Name="请求体"
@@ -1238,6 +1245,15 @@
                                                     />
                                                 </Grid>
                                             </Grid>
+
+                                            <arc:JsonViewer
+                                                Json="{Binding Editing.Body}"
+                                                IsVisible="{Binding ShowRequestBodyJsonViewer}"
+                                                ExpandDepth="2"
+                                                MaxTreeHeight="420"
+                                                SearchPlaceholder="搜索请求体键和值"
+                                                AutomationProperties.Name="JSON 请求体"
+                                            />
 
                                             <Grid
                                                 IsVisible="{Binding IsMultipartBody}"

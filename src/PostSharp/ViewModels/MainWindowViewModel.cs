@@ -262,6 +262,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _isBodySingleLine;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRequestBodyJsonViewer))]
+    [NotifyPropertyChangedFor(nameof(ShowRequestBodyEditor))]
+    private bool _isRequestBodyJsonView;
+
+    [ObservableProperty]
     private string _bodyPreview = string.Empty;
 
     [ObservableProperty]
@@ -1082,7 +1087,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public bool IsMultipartBody => Editing.BodyMode == "Multipart";
 
+    public bool IsJsonBody => Editing.BodyMode == "Json";
+
     public bool IsTextBody => !IsMultipartBody;
+
+    public bool ShowRequestBodyJsonViewer => IsJsonBody && IsRequestBodyJsonView;
+
+    public bool ShowRequestBodyEditor => IsTextBody && !ShowRequestBodyJsonViewer;
 
     public bool HasUploadFile => Editing.UploadFiles.Count > 0;
 
@@ -4055,7 +4066,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             );
 
         OnPropertyChanged(nameof(IsMultipartBody));
+        OnPropertyChanged(nameof(IsJsonBody));
         OnPropertyChanged(nameof(IsTextBody));
+        OnPropertyChanged(nameof(ShowRequestBodyJsonViewer));
+        OnPropertyChanged(nameof(ShowRequestBodyEditor));
         OnPropertyChanged(nameof(HasUploadFile));
 
         var duplicates = Editing
