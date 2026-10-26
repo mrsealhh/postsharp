@@ -37,6 +37,7 @@ public sealed class HttpRequestServiceTests
                 null,
                 null
             ),
+            "https://example.com/",
             CancellationToken.None,
             sseProgress: progress
         );
@@ -218,6 +219,7 @@ public sealed class HttpRequestServiceTests
                 null,
                 null
             ),
+            "https://example.com/",
             CancellationToken.None,
             sseProgress: progress
         );
@@ -250,6 +252,7 @@ public sealed class HttpRequestServiceTests
                 null,
                 null
             ),
+            "https://example.com/",
             cancellation.Token
         );
 

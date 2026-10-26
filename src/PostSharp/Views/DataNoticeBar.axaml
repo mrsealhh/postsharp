@@ -1,0 +1,39 @@
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+    xmlns:controls="using:PostSharp.Controls"
+    xmlns:vm="using:PostSharp.ViewModels"
+    x:Class="PostSharp.Views.DataNoticeBar"
+    x:DataType="vm:DataNoticeViewModel"
+    IsVisible="{Binding IsOpen}"
+>
+    <arc:Alert
+        Margin="16,10,16,0"
+        Tone="{Binding Tone}"
+        Title="{Binding Title}"
+        IsOpen="{Binding IsOpen, Mode=TwoWay}"
+        IsDismissible="True"
+    >
+        <StackPanel Spacing="8">
+            <SelectableTextBlock
+                Text="{Binding Message}"
+                TextWrapping="Wrap"
+                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+            />
+            <arc:Button
+                HorizontalAlignment="Left"
+                Variant="Secondary"
+                Size="Small"
+                Command="{Binding OpenDataFolderCommand}"
+            >
+                <controls:IconLabel
+                    Icon="{x:Static arc:ArcIcons.FolderOpen}"
+                    Text="打开数据目录"
+                    IconSize="13"
+                />
+            </arc:Button>
+        </StackPanel>
+    </arc:Alert>
+</UserControl>

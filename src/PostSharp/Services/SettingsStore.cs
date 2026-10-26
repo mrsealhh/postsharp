@@ -13,6 +13,8 @@ public sealed class SettingsStore
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    private static AppSettings? _loaded;
+
     public string FilePath { get; }
 
     public SettingsStore()
@@ -21,45 +23,42 @@ public sealed class SettingsStore
         FilePath = AppPaths.SettingsFile;
     }
 
+    /// <summary>
+    /// How reading settings went when it was not normal. Program reads settings before the main window exists, so the
+    /// window asks here to show the notice.
+    /// </summary>
+    public static DataFileLoad<AppSettings>? StartupProblem { get; private set; }
+
+    /// <summary>
+    /// Settings are read once per process and every later call gets the same instance, so a momentary lock during a
+    /// second read cannot swap in defaults or block saving.
+    /// </summary>
     public AppSettings Load()
     {
-        try
+        if (_loaded is not null)
         {
-            if (!File.Exists(FilePath))
-            {
-                return new AppSettings();
-            }
-
-            var settings =
-                JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOptions)
-                ?? new AppSettings();
-
-            if (string.IsNullOrWhiteSpace(settings.LogDirectory))
-            {
-                settings.LogDirectory = AppPaths.DefaultLogDirectory;
-            }
-
-            return settings;
+            return _loaded;
         }
-        catch (Exception exception)
+
+        var load = DataFile.Load(
+            FilePath,
+            text => JsonSerializer.Deserialize<AppSettings>(text, JsonOptions)
+        );
+        if (load.IsProblem)
         {
-            Log.Warning(exception, "读取设置文件失败，使用默认设置 {SettingsFile}", FilePath);
-            return new AppSettings();
+            StartupProblem = load;
         }
+
+        var settings = load.Value ?? new AppSettings();
+        if (string.IsNullOrWhiteSpace(settings.LogDirectory))
+        {
+            settings.LogDirectory = AppPaths.DefaultLogDirectory;
+        }
+
+        _loaded = settings;
+        return settings;
     }
 
-    public bool Save(AppSettings settings)
-    {
-        try
-        {
-            var json = JsonSerializer.Serialize(settings, JsonOptions);
-            File.WriteAllText(FilePath, json);
-            return true;
-        }
-        catch (Exception exception)
-        {
-            Log.Error(exception, "保存设置文件失败 {SettingsFile}", FilePath);
-            return false;
-        }
-    }
+    public SaveResult Save(AppSettings settings) =>
+        DataFile.Save(FilePath, () => JsonSerializer.Serialize(settings, JsonOptions));
 }

@@ -17,6 +17,17 @@ internal static class Program
     {
         var settings = new SettingsStore().Load();
         AppLog.Initialize(settings.LogDirectory, settings.LogLevel);
+        // Settings are read before logging starts, so a problem with them is written down here.
+        if (SettingsStore.StartupProblem is { } problem)
+        {
+            Log.Warning(
+                "启动时设置文件读取异常 {SettingsFile} {State} {SetAsideFile}",
+                AppPaths.SettingsFile,
+                problem.State,
+                problem.SetAsidePath
+            );
+        }
+
         using var singleInstance = new Mutex(
             initiallyOwned: true,
             SingleInstanceMutexName,
@@ -28,7 +39,6 @@ internal static class Program
             AppLog.Shutdown();
             return;
         }
-
         AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
             Log.Fatal(
                 eventArgs.ExceptionObject as Exception,

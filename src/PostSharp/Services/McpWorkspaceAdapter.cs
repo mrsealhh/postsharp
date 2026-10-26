@@ -1,10 +1,16 @@
+using System.Text.Json.Serialization;
 using Avalonia.Threading;
 using PostSharp.Models;
 using PostSharp.ViewModels;
 
 namespace PostSharp.Services;
 
-public sealed record McpRowInfo(string Key, string Value, bool Enabled);
+public sealed record McpRowInfo(
+    string Key,
+    string Value,
+    bool Enabled,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Secret = false
+);
 
 public sealed record McpRequestInfo(
     Guid Id,
@@ -84,8 +90,13 @@ public sealed record McpSendResult(
     bool IsSse = false,
     int SseEventCount = 0,
     string SseThinking = "",
-    string SseContent = ""
-);
+    string SseContent = "",
+    bool BodyTruncated = false
+)
+{
+    /// <summary>How much of a response body an AI client gets back.</summary>
+    public const int BodyLimit = 30000;
+}
 
 public sealed record McpCallContext(string Tool, string? Client);
 
@@ -206,7 +217,7 @@ public sealed class McpWorkspaceAdapter
 
     public async Task<bool> DeleteCollectionAsync(Guid id)
     {
-        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.DeleteCollection(id));
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.DeleteCollection(id, "MCP"));
     }
 
     public async Task<McpRequestInfo> MoveRequestAsync(Guid id, Guid collectionId, int? position)
@@ -346,19 +357,7 @@ public sealed class McpWorkspaceAdapter
 
     public async Task<bool> DeleteRequestAsync(Guid id)
     {
-        return await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            var request = FindRequest(id);
-            if (request is null)
-            {
-                return false;
-            }
-
-            request.Owner?.Requests.Remove(request);
-            _viewModel.AfterExternalDelete(request);
-            _viewModel.NotifyWorkspaceChanged();
-            return true;
-        });
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.DeleteRequest(id, "MCP"));
     }
 
     public async Task<McpSendResult> SendAsync(
@@ -380,7 +379,11 @@ public sealed class McpWorkspaceAdapter
                 ? _viewModel.Environments.FirstOrDefault(candidate => candidate.Id == requested)
                 : _viewModel.ActiveEnvironment;
 
-            return new SendSnapshot(request.Clone(), CloneEnvironment(environment));
+            return new SendSnapshot(
+                request.Clone(copyAuthorization: false),
+                CloneEnvironment(environment),
+                SecretMasker.CollectSecrets(_viewModel.Environments)
+            );
         });
 
         if (snapshot is null)
@@ -392,13 +395,24 @@ public sealed class McpWorkspaceAdapter
             FindRequest(id)?.Name ?? snapshot.Request.Name
         );
 
+        // The snapshot cannot change, so the masked copy for the audit and the AI is built once, off the UI thread.
+        var secrets = snapshot.Secrets;
         ComposedRequest? composed = null;
+        ComposedRequest? stored = null;
         HttpResult result;
         try
         {
-            composed = RequestComposer.Compose(snapshot.Request, snapshot.Environment);
+            var auth = await _viewModel.ResolveAuthAsync(snapshot.Request, cancellationToken);
+            composed = RequestComposer.Compose(snapshot.Request, snapshot.Environment, auth);
+            stored = SecretMasker.MaskComposed(
+                snapshot.Request,
+                snapshot.Environment,
+                composed,
+                secrets
+            );
             result = await _http.SendAsync(
                 composed,
+                stored.Url,
                 cancellationToken,
                 snapshot.Request.TimeoutSeconds
             );
@@ -413,39 +427,49 @@ public sealed class McpWorkspaceAdapter
         {
             _viewModel.RecordExternalSend(
                 snapshot.Request,
-                composed,
+                stored,
                 result,
                 "MCP",
                 context.Tool,
-                context.Client
+                context.Client,
+                secrets
             );
             return true;
         });
 
+        // Secret values never go back to the AI client, even when a server echoes them.
+        // Credential headers such as Set-Cookie are masked by name, the same as in the audit.
         var headers = result
-            .Headers.Select(header => new McpRowInfo(header.Key, header.Value, true))
+            .Headers.Select(header => new McpRowInfo(
+                header.Key,
+                SecretMasker.MaskHeaderValue(header.Key, header.Value, secrets),
+                true
+            ))
             .ToList();
+        var body = SecretMasker.MaskHead(result.Body, McpSendResult.BodyLimit, secrets);
 
         return new McpSendResult(
             id,
             snapshot.Request.Name,
             composed?.Method ?? snapshot.Request.Method,
-            composed?.Url ?? snapshot.Request.Url,
+            stored?.Url ?? SecretMasker.MaskSecrets(snapshot.Request.Url, secrets),
             result.StatusCode,
             string.IsNullOrWhiteSpace(result.ReasonPhrase)
                 ? result.StatusCode.ToString()
                 : $"{result.StatusCode} {result.ReasonPhrase}",
-            result.Error,
+            result.Error is null ? null : SecretMasker.MaskSecrets(result.Error, secrets),
             result.ElapsedMs,
             result.SizeBytes,
             result.IsJson,
             result.MediaType,
-            result.Body,
+            body,
             headers,
             result.IsSse,
             result.SseEventCount,
-            result.SseThinking,
-            result.SseContent
+            SecretMasker.MaskSecrets(result.SseThinking, secrets),
+            SecretMasker.MaskSecrets(result.SseContent, secrets),
+            // MaskHead returns more than the limit exactly when it had to cut.
+            body.Length > McpSendResult.BodyLimit
         );
     }
 
@@ -517,7 +541,31 @@ public sealed class McpWorkspaceAdapter
         {
             var request =
                 FindRequest(id) ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的请求。");
-            return RequestComposer.BuildCurl(request, _viewModel.ActiveEnvironment);
+            var environment = _viewModel.ActiveEnvironment;
+            var secrets = SecretMasker.CollectSecrets(_viewModel.Environments);
+            var auth = _viewModel.ResolveAuth(request);
+
+            ComposedRequest composed;
+            try
+            {
+                composed = RequestComposer.Compose(request, environment, auth);
+            }
+            catch (InvalidOperationException exception)
+            {
+                // BuildCurl turns the same problem into a "# 无法生成 cURL" hint for the client.
+                Log.Debug(exception, "MCP 获取 cURL 时请求无法生成 {RequestId}", id);
+                return SecretMasker.MaskSecrets(
+                    RequestComposer.BuildCurl(request, environment),
+                    secrets
+                );
+            }
+
+            // Mask environment secrets and injected credentials before quoting.
+            var masked = SecretMasker.MaskRequest(
+                composed,
+                SecretMasker.CollectAllSecrets(_viewModel.Environments)
+            );
+            return RequestComposer.BuildCurl(RequestComposer.MaskAuthorization(masked));
         });
     }
 
@@ -710,19 +758,22 @@ public sealed class McpWorkspaceAdapter
     public async Task<IReadOnlyList<McpHistoryInfo>> ListHistoryAsync(int limit)
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
-            (IReadOnlyList<McpHistoryInfo>)
+        {
+            // Older history entries were stored before suite mappings were masked; mask again at the MCP boundary.
+            var secrets = SecretMasker.CollectAllSecrets(_viewModel.Environments);
+            return (IReadOnlyList<McpHistoryInfo>)
                 _viewModel
                     .History.Take(Math.Clamp(limit, 1, 200))
                     .Select(entry => new McpHistoryInfo(
                         entry.Timestamp,
                         entry.Name,
                         entry.Method,
-                        entry.Url,
+                        SecretMasker.MaskSecrets(entry.Url, secrets),
                         entry.StatusCode,
                         entry.DurationMs
                     ))
-                    .ToList()
-        );
+                    .ToList();
+        });
     }
 
     public async Task<IReadOnlyList<McpEnvironmentInfo>> ListEnvironmentsAsync()
@@ -736,7 +787,7 @@ public sealed class McpWorkspaceAdapter
                         ReferenceEquals(environment, _viewModel.ActiveEnvironment),
                         environment
                             .Variables.Where(row => !string.IsNullOrWhiteSpace(row.Key))
-                            .Select(ToInfo)
+                            .Select(ToVariableInfo)
                             .ToList()
                     ))
                     .ToList()
@@ -746,8 +797,9 @@ public sealed class McpWorkspaceAdapter
     public async Task<McpEnvironmentInfo> SetVariableAsync(
         Guid? environmentId,
         string key,
-        string value,
-        bool? enabled
+        string? value,
+        bool? enabled,
+        bool? secret
     )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
@@ -767,20 +819,48 @@ public sealed class McpWorkspaceAdapter
 
             if (row is null)
             {
-                environment.Variables.AddRow(key, value, enabled ?? true);
+                environment.Variables.AddRow(
+                    key,
+                    value ?? string.Empty,
+                    enabled ?? true,
+                    secret ?? false
+                );
             }
             else
             {
+                // Otherwise an AI client could clear the flag and then read the value in clear text.
+                if (row.IsSecret && secret == false)
+                {
+                    throw new InvalidOperationException(
+                        $"变量 {row.Key} 是机密变量，只能在 PostSharp 的环境变量对话框中取消机密。"
+                    );
+                }
+
                 row.Key = key;
-                row.Value = value;
+
+                // list_environments shows a secret as the mask; writing the mask back keeps the real value.
+                if (value is not null && !(row.IsSecret && value == SecretMasker.Mask))
+                {
+                    row.Value = value;
+                }
+
                 if (enabled is { } isEnabled)
                 {
                     row.IsEnabled = isEnabled;
+                }
+
+                if (secret == true)
+                {
+                    row.IsSecret = true;
                 }
             }
 
             environment.Variables.EnsureTrailingRow();
             _viewModel.NotifyWorkspaceChanged();
+            if (secret == true)
+            {
+                _viewModel.ScrubAuditSecrets();
+            }
 
             return new McpEnvironmentInfo(
                 environment.Id,
@@ -788,7 +868,7 @@ public sealed class McpWorkspaceAdapter
                 ReferenceEquals(environment, _viewModel.ActiveEnvironment),
                 environment
                     .Variables.Where(candidate => !string.IsNullOrWhiteSpace(candidate.Key))
-                    .Select(ToInfo)
+                    .Select(ToVariableInfo)
                     .ToList()
             );
         });
@@ -965,6 +1045,9 @@ public sealed class McpWorkspaceAdapter
 
     private static McpRowInfo ToInfo(KeyValueRow row) => new(row.Key, row.Value, row.IsEnabled);
 
+    private static McpRowInfo ToVariableInfo(KeyValueRow row) =>
+        new(row.Key, row.IsSecret ? SecretMasker.Mask : row.Value, row.IsEnabled, row.IsSecret);
+
     private static void ReplaceRows(EditableRowCollection target, IReadOnlyList<McpRowInfo>? rows)
     {
         if (rows is null)
@@ -991,7 +1074,7 @@ public sealed class McpWorkspaceAdapter
         var clone = new EnvironmentModel { Name = environment.Name };
         foreach (var row in environment.Variables)
         {
-            clone.Variables.AddRow(row.Key, row.Value, row.IsEnabled);
+            clone.Variables.AddRow(row.Key, row.Value, row.IsEnabled, row.IsSecret);
         }
 
         clone.Variables.EnsureTrailingRow();
@@ -1022,5 +1105,9 @@ public sealed class McpWorkspaceAdapter
         };
     }
 
-    private sealed record SendSnapshot(RequestItem Request, EnvironmentModel? Environment);
+    private sealed record SendSnapshot(
+        RequestItem Request,
+        EnvironmentModel? Environment,
+        IReadOnlyList<string> Secrets
+    );
 }

@@ -29,8 +29,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private readonly AuditStore _auditStore = new();
     private readonly SettingsStore _settingsStore = new();
     private readonly HttpRequestService _http = new();
+    private readonly AuthorizationService _authorizationService = new();
     private readonly MockApiServer _mockServer = new();
     private readonly Dictionary<Guid, TestRunResult> _suiteResults = new();
+    private readonly AuditScrubber _auditScrubber;
 
     private const int AuditPreviewLimit = 2000;
     private const int ResponsePreviewLimit = 8 * 1024;
@@ -61,6 +63,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private AuditEntry? _pendingAuditPurge;
     private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
+    private CancellationTokenSource? _suiteCts;
     private ComposedRequest? _lastComposedRequest;
     private SseResumeSnapshot? _sseResume;
     private readonly DispatcherTimer _suiteScheduleTimer = new()
@@ -73,6 +76,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public MainWindowViewModel()
     {
+        TreeTrash = new TreeTrashViewModel(Collections, OnTreeTrashChanged, ShowToast);
+        _auditScrubber = new AuditScrubber(
+            Audit,
+            AuditTrash,
+            Environments,
+            PersistAudit,
+            _auditStore.DeleteBackups,
+            DataNotice
+        );
         Settings = _settingsStore.Load();
         FontService.Initialize(Settings);
         AppLog.Reconfigure(Settings.LogDirectory, Settings.LogLevel);
@@ -93,9 +105,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
 
         _mockServer.Start();
-        LoadWorkspace();
+        if (SettingsStore.StartupProblem is { } settingsProblem)
+        {
+            DataNotice.Report(settingsProblem, "设置文件 settings.json ", "已使用默认设置");
+        }
 
-        if (Collections.Count == 0)
+        var workspaceLoad = _store.Load();
+        DataNotice.Report(workspaceLoad, "工作区文件 workspace.json ", "已用示例工作区启动");
+        if (workspaceLoad.Value is { } workspace)
+        {
+            LoadWorkspace(workspace);
+        }
+        else
         {
             SeedWorkspace();
         }
@@ -144,21 +165,36 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             OnPropertyChanged(nameof(AuditTrashLabel));
         };
 
-        foreach (var entry in _auditStore.Load().Take(_auditLimit))
+        var auditLoad = _auditStore.Load();
+        var auditTrashLoad = _auditStore.LoadTrash();
+        // A moved-aside audit file is never scrubbed, so the notice asks for it to be removed once recovered.
+        const string auditCopyHint = "该文件可能含打码前的明文凭据，找回需要的内容后请删除。";
+        DataNotice.Report(auditLoad, "审计文件 audit.json ", "审计列表从空白开始", auditCopyHint);
+        DataNotice.Report(
+            auditTrashLoad,
+            "审计回收站文件 audit-trash.json ",
+            "审计回收站从空白开始",
+            auditCopyHint
+        );
+
+        foreach (var entry in (auditLoad.Value ?? new List<AuditEntry>()).Take(_auditLimit))
         {
             Audit.Add(entry);
         }
 
-        foreach (var entry in _auditStore.LoadTrash())
+        foreach (var entry in auditTrashLoad.Value ?? new List<AuditEntry>())
         {
             WireAuditTrashEntry(entry);
             AuditTrash.Add(entry);
         }
 
+        // Records written before secrets were masked still hold credentials.
+        ScrubAuditSecrets();
+
         Import = new ImportViewModel(this);
         RefreshAuditView();
         BindEditingTracking();
-        RefreshDerivedState();
+        RefreshAuthState();
         RefreshTree();
         UpdateSelectionFlags();
         _suiteScheduleTimer.Tick += OnSuiteScheduleTick;
@@ -168,6 +204,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     }
 
     public ObservableCollection<RequestCollection> Collections { get; } = new();
+
+    public DataNoticeViewModel DataNotice { get; } = new();
+
+    public TreeTrashViewModel TreeTrash { get; }
 
     public ObservableCollection<TreeDisplayNode> TreeNodes { get; } = new();
 
@@ -646,7 +686,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         foreach (var child in source.Children)
         {
-            if (depth >= MaxCollectionDepth)
+            if (depth >= CollectionTree.MaxDepth)
             {
                 AddImportedCollectionContent(
                     target,
@@ -941,6 +981,207 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public SettingsViewModel CreateSettingsViewModel() => new(Settings, _settingsStore);
 
+    public AuthorizationViewModel CreateAuthorizationViewModel(
+        RequestAuth auth,
+        string targetLabel,
+        Func<string> targetDetailFactory
+    ) => new(auth, targetLabel, targetDetailFactory);
+
+    private RequestCollection? AuthCollectionTarget =>
+        SelectedRequest is null ? SelectedCollection : null;
+
+    /// <summary>树里选中的是集合而不是请求；此时授权标签页编辑集合自己的配置。</summary>
+    public bool IsCollectionSelected => AuthCollectionTarget is not null;
+
+    /// <summary>授权标签页与工具栏钥匙按钮当前编辑的那份配置：选中的集合或当前请求。</summary>
+    public RequestAuth EditingAuth =>
+        AuthCollectionTarget is { } collection ? collection.Auth : Editing.Auth;
+
+    /// <summary>当前编辑对象通过继承拿到授权的集合；自己配置了授权或一路继承时为 null。</summary>
+    public RequestCollection? InheritedAuthSource { get; private set; }
+
+    /// <summary>「编辑所属 / 上级集合授权」按钮要打开的集合；没有可跳转的上级时为 null。</summary>
+    public RequestCollection? EnclosingCollectionAuthTarget
+    {
+        get
+        {
+            if (AuthCollectionTarget is not null)
+            {
+                return InheritedAuthSource;
+            }
+
+            return Editing.Owner;
+        }
+    }
+
+    public bool HasEnclosingCollectionAuth => EnclosingCollectionAuthTarget is not null;
+
+    public string EnclosingCollectionAuthLabel =>
+        AuthCollectionTarget is not null ? "编辑上级集合授权" : "编辑所属集合授权";
+
+    public string AuthScopeTitle { get; private set; } = string.Empty;
+
+    public string AuthScopeDetail { get; private set; } = string.Empty;
+
+    public string AuthScopeSummary { get; private set; } = string.Empty;
+
+    public void RefreshAuthState()
+    {
+        InheritedAuthSource = AuthCollectionTarget is { } collection
+            ? AuthResolver.FindInheritSource(collection)
+            : AuthResolver.FindInheritSource(Editing);
+
+        AuthScopeTitle = BuildAuthScopeTitle();
+        AuthScopeDetail = BuildAuthScopeDetail();
+        AuthScopeSummary = BuildAuthScopeSummary();
+        OnPropertyChanged(nameof(InheritedAuthSource));
+        OnPropertyChanged(nameof(EnclosingCollectionAuthTarget));
+        OnPropertyChanged(nameof(HasEnclosingCollectionAuth));
+        OnPropertyChanged(nameof(EnclosingCollectionAuthLabel));
+        OnPropertyChanged(nameof(AuthScopeTitle));
+        OnPropertyChanged(nameof(AuthScopeDetail));
+        OnPropertyChanged(nameof(AuthScopeSummary));
+        RefreshDerivedState();
+    }
+
+    /// <summary>授权窗口与标签页共用这段说明：写清保存后到底影响谁。</summary>
+    public string DescribeCollectionAuthTarget(RequestCollection collection)
+    {
+        if (!collection.Auth.IsInherit)
+        {
+            return $"只作用于集合「{collection.Name}」及其下级中仍选择「继承」的请求：{AuthResolver.Describe(collection.Auth)}。";
+        }
+
+        return AuthResolver.FindInheritSource(collection) is { } source
+            ? $"当前继承上级集合「{source.Name}」的授权：{AuthResolver.Describe(source.Auth)}。在这里配置后只覆盖本集合及其下级。"
+            : "该集合当前未配置授权；在这里配置后只影响本集合及其下级，其他集合不受影响。";
+    }
+
+    public string DescribeRequestAuthTarget(RequestItem request)
+    {
+        if (!request.Auth.IsInherit)
+        {
+            return $"只影响请求「{request.Name}」：{AuthResolver.Describe(request.Auth)}。";
+        }
+
+        return AuthResolver.FindInheritSource(request) is { } source
+            ? $"请求「{request.Name}」当前继承集合「{source.Name}」的授权：{AuthResolver.Describe(source.Auth)}。在这里配置后只覆盖这个请求。"
+            : $"请求「{request.Name}」当前不附加认证；在这里配置后只影响这个请求。";
+    }
+
+    /// <summary>授权窗口关闭后调用：把窗口里改过的配置落盘，并刷新摘要与 cURL。</summary>
+    public void OnAuthorizationDialogClosed()
+    {
+        Persist();
+        RefreshAuthState();
+    }
+
+    /// <summary>发送前解析这次请求的授权；OAuth 2.0 令牌过期时先续期。</summary>
+    public async Task<AuthInjection?> ResolveAuthAsync(
+        RequestItem request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var auth = AuthResolver.Resolve(request);
+        if (auth is null)
+        {
+            return null;
+        }
+
+        if (auth.AuthType == AuthKinds.OAuth2 && auth.OAuth2 is { } profile)
+        {
+            if (profile.IsTokenExpired && profile.CanRefresh)
+            {
+                await _authorizationService.EnsureFreshAsync(profile, cancellationToken);
+            }
+
+            return AuthorizationService.BuildInjection(profile, auth.Target);
+        }
+
+        return AuthorizationService.BuildInjection(auth);
+    }
+
+    /// <summary>同步版本，给 cURL 预览这类不能等待令牌刷新的地方用。</summary>
+    public AuthInjection? ResolveAuth(RequestItem request)
+    {
+        var auth = AuthResolver.Resolve(request);
+        return auth is null ? null : AuthorizationService.BuildInjection(auth);
+    }
+
+    private string BuildAuthScopeTitle()
+    {
+        if (AuthCollectionTarget is { } collection)
+        {
+            if (!collection.Auth.IsInherit)
+            {
+                return $"集合「{collection.Name}」· 本级授权";
+            }
+
+            return InheritedAuthSource is { } source
+                ? $"集合「{collection.Name}」· 继承自「{source.Name}」"
+                : $"集合「{collection.Name}」· 未配置授权";
+        }
+
+        if (!Editing.Auth.IsInherit)
+        {
+            return $"请求「{Editing.Name}」· 本级授权";
+        }
+
+        return InheritedAuthSource is { } inherited
+            ? $"请求「{Editing.Name}」· 继承自集合「{inherited.Name}」"
+            : $"请求「{Editing.Name}」· 未配置授权";
+    }
+
+    private string BuildAuthScopeDetail()
+    {
+        if (AuthCollectionTarget is { } collection)
+        {
+            if (!collection.Auth.IsInherit)
+            {
+                return $"只作用于该集合及其下级中仍选择「继承」的请求：{AuthResolver.Describe(collection.Auth)}。";
+            }
+
+            return InheritedAuthSource is { } source
+                ? $"本集合未覆盖，使用上级集合「{source.Name}」的授权：{AuthResolver.Describe(source.Auth)}；该集合下未单独配置的请求共用这份授权。"
+                : "该集合与其下级都未配置授权，发送时不附加认证；选择一种认证类型即可为本集合配置。";
+        }
+
+        if (!Editing.Auth.IsInherit)
+        {
+            return $"只影响「{Editing.Name}」：{AuthResolver.Describe(Editing.Auth)}。";
+        }
+
+        return InheritedAuthSource is { } inherited
+            ? $"{AuthResolver.Describe(inherited.Auth)}；该集合下未单独配置的请求共用这份授权，修改集合授权会影响这些请求。"
+            : "发送时不附加 Authorization 头或令牌参数；选择一种认证类型即可为这个请求单独配置。";
+    }
+
+    private string BuildAuthScopeSummary()
+    {
+        if (AuthCollectionTarget is { } collection)
+        {
+            var resolved = AuthResolver.Resolve(collection);
+            if (resolved is null)
+            {
+                return $"集合「{collection.Name}」：不附加认证";
+            }
+
+            return InheritedAuthSource is { } source
+                ? $"集合「{collection.Name}」继承「{source.Name}」：{AuthResolver.Describe(resolved)}"
+                : $"集合「{collection.Name}」：{AuthResolver.Describe(resolved)}";
+        }
+
+        var requestAuth = AuthResolver.Resolve(Editing);
+        if (requestAuth is null)
+        {
+            return $"请求「{Editing.Name}」：不附加认证";
+        }
+
+        return AuthResolver.FindInheritSource(Editing) is { } inherited
+            ? $"请求「{Editing.Name}」继承「{inherited.Name}」：{AuthResolver.Describe(requestAuth)}"
+            : $"请求「{Editing.Name}」：{AuthResolver.Describe(requestAuth)}";
+    }
+
     private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
     {
         _http.TimeoutSeconds = Math.Clamp(Settings.RequestTimeoutSeconds, 5, 600);
@@ -980,7 +1221,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             FontService.Reload(Settings.FontDirectories);
         }
 
-        _settingsStore.Save(Settings);
+        if (_settingsStore.Save(Settings) == SaveResult.Failed)
+        {
+            DataNotice.Warn(
+                "设置保存失败：无法写入 settings.json，修改只在本次运行中有效。请检查数据目录是否可写、settings.json 是否被其他程序占用。"
+            );
+        }
+
         AppearanceChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -1002,7 +1249,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         || IsAuditTrashConfirmOpen
         || IsAuditTrashOpen
         || IsAuditPurgeConfirmOpen
-        || Import.IsImportDialogOpen;
+        || Import.IsImportDialogOpen
+        || TreeTrash.IsOpen
+        || TreeTrash.IsPurgeConfirmOpen;
 
     /// <summary>Enter in a confirmation or rename dialog; buttons keep their own activation.</summary>
     public bool TryConfirmActiveDialog()
@@ -1040,6 +1289,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (IsAuditPurgeConfirmOpen)
         {
             ConfirmAuditPurgeCommand.Execute(null);
+            return true;
+        }
+
+        if (TreeTrash.IsPurgeConfirmOpen)
+        {
+            TreeTrash.ConfirmPurgeCommand.Execute(null);
             return true;
         }
 
@@ -1082,6 +1337,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (IsAuditPurgeConfirmOpen)
         {
             CancelAuditPurgeCommand.Execute(null);
+            return true;
+        }
+
+        if (TreeTrash.IsPurgeConfirmOpen)
+        {
+            TreeTrash.CancelPurgeCommand.Execute(null);
             return true;
         }
 
@@ -1130,6 +1391,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (IsAuditTrashOpen)
         {
             CloseAuditTrashCommand.Execute(null);
+            return true;
+        }
+
+        if (TreeTrash.IsOpen)
+        {
+            TreeTrash.CloseCommand.Execute(null);
             return true;
         }
 
@@ -1252,14 +1519,31 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         + "套件：list_suites、get_suite、create_suite、create_suite_from_collections、update_suite、run_suite、delete_suite；"
         + "运行与审计：send_request、run_sequence、get_curl、list_audit、get_audit、list_history、list_environments、set_variable。";
 
-    public string EditorHint => IsDraft ? "草稿 · 保存后加入集合" : "Ctrl+S 保存 · Ctrl+Enter 发送";
+    public string EditorHint =>
+        IsCollectionSelected ? "已选中集合 · 「授权」标签页正在配置集合授权"
+        : IsDraft ? "草稿 · 保存后加入集合"
+        : "Ctrl+S 保存 · Ctrl+Enter 发送";
 
     partial void OnEditingChanged(RequestItem value)
     {
         OnPropertyChanged(nameof(IsDraft));
         OnPropertyChanged(nameof(EditorHint));
         BindEditingTracking();
-        RefreshDerivedState();
+        OnPropertyChanged(nameof(EditingAuth));
+        RefreshAuthState();
+    }
+
+    partial void OnSelectedCollectionChanged(RequestCollection? value) => OnAuthScopeChanged();
+
+    partial void OnSelectedRequestChanged(RequestItem? value) => OnAuthScopeChanged();
+
+    private void OnAuthScopeChanged()
+    {
+        BindAuthTracking();
+        OnPropertyChanged(nameof(IsCollectionSelected));
+        OnPropertyChanged(nameof(EditingAuth));
+        OnPropertyChanged(nameof(EditorHint));
+        RefreshAuthState();
     }
 
     partial void OnFilterTextChanged(string value) => NotifyTreeChanged();
@@ -1333,21 +1617,30 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         SseCanResume = false;
         SseLastEventId = string.Empty;
         _sendCts = new CancellationTokenSource();
-        ComposedRequest? composed = null;
+        var secrets = SecretMasker.CollectSecrets(Environments);
+
+        // Another request may be opened while this one is on its way; history and audit describe this one.
+        var request = Editing;
+        ComposedRequest? stored = null;
 
         try
         {
             HttpResult result;
             try
             {
-                composed = RequestComposer.Compose(Editing, ActiveEnvironment);
+                var auth = await ResolveAuthAsync(request, _sendCts.Token);
+                var composed = RequestComposer.Compose(request, ActiveEnvironment, auth);
                 _lastComposedRequest = composed;
+
+                // Masked before the await: the request and environment can be edited while it is on its way.
+                stored = SecretMasker.MaskComposed(request, ActiveEnvironment, composed, secrets);
                 var sseProgress = new Progress<SseProgress>(ApplySseProgress);
                 var uploadProgress = new Progress<UploadProgress>(ApplyUploadProgress);
                 result = await _http.SendAsync(
                     composed,
+                    stored.Url,
                     _sendCts.Token,
-                    Editing.TimeoutSeconds,
+                    request.TimeoutSeconds,
                     sseProgress,
                     uploadProgress
                 );
@@ -1355,7 +1648,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             }
             catch (Exception exception)
             {
-                Log.Error(exception, "UI 发送请求失败 {RequestName}", Editing.Name);
+                Log.Error(exception, "UI 发送请求失败 {RequestName}", request.Name);
                 result = HttpRequestService.Failure(exception.Message);
             }
 
@@ -1369,10 +1662,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                     IsWorkspaceSideBySide = true;
                 }
 
-                AddHistory(Editing, result);
+                AddHistory(request, result);
             }
 
-            RecordAudit(Editing, composed, result, "UI", null, null);
+            RecordAudit(request, stored, result, "UI", null, null, secrets);
             Persist();
         }
         finally
@@ -1408,8 +1701,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         try
         {
             var sseProgress = new Progress<SseProgress>(ApplySseProgress);
+            var secrets = SecretMasker.CollectSecrets(Environments);
+            var stored = RequestComposer.MaskAuthorization(
+                SecretMasker.MaskRequest(composed, SecretMasker.CollectAllSecrets(Environments))
+            );
+            var logUrl = stored.Url;
             var result = await _http.SendAsync(
                 composed,
+                logUrl,
                 _sendCts.Token,
                 Editing.TimeoutSeconds,
                 sseProgress,
@@ -1428,7 +1727,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 AddHistory(Editing, result);
             }
 
-            RecordAudit(Editing, composed, result, "UI", null, null);
+            RecordAudit(Editing, stored, result, "UI", null, null, secrets);
             Persist();
         }
         catch (Exception exception)
@@ -1531,9 +1830,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public void AddSubcollection(RequestCollection parent)
     {
-        if (parent.Depth >= MaxCollectionDepth)
+        if (parent.Depth >= CollectionTree.MaxDepth)
         {
-            ShowToast($"集合最多支持 {MaxCollectionDepth} 级");
+            ShowToast($"集合最多支持 {CollectionTree.MaxDepth} 级");
             return;
         }
 
@@ -1569,9 +1868,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 ?? throw new KeyNotFoundException($"没有找到 id 为 {requestedParent} 的父集合。");
         }
 
-        if (parent is not null && parent.Depth >= MaxCollectionDepth)
+        if (parent is not null && parent.Depth >= CollectionTree.MaxDepth)
         {
-            throw new InvalidOperationException($"集合最多支持 {MaxCollectionDepth} 级。");
+            throw new InvalidOperationException($"集合最多支持 {CollectionTree.MaxDepth} 级。");
         }
 
         var collection = new RequestCollection
@@ -1647,10 +1946,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
             if (
                 target is not null
-                && target.Depth + GetCollectionSubtreeHeight(collection) > MaxCollectionDepth
+                && target.Depth + CollectionTree.SubtreeHeight(collection) > CollectionTree.MaxDepth
             )
             {
-                throw new InvalidOperationException($"集合最多支持 {MaxCollectionDepth} 级。");
+                throw new InvalidOperationException($"集合最多支持 {CollectionTree.MaxDepth} 级。");
             }
 
             if (!ReferenceEquals(collection.Parent, target))
@@ -1707,10 +2006,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         Persist();
         NotifySelectionChanged();
         NotifyTreeChanged();
+        RefreshAuthState();
         return collection;
     }
 
-    public bool DeleteCollection(Guid id)
+    /// <summary>
+    /// Moves a collection and everything under it to the recycle bin. Returns false when it does not exist.
+    /// </summary>
+    public bool DeleteCollection(Guid id, string source)
     {
         var collection = Collections.FirstOrDefault(candidate => candidate.Id == id);
         if (collection is null)
@@ -1722,7 +2025,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Editing.Owner is not null && IsSelfOrDescendant(Editing.Owner, collection);
         var selectedRemoved =
             SelectedCollection is not null && IsSelfOrDescendant(SelectedCollection, collection);
-        RemoveCollectionRecursive(collection);
+        TreeTrash.TrashCollection(collection, source);
 
         if (editingRemoved)
         {
@@ -1740,6 +2043,42 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         NotifySelectionChanged();
         NotifyTreeChanged();
         return true;
+    }
+
+    /// <summary>Moves a request to the recycle bin. Returns false when it is not in the tree.</summary>
+    public bool DeleteRequest(Guid requestId, string source)
+    {
+        var request = Collections
+            .SelectMany(collection => collection.Requests)
+            .FirstOrDefault(candidate => candidate.Id == requestId);
+        if (request is null)
+        {
+            return false;
+        }
+
+        var wasOpen =
+            ReferenceEquals(Editing, request) || ReferenceEquals(SelectedRequest, request);
+        if (!TreeTrash.TrashRequest(request, source))
+        {
+            return false;
+        }
+
+        if (wasOpen)
+        {
+            SelectFirstRequestOrBlank();
+        }
+
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
+        return true;
+    }
+
+    private void OnTreeTrashChanged()
+    {
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
     }
 
     public RequestItem MoveRequest(Guid requestId, Guid targetCollectionId, int? position)
@@ -1776,6 +2115,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             SelectedCollection = target;
         }
 
+        RefreshAuthState();
         Persist();
         NotifySelectionChanged();
         NotifyTreeChanged();
@@ -1884,13 +2224,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             case RequestItem request:
                 _pendingDelete = request;
                 DeleteDialogTitle = "删除请求？";
-                DeleteDialogDescription = $"“{request.Name}”将从集合中删除。此操作无法撤销。";
+                DeleteDialogDescription =
+                    $"“{request.Name}”将移入集合回收站，可在回收站中恢复到原位置。";
                 break;
             case RequestCollection collection:
                 _pendingDelete = collection;
                 DeleteDialogTitle = "删除集合？";
                 DeleteDialogDescription =
-                    $"“{collection.Name}”及其子集合、共 {CountRequests(collection)} 个请求将被删除。此操作无法撤销。";
+                    $"“{collection.Name}”及其子集合、共 {collection.TotalRequestCount} 个请求将移入集合回收站，可在回收站中恢复到原位置。";
                 break;
             default:
                 ShowToast("请先选择集合或请求");
@@ -1932,7 +2273,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return !ReferenceEquals(collection, target)
                 && !ReferenceEquals(collection.Parent, target)
                 && !IsSelfOrDescendant(target, collection)
-                && target.Depth + GetCollectionSubtreeHeight(collection) <= MaxCollectionDepth;
+                && target.Depth + CollectionTree.SubtreeHeight(collection)
+                    <= CollectionTree.MaxDepth;
         }
 
         return false;
@@ -1981,7 +2323,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         return parent is null
             || (
                 !IsSelfOrDescendant(parent, collection)
-                && parent.Depth + GetCollectionSubtreeHeight(collection) <= MaxCollectionDepth
+                && parent.Depth + CollectionTree.SubtreeHeight(collection)
+                    <= CollectionTree.MaxDepth
             );
     }
 
@@ -2065,37 +2408,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         SyncFlatCollectionOrder(roots);
     }
 
-    private void SyncFlatCollectionOrder(IReadOnlyList<RequestCollection> roots)
-    {
-        var ordered = new List<RequestCollection>();
-        foreach (var root in roots)
-        {
-            AddCollectionInTreeOrder(root, ordered);
-        }
-
-        if (ordered.Count != Collections.Count)
-        {
-            return;
-        }
-
-        Collections.Clear();
-        foreach (var collection in ordered)
-        {
-            Collections.Add(collection);
-        }
-    }
-
-    private static void AddCollectionInTreeOrder(
-        RequestCollection collection,
-        ICollection<RequestCollection> target
-    )
-    {
-        target.Add(collection);
-        foreach (var child in collection.Children)
-        {
-            AddCollectionInTreeOrder(child, target);
-        }
-    }
+    private void SyncFlatCollectionOrder(IReadOnlyList<RequestCollection> roots) =>
+        CollectionTree.SyncFlatOrder(Collections, roots);
 
     public bool MoveTreeNode(TreeDisplayNode source, RequestCollection target)
     {
@@ -2135,6 +2449,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         Persist();
         NotifySelectionChanged();
         NotifyTreeChanged();
+        RefreshAuthState();
         return true;
     }
 
@@ -2164,6 +2479,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         Persist();
         NotifySelectionChanged();
         NotifyTreeChanged();
+        RefreshAuthState();
         return true;
     }
 
@@ -2335,44 +2651,16 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [RelayCommand]
     private void ConfirmDelete()
     {
-        if (_pendingDelete is RequestItem request)
+        var deleted = _pendingDelete switch
         {
-            var wasSelected = ReferenceEquals(SelectedRequest, request);
-            request.Owner?.Requests.Remove(request);
-            if (wasSelected)
-            {
-                SelectFirstRequestOrBlank();
-            }
-        }
-        else if (_pendingDelete is RequestCollection collection)
-        {
-            var editingRemoved =
-                Editing.Owner is not null && IsSelfOrDescendant(Editing.Owner, collection);
-            var selectedRemoved =
-                SelectedCollection is not null
-                && IsSelfOrDescendant(SelectedCollection, collection);
-
-            RemoveCollectionRecursive(collection);
-
-            if (editingRemoved)
-            {
-                SelectedCollection = null;
-                SelectedRequest = null;
-                SelectFirstRequestOrBlank();
-            }
-            else if (selectedRemoved)
-            {
-                SelectedCollection = Editing.Owner;
-                SelectedRequest = Editing.Owner is null ? null : Editing;
-            }
-        }
+            RequestItem request => DeleteRequest(request.Id, "UI"),
+            RequestCollection collection => DeleteCollection(collection.Id, "UI"),
+            _ => false,
+        };
 
         _pendingDelete = null;
         IsDeleteDialogOpen = false;
-        NotifySelectionChanged();
-        Persist();
-        NotifyTreeChanged();
-        ShowToast("已删除");
+        ShowToast(deleted ? "已移入集合回收站" : "没有找到要删除的集合或请求，它可能已被删除");
     }
 
     [RelayCommand]
@@ -2446,6 +2734,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         _pendingDelete = null;
         IsRenameDialogOpen = false;
+        RefreshAuthState();
         Persist();
         NotifyTreeChanged();
         ShowToast("名称已更新");
@@ -2475,6 +2764,16 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [RelayCommand]
     private void CancelEnvironmentDialog() => IsEnvironmentDialogOpen = false;
+
+    // Edits apply as they are typed, and the dialog also closes on Esc or a click outside it, so a variable marked
+    // secret here is masked in the audit whichever way it closes.
+    partial void OnIsEnvironmentDialogOpenChanged(bool value)
+    {
+        if (!value)
+        {
+            ScrubAuditSecrets();
+        }
+    }
 
     [RelayCommand]
     private void AddEnvironment()
@@ -2701,32 +3000,6 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         return false;
     }
 
-    private void RemoveCollectionRecursive(RequestCollection collection)
-    {
-        foreach (var child in collection.Children.ToList())
-        {
-            RemoveCollectionRecursive(child);
-        }
-
-        collection.Parent?.Children.Remove(collection);
-        Collections.Remove(collection);
-    }
-
-    private static int CountRequests(RequestCollection collection)
-    {
-        return collection.Requests.Count + collection.Children.Sum(child => CountRequests(child));
-    }
-
-    private static int GetCollectionSubtreeHeight(RequestCollection collection)
-    {
-        return 1
-            + (
-                collection.Children.Count == 0
-                    ? 0
-                    : collection.Children.Max(GetCollectionSubtreeHeight)
-            );
-    }
-
     public void LoadHistory(HistoryEntry entry)
     {
         Editing = entry.ToRequest();
@@ -2768,17 +3041,19 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         RefreshDerivedState();
     }
 
+    /// <summary>Records a send made outside the window; <paramref name="stored"/> is already masked.</summary>
     public void RecordExternalSend(
         RequestItem request,
-        ComposedRequest? composed,
+        ComposedRequest? stored,
         HttpResult result,
         string source,
         string? tool,
-        string? client
+        string? client,
+        IReadOnlyList<string> secrets
     )
     {
         AddHistory(request, result);
-        RecordAudit(request, composed, result, source, tool, client);
+        RecordAudit(request, stored, result, source, tool, client, secrets);
         Persist();
     }
 
@@ -2812,29 +3087,37 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         return string.Join("\n", lines);
     }
 
-    private void RecordAudit(
+    /// <summary>
+    /// Stores a record of a send and returns it. <paramref name="stored"/> is the sent request already masked with
+    /// <see cref="SecretMasker.MaskComposed"/> before the send, or null when nothing was sent.
+    /// </summary>
+    private AuditEntry RecordAudit(
         RequestItem request,
-        ComposedRequest? composed,
+        ComposedRequest? stored,
         HttpResult result,
         string source,
         string? tool,
-        string? client
+        string? client,
+        IReadOnlyList<string> secrets
     )
     {
-        var requestHeaders = composed is not null
+        // The audit file and MCP readers must never see credentials, so everything stored is masked first.
+        var requestHeaders = stored is not null
             ? string.Join(
                 "\n",
-                composed
+                stored
                     .Headers.Select(pair => $"{pair.Key}: {pair.Value}")
                     .Concat(
-                        composed.ContentType is null
+                        stored.ContentType is null
                             ? Array.Empty<string>()
-                            : new[] { $"Content-Type: {composed.ContentType}" }
+                            : new[] { $"Content-Type: {stored.ContentType}" }
                     )
             )
             : string.Join(
                 "\n",
-                request.Headers.ActiveRows.Select(row => $"{row.Key}: {row.Value}")
+                request.Headers.ActiveRows.Select(row =>
+                    $"{row.Key}: {SecretMasker.MaskHeaderValue(row.Key, row.Value, secrets)}"
+                )
             );
 
         var entry = new AuditEntry
@@ -2844,31 +3127,37 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Client = client,
             RequestId = request.Id,
             RequestName = request.Name,
-            Method = composed?.Method ?? request.Method,
-            Url = composed?.Url ?? request.Url,
-            Environment = composed?.EnvironmentName ?? ActiveEnvironment?.Name,
+            Method = stored?.Method ?? request.Method,
+            Url = stored?.Url ?? SecretMasker.MaskSecrets(request.Url, secrets),
+            Environment = stored?.EnvironmentName ?? ActiveEnvironment?.Name,
             StatusCode = result.StatusCode,
             StatusText = result.ReasonPhrase,
             ElapsedMs = result.ElapsedMs,
             SizeBytes = result.SizeBytes,
             IsSuccess = result.HasResponse && result.StatusCode < 400,
-            Error = result.Error,
-            Curl = composed is null ? null : RequestComposer.BuildCurl(composed),
+            Error = result.Error is null ? null : SecretMasker.MaskSecrets(result.Error, secrets),
+            Curl = stored is null ? null : RequestComposer.BuildCurl(stored),
             RequestHeaders = Truncate(requestHeaders, AuditPreviewLimit),
             RequestBodyPreview = Truncate(
-                composed?.Body ?? BuildMultipartPreview(request),
+                stored?.Body ?? SecretMasker.MaskSecrets(BuildMultipartPreview(request), secrets),
                 AuditPreviewLimit
             ),
             ResponseHeaders = Truncate(
-                string.Join("\n", result.Headers.Select(header => $"{header.Key}: {header.Value}")),
+                SecretMasker.MaskHeaderLines(
+                    string.Join(
+                        "\n",
+                        result.Headers.Select(header => $"{header.Key}: {header.Value}")
+                    ),
+                    secrets
+                ),
                 AuditPreviewLimit
             ),
-            ResponseBodyPreview = Truncate(result.Body, AuditPreviewLimit),
+            ResponseBodyPreview = SecretMasker.MaskPreview(result.Body, AuditPreviewLimit, secrets),
             ResponseContentType = result.MediaType,
             IsSse = result.IsSse,
             SseEventCount = result.SseEventCount,
-            AiThinking = result.SseThinking,
-            AiContent = result.SseContent,
+            AiThinking = SecretMasker.MaskSecrets(result.SseThinking, secrets),
+            AiContent = SecretMasker.MaskSecrets(result.SseContent, secrets),
         };
 
         Audit.Insert(0, entry);
@@ -2880,6 +3169,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         PersistAudit();
+        return entry;
     }
 
     private void RefreshAuditView()
@@ -3034,11 +3324,30 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         IsAuditPurgeConfirmOpen = false;
     }
 
-    private void PersistAudit()
+    /// <summary>Returns false when either audit file could not be written.</summary>
+    /// <summary>
+    /// Writes both audit files. Failed when either write failed, Blocked when either is protected after a failed
+    /// read at startup (the startup notice explains that), Saved otherwise.
+    /// </summary>
+    private SaveResult PersistAudit()
     {
-        _auditStore.Save(Audit);
-        _auditStore.SaveTrash(AuditTrash);
+        var saved = _auditStore.Save(Audit);
+        var trashSaved = _auditStore.SaveTrash(AuditTrash);
+        if (saved == SaveResult.Failed || trashSaved == SaveResult.Failed)
+        {
+            DataNotice.Warn(
+                "审计记录保存失败：无法写入 audit.json 或 audit-trash.json，新的审计记录暂时只在界面中。请检查数据目录是否可写；下次发送请求时会自动重试。"
+            );
+            return SaveResult.Failed;
+        }
+
+        return saved == SaveResult.Saved && trashSaved == SaveResult.Saved
+            ? SaveResult.Saved
+            : SaveResult.Blocked;
     }
+
+    /// <summary>Masks stored audit records again when a variable may have become secret.</summary>
+    public void ScrubAuditSecrets() => _auditScrubber.Scrub();
 
     [RelayCommand]
     private void OpenSelectedAuditRequest()
@@ -3479,6 +3788,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return;
         }
 
+        var cancellation = new CancellationTokenSource();
+        _suiteCts = cancellation;
         try
         {
             IsRunningSuite = true;
@@ -3487,16 +3798,28 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 "UI",
                 $"suite:{suite.Name}",
                 null,
-                CancellationToken.None
+                cancellation.Token
             );
             SelectedSuiteResult = result;
-            ShowToast($"套件完成：{result.Passed}/{result.Total} 通过");
+            ShowToast(
+                result.Cancelled ? $"套件已取消：{result.Outcome}" : $"套件完成：{result.Outcome}"
+            );
         }
         finally
         {
             IsRunningSuite = false;
+            _suiteCts = null;
+            cancellation.Dispose();
         }
     }
+
+    [RelayCommand]
+    private void CancelSuiteRun() => _suiteCts?.Cancel();
+
+    public string RunSuiteButtonText => IsRunningSuite ? "运行中…" : "运行套件";
+
+    partial void OnIsRunningSuiteChanged(bool value) =>
+        OnPropertyChanged(nameof(RunSuiteButtonText));
 
     public async Task<TestRunResult> RunSuiteForMcpAsync(
         Guid suiteId,
@@ -3531,7 +3854,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         var steps = new List<TestStepResult>();
         var stopped = false;
+        var cancelled = false;
         var stepResults = new Dictionary<Guid, HttpResult>();
+        var secrets = SecretMasker.CollectSecrets(Environments);
 
         for (var index = 0; index < suite.Steps.Count; index++)
         {
@@ -3556,6 +3881,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 {
                     Log.Debug(exception, "套件运行被取消 {SuiteName}", suite.Name);
                     stopped = true;
+                    cancelled = true;
                     break;
                 }
             }
@@ -3563,6 +3889,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             if (cancellationToken.IsCancellationRequested)
             {
                 stopped = true;
+                cancelled = true;
                 break;
             }
 
@@ -3595,7 +3922,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 continue;
             }
 
-            var effectiveRequest = step.InputMappings.Count > 0 ? request.Clone() : request;
+            var effectiveRequest =
+                step.InputMappings.Count > 0 ? request.Clone(copyAuthorization: false) : request;
             var mappingError =
                 step.InputMappings.Count > 0
                     ? ApplyInputMappings(effectiveRequest, step, stepResults)
@@ -3605,7 +3933,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             {
                 var failure = HttpRequestService.Failure(mappingError);
                 AddHistory(effectiveRequest, failure);
-                RecordAudit(effectiveRequest, null, failure, source, tool, client);
+                RecordAudit(effectiveRequest, null, failure, source, tool, client, secrets);
                 stepResults[step.Id] = failure;
                 steps.Add(
                     new TestStepResult
@@ -3630,7 +3958,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 continue;
             }
 
-            ComposedRequest? composed = null;
+            ComposedRequest? stored = null;
             HttpResult result = HttpRequestService.Failure("步骤未执行。");
             var assertionResults = new List<TestAssertionResult>();
             var attempts = 0;
@@ -3643,9 +3971,21 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 attempts++;
                 try
                 {
-                    composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment);
+                    var auth = await ResolveAuthAsync(effectiveRequest, cancellationToken);
+                    var composed = RequestComposer.Compose(
+                        effectiveRequest,
+                        ActiveEnvironment,
+                        auth
+                    );
+                    stored = SecretMasker.MaskComposed(
+                        effectiveRequest,
+                        ActiveEnvironment,
+                        composed,
+                        secrets
+                    );
                     result = await _http.SendAsync(
                         composed,
+                        stored.Url,
                         cancellationToken,
                         effectiveRequest.TimeoutSeconds
                     );
@@ -3661,14 +4001,28 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                     result = HttpRequestService.Failure(exception.Message);
                 }
 
+                if (!result.HasResponse && cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                // Checks see the masked response, so neither their outcome nor the 「实际」 values they report
+                // can be used to read a secret.
+                var checkedResult =
+                    step.Assertions.Count > 0 || !string.IsNullOrWhiteSpace(step.BodyContains)
+                        ? SecretMasker.MaskResult(result, secrets)
+                        : result;
                 var statusMatches = step.ExpectedStatus is null
                     ? result.StatusCode is >= 200 and < 400
                     : result.StatusCode == step.ExpectedStatus;
                 var bodyMatches =
                     string.IsNullOrWhiteSpace(step.BodyContains)
-                    || result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
+                    || checkedResult.Body.Contains(
+                        step.BodyContains,
+                        StringComparison.OrdinalIgnoreCase
+                    );
                 assertionResults = SuiteAssertionEvaluator
-                    .Evaluate(step.Assertions, result)
+                    .Evaluate(step.Assertions, checkedResult)
                     .ToList();
                 var assertionsMatch = assertionResults.All(assertion => assertion.Passed);
                 passed = result.HasResponse && statusMatches && bodyMatches && assertionsMatch;
@@ -3711,9 +4065,27 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 }
             }
 
+            if (!result.HasResponse && cancellationToken.IsCancellationRequested)
+            {
+                // A step cut short by the cancel is not a failed assertion: keep it in the audit like a cancelled
+                // UI send, but leave it out of the step results and the pass/fail counts.
+                RecordAudit(effectiveRequest, stored, result, source, tool, client, secrets);
+                stopped = true;
+                cancelled = true;
+                break;
+            }
+
             stepResults[step.Id] = result;
             AddHistory(effectiveRequest, result);
-            RecordAudit(effectiveRequest, composed, result, source, tool, client);
+            var audited = RecordAudit(
+                effectiveRequest,
+                stored,
+                result,
+                source,
+                tool,
+                client,
+                secrets
+            );
 
             var stepResult = new TestStepResult
             {
@@ -3721,14 +4093,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 RequestId = request.Id,
                 Name = request.Name,
                 Method = request.Method,
-                Url = composed?.Url ?? request.Url,
+                Url = audited.Url,
                 StatusCode = result.StatusCode,
                 StatusText = result.ReasonPhrase,
                 ElapsedMs = result.ElapsedMs,
                 Attempts = attempts,
                 Passed = passed,
-                Error = error,
-                ResponsePreview = Truncate(result.Body, 500),
+                Error = error is null ? null : SecretMasker.MaskSecrets(error, secrets),
+                ResponsePreview = SecretMasker.MaskPreview(result.Body, 500, secrets),
             };
             stepResult.Assertions.AddRange(assertionResults);
             steps.Add(stepResult);
@@ -3740,13 +4112,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             }
         }
 
-        return CompleteSuiteRun(suite, steps, stopped);
+        return CompleteSuiteRun(suite, steps, stopped, cancelled);
     }
 
     private TestRunResult CompleteSuiteRun(
         TestSuite suite,
         List<TestStepResult> steps,
-        bool stopped
+        bool stopped,
+        bool cancelled
     )
     {
         var run = new TestRunResult
@@ -3758,6 +4131,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Failed = steps.Count(step => !step.Passed && !step.Skipped),
             Skipped = steps.Count(step => step.Skipped),
             Stopped = stopped,
+            Cancelled = cancelled,
+            NotRun = suite.Steps.Count - steps.Count,
             Steps = steps,
         };
 
@@ -3787,7 +4162,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             )
             .ToList();
         var results = await Task.WhenAll(tasks);
-        return CompleteSuiteRun(suite, results.ToList(), false);
+        return CompleteSuiteRun(suite, results.ToList(), false, false);
     }
 
     private async Task<TestStepResult> RunParallelStepAsync(
@@ -3817,7 +4192,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             };
         }
 
+        var secrets = SecretMasker.CollectSecrets(Environments);
         ComposedRequest? composed = null;
+        ComposedRequest? stored = null;
         HttpResult result = HttpRequestService.Failure("步骤未执行。");
         var attempts = 0;
         var passed = false;
@@ -3830,8 +4207,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             attempts++;
             try
             {
-                composed = RequestComposer.Compose(request, ActiveEnvironment);
-                result = await _http.SendAsync(composed, cancellationToken, request.TimeoutSeconds);
+                var auth = await ResolveAuthAsync(request, cancellationToken);
+                composed = RequestComposer.Compose(request, ActiveEnvironment, auth);
+                stored = SecretMasker.MaskComposed(request, ActiveEnvironment, composed, secrets);
+                result = await _http.SendAsync(
+                    composed,
+                    stored.Url,
+                    cancellationToken,
+                    request.TimeoutSeconds
+                );
             }
             catch (Exception exception)
             {
@@ -3876,21 +4260,21 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         AddHistory(request, result);
-        RecordAudit(request, composed, result, source, tool, client);
+        var audited = RecordAudit(request, stored, result, source, tool, client, secrets);
         var stepResult = new TestStepResult
         {
             StepId = step.Id,
             RequestId = request.Id,
             Name = request.Name,
             Method = request.Method,
-            Url = composed?.Url ?? request.Url,
+            Url = audited.Url,
             StatusCode = result.StatusCode,
             StatusText = result.ReasonPhrase,
             ElapsedMs = result.ElapsedMs,
             Attempts = attempts,
             Passed = passed,
-            Error = error,
-            ResponsePreview = Truncate(result.Body, 500),
+            Error = error is null ? null : SecretMasker.MaskSecrets(error, secrets),
+            ResponsePreview = SecretMasker.MaskPreview(result.Body, 500, secrets),
         };
         stepResult.Assertions.AddRange(assertionResults);
         return stepResult;
@@ -4438,6 +4822,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         _trackedHeaders = Editing.Headers;
 
         _trackedEditing.PropertyChanged += OnTrackedEditingPropertyChanged;
+        BindAuthTracking();
         _trackedParams.CollectionChanged += OnTrackedRowsCollectionChanged;
         _trackedHeaders.CollectionChanged += OnTrackedRowsCollectionChanged;
 
@@ -4448,16 +4833,40 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
     }
 
+    /// <summary>跟踪当前作用域那份授权，集合与请求切换时换订阅。</summary>
+    private void BindAuthTracking()
+    {
+        if (_trackedAuth is not null)
+        {
+            _trackedAuth.PropertyChanged -= OnTrackedAuthPropertyChanged;
+        }
+
+        _trackedAuth = EditingAuth;
+        _trackedAuth.PropertyChanged += OnTrackedAuthPropertyChanged;
+    }
+
     private RequestItem? _trackedEditing;
+    private RequestAuth? _trackedAuth;
     private EditableRowCollection? _trackedParams;
     private EditableRowCollection? _trackedHeaders;
     private readonly List<KeyValueRow> _trackedRows = new();
+
+    private void OnTrackedAuthPropertyChanged(
+        object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e
+    ) => RefreshAuthState();
 
     private void OnTrackedEditingPropertyChanged(
         object? sender,
         System.ComponentModel.PropertyChangedEventArgs e
     )
     {
+        if (e.PropertyName == nameof(RequestItem.Name))
+        {
+            RefreshAuthState();
+            return;
+        }
+
         if (
             e.PropertyName
             is nameof(RequestItem.Url)
@@ -4529,7 +4938,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             ? $"重复请求头：{string.Join("、", duplicates)}；发送时会按行依次附加。"
             : string.Empty;
 
-        CurlPreview = RequestComposer.BuildCurl(Editing, ActiveEnvironment);
+        CurlPreview = RequestComposer.BuildCurl(Editing, ActiveEnvironment, ResolveAuth(Editing));
     }
 
     private static string Truncate(string text, int limit)
@@ -4540,21 +4949,6 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         return text[..limit] + "\n…（已截断）";
-    }
-
-    public void AfterExternalDelete(RequestItem request)
-    {
-        if (!ReferenceEquals(Editing, request))
-        {
-            return;
-        }
-
-        Editing = new RequestItem { Name = "新建请求" };
-        SelectedRequest = null;
-        SelectedCollection = null;
-        IsDraft = true;
-        ClearResponse();
-        NotifySelectionChanged();
     }
 
     public void Shutdown()
@@ -4787,23 +5181,30 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     private void AddHistory(RequestItem request, HttpResult result)
     {
+        // Suite input mappings can write a resolved secret directly into the URL or body. Mask the stored snapshot
+        // before it reaches workspace.json or list_history, including short secrets that server-text masking skips.
+        var secrets = SecretMasker.CollectAllSecrets(Environments);
         var entry = new HistoryEntry
         {
             Name = request.Name,
             Method = request.Method,
-            Url = request.Url,
+            Url = SecretMasker.MaskSecrets(request.Url, secrets),
             TimeoutSeconds = request.TimeoutSeconds,
             BodyMode = request.BodyMode,
-            Body = request.Body,
+            Body = SecretMasker.MaskSecrets(request.Body, secrets),
             StatusCode = result.StatusCode,
             DurationMs = result.ElapsedMs,
             Params = request
-                .Params.ActiveRows.Select(row => new RowSnapshot(row.Key, row.Value, row.IsEnabled))
+                .Params.ActiveRows.Select(row => new RowSnapshot(
+                    row.Key,
+                    SecretMasker.MaskSecrets(row.Value, secrets),
+                    row.IsEnabled
+                ))
                 .ToList(),
             Headers = request
                 .Headers.ActiveRows.Select(row => new RowSnapshot(
                     row.Key,
-                    row.Value,
+                    SecretMasker.MaskHeaderValue(row.Key, row.Value, secrets),
                     row.IsEnabled
                 ))
                 .ToList(),
@@ -5073,43 +5474,30 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return;
         }
 
-        _store.Save(
+        var saved = _store.Save(
             WorkspaceStore.Capture(
                 Collections,
                 Environments,
                 History,
                 RecycledHistory,
                 Suites,
+                TreeTrash.Items,
                 ActiveEnvironment?.Id
             )
         );
+        if (saved == SaveResult.Failed)
+        {
+            DataNotice.Warn(
+                "工作区保存失败：无法写入 workspace.json，最近的修改还没有保存到磁盘。请检查数据目录是否可写、workspace.json 或其备份是否被其他程序打开；下次保存时会自动重试。"
+            );
+        }
     }
 
-    private void LoadWorkspace()
+    private void LoadWorkspace(WorkspaceDto workspace)
     {
-        var workspace = _store.Load();
-        if (workspace is null)
-        {
-            return;
-        }
-
         foreach (var collectionDto in workspace.Collections)
         {
-            var collection = new RequestCollection
-            {
-                Id = collectionDto.Id == Guid.Empty ? Guid.NewGuid() : collectionDto.Id,
-                Name = collectionDto.Name,
-                IsFavorite = collectionDto.IsFavorite,
-            };
-
-            foreach (var requestDto in collectionDto.Requests)
-            {
-                var request = WorkspaceStore.ToModel(requestDto);
-                request.Owner = collection;
-                collection.Requests.Add(request);
-            }
-
-            Collections.Add(collection);
+            Collections.Add(WorkspaceStore.ToCollectionModel(collectionDto));
         }
 
         foreach (var collectionDto in workspace.Collections)
@@ -5138,7 +5526,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
             foreach (var row in environmentDto.Variables)
             {
-                environment.Variables.AddRow(row.Key, row.Value, row.IsEnabled);
+                environment.Variables.AddRow(row.Key, row.Value, row.IsEnabled, row.IsSecret);
             }
 
             environment.Variables.EnsureTrailingRow();
@@ -5224,6 +5612,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             }
 
             Suites.Add(suite);
+        }
+
+        foreach (var trashedDto in workspace.TrashedNodes)
+        {
+            if (WorkspaceStore.ToTrashedNode(trashedDto) is { } trashed)
+            {
+                TreeTrash.Load(trashed);
+            }
         }
 
         ActiveEnvironment =

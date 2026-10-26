@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Globalization;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
@@ -11,6 +10,7 @@ using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
+using PostSharp.Controls;
 using PostSharp.Models;
 using PostSharp.Services;
 using PostSharp.ViewModels;
@@ -28,6 +28,7 @@ public partial class MainWindow : Window
 
     private MainWindowViewModel? _viewModel;
     private SettingsWindow? _settingsWindow;
+    private AuthorizationWindow? _authorizationWindow;
     private TreeDisplayNode? _dragCandidate;
     private Point _dragStart;
     private bool _dragging;
@@ -96,31 +97,10 @@ public partial class MainWindow : Window
         };
         Opened += (_, _) =>
         {
-            EnablePopupOverlayLayer();
+            this.EnablePopupOverlayLayer();
             ApplyTitleBarTheme();
         };
         ActualThemeVariantChanged += (_, _) => ApplyTitleBarTheme();
-    }
-
-    /// <summary>
-    /// Arc popups (Select, menus, tooltips) render inside the window's popup overlay layer instead of a native
-    /// popup window, so the floating shadow stays part of the window. Avalonia only creates that layer when the
-    /// window's VisualLayerManager has the internal EnablePopupOverlayLayer flag set; the AtomUI window template
-    /// does this for the gallery, and a plain Avalonia window must opt in the same way.
-    /// </summary>
-    private void EnablePopupOverlayLayer()
-    {
-        var manager = this.GetVisualDescendants()
-            .OfType<Avalonia.Controls.Primitives.VisualLayerManager>()
-            .FirstOrDefault();
-
-        manager
-            ?.GetType()
-            .GetProperty(
-                "EnablePopupOverlayLayer",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-            )
-            ?.SetValue(manager, true);
     }
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
@@ -477,6 +457,134 @@ public partial class MainWindow : Window
         window.Height = Math.Clamp(Bounds.Height - 80, window.MinHeight, 900);
         _settingsWindow = window;
         window.Closed += (_, _) => _settingsWindow = null;
+        window.Show(this);
+        window.Activate();
+    }
+
+    private void OnOpenAuthorizationClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    ) => OpenCurrentAuthorization();
+
+    private void OnOpenCurrentAuthorizationClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    ) => OpenCurrentAuthorization();
+
+    /// <summary>工具栏钥匙和授权标签页都按当前树选中对象打开：集合或请求。</summary>
+    private void OpenCurrentAuthorization()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (_viewModel.IsCollectionSelected && _viewModel.SelectedCollection is { } collection)
+        {
+            OpenCollectionAuthorization(collection);
+            return;
+        }
+
+        OpenRequestAuthorization(_viewModel.Editing);
+    }
+
+    private void OpenRequestAuthorization(RequestItem request)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        OpenAuthorizationWindow(
+            request.Auth,
+            $"请求「{request.Name}」",
+            () => _viewModel.DescribeRequestAuthTarget(request)
+        );
+    }
+
+    private void OnOpenEnclosingCollectionAuthorizationClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel?.EnclosingCollectionAuthTarget is not { } collection)
+        {
+            return;
+        }
+
+        OpenCollectionAuthorization(collection);
+    }
+
+    private void OnTreeMenuAuthorizationClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        HideTreeMenu();
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (_viewModel.SelectedRequest is { } request)
+        {
+            OpenRequestAuthorization(request);
+            return;
+        }
+
+        if (_viewModel.SelectedCollection is { } collection)
+        {
+            OpenCollectionAuthorization(collection);
+        }
+    }
+
+    private void OpenCollectionAuthorization(RequestCollection collection)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        OpenAuthorizationWindow(
+            collection.Auth,
+            $"集合「{collection.Name}」",
+            () => _viewModel.DescribeCollectionAuthTarget(collection)
+        );
+    }
+
+    private void OpenAuthorizationWindow(
+        RequestAuth auth,
+        string targetLabel,
+        Func<string> targetDetailFactory
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (_authorizationWindow is { } existing)
+        {
+            existing.Close();
+            _authorizationWindow = null;
+        }
+
+        var window = new AuthorizationWindow
+        {
+            DataContext = _viewModel.CreateAuthorizationViewModel(
+                auth,
+                targetLabel,
+                targetDetailFactory
+            ),
+        };
+        window.Width = Math.Clamp(Bounds.Width - 160, window.MinWidth, 1120);
+        window.Height = Math.Clamp(Bounds.Height - 100, window.MinHeight, 840);
+        _authorizationWindow = window;
+        window.Closed += (_, _) =>
+        {
+            _authorizationWindow = null;
+            _viewModel?.OnAuthorizationDialogClosed();
+        };
         window.Show(this);
         window.Activate();
     }

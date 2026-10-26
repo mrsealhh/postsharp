@@ -63,15 +63,7 @@ public sealed class HistoryEntry
             Size = 12,
         };
 
-    public BadgeTone MethodTone =>
-        Method.ToUpperInvariant() switch
-        {
-            "GET" => BadgeTone.Info,
-            "POST" => BadgeTone.Success,
-            "PUT" or "PATCH" => BadgeTone.Warning,
-            "DELETE" => BadgeTone.Danger,
-            _ => BadgeTone.Neutral,
-        };
+    public BadgeTone MethodTone => MethodTones.Of(Method);
 
     public RequestItem ToRequest()
     {
