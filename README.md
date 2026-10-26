@@ -577,6 +577,7 @@ docs/
 | 导入来源卡片 | OpenAPI、Postman Collection、Postman Environment、cURL、HAR、Insomnia、Hoppscotch、YApi/ApiPost/Eolink、Apifox 九张卡片同屏展示，选中态清晰 |
 | 批量导入 | 文件选择器允许多选；自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL，逐文件成功/失败互不影响 |
 | 导入反馈 | 单文件成功 Toast；批量或有提示时显示「导入结果」绿色结果区和「兼容性提示」橙色提示区，含请求/分组/环境数量，默认折叠可展开 |
+| 粘贴区 | 长 JSON 在固定高度内自适应滚动；底部边框完整，不再被外层裁切 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
 | 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：30 个测试全部通过 |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |

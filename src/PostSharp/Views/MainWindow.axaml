@@ -3240,16 +3240,16 @@
                                         TextWrapping="Wrap"
                                     />
                                 </StackPanel>
-                                <Border Height="120" ClipToBounds="True">
-                                    <arc:Textarea
-                                        Label="或者粘贴 Collection JSON"
-                                        Text="{Binding PostmanJson, Mode=TwoWay}"
-                                        Placeholder="粘贴 Postman Collection v2.1 JSON"
-                                        FrameHeight="120"
-                                        IsResizable="False"
-                                        AutomationProperties.Name="Postman Collection JSON"
-                                    />
-                                </Border>
+                                <arc:Textarea
+                                    Height="124"
+                                    Margin="0,0,0,8"
+                                    Label="或者粘贴 Collection JSON"
+                                    Text="{Binding PostmanJson, Mode=TwoWay}"
+                                    Placeholder="粘贴 Postman Collection v2.1 JSON"
+                                    FrameHeight="100"
+                                    IsResizable="False"
+                                    AutomationProperties.Name="Postman Collection JSON"
+                                />
                                 <arc:Button
                                     Content="导入粘贴内容"
                                     Variant="Primary"
@@ -3301,16 +3301,16 @@
                                     Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                     TextWrapping="Wrap"
                                 />
-                                <Border Height="120" ClipToBounds="True">
-                                    <arc:Textarea
-                                        Label="cURL 命令"
-                                        Text="{Binding CurlCommand, Mode=TwoWay}"
-                                        Placeholder="curl -X POST 'https://api.example.com/health' -H 'Accept: application/json'"
-                                        FrameHeight="120"
-                                        IsResizable="False"
-                                        AutomationProperties.Name="cURL 命令"
-                                    />
-                                </Border>
+                                <arc:Textarea
+                                    Height="124"
+                                    Margin="0,0,0,8"
+                                    Label="cURL 命令"
+                                    Text="{Binding CurlCommand, Mode=TwoWay}"
+                                    Placeholder="curl -X POST 'https://api.example.com/health' -H 'Accept: application/json'"
+                                    FrameHeight="100"
+                                    IsResizable="False"
+                                    AutomationProperties.Name="cURL 命令"
+                                />
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <arc:Button
                                         Content="导入 cURL"
@@ -3364,16 +3364,16 @@
                                         VerticalAlignment="Center"
                                     />
                                 </StackPanel>
-                                <Border Height="120" ClipToBounds="True">
-                                    <arc:Textarea
-                                        Label="或者粘贴 HAR JSON"
-                                        Text="{Binding HarJson, Mode=TwoWay}"
-                                        Placeholder="粘贴 HAR 1.2 JSON"
-                                        FrameHeight="120"
-                                        IsResizable="False"
-                                        AutomationProperties.Name="HAR JSON"
-                                    />
-                                </Border>
+                                <arc:Textarea
+                                    Height="124"
+                                    Margin="0,0,0,8"
+                                    Label="或者粘贴 HAR JSON"
+                                    Text="{Binding HarJson, Mode=TwoWay}"
+                                    Placeholder="粘贴 HAR 1.2 JSON"
+                                    FrameHeight="100"
+                                    IsResizable="False"
+                                    AutomationProperties.Name="HAR JSON"
+                                />
                                 <arc:Button
                                     Content="导入粘贴的 HAR"
                                     Variant="Primary"
@@ -3415,16 +3415,16 @@
                                         TextWrapping="Wrap"
                                     />
                                 </StackPanel>
-                                <Border Height="120" ClipToBounds="True">
-                                    <arc:Textarea
-                                        Label="或者粘贴 Insomnia JSON"
-                                        Text="{Binding InsomniaJson, Mode=TwoWay}"
-                                        Placeholder="粘贴 Insomnia v4 JSON"
-                                        FrameHeight="120"
-                                        IsResizable="False"
-                                        AutomationProperties.Name="Insomnia JSON"
-                                    />
-                                </Border>
+                                <arc:Textarea
+                                    Height="124"
+                                    Margin="0,0,0,8"
+                                    Label="或者粘贴 Insomnia JSON"
+                                    Text="{Binding InsomniaJson, Mode=TwoWay}"
+                                    Placeholder="粘贴 Insomnia v4 JSON"
+                                    FrameHeight="100"
+                                    IsResizable="False"
+                                    AutomationProperties.Name="Insomnia JSON"
+                                />
                                 <arc:Button
                                     Content="导入粘贴的 Insomnia"
                                     Variant="Primary"
@@ -3466,16 +3466,16 @@
                                         TextWrapping="Wrap"
                                     />
                                 </StackPanel>
-                                <Border Height="120" ClipToBounds="True">
-                                    <arc:Textarea
-                                        Label="或者粘贴 Hoppscotch JSON"
-                                        Text="{Binding HoppscotchJson, Mode=TwoWay}"
-                                        Placeholder="粘贴 Hoppscotch Collection JSON"
-                                        FrameHeight="120"
-                                        IsResizable="False"
-                                        AutomationProperties.Name="Hoppscotch JSON"
-                                    />
-                                </Border>
+                                <arc:Textarea
+                                    Height="124"
+                                    Margin="0,0,0,8"
+                                    Label="或者粘贴 Hoppscotch JSON"
+                                    Text="{Binding HoppscotchJson, Mode=TwoWay}"
+                                    Placeholder="粘贴 Hoppscotch Collection JSON"
+                                    FrameHeight="100"
+                                    IsResizable="False"
+                                    AutomationProperties.Name="Hoppscotch JSON"
+                                />
                                 <arc:Button
                                     Content="导入粘贴的 Hoppscotch"
                                     Variant="Primary"
