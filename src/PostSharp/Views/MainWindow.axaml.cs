@@ -21,7 +21,7 @@ public partial class MainWindow : Window
     private const double DefaultSidebarWidth = 320;
     private const double MinSidebarWidth = 240;
     private const double MaxSidebarWidth = 520;
-    private const double DefaultRequestPaneRatio = 0.6;
+    private const double DefaultRequestPaneRatio = 0.5;
     private const double MinRequestPaneRatio = 0.25;
     private const double MaxRequestPaneRatio = 0.8;
 
@@ -67,6 +67,12 @@ public partial class MainWindow : Window
                 140,
                 420
             );
+        };
+        RequestTabs.SizeChanged += (_, _) =>
+        {
+            var available = RequestTabs.Bounds.Height;
+            RequestBodyTextarea.FrameHeight = Math.Clamp(available - 170, 80, 560);
+            JsonRequestBodyViewer.MaxTreeHeight = Math.Clamp(available - 190, 80, 520);
         };
         HistoryScrollArea.SizeChanged += (_, _) => UpdateHistoryWidth();
         DataContextChanged += OnDataContextChanged;

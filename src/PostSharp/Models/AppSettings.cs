@@ -54,7 +54,7 @@ public partial class AppSettings : ObservableObject
 
     /// <summary>Share of the editor area used by the request pane; the rest goes to the response pane.</summary>
     [ObservableProperty]
-    private double _requestPaneRatio = 0.6;
+    private double _requestPaneRatio = 0.5;
 
     [ObservableProperty]
     private bool _historyCollapsed;
