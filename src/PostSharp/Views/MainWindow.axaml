@@ -964,7 +964,7 @@
                                     Size="Small"
                                     Content="{Binding ResponseCollapseLabel}"
                                     Command="{Binding ToggleResponseCollapsedCommand}"
-                                    IsVisible="{Binding HasResponse}"
+                                    ToolTip.Tip="收起或展开响应区域"
                                     AutomationProperties.Name="收起或展开响应"
                                 />
                                 <arc:Button
