@@ -294,9 +294,6 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private string _assertionTitle = string.Empty;
 
     [ObservableProperty]
-    private bool _isBodySingleLine;
-
-    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowRequestBodyJsonViewer))]
     [NotifyPropertyChangedFor(nameof(ShowRequestBodyEditor))]
     private bool _isRequestBodyJsonView;
@@ -460,6 +457,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanResumeSse))]
     private bool _sseCanResume;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResponseCollapseLabel))]
+    private bool _isResponseCollapsed;
+
+    public string ResponseCollapseLabel => IsResponseCollapsed ? "展开响应" : "收起响应";
+
+    [ObservableProperty]
+    private bool _isWorkspaceSideBySide;
 
     public bool CanResumeSse => SseCanResume && !string.IsNullOrWhiteSpace(SseLastEventId);
 
@@ -1367,6 +1373,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
             if (result.HasResponse)
             {
+                IsResponseCollapsed = false;
+                IsWorkspaceSideBySide = true;
                 AddHistory(Editing, result);
             }
 
@@ -1384,6 +1392,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [RelayCommand]
     private void CancelSend() => _sendCts?.Cancel();
+
+    [RelayCommand]
+    private void ToggleResponseCollapsed()
+    {
+        IsResponseCollapsed = !IsResponseCollapsed;
+    }
 
     [RelayCommand]
     private async Task ResumeSseAsync()
@@ -1411,6 +1425,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             ApplyResponse(result);
             if (result.HasResponse)
             {
+                IsResponseCollapsed = false;
+                IsWorkspaceSideBySide = true;
                 AddHistory(Editing, result);
             }
 

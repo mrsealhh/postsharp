@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -32,6 +33,7 @@ public partial class MainWindow : Window
     private bool _dragging;
     private Border? _dropTargetBorder;
     private TreeDropPosition _dropPosition;
+    private bool _isSideBySide;
 
     public MainWindow()
     {
@@ -1369,14 +1371,17 @@ public partial class MainWindow : Window
         if (_viewModel is not null)
         {
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
+            _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         }
 
         _viewModel = DataContext as MainWindowViewModel;
         if (_viewModel is not null)
         {
             _viewModel.AppearanceChanged += OnAppearanceChanged;
+            _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             ApplyAppearance();
             ApplyRequestResponseLayout();
+            ApplyWorkspaceLayout(_viewModel.IsWorkspaceSideBySide);
         }
     }
 
@@ -1387,6 +1392,7 @@ public partial class MainWindow : Window
             SaveSidebarWidth();
             SaveRequestResponseRatio();
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
+            _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.Shutdown();
             _viewModel = null;
         }
@@ -1506,7 +1512,7 @@ public partial class MainWindow : Window
 
     private void ApplyRequestResponseLayout()
     {
-        if (_viewModel is null)
+        if (_viewModel is null || _isSideBySide)
         {
             return;
         }
@@ -1523,9 +1529,64 @@ public partial class MainWindow : Window
         );
     }
 
-    private void SaveRequestResponseRatio()
+    private void ApplyWorkspaceLayout(bool sideBySide)
+    {
+        _isSideBySide = sideBySide;
+        var collapsed = _viewModel?.IsResponseCollapsed == true;
+        var columns = EditorResponseLayout.ColumnDefinitions;
+        var rows = EditorResponseLayout.RowDefinitions;
+
+        columns[0].Width = new GridLength(1, GridUnitType.Star);
+        columns[1].Width = new GridLength(sideBySide && !collapsed ? 8 : 0);
+        columns[2].Width = new GridLength(sideBySide && !collapsed ? 1 : 0, GridUnitType.Star);
+        rows[2].Height = new GridLength(1, GridUnitType.Star);
+        rows[3].Height = new GridLength(!sideBySide && !collapsed ? 8 : 0);
+        rows[4].Height = new GridLength(!sideBySide && !collapsed ? 1 : 0, GridUnitType.Star);
+
+        Grid.SetRow(RequestTabs, 2);
+        Grid.SetColumn(RequestTabs, 0);
+        Grid.SetColumnSpan(RequestTabs, sideBySide && !collapsed ? 1 : 3);
+        Grid.SetRowSpan(RequestTabs, 1);
+
+        Grid.SetRow(ResponsePane, sideBySide ? 2 : 4);
+        Grid.SetColumn(ResponsePane, sideBySide ? 2 : 0);
+        Grid.SetColumnSpan(ResponsePane, sideBySide && !collapsed ? 1 : 3);
+        Grid.SetRowSpan(ResponsePane, 1);
+
+        Grid.SetRow(RequestResponseSplitter, sideBySide ? 2 : 3);
+        Grid.SetColumn(RequestResponseSplitter, sideBySide ? 1 : 0);
+        Grid.SetColumnSpan(RequestResponseSplitter, sideBySide && !collapsed ? 1 : 3);
+        Grid.SetRowSpan(RequestResponseSplitter, 1);
+
+        RequestResponseSplitter.ResizeDirection = sideBySide
+            ? GridResizeDirection.Columns
+            : GridResizeDirection.Rows;
+        RequestResponseSplitter.Width = sideBySide ? 8 : double.NaN;
+        RequestResponseSplitter.Height = sideBySide ? double.NaN : 8;
+        ResponsePane.IsVisible = !collapsed;
+        RequestResponseSplitter.IsVisible = !collapsed;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (e.PropertyName == nameof(MainWindowViewModel.IsWorkspaceSideBySide))
+        {
+            ApplyWorkspaceLayout(_viewModel.IsWorkspaceSideBySide);
+        }
+        else if (e.PropertyName == nameof(MainWindowViewModel.IsResponseCollapsed))
+        {
+            ApplyWorkspaceLayout(_isSideBySide);
+        }
+    }
+
+    private void SaveRequestResponseRatio()
+    {
+        if (_viewModel is null || _isSideBySide)
         {
             return;
         }

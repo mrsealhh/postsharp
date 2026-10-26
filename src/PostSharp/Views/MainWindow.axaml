@@ -920,6 +920,11 @@
 
                         <!-- Editor and response -->
                         <Grid x:Name="EditorResponseLayout" Grid.Column="2" Margin="16,12,16,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="0" />
+                                <ColumnDefinition Width="0" />
+                            </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -927,7 +932,12 @@
                                 <RowDefinition Height="8" />
                                 <RowDefinition Height="*" MinHeight="0" />
                             </Grid.RowDefinitions>
-                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+                            <Grid
+                                Grid.Row="0"
+                                Grid.ColumnSpan="3"
+                                ColumnDefinitions="*,Auto,Auto"
+                                Margin="0,0,0,10"
+                            >
                                 <StackPanel
                                     Orientation="Horizontal"
                                     Spacing="10"
@@ -950,6 +960,15 @@
                                 </StackPanel>
                                 <arc:Button
                                     Grid.Column="1"
+                                    Variant="Ghost"
+                                    Size="Small"
+                                    Content="{Binding ResponseCollapseLabel}"
+                                    Command="{Binding ToggleResponseCollapsedCommand}"
+                                    IsVisible="{Binding HasResponse}"
+                                    AutomationProperties.Name="收起或展开响应"
+                                />
+                                <arc:Button
+                                    Grid.Column="2"
                                     Variant="Secondary"
                                     Size="Small"
                                     Command="{Binding SaveCommand}"
@@ -963,6 +982,7 @@
 
                             <Grid
                                 Grid.Row="1"
+                                Grid.ColumnSpan="3"
                                 ColumnDefinitions="Auto,*,Auto,Auto"
                                 Margin="0,0,0,12"
                             >
@@ -1174,10 +1194,6 @@
                                                 />
                                             </arc:SegmentedControl>
                                             <arc:Switch
-                                                Content="单行"
-                                                IsChecked="{Binding IsBodySingleLine, Mode=TwoWay}"
-                                            />
-                                            <arc:Switch
                                                 Content="JSON 视图"
                                                 IsChecked="{Binding IsRequestBodyJsonView, Mode=TwoWay}"
                                                 IsVisible="{Binding IsJsonBody}"
@@ -1229,7 +1245,6 @@
                                                     <arc:Textarea
                                                         x:Name="RequestBodyTextarea"
                                                         Text="{Binding Editing.Body, Mode=TwoWay}"
-                                                        IsVisible="{Binding !IsBodySingleLine}"
                                                         IsLabelVisible="False"
                                                         Placeholder="{}{ &quot;name&quot;: &quot;PostSharp&quot; }"
                                                         IsResizable="False"
@@ -1239,20 +1254,6 @@
                                                         FontFamily="{DynamicResource PostSharpCodeFont}"
                                                         FontSize="{DynamicResource PostSharpCodeFontSize}"
                                                         AutomationProperties.Name="请求体"
-                                                    />
-                                                    <arc:Input
-                                                        Text="{Binding Editing.Body, Mode=TwoWay}"
-                                                        IsVisible="{Binding IsBodySingleLine}"
-                                                        IsLabelVisible="False"
-                                                        Size="Small"
-                                                        AcceptsReturn="False"
-                                                        MaxLines="1"
-                                                        MinLines="1"
-                                                        TextWrapping="NoWrap"
-                                                        Placeholder="{}{ &quot;name&quot;: &quot;PostSharp&quot; }"
-                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
-                                                        FontSize="{DynamicResource PostSharpCodeFontSize}"
-                                                        AutomationProperties.Name="请求体（单行）"
                                                     />
                                                 </Grid>
                                             </Grid>
@@ -1503,7 +1504,12 @@
                                 </GridSplitter.Template>
                             </GridSplitter>
 
-                            <Grid Grid.Row="4" RowDefinitions="Auto,*" ClipToBounds="True">
+                            <Grid
+                                Grid.Row="4"
+                                x:Name="ResponsePane"
+                                RowDefinitions="Auto,*"
+                                ClipToBounds="True"
+                            >
                                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
                                     <StackPanel
                                         Orientation="Horizontal"
@@ -2945,7 +2951,7 @@
                                                                 Foreground="{arc:ArcDesignTokenResource Foreground}"
                                                             />
                                                             <TextBlock
-                                                                Text="请求头可以一键插入 JSON 类型、Accept JSON、Bearer Token，并会提示重复头。请求体支持 JSON/XML 格式化、压缩、单行切换；cURL 标签会生成已解析环境变量的可执行命令。"
+                                                                Text="请求头可以一键插入 JSON 类型、Accept JSON、Bearer Token，并会提示重复头。请求体支持 JSON/XML 格式化与压缩；cURL 标签会生成已解析环境变量的可执行命令。"
                                                                 FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                                                 Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                                                 TextWrapping="Wrap"
