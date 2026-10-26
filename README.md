@@ -442,6 +442,7 @@ http://127.0.0.1:5199/mcp
 顶栏「设置」打开独立设置窗口。窗口内编辑的是草稿，点「保存设置」后写入本地 SQLite 的 settings 文档，并立即更新内存中的设置；下次启动重新读取该文档。
 
 - **主题**：跟随系统 / 浅色 / 深色。跟随系统会在启动时读取 Windows 主题，并在系统切换时同步。
+- **渲染模式**：默认「软件（低内存）」，用 CPU 绘制并避免 GPU/ANGLE 原生内存；可切「自动（GPU）」获得硬件加速。修改后重启生效。
 - **全局圆角**：0–2 倍滑杆，0 = 直角，1 = Arc 默认，2 = 双倍圆角；通过 `TKCode.Arc.Themes.Corners` 统一覆盖 Arc 设计令牌，不改变颜色、边框、阴影和动效。
 - **SSE 自定义解析**：可填写「思考节点路径」和「内容节点路径」，例如 `output.choices[0].message.reasoning_content`、`output.choices[0].message.content`；留空时使用内置自动识别，填写后优先按自定义路径提取。
 - **日志目录**：默认 `<项目目录>\.postsharp\logs`；可浏览选择其他目录或直接打开。保存时会校验目录可写，校验失败会保留原设置并给出原因；若写入 SQLite 失败，当前会话仍会应用新值，但重启后回到上次成功保存的设置。
@@ -460,6 +461,14 @@ http://127.0.0.1:5199/mcp
 ![系统设置](docs/settings.png)
 
 ![存储配置](docs/settings-storage.png)
+
+### 内存与性能
+
+- 默认软件渲染显著低于 GPU/ANGLE 模式（本机冷启动约 100–130 MB 私有内存，GPU 模式约 220 MB 起）；需要硬件加速时可在设置中切回自动。
+- 审计只保留 AI 内容/思考各 32 KB、cURL 16 KB、请求/响应预览 2 KB；历史请求体最多 256 KB；SSE 原文、思考、内容各最多 2 MB。超出部分会标记为已截断，避免长时间运行后把完整 AI 流留在 500 + 1000 条审计/回收站记录里。
+- 大响应仍在当前响应区完整显示；只有审计与回收站使用截断副本。升级后旧的超大审计记录会在读取时截断到上述上限。
+
+![渲染模式](docs/settings-memory.png)
 
 ## 快捷键
 
@@ -716,7 +725,10 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：119 个测试全部通过（含数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写与存储配置） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：122 个测试全部通过（含数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置与内存截断） |
+| 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
+| 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
+| 内存诊断 | `dotnet-gcdump` 显示 live heap 约 55 MB；剩余主要是 Avalonia/Skia/ANGLE 原生内存；`dotnet-counters` 的 LOH 在大响应后会延迟回收，故默认软件渲染并限制审计文本 |
 | 存储配置 | 设置窗口「存储」显示本地 SQLite 路径、数据库类型、连接串、三个分类绑定、测试连接、同步和切换按钮；新增远程库后字段可编辑 |
 | 项目数据目录 | 首次启动把旧 `%APPDATA%\PostSharp` 的 settings/workspace/audit/postsharp.db 复制到项目 `.postsharp`，本地文档表看到 settings/workspace/suites 三类 |
 | MCP 语义工具 | `tools/list` 返回 56 个工具；实测 `get_settings`、`update_settings`、`get_storage_config`、`test_storage_profile`、`switch_storage`、集合授权、环境 CRUD、导出工作区均返回结果 |
@@ -849,7 +861,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：119 个 xUnit 测试。
+- 自测：122 个 xUnit 测试。
 
 ### 当前 MVP 限制
 

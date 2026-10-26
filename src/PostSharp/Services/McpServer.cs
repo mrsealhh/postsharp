@@ -388,6 +388,7 @@ public sealed class McpServer
                     .UpdateSettingsAsync(
                         new McpSettingsDraft(
                             OptionalString(arguments, "theme"),
+                            OptionalString(arguments, "renderingMode"),
                             OptionalDouble(arguments, "cornerScale"),
                             OptionalString(arguments, "uiFont"),
                             OptionalString(arguments, "codeFont"),
@@ -1194,6 +1195,11 @@ public sealed class McpServer
                     new JsonObject
                     {
                         ["theme"] = StringSchema("主题：跟随系统/浅色/深色"),
+                        ["renderingMode"] = EnumSchema(
+                            "渲染模式；修改后重启生效",
+                            RenderingModes.Software,
+                            RenderingModes.Auto
+                        ),
                         ["cornerScale"] = new JsonObject
                         {
                             ["type"] = "number",

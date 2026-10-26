@@ -5,6 +5,12 @@ namespace PostSharp.Models;
 
 public sealed class HistoryEntry
 {
+    /// <summary>Request body snapshots are capped so 40 large requests cannot pin hundreds of megabytes.</summary>
+    public const int BodyLimit = 256 * 1024;
+
+    public static string LimitBody(string body) =>
+        body.Length <= BodyLimit ? body : body[..BodyLimit] + "\n…（内容已截断）";
+
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.Now;
 
     public string Name { get; init; } = string.Empty;

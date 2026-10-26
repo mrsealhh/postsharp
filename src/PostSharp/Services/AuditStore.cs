@@ -301,7 +301,7 @@ public sealed class AuditStore
             SizeBytes = reader.GetInt64(reader.GetOrdinal("SizeBytes")),
             IsSuccess = reader.GetInt32(reader.GetOrdinal("IsSuccess")) != 0,
             Error = GetNullableString(reader, "Error"),
-            Curl = GetNullableString(reader, "Curl"),
+            Curl = AuditEntry.LimitCurl(GetNullableString(reader, "Curl")),
             RequestHeaders = reader.GetString(reader.GetOrdinal("RequestHeaders")),
             RequestBodyPreview = reader.GetString(reader.GetOrdinal("RequestBodyPreview")),
             ResponseHeaders = reader.GetString(reader.GetOrdinal("ResponseHeaders")),
@@ -309,8 +309,8 @@ public sealed class AuditStore
             ResponseContentType = reader.GetString(reader.GetOrdinal("ResponseContentType")),
             IsSse = reader.GetInt32(reader.GetOrdinal("IsSse")) != 0,
             SseEventCount = reader.GetInt32(reader.GetOrdinal("SseEventCount")),
-            AiThinking = reader.GetString(reader.GetOrdinal("AiThinking")),
-            AiContent = reader.GetString(reader.GetOrdinal("AiContent")),
+            AiThinking = AuditEntry.LimitAiText(reader.GetString(reader.GetOrdinal("AiThinking"))),
+            AiContent = AuditEntry.LimitAiText(reader.GetString(reader.GetOrdinal("AiContent"))),
         };
     }
 
@@ -391,7 +391,10 @@ public sealed class AuditStore
         command.Parameters.AddWithValue("$sizeBytes", entry.SizeBytes);
         command.Parameters.AddWithValue("$isSuccess", entry.IsSuccess ? 1 : 0);
         command.Parameters.AddWithValue("$error", (object?)entry.Error ?? DBNull.Value);
-        command.Parameters.AddWithValue("$curl", (object?)entry.Curl ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$curl",
+            (object?)AuditEntry.LimitCurl(entry.Curl) ?? DBNull.Value
+        );
         command.Parameters.AddWithValue("$requestHeaders", entry.RequestHeaders);
         command.Parameters.AddWithValue("$requestBodyPreview", entry.RequestBodyPreview);
         command.Parameters.AddWithValue("$responseHeaders", entry.ResponseHeaders);
@@ -399,8 +402,8 @@ public sealed class AuditStore
         command.Parameters.AddWithValue("$responseContentType", entry.ResponseContentType);
         command.Parameters.AddWithValue("$isSse", entry.IsSse ? 1 : 0);
         command.Parameters.AddWithValue("$sseEventCount", entry.SseEventCount);
-        command.Parameters.AddWithValue("$aiThinking", entry.AiThinking);
-        command.Parameters.AddWithValue("$aiContent", entry.AiContent);
+        command.Parameters.AddWithValue("$aiThinking", AuditEntry.LimitAiText(entry.AiThinking));
+        command.Parameters.AddWithValue("$aiContent", AuditEntry.LimitAiText(entry.AiContent));
         command.Parameters.AddWithValue("$isTrashed", isTrashed ? 1 : 0);
         command.ExecuteNonQuery();
     }

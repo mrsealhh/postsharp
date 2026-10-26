@@ -127,6 +127,7 @@ public sealed record McpCallContext(string Tool, string? Client);
 
 public sealed record McpSettingsInfo(
     string Theme,
+    string RenderingMode,
     double CornerScale,
     string UiFont,
     string CodeFont,
@@ -144,6 +145,7 @@ public sealed record McpSettingsInfo(
 
 public sealed record McpSettingsDraft(
     string? Theme,
+    string? RenderingMode,
     double? CornerScale,
     string? UiFont,
     string? CodeFont,
@@ -1155,6 +1157,7 @@ public sealed class McpWorkspaceAdapter
             var settings = _viewModel.Settings;
             return new McpSettingsInfo(
                 settings.Theme,
+                settings.RenderingMode,
                 settings.CornerScale,
                 settings.UiFont,
                 settings.CodeFont,
@@ -1180,6 +1183,14 @@ public sealed class McpWorkspaceAdapter
             if (!string.IsNullOrWhiteSpace(draft.Theme))
             {
                 settings.Theme = draft.Theme;
+            }
+
+            if (
+                draft.RenderingMode is { } renderingMode
+                && RenderingModes.All.Contains(renderingMode, StringComparer.Ordinal)
+            )
+            {
+                settings.RenderingMode = renderingMode;
             }
 
             if (draft.CornerScale is { } cornerScale)
@@ -1621,6 +1632,7 @@ public sealed class McpWorkspaceAdapter
     private static McpSettingsInfo GetSettingsCore(AppSettings settings) =>
         new(
             settings.Theme,
+            settings.RenderingMode,
             settings.CornerScale,
             settings.UiFont,
             settings.CodeFont,

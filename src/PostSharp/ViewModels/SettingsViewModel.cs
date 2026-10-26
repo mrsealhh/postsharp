@@ -412,6 +412,7 @@ public partial class SettingsViewModel : ObservableObject
     {
         var defaults = new AppSettings();
         Draft.Theme = defaults.Theme;
+        Draft.RenderingMode = defaults.RenderingMode;
         Draft.CornerScale = defaults.CornerScale;
         Draft.UiFont = defaults.UiFont;
         Draft.CodeFont = defaults.CodeFont;
@@ -780,6 +781,7 @@ public partial class SettingsViewModel : ObservableObject
     private void CopyToCurrent()
     {
         _current.Theme = Draft.Theme;
+        _current.RenderingMode = Draft.RenderingMode;
         _current.CornerScale = Math.Clamp(Draft.CornerScale, 0, 2);
         _current.UiFont = Draft.UiFont;
         _current.CodeFont = Draft.CodeFont;
@@ -811,6 +813,7 @@ public partial class SettingsViewModel : ObservableObject
         return new AppSettings
         {
             Theme = source.Theme,
+            RenderingMode = source.RenderingMode,
             CornerScale = source.CornerScale,
             UiFont = source.UiFont,
             CodeFont = source.CodeFont,
