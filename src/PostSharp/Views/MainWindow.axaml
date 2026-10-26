@@ -282,29 +282,15 @@
                                 />
                                 <arc:Button
                                     Variant="Secondary"
-                                    Width="48"
-                                    Height="42"
-                                    Padding="0"
                                     Click="OnOpenAuthorizationClick"
                                     ToolTip.Tip="{Binding AuthScopeSummary}"
                                     AutomationProperties.Name="{Binding AuthScopeSummary}"
                                 >
-                                    <StackPanel
-                                        Spacing="1"
-                                        HorizontalAlignment="Center"
-                                        VerticalAlignment="Center"
-                                    >
-                                        <arc:ArcGlyph
-                                            Data="{x:Static arc:ArcIcons.Key}"
-                                            Size="14"
-                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                        />
-                                        <TextBlock
-                                            Text="授权"
-                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                        />
-                                    </StackPanel>
+                                    <controls:IconLabel
+                                        Icon="{x:Static arc:ArcIcons.Key}"
+                                        Text="授权"
+                                        IconSize="13"
+                                    />
                                 </arc:Button>
                                 <arc:Button
                                     Variant="Secondary"
@@ -335,30 +321,16 @@
                                 </arc:Button>
                                 <arc:Button
                                     Variant="Secondary"
-                                    Width="48"
-                                    Height="42"
-                                    Padding="0"
                                     Command="{Binding UpdateCommand}"
                                     IsEnabled="{Binding !IsCheckingUpdates}"
                                     ToolTip.Tip="{Binding UpdateButtonTooltip}"
                                     AutomationProperties.Name="{Binding UpdateButtonText}"
                                 >
-                                    <StackPanel
-                                        Spacing="1"
-                                        HorizontalAlignment="Center"
-                                        VerticalAlignment="Center"
-                                    >
-                                        <arc:ArcGlyph
-                                            Data="{x:Static arc:ArcIcons.RefreshCw}"
-                                            Size="14"
-                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                        />
-                                        <TextBlock
-                                            Text="{Binding UpdateButtonText}"
-                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                        />
-                                    </StackPanel>
+                                    <controls:IconLabel
+                                        Icon="{x:Static arc:ArcIcons.RefreshCw}"
+                                        Text="{Binding UpdateButtonText}"
+                                        IconSize="13"
+                                    />
                                 </arc:Button>
                                 <arc:Button
                                     Variant="Secondary"
