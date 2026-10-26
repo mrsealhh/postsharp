@@ -480,8 +480,8 @@ public sealed class McpServer
             result.SseEventCount,
             sseThinking = result.SseThinking,
             sseContent = result.SseContent,
-            body = Truncate(result.Body, 30000),
-            bodyTruncated = result.Body.Length > 30000,
+            body = Truncate(result.Body, McpSendResult.BodyLimit),
+            bodyTruncated = result.BodyTruncated,
             headers = result.Headers,
         };
     }

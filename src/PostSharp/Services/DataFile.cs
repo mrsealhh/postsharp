@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 
 namespace PostSharp.Services;
@@ -17,7 +18,10 @@ public enum DataFileState
     /// <summary>The file was unreadable, no backup could be used, and the file was moved aside.</summary>
     Unreadable,
 
-    /// <summary>The file is locked or could not be moved aside, so saving is blocked to protect it.</summary>
+    /// <summary>
+    /// The file is locked or could not be moved aside, so writing it is blocked for this run; the value comes from
+    /// the backup when that one is readable.
+    /// </summary>
     Inaccessible,
 }
 
@@ -34,15 +38,26 @@ public sealed record DataFileLoad<T>(T? Value, DataFileState State, string? SetA
 /// Reads and writes the local JSON data files. A save goes through a temporary file and keeps the previous
 /// version as <c>.bak</c>, so a crash mid-write never leaves a half-written file. A file that cannot be read is
 /// moved aside instead of being overwritten by the next save, and the backup is used when it is readable.
+/// A file that could neither be read nor moved aside is never written again in this process.
 /// </summary>
 public static class DataFile
 {
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
+    private static readonly ConcurrentDictionary<string, bool> BlockedPaths = new(
+        StringComparer.OrdinalIgnoreCase
+    );
+
     public static string BackupPath(string path) => path + ".bak";
 
-    public static void WriteAllText(string path, string content)
+    /// <summary>Returns false without writing when the file is protected after a failed read.</summary>
+    public static bool WriteAllText(string path, string content)
     {
+        if (BlockedPaths.ContainsKey(Path.GetFullPath(path)))
+        {
+            return false;
+        }
+
         // No fsync: saves run on every request, and the .bak covers the rare power loss mid-write.
         var temporaryPath = path + ".tmp";
         File.WriteAllText(temporaryPath, content, Utf8);
@@ -50,7 +65,7 @@ public static class DataFile
         if (!File.Exists(path))
         {
             File.Move(temporaryPath, path);
-            return;
+            return true;
         }
 
         try
@@ -69,6 +84,8 @@ public static class DataFile
             File.Copy(path, BackupPath(path), overwrite: true);
             File.Move(temporaryPath, path, overwrite: true);
         }
+
+        return true;
     }
 
     public static DataFileLoad<T> Load<T>(string path, Func<string, T?> parse)
@@ -84,7 +101,7 @@ public static class DataFile
         if (TryRead(path) is not { } text)
         {
             // Locked by antivirus or a sync client, not corrupt: leave it where it is and never overwrite it.
-            return new DataFileLoad<T>(null, DataFileState.Inaccessible, null);
+            return Protect(path, parse);
         }
 
         if (TryParse(path, text, parse) is { } value)
@@ -95,7 +112,7 @@ public static class DataFile
         var setAsidePath = SetAside(path);
         if (setAsidePath is null)
         {
-            return new DataFileLoad<T>(null, DataFileState.Inaccessible, null);
+            return Protect(path, parse);
         }
 
         return TryLoadBackup(path, parse, setAsidePath)
@@ -115,6 +132,15 @@ public static class DataFile
             Log.Warning(exception, "删除数据文件备份失败 {DataFile}", BackupPath(path));
             return false;
         }
+    }
+
+    /// <summary>Blocks writes to a file that must stay untouched and opens its backup read-only instead.</summary>
+    private static DataFileLoad<T> Protect<T>(string path, Func<string, T?> parse)
+        where T : class
+    {
+        BlockedPaths[Path.GetFullPath(path)] = true;
+        var backup = TryLoadBackup(path, parse, setAsidePath: null);
+        return new DataFileLoad<T>(backup?.Value, DataFileState.Inaccessible, null);
     }
 
     private static DataFileLoad<T>? TryLoadBackup<T>(

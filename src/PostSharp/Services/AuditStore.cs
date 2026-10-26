@@ -17,8 +17,6 @@ public sealed class AuditStore
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    private readonly HashSet<string> _blockedFiles = new(StringComparer.OrdinalIgnoreCase);
-
     public string FilePath { get; }
 
     public string TrashFilePath { get; }
@@ -51,32 +49,18 @@ public sealed class AuditStore
             .ToList();
     }
 
-    private DataFileLoad<List<AuditEntry>> LoadFile(string path)
-    {
-        var load = DataFile.Load(
+    private static DataFileLoad<List<AuditEntry>> LoadFile(string path) =>
+        DataFile.Load(
             path,
             text => JsonSerializer.Deserialize<List<AuditEntry>>(text, JsonOptions)
         );
-        if (load.State == DataFileState.Inaccessible)
-        {
-            _blockedFiles.Add(path);
-        }
 
-        return load;
-    }
-
-    private bool SaveFile(string path, IEnumerable<AuditEntry> entries)
+    private static bool SaveFile(string path, IEnumerable<AuditEntry> entries)
     {
-        if (_blockedFiles.Contains(path))
-        {
-            // The original could not be read or moved aside at startup; the startup notice already says so.
-            return false;
-        }
-
         try
         {
-            DataFile.WriteAllText(path, JsonSerializer.Serialize(entries, JsonOptions));
-            return true;
+            // False for a file protected after a failed read; the startup notice already says so.
+            return DataFile.WriteAllText(path, JsonSerializer.Serialize(entries, JsonOptions));
         }
         catch (Exception exception)
         {

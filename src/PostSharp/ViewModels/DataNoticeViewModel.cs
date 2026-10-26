@@ -26,18 +26,28 @@ public partial class DataNoticeViewModel : ObservableObject
     [ObservableProperty]
     private AlertTone _tone = AlertTone.Warning;
 
-    /// <summary>Adds a line for a data file that was not read normally; normal loads are ignored.</summary>
-    public void Report<T>(DataFileLoad<T> load, string fileLabel, string fallback)
+    /// <summary>
+    /// Adds a line for a data file that was not read normally; normal loads are ignored. <paramref name="setAsideHint"/>
+    /// is appended when the original was moved aside, for files whose copy needs a warning of its own.
+    /// </summary>
+    public void Report<T>(
+        DataFileLoad<T> load,
+        string fileLabel,
+        string fallback,
+        string setAsideHint = ""
+    )
         where T : class
     {
         var text = load.State switch
         {
             DataFileState.RestoredFromBackup when load.SetAsidePath is not null =>
-                $"{fileLabel}无法读取，已改用上次保存的备份恢复，最近一次改动可能缺失。原文件已移到 {load.SetAsidePath}，没有被覆盖。",
+                $"{fileLabel}无法读取，已改用上次保存的备份恢复，最近一次改动可能缺失。原文件已移到 {load.SetAsidePath}，没有被覆盖。{setAsideHint}",
             DataFileState.RestoredFromBackup =>
                 $"{fileLabel}不存在，已改用上次保存的备份恢复，最近一次改动可能缺失。",
             DataFileState.Unreadable =>
-                $"{fileLabel}无法读取，也没有可用的备份，{fallback}。原文件已移到 {load.SetAsidePath}，没有被覆盖，可以用文本编辑器打开找回内容。",
+                $"{fileLabel}无法读取，也没有可用的备份，{fallback}。原文件已移到 {load.SetAsidePath}，没有被覆盖，可以用文本编辑器打开找回内容。{setAsideHint}",
+            DataFileState.Inaccessible when load.Value is not null =>
+                $"{fileLabel}无法读取，可能正被其他程序占用，已改用上次保存的备份打开，最近一次改动可能缺失。为避免覆盖原文件，本次运行不会保存对它的修改；请关闭占用该文件的程序后重启 PostSharp。",
             DataFileState.Inaccessible =>
                 $"{fileLabel}无法读取，可能正被其他程序占用，{fallback}。为避免覆盖原文件，本次运行不会保存对它的修改；请关闭占用该文件的程序后重启 PostSharp。",
             _ => null,

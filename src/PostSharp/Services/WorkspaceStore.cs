@@ -13,8 +13,6 @@ public sealed class WorkspaceStore
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    private bool _saveBlocked;
-
     public string FilePath { get; }
 
     public WorkspaceStore()
@@ -23,26 +21,17 @@ public sealed class WorkspaceStore
         FilePath = AppPaths.WorkspaceFile;
     }
 
-    public DataFileLoad<WorkspaceDto> Load()
-    {
-        var load = DataFile.Load(
+    public DataFileLoad<WorkspaceDto> Load() =>
+        DataFile.Load(
             FilePath,
             text => JsonSerializer.Deserialize<WorkspaceDto>(text, JsonOptions)
         );
-        _saveBlocked = load.State == DataFileState.Inaccessible;
-        return load;
-    }
 
     public void Save(WorkspaceDto workspace)
     {
-        if (_saveBlocked)
-        {
-            // The original could not be read or moved aside at startup; DataFile already logged why.
-            return;
-        }
-
         try
         {
+            // A file protected after a failed read is skipped; the startup notice already says so.
             DataFile.WriteAllText(FilePath, JsonSerializer.Serialize(workspace, JsonOptions));
         }
         catch (Exception exception)

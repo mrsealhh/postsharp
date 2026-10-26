@@ -1,21 +1,30 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using PostSharp.Models;
 
 namespace PostSharp.Services;
 
 /// <summary>
-/// Keeps credentials out of what PostSharp stores and hands to AI clients: values of environment variables marked
-/// as secret are replaced wherever they appear, and credential headers are masked in audit records.
+/// Keeps credentials out of what PostSharp stores and hands to AI clients. A request PostSharp builds itself is
+/// rebuilt with every secret variable resolved to the mask, so the secret never enters the stored text whatever its
+/// length or quoting. Text that comes back from a server is searched for the secret values instead, and credential
+/// headers are masked by name.
 /// </summary>
 public static partial class SecretMasker
 {
     public const string Mask = "******";
 
     /// <summary>
-    /// Shorter values ("true", "admin", "1234") would also match ordinary text and permanently rewrite unrelated
-    /// audit content, so they are not searched for; credential headers are still masked by name.
+    /// Only for searching server text: shorter values ("true", "admin", "1234") would also match ordinary text and
+    /// rewrite unrelated content. Requests PostSharp builds are masked at the variable, whatever the length.
     /// </summary>
     public const int MinimumSecretLength = 8;
+
+    private static readonly string EscapedMask = Uri.EscapeDataString(Mask);
+
+    private static readonly JavaScriptEncoder JsonText =
+        JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
 
     private static readonly HashSet<string> CredentialHeaders = new(
         StringComparer.OrdinalIgnoreCase
@@ -36,7 +45,10 @@ public static partial class SecretMasker
     [GeneratedRegex(@"^(\s*-H ')([^:']+)(:\s*)(.*?)('(?: \\)?)$", RegexOptions.Multiline)]
     private static partial Regex CurlHeaderLine();
 
-    /// <summary>Every secret value across the environments, longest first so overlapping values mask fully.</summary>
+    /// <summary>
+    /// Every secret value across the environments in the forms it can take in text (raw, URL-encoded, JSON-escaped,
+    /// shell-quoted), longest first so overlapping values mask fully.
+    /// </summary>
     public static IReadOnlyList<string> CollectSecrets(IEnumerable<EnvironmentModel> environments)
     {
         return environments
@@ -46,10 +58,86 @@ public static partial class SecretMasker
                 && !string.IsNullOrWhiteSpace(row.Key)
                 && row.Value.Length >= MinimumSecretLength
             )
-            .SelectMany(row => new[] { row.Value, Uri.EscapeDataString(row.Value) })
+            .SelectMany(row =>
+                new[]
+                {
+                    row.Value,
+                    Uri.EscapeDataString(row.Value),
+                    JsonEncodedText.Encode(row.Value, JsonText).ToString(),
+                    row.Value.Replace("'", "'\\''", StringComparison.Ordinal),
+                }
+            )
             .Distinct(StringComparer.Ordinal)
             .OrderByDescending(value => value.Length)
             .ToList();
+    }
+
+    /// <summary>A copy of the environment in which every secret variable resolves to the mask.</summary>
+    public static EnvironmentModel? MaskEnvironment(EnvironmentModel? environment)
+    {
+        if (environment is null)
+        {
+            return null;
+        }
+
+        var masked = new EnvironmentModel { Id = environment.Id, Name = environment.Name };
+        foreach (var row in environment.Variables)
+        {
+            masked.Variables.AddRow(
+                row.Key,
+                row.IsSecret ? Mask : row.Value,
+                row.IsEnabled,
+                row.IsSecret
+            );
+        }
+
+        return masked;
+    }
+
+    /// <summary>
+    /// The request as it may be stored or shown to an AI client: rebuilt with secret variables resolved to the mask,
+    /// then credential headers masked. Falls back to masking the sent request when the masked one cannot be built,
+    /// for example when a secret is part of the host name.
+    /// </summary>
+    public static ComposedRequest MaskComposed(
+        RequestItem request,
+        EnvironmentModel? environment,
+        ComposedRequest sent,
+        IReadOnlyList<string> secrets
+    )
+    {
+        ComposedRequest masked;
+        try
+        {
+            masked = RequestComposer.Compose(request, MaskEnvironment(environment));
+            masked = masked with
+            {
+                Url = masked.Url.Replace(EscapedMask, Mask, StringComparison.Ordinal),
+            };
+        }
+        catch (InvalidOperationException exception)
+        {
+            Log.Debug(
+                exception,
+                "按打码环境重建请求失败，改为在已发送请求上打码 {RequestName}",
+                request.Name
+            );
+            masked = sent;
+        }
+
+        return MaskRequest(masked, secrets);
+    }
+
+    /// <summary>
+    /// Masks only the start of a possibly large text: what a preview keeps, plus enough to finish a secret that
+    /// crosses the cut. Callers still truncate the result, and judge whether anything was cut from the original
+    /// length, since masking can shorten the text.
+    /// </summary>
+    public static string MaskHead(string text, int length, IReadOnlyList<string> secrets)
+    {
+        var margin = secrets.Count == 0 ? 0 : secrets[0].Length;
+        var head = text.Length > length + margin + 1 ? text[..(length + margin + 1)] : text;
+        return MaskSecrets(head, secrets);
     }
 
     public static bool IsCredentialHeader(string name) => CredentialHeaders.Contains(name.Trim());

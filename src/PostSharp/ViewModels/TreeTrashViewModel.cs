@@ -8,13 +8,14 @@ namespace PostSharp.ViewModels;
 /// <summary>
 /// The recycle bin for collections and requests. Deleting from the tree or through MCP lands here first;
 /// restoring puts the item back where it was, and only an explicit, confirmed purge removes it for good.
+/// Trashed objects keep their ids, so suites that use them work again after a restore.
 /// </summary>
-/// <param name="restore">Puts a node back into the tree and returns the message to show.</param>
-/// <param name="persist">Saves the workspace after the bin changed.</param>
+/// <param name="collections">The workspace's flat collection list, in tree order.</param>
+/// <param name="changed">Saves the workspace and refreshes the tree after the bin changed it.</param>
 /// <param name="toast">Shows a short confirmation.</param>
 public partial class TreeTrashViewModel(
-    Func<TrashedNode, string> restore,
-    Action persist,
+    ObservableCollection<RequestCollection> collections,
+    Action changed,
     Action<string> toast
 ) : ObservableObject
 {
@@ -42,20 +43,67 @@ public partial class TreeTrashViewModel(
             ? $"集合回收站（{Items.Count} 项）：恢复已删除的集合和请求"
             : "集合回收站：删除的集合和请求会先进入这里";
 
-    /// <summary>Adds a node that was just deleted; the newest stays on top.</summary>
-    public void Add(TrashedNode node)
-    {
-        Wire(node);
-        Items.Insert(0, node);
-        NotifyItemsChanged();
-    }
-
     /// <summary>Adds a node read from the workspace file, keeping the stored order.</summary>
     public void Load(TrashedNode node)
     {
         Wire(node);
         Items.Add(node);
         NotifyItemsChanged();
+    }
+
+    /// <summary>
+    /// Takes a request out of its collection into the bin. The caller saves and moves the selection, since it
+    /// knows whether the request was open.
+    /// </summary>
+    public void TrashRequest(RequestItem request, string source)
+    {
+        if (request.Owner is not { } owner)
+        {
+            return;
+        }
+
+        var node = new TrashedNode
+        {
+            Source = source,
+            Request = request,
+            OriginalParentId = owner.Id,
+            OriginalLocation = CollectionTree.DescribeLocation(owner),
+            OriginalPosition = owner.Requests.IndexOf(request),
+        };
+
+        owner.Requests.Remove(request);
+        request.Owner = null;
+        request.IsSelected = false;
+        Add(node);
+    }
+
+    /// <summary>Takes a collection, with its sub-collections and requests, out of the tree into the bin.</summary>
+    public void TrashCollection(RequestCollection collection, string source)
+    {
+        var parent = collection.Parent;
+        var position = parent is not null
+            ? parent.Children.IndexOf(collection)
+            : collections.Where(candidate => candidate.Parent is null).ToList().IndexOf(collection);
+
+        var node = new TrashedNode
+        {
+            Source = source,
+            Collection = collection,
+            OriginalParentId = parent?.Id,
+            OriginalLocation = parent is null ? "根目录" : CollectionTree.DescribeLocation(parent),
+            OriginalPosition = position,
+        };
+
+        // Only the top of the subtree is detached: its sub-collections and requests stay linked for a restore.
+        parent?.Children.Remove(collection);
+        collection.Parent = null;
+        foreach (var member in CollectionTree.SelfAndDescendants(collection))
+        {
+            collections.Remove(member);
+            member.IsSelected = false;
+        }
+
+        Add(node);
     }
 
     [RelayCommand]
@@ -93,12 +141,19 @@ public partial class TreeTrashViewModel(
 
         ResetPurge();
         NotifyItemsChanged();
-        persist();
+        changed();
         toast("已永久删除");
     }
 
     [RelayCommand]
     private void CancelPurge() => ResetPurge();
+
+    private void Add(TrashedNode node)
+    {
+        Wire(node);
+        Items.Insert(0, node);
+        NotifyItemsChanged();
+    }
 
     private void Wire(TrashedNode node)
     {
@@ -108,13 +163,99 @@ public partial class TreeTrashViewModel(
 
     private void Restore(TrashedNode node)
     {
-        if (!Items.Remove(node))
+        string message;
+        if (node.Collection is { } collection)
+        {
+            message = RestoreCollection(node, collection);
+        }
+        else if (node.Request is { } request)
+        {
+            message = RestoreRequest(node, request);
+        }
+        else
         {
             return;
         }
 
+        Items.Remove(node);
         NotifyItemsChanged();
-        toast(restore(node));
+        changed();
+        toast(message);
+    }
+
+    /// <summary>Puts a collection back under its old parent, or at the top level when that parent is gone.</summary>
+    private string RestoreCollection(TrashedNode node, RequestCollection collection)
+    {
+        var parent = node.OriginalParentId is { } parentId
+            ? collections.FirstOrDefault(candidate => candidate.Id == parentId)
+            : null;
+        var members = CollectionTree.SelfAndDescendants(collection);
+
+        if (
+            parent is not null
+            && parent.Depth + CollectionTree.SubtreeHeight(collection) <= CollectionTree.MaxDepth
+        )
+        {
+            collection.Parent = parent;
+            parent.Children.Insert(
+                Math.Clamp(node.OriginalPosition, 0, parent.Children.Count),
+                collection
+            );
+            parent.IsExpanded = true;
+            foreach (var member in members)
+            {
+                collections.Add(member);
+            }
+
+            CollectionTree.SyncFlatOrder(
+                collections,
+                collections.Where(candidate => candidate.Parent is null).ToList()
+            );
+            return $"已恢复集合「{collection.Name}」到「{CollectionTree.DescribeLocation(parent)}」";
+        }
+
+        var roots = collections.Where(candidate => candidate.Parent is null).ToList();
+        var rootPosition = node.OriginalParentId is null ? node.OriginalPosition : roots.Count;
+        roots.Insert(Math.Clamp(rootPosition, 0, roots.Count), collection);
+        foreach (var member in members)
+        {
+            collections.Add(member);
+        }
+
+        CollectionTree.SyncFlatOrder(collections, roots);
+        return node.OriginalParentId is null
+            ? $"已恢复集合「{collection.Name}」"
+            : $"原位置「{node.OriginalLocation}」已不可用，集合「{collection.Name}」已恢复到根目录";
+    }
+
+    /// <summary>Puts a request back in its old collection, or in the first top-level one when that is gone.</summary>
+    private string RestoreRequest(TrashedNode node, RequestItem request)
+    {
+        var target = node.OriginalParentId is { } ownerId
+            ? collections.FirstOrDefault(candidate => candidate.Id == ownerId)
+            : null;
+        if (target is not null)
+        {
+            request.Owner = target;
+            target.Requests.Insert(
+                Math.Clamp(node.OriginalPosition, 0, target.Requests.Count),
+                request
+            );
+            target.IsExpanded = true;
+            return $"已恢复请求「{request.Name}」到「{CollectionTree.DescribeLocation(target)}」";
+        }
+
+        var fallback = collections.FirstOrDefault(candidate => candidate.Parent is null);
+        if (fallback is null)
+        {
+            fallback = new RequestCollection { Name = "恢复的请求" };
+            collections.Add(fallback);
+        }
+
+        request.Owner = fallback;
+        fallback.Requests.Add(request);
+        fallback.IsExpanded = true;
+        return $"原集合「{node.OriginalLocation}」已不存在，请求「{request.Name}」已恢复到「{fallback.Name}」";
     }
 
     private void RequestPurge(TrashedNode node)

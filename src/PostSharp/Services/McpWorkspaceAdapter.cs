@@ -90,8 +90,13 @@ public sealed record McpSendResult(
     bool IsSse = false,
     int SseEventCount = 0,
     string SseThinking = "",
-    string SseContent = ""
-);
+    string SseContent = "",
+    bool BodyTruncated = false
+)
+{
+    /// <summary>How much of a response body an AI client gets back.</summary>
+    public const int BodyLimit = 30000;
+}
 
 public sealed record McpCallContext(string Tool, string? Client);
 
@@ -407,6 +412,7 @@ public sealed class McpWorkspaceAdapter
         {
             _viewModel.RecordExternalSend(
                 snapshot.Request,
+                snapshot.Environment,
                 composed,
                 result,
                 "MCP",
@@ -432,7 +438,11 @@ public sealed class McpWorkspaceAdapter
             id,
             snapshot.Request.Name,
             composed?.Method ?? snapshot.Request.Method,
-            SecretMasker.MaskSecrets(composed?.Url ?? snapshot.Request.Url, secrets),
+            composed is null
+                ? SecretMasker.MaskSecrets(snapshot.Request.Url, secrets)
+                : SecretMasker
+                    .MaskComposed(snapshot.Request, snapshot.Environment, composed, secrets)
+                    .Url,
             result.StatusCode,
             string.IsNullOrWhiteSpace(result.ReasonPhrase)
                 ? result.StatusCode.ToString()
@@ -442,12 +452,13 @@ public sealed class McpWorkspaceAdapter
             result.SizeBytes,
             result.IsJson,
             result.MediaType,
-            SecretMasker.MaskSecrets(result.Body, secrets),
+            SecretMasker.MaskHead(result.Body, McpSendResult.BodyLimit, secrets),
             headers,
             result.IsSse,
             result.SseEventCount,
             SecretMasker.MaskSecrets(result.SseThinking, secrets),
-            SecretMasker.MaskSecrets(result.SseContent, secrets)
+            SecretMasker.MaskSecrets(result.SseContent, secrets),
+            result.Body.Length > McpSendResult.BodyLimit
         );
     }
 
@@ -519,9 +530,20 @@ public sealed class McpWorkspaceAdapter
         {
             var request =
                 FindRequest(id) ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的请求。");
-            return SecretMasker.MaskSecrets(
-                RequestComposer.BuildCurl(request, _viewModel.ActiveEnvironment),
-                SecretMasker.CollectSecrets(_viewModel.Environments)
+            var environment = _viewModel.ActiveEnvironment;
+            var secrets = SecretMasker.CollectSecrets(_viewModel.Environments);
+
+            // A request that cannot be built comes back as a "# 无法生成 cURL" hint.
+            var plain = RequestComposer.BuildCurl(request, environment);
+            if (plain.StartsWith('#'))
+            {
+                return SecretMasker.MaskSecrets(plain, secrets);
+            }
+
+            // Mask before quoting, so short secrets and secrets with quotes are covered too.
+            var composed = RequestComposer.Compose(request, environment);
+            return RequestComposer.BuildCurl(
+                SecretMasker.MaskComposed(request, environment, composed, secrets)
             );
         });
     }

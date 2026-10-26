@@ -34,7 +34,6 @@ public partial class MainWindowViewModel : ObservableObject
     private const int AuditPreviewLimit = 2000;
     private const int ResponsePreviewLimit = 8 * 1024;
     private const int DetailPageSize = 16 * 1024;
-    private const int MaxCollectionDepth = 5;
 
     private static readonly JsonSerializerOptions MappingJsonOptions = new()
     {
@@ -54,13 +53,14 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
     private CancellationTokenSource? _suiteCts;
+    private IReadOnlyList<string>? _scrubbedSecrets;
     private CancellationTokenSource? _importCts;
     private bool _initializing = true;
     private IReadOnlyList<SuiteStepOption> _mappingSourceOptions = Array.Empty<SuiteStepOption>();
 
     public MainWindowViewModel()
     {
-        TreeTrash = new TreeTrashViewModel(RestoreTrashedNode, Persist, ShowToast);
+        TreeTrash = new TreeTrashViewModel(Collections, OnTreeTrashChanged, ShowToast);
         Settings = _settingsStore.Load();
         FontService.Initialize(Settings);
         AppLog.Reconfigure(Settings.LogDirectory, Settings.LogLevel);
@@ -142,11 +142,14 @@ public partial class MainWindowViewModel : ObservableObject
 
         var auditLoad = _auditStore.Load();
         var auditTrashLoad = _auditStore.LoadTrash();
-        DataNotice.Report(auditLoad, "审计文件 audit.json ", "审计列表从空白开始");
+        // A moved-aside audit file is never scrubbed, so the notice asks for it to be removed once recovered.
+        const string auditCopyHint = "该文件可能含打码前的明文凭据，找回需要的内容后请删除。";
+        DataNotice.Report(auditLoad, "审计文件 audit.json ", "审计列表从空白开始", auditCopyHint);
         DataNotice.Report(
             auditTrashLoad,
             "审计回收站文件 audit-trash.json ",
-            "审计回收站从空白开始"
+            "审计回收站从空白开始",
+            auditCopyHint
         );
 
         foreach (var entry in (auditLoad.Value ?? new List<AuditEntry>()).Take(_auditLimit))
@@ -1705,7 +1708,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         foreach (var child in source.Children)
         {
-            if (depth >= MaxCollectionDepth)
+            if (depth >= CollectionTree.MaxDepth)
             {
                 AddImportedCollectionContent(
                     target,
@@ -2432,7 +2435,7 @@ public partial class MainWindowViewModel : ObservableObject
                 AddHistory(Editing, result);
             }
 
-            RecordAudit(Editing, composed, result, "UI", null, null);
+            RecordAudit(Editing, ActiveEnvironment, composed, result, "UI", null, null);
             Persist();
         }
         finally
@@ -2514,9 +2517,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void AddSubcollection(RequestCollection parent)
     {
-        if (parent.Depth >= MaxCollectionDepth)
+        if (parent.Depth >= CollectionTree.MaxDepth)
         {
-            ShowToast($"集合最多支持 {MaxCollectionDepth} 级");
+            ShowToast($"集合最多支持 {CollectionTree.MaxDepth} 级");
             return;
         }
 
@@ -2552,9 +2555,9 @@ public partial class MainWindowViewModel : ObservableObject
                 ?? throw new KeyNotFoundException($"没有找到 id 为 {requestedParent} 的父集合。");
         }
 
-        if (parent is not null && parent.Depth >= MaxCollectionDepth)
+        if (parent is not null && parent.Depth >= CollectionTree.MaxDepth)
         {
-            throw new InvalidOperationException($"集合最多支持 {MaxCollectionDepth} 级。");
+            throw new InvalidOperationException($"集合最多支持 {CollectionTree.MaxDepth} 级。");
         }
 
         var collection = new RequestCollection
@@ -2630,10 +2633,10 @@ public partial class MainWindowViewModel : ObservableObject
 
             if (
                 target is not null
-                && target.Depth + GetCollectionSubtreeHeight(collection) > MaxCollectionDepth
+                && target.Depth + CollectionTree.SubtreeHeight(collection) > CollectionTree.MaxDepth
             )
             {
-                throw new InvalidOperationException($"集合最多支持 {MaxCollectionDepth} 级。");
+                throw new InvalidOperationException($"集合最多支持 {CollectionTree.MaxDepth} 级。");
             }
 
             if (!ReferenceEquals(collection.Parent, target))
@@ -2706,7 +2709,7 @@ public partial class MainWindowViewModel : ObservableObject
             Editing.Owner is not null && IsSelfOrDescendant(Editing.Owner, collection);
         var selectedRemoved =
             SelectedCollection is not null && IsSelfOrDescendant(SelectedCollection, collection);
-        TrashCollection(collection, "MCP");
+        TreeTrash.TrashCollection(collection, "MCP");
 
         if (editingRemoved)
         {
@@ -2724,6 +2727,38 @@ public partial class MainWindowViewModel : ObservableObject
         NotifySelectionChanged();
         NotifyTreeChanged();
         return true;
+    }
+
+    /// <summary>Moves a request to the recycle bin (the MCP delete). Returns false when it does not exist.</summary>
+    public bool DeleteRequest(Guid requestId, string source)
+    {
+        var request = Collections
+            .SelectMany(collection => collection.Requests)
+            .FirstOrDefault(candidate => candidate.Id == requestId);
+        if (request is null)
+        {
+            return false;
+        }
+
+        var wasOpen =
+            ReferenceEquals(Editing, request) || ReferenceEquals(SelectedRequest, request);
+        TreeTrash.TrashRequest(request, source);
+        if (wasOpen)
+        {
+            SelectFirstRequestOrBlank();
+        }
+
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
+        return true;
+    }
+
+    private void OnTreeTrashChanged()
+    {
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
     }
 
     public RequestItem MoveRequest(Guid requestId, Guid targetCollectionId, int? position)
@@ -2917,7 +2952,8 @@ public partial class MainWindowViewModel : ObservableObject
             return !ReferenceEquals(collection, target)
                 && !ReferenceEquals(collection.Parent, target)
                 && !IsSelfOrDescendant(target, collection)
-                && target.Depth + GetCollectionSubtreeHeight(collection) <= MaxCollectionDepth;
+                && target.Depth + CollectionTree.SubtreeHeight(collection)
+                    <= CollectionTree.MaxDepth;
         }
 
         return false;
@@ -2966,7 +3002,8 @@ public partial class MainWindowViewModel : ObservableObject
         return parent is null
             || (
                 !IsSelfOrDescendant(parent, collection)
-                && parent.Depth + GetCollectionSubtreeHeight(collection) <= MaxCollectionDepth
+                && parent.Depth + CollectionTree.SubtreeHeight(collection)
+                    <= CollectionTree.MaxDepth
             );
     }
 
@@ -3050,37 +3087,8 @@ public partial class MainWindowViewModel : ObservableObject
         SyncFlatCollectionOrder(roots);
     }
 
-    private void SyncFlatCollectionOrder(IReadOnlyList<RequestCollection> roots)
-    {
-        var ordered = new List<RequestCollection>();
-        foreach (var root in roots)
-        {
-            AddCollectionInTreeOrder(root, ordered);
-        }
-
-        if (ordered.Count != Collections.Count)
-        {
-            return;
-        }
-
-        Collections.Clear();
-        foreach (var collection in ordered)
-        {
-            Collections.Add(collection);
-        }
-    }
-
-    private static void AddCollectionInTreeOrder(
-        RequestCollection collection,
-        ICollection<RequestCollection> target
-    )
-    {
-        target.Add(collection);
-        foreach (var child in collection.Children)
-        {
-            AddCollectionInTreeOrder(child, target);
-        }
-    }
+    private void SyncFlatCollectionOrder(IReadOnlyList<RequestCollection> roots) =>
+        CollectionTree.SyncFlatOrder(Collections, roots);
 
     public bool MoveTreeNode(TreeDisplayNode source, RequestCollection target)
     {
@@ -3324,7 +3332,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             var wasOpen =
                 ReferenceEquals(SelectedRequest, request) || ReferenceEquals(Editing, request);
-            TrashRequest(request, "UI");
+            TreeTrash.TrashRequest(request, "UI");
             if (wasOpen)
             {
                 SelectFirstRequestOrBlank();
@@ -3338,7 +3346,7 @@ public partial class MainWindowViewModel : ObservableObject
                 SelectedCollection is not null
                 && IsSelfOrDescendant(SelectedCollection, collection);
 
-            TrashCollection(collection, "UI");
+            TreeTrash.TrashCollection(collection, "UI");
 
             if (editingRemoved)
             {
@@ -3698,16 +3706,6 @@ public partial class MainWindowViewModel : ObservableObject
         return collection.Requests.Count + collection.Children.Sum(child => CountRequests(child));
     }
 
-    private static int GetCollectionSubtreeHeight(RequestCollection collection)
-    {
-        return 1
-            + (
-                collection.Children.Count == 0
-                    ? 0
-                    : collection.Children.Max(GetCollectionSubtreeHeight)
-            );
-    }
-
     public void LoadHistory(HistoryEntry entry)
     {
         Editing = entry.ToRequest();
@@ -3751,6 +3749,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void RecordExternalSend(
         RequestItem request,
+        EnvironmentModel? environment,
         ComposedRequest? composed,
         HttpResult result,
         string source,
@@ -3759,7 +3758,7 @@ public partial class MainWindowViewModel : ObservableObject
     )
     {
         AddHistory(request, result);
-        RecordAudit(request, composed, result, source, tool, client);
+        RecordAudit(request, environment, composed, result, source, tool, client);
         Persist();
     }
 
@@ -3785,8 +3784,10 @@ public partial class MainWindowViewModel : ObservableObject
         return string.Join("\n", lines);
     }
 
-    private void RecordAudit(
+    /// <summary>Stores a masked record of a send and returns it; <paramref name="environment"/> is the one it used.</summary>
+    private AuditEntry RecordAudit(
         RequestItem request,
+        EnvironmentModel? environment,
         ComposedRequest? composed,
         HttpResult result,
         string source,
@@ -3796,7 +3797,9 @@ public partial class MainWindowViewModel : ObservableObject
     {
         // The audit file and MCP readers must never see credentials, so everything stored is masked first.
         var secrets = SecretMasker.CollectSecrets(Environments);
-        var stored = composed is null ? null : SecretMasker.MaskRequest(composed, secrets);
+        var stored = composed is null
+            ? null
+            : SecretMasker.MaskComposed(request, environment, composed, secrets);
         var requestHeaders = stored is not null
             ? string.Join(
                 "\n",
@@ -3847,10 +3850,7 @@ public partial class MainWindowViewModel : ObservableObject
                 ),
                 AuditPreviewLimit
             ),
-            ResponseBodyPreview = Truncate(
-                SecretMasker.MaskSecrets(result.Body, secrets),
-                AuditPreviewLimit
-            ),
+            ResponseBodyPreview = MaskedPreview(result.Body, AuditPreviewLimit, secrets),
             ResponseContentType = result.MediaType,
             IsSse = result.IsSse,
             SseEventCount = result.SseEventCount,
@@ -3867,6 +3867,16 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         PersistAudit();
+        return entry;
+    }
+
+    /// <summary>A masked preview of a possibly large text, marked when it was cut.</summary>
+    private static string MaskedPreview(string text, int limit, IReadOnlyList<string> secrets)
+    {
+        var masked = SecretMasker.MaskHead(text, limit, secrets);
+        return text.Length > limit && masked.Length <= limit
+            ? masked + "\n…（已截断）"
+            : Truncate(masked, limit);
     }
 
     private void RefreshAuditView()
@@ -4035,6 +4045,14 @@ public partial class MainWindowViewModel : ObservableObject
     public void ScrubAuditSecrets()
     {
         var secrets = SecretMasker.CollectSecrets(Environments);
+
+        // Records added since the last pass were masked when written, so only a new set of secrets needs a pass.
+        if (_scrubbedSecrets is not null && _scrubbedSecrets.SequenceEqual(secrets))
+        {
+            return;
+        }
+
+        _scrubbedSecrets = secrets;
         var changed = false;
         foreach (var entry in Audit.Concat(AuditTrash))
         {
@@ -4404,9 +4422,7 @@ public partial class MainWindowViewModel : ObservableObject
             );
             SelectedSuiteResult = result;
             ShowToast(
-                result.Cancelled
-                    ? $"套件已取消：{result.Passed}/{result.Total} 通过"
-                    : $"套件完成：{result.Passed}/{result.Total} 通过"
+                result.Cancelled ? $"套件已取消：{result.Outcome}" : $"套件完成：{result.Outcome}"
             );
         }
         finally
@@ -4522,7 +4538,15 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 var failure = HttpRequestService.Failure(mappingError);
                 AddHistory(effectiveRequest, failure);
-                RecordAudit(effectiveRequest, null, failure, source, tool, client);
+                RecordAudit(
+                    effectiveRequest,
+                    ActiveEnvironment,
+                    null,
+                    failure,
+                    source,
+                    tool,
+                    client
+                );
                 stepResults[step.Id] = failure;
                 steps.Add(
                     new TestStepResult
@@ -4573,7 +4597,15 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 // A step cut short by the cancel is not a failed assertion: keep it in the audit like a cancelled
                 // UI send, but leave it out of the step results and the pass/fail counts.
-                RecordAudit(effectiveRequest, composed, result, source, tool, client);
+                RecordAudit(
+                    effectiveRequest,
+                    ActiveEnvironment,
+                    composed,
+                    result,
+                    source,
+                    tool,
+                    client
+                );
                 stopped = true;
                 cancelled = true;
                 break;
@@ -4581,7 +4613,15 @@ public partial class MainWindowViewModel : ObservableObject
 
             stepResults[step.Id] = result;
             AddHistory(effectiveRequest, result);
-            RecordAudit(effectiveRequest, composed, result, source, tool, client);
+            var audited = RecordAudit(
+                effectiveRequest,
+                ActiveEnvironment,
+                composed,
+                result,
+                source,
+                tool,
+                client
+            );
 
             var statusMatches = step.ExpectedStatus is null
                 ? result.StatusCode is >= 200 and < 400
@@ -4605,13 +4645,13 @@ public partial class MainWindowViewModel : ObservableObject
                     RequestId = request.Id,
                     Name = request.Name,
                     Method = request.Method,
-                    Url = SecretMasker.MaskSecrets(composed?.Url ?? request.Url, secrets),
+                    Url = audited.Url,
                     StatusCode = result.StatusCode,
                     StatusText = result.ReasonPhrase,
                     ElapsedMs = result.ElapsedMs,
                     Passed = passed,
                     Error = error is null ? null : SecretMasker.MaskSecrets(error, secrets),
-                    ResponsePreview = Truncate(SecretMasker.MaskSecrets(result.Body, secrets), 500),
+                    ResponsePreview = MaskedPreview(result.Body, 500, secrets),
                 }
             );
 
@@ -4631,6 +4671,7 @@ public partial class MainWindowViewModel : ObservableObject
             Failed = steps.Count(step => !step.Passed),
             Stopped = stopped,
             Cancelled = cancelled,
+            NotRun = suite.Steps.Count - steps.Count,
             Steps = steps,
         };
 

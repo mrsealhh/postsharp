@@ -88,8 +88,11 @@ public sealed class DataFileTests : IDisposable
             load = DataFile.Load(path, Parse);
         }
 
+        var written = DataFile.WriteAllText(path, "{\"v\":3}");
+
         Assert.Equal(DataFileState.Inaccessible, load.State);
-        Assert.Null(load.Value);
+        Assert.Equal("{\"v\":1}", load.Value);
+        Assert.False(written);
         Assert.Equal("{\"v\":2}", File.ReadAllText(path));
         Assert.Empty(Directory.GetFiles(_directory, "workspace.unreadable-*"));
     }

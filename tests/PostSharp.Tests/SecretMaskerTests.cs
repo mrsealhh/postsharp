@@ -55,6 +55,41 @@ public sealed class SecretMaskerTests
     }
 
     [Fact]
+    public void MasksShortAndQuotedSecretsWhereTheyAreUsed()
+    {
+        var environment = new EnvironmentModel();
+        environment.Variables.AddRow("pin", "ab'cd", isSecret: true);
+        environment.Variables.AddRow("host", "api.example.com");
+        var request = new RequestItem { Method = "GET", Url = "https://{{host}}/items" };
+        request.Headers.AddRow("X-Pin", "{{pin}}");
+        request.Params.AddRow("pin", "{{pin}}");
+        var secrets = SecretMasker.CollectSecrets([environment]);
+
+        var sent = RequestComposer.Compose(request, environment);
+        var curl = RequestComposer.BuildCurl(
+            SecretMasker.MaskComposed(request, environment, sent, secrets)
+        );
+
+        Assert.Empty(secrets);
+        Assert.DoesNotContain("ab'", curl);
+        Assert.DoesNotContain("ab%27cd", curl);
+        Assert.Contains("X-Pin: ******", curl);
+        Assert.Contains("pin=******", curl);
+        Assert.Contains("api.example.com", curl);
+    }
+
+    [Fact]
+    public void MasksOnlyTheHeadOfLargeText()
+    {
+        var text = "secret-token-1" + new string('x', 10_000) + "secret-token-1";
+
+        var head = SecretMasker.MaskHead(text, 100, ["secret-token-1"]);
+
+        Assert.StartsWith("******", head);
+        Assert.True(head.Length < 200);
+    }
+
+    [Fact]
     public void ScrubsExistingAuditEntries()
     {
         var entry = new AuditEntry

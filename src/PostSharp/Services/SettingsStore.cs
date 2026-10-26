@@ -13,7 +13,7 @@ public sealed class SettingsStore
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    private static bool _saveBlocked;
+    private static AppSettings? _loaded;
 
     public string FilePath { get; }
 
@@ -24,25 +24,29 @@ public sealed class SettingsStore
     }
 
     /// <summary>
-    /// The first unusual outcome of reading settings in this process. Program reads settings before the main
-    /// window exists, and that first read is the one that moves an unreadable file aside, so the window asks here.
+    /// How reading settings went when it was not normal. Program reads settings before the main window exists, so the
+    /// window asks here to show the notice.
     /// </summary>
     public static DataFileLoad<AppSettings>? StartupProblem { get; private set; }
 
+    /// <summary>
+    /// Settings are read once per process and every later call gets the same instance, so a momentary lock during a
+    /// second read cannot swap in defaults or block saving.
+    /// </summary>
     public AppSettings Load()
     {
+        if (_loaded is not null)
+        {
+            return _loaded;
+        }
+
         var load = DataFile.Load(
             FilePath,
             text => JsonSerializer.Deserialize<AppSettings>(text, JsonOptions)
         );
         if (load.IsProblem)
         {
-            StartupProblem ??= load;
-        }
-
-        if (load.State == DataFileState.Inaccessible)
-        {
-            _saveBlocked = true;
+            StartupProblem = load;
         }
 
         var settings = load.Value ?? new AppSettings();
@@ -51,21 +55,16 @@ public sealed class SettingsStore
             settings.LogDirectory = AppPaths.DefaultLogDirectory;
         }
 
+        _loaded = settings;
         return settings;
     }
 
     public bool Save(AppSettings settings)
     {
-        if (_saveBlocked)
-        {
-            Log.Warning("设置文件启动时无法读取，为保护原文件不写入 {SettingsFile}", FilePath);
-            return false;
-        }
-
         try
         {
-            DataFile.WriteAllText(FilePath, JsonSerializer.Serialize(settings, JsonOptions));
-            return true;
+            // False for a file protected after a failed read; the startup notice already says so.
+            return DataFile.WriteAllText(FilePath, JsonSerializer.Serialize(settings, JsonOptions));
         }
         catch (Exception exception)
         {

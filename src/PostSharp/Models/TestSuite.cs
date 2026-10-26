@@ -136,10 +136,16 @@ public sealed class TestRunResult
     /// <summary>The run was cancelled before every step finished.</summary>
     public bool Cancelled { get; set; }
 
+    /// <summary>Steps that never ran because the run was stopped or cancelled.</summary>
+    public int NotRun { get; set; }
+
     public List<TestStepResult> Steps { get; set; } = new();
 
+    /// <summary>Pass count, plus how many steps never ran.</summary>
+    public string Outcome =>
+        $"{Passed}/{Total} 通过" + (NotRun > 0 ? $" · {NotRun} 步未运行" : string.Empty);
+
     public string Summary =>
-        Cancelled
-            ? $"已取消 · {Passed}/{Total} 通过 · {Timestamp.LocalDateTime:HH:mm:ss}"
-            : $"{Passed}/{Total} 通过 · {Timestamp.LocalDateTime:HH:mm:ss}";
+        (Cancelled ? "已取消 · " : string.Empty)
+        + $"{Outcome} · {Timestamp.LocalDateTime:HH:mm:ss}";
 }
