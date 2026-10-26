@@ -62,10 +62,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _purgeAllPending;
     private AuditEntry? _pendingAuditPurge;
     private bool _auditPurgeAllPending;
-    private CancellationTokenSource? _sendCts;
+    private readonly RequestSessionStore _sessions = new();
+    private RequestItem? _viewRequest;
     private CancellationTokenSource? _suiteCts;
-    private ComposedRequest? _lastComposedRequest;
-    private SseResumeSnapshot? _sseResume;
     private readonly DispatcherTimer _suiteScheduleTimer = new()
     {
         Interval = TimeSpan.FromSeconds(30),
@@ -265,9 +264,6 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _treeIsEmpty;
 
     [ObservableProperty]
-    private bool _isSending;
-
-    [ObservableProperty]
     private double _uploadProgressValue;
 
     [ObservableProperty]
@@ -418,6 +414,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         IsRequestSelected
         && !string.IsNullOrWhiteSpace(Editing.Url)
         && !CurlPreview.StartsWith('#');
+
+    /// <summary>发送中的加载态只属于发起这次发送的请求，多个请求可以同时发送。</summary>
+    public bool IsSending => _sessions.Find(Editing) is { Cts: not null };
+
+    public bool CanSend => !IsSending;
 
     [ObservableProperty]
     private bool _isToastOpen;
@@ -1526,11 +1527,26 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     partial void OnEditingChanged(RequestItem value)
     {
+        if (!ReferenceEquals(_viewRequest, value))
+        {
+            CaptureViewState(_viewRequest);
+            _viewRequest = value;
+            RestoreViewState(value);
+        }
+
         OnPropertyChanged(nameof(IsDraft));
         OnPropertyChanged(nameof(EditorHint));
         BindEditingTracking();
         OnPropertyChanged(nameof(EditingAuth));
         RefreshAuthState();
+        RefreshSendingState();
+    }
+
+    private void RefreshSendingState()
+    {
+        OnPropertyChanged(nameof(IsSending));
+        OnPropertyChanged(nameof(CanSend));
+        SendCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnSelectedCollectionChanged(RequestCollection? value) => OnAuthScopeChanged();
@@ -1601,26 +1617,37 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanSend))]
     private async Task SendAsync()
     {
-        if (IsSending)
+        var request = Editing;
+        var session = _sessions.Get(request);
+        if (session.Cts is not null)
         {
             return;
         }
 
-        IsSending = true;
-        IsUploading = false;
-        UploadProgressValue = 0;
-        UploadProgressText = string.Empty;
-        _sseResume = null;
-        SseCanResume = false;
-        SseLastEventId = string.Empty;
-        _sendCts = new CancellationTokenSource();
-        var secrets = SecretMasker.CollectSecrets(Environments);
+        // 发送途中可能切换到别的请求；历史与审计仍记录发起这次发送的请求。
+        var cts = new CancellationTokenSource();
+        session.Cts = cts;
+        session.SseResume = null;
+        session.LastComposedRequest = null;
+        session.IsUploading = false;
+        session.UploadProgressValue = 0;
+        session.UploadProgressText = string.Empty;
+        session.Response.SseCanResume = false;
+        session.Response.SseLastEventId = string.Empty;
+        RefreshSendingState();
+        if (ReferenceEquals(Editing, request))
+        {
+            IsUploading = false;
+            UploadProgressValue = 0;
+            UploadProgressText = string.Empty;
+            SseCanResume = false;
+            SseLastEventId = string.Empty;
+        }
 
-        // Another request may be opened while this one is on its way; history and audit describe this one.
-        var request = Editing;
+        var secrets = SecretMasker.CollectSecrets(Environments);
         ComposedRequest? stored = null;
 
         try
@@ -1628,23 +1655,27 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             HttpResult result;
             try
             {
-                var auth = await ResolveAuthAsync(request, _sendCts.Token);
+                var auth = await ResolveAuthAsync(request, cts.Token);
                 var composed = RequestComposer.Compose(request, ActiveEnvironment, auth);
-                _lastComposedRequest = composed;
+                session.LastComposedRequest = composed;
 
-                // Masked before the await: the request and environment can be edited while it is on its way.
+                // 在 await 之前打码：发送途中请求与环境仍可能被编辑。
                 stored = SecretMasker.MaskComposed(request, ActiveEnvironment, composed, secrets);
-                var sseProgress = new Progress<SseProgress>(ApplySseProgress);
-                var uploadProgress = new Progress<UploadProgress>(ApplyUploadProgress);
+                var sseProgress = new Progress<SseProgress>(progress =>
+                    ApplySseProgress(request, session, progress)
+                );
+                var uploadProgress = new Progress<UploadProgress>(progress =>
+                    ApplyUploadProgress(request, session, progress)
+                );
                 result = await _http.SendAsync(
                     composed,
                     stored.Url,
-                    _sendCts.Token,
+                    cts.Token,
                     request.TimeoutSeconds,
                     sseProgress,
                     uploadProgress
                 );
-                result = MergeSseResume(result);
+                result = MergeSseResume(session, result);
             }
             catch (Exception exception)
             {
@@ -1652,16 +1683,21 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 result = HttpRequestService.Failure(exception.Message);
             }
 
-            ApplyResponse(result);
-
-            if (result.HasResponse)
+            if (_sessions.IsTracked(request, session))
             {
-                IsResponseCollapsed = false;
-                if (Settings.WorkspaceLayout is null)
+                ApplyResponse(request, result);
+                if (!ReferenceEquals(Editing, request))
                 {
-                    IsWorkspaceSideBySide = true;
+                    ShowToast(DescribeFinishedSend(request, result));
                 }
 
+                if (result.HasResponse)
+                {
+                    AddHistory(request, result);
+                }
+            }
+            else if (result.HasResponse)
+            {
                 AddHistory(request, result);
             }
 
@@ -1670,15 +1706,39 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
         finally
         {
-            IsSending = false;
-            IsUploading = false;
-            _sendCts?.Dispose();
-            _sendCts = null;
+            if (ReferenceEquals(session.Cts, cts))
+            {
+                session.Cts = null;
+            }
+
+            session.IsUploading = false;
+            session.UploadProgressValue = 0;
+            session.UploadProgressText = string.Empty;
+            if (ReferenceEquals(Editing, request))
+            {
+                IsUploading = false;
+                UploadProgressValue = 0;
+                UploadProgressText = string.Empty;
+            }
+
+            cts.Dispose();
+            RefreshSendingState();
         }
     }
 
+    private static string DescribeFinishedSend(RequestItem request, HttpResult result) =>
+        result.HasResponse
+            ? $"请求「{request.Name}」已完成（{result.StatusCode}），结果已记录到历史"
+            : $"请求「{request.Name}」失败，可在审计记录中查看";
+
     [RelayCommand]
-    private void CancelSend() => _sendCts?.Cancel();
+    private void CancelSend()
+    {
+        if (_sessions.Find(Editing) is { } session)
+        {
+            session.Cts?.Cancel();
+        }
+    }
 
     [RelayCommand]
     private void ToggleResponseCollapsed()
@@ -1689,18 +1749,28 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [RelayCommand]
     private async Task ResumeSseAsync()
     {
-        if (IsSending || !CanResumeSse || _lastComposedRequest is not { } composed)
+        var request = Editing;
+        var session = _sessions.Get(request);
+        if (
+            session.Cts is not null
+            || !CanResumeSse
+            || session.LastComposedRequest is not { } composed
+        )
         {
             return;
         }
 
-        _sseResume = new SseResumeSnapshot(SseRaw, SseThinking, SseContent, SseEventCount);
-        IsSending = true;
+        var cts = new CancellationTokenSource();
+        session.Cts = cts;
+        session.SseResume = new SseResumeSnapshot(SseRaw, SseThinking, SseContent, SseEventCount);
+        session.Response.SseCanResume = false;
         SseCanResume = false;
-        _sendCts = new CancellationTokenSource();
+        RefreshSendingState();
         try
         {
-            var sseProgress = new Progress<SseProgress>(ApplySseProgress);
+            var sseProgress = new Progress<SseProgress>(progress =>
+                ApplySseProgress(request, session, progress)
+            );
             var secrets = SecretMasker.CollectSecrets(Environments);
             var stored = RequestComposer.MaskAuthorization(
                 SecretMasker.MaskRequest(composed, SecretMasker.CollectAllSecrets(Environments))
@@ -1709,44 +1779,62 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             var result = await _http.SendAsync(
                 composed,
                 logUrl,
-                _sendCts.Token,
-                Editing.TimeoutSeconds,
+                cts.Token,
+                request.TimeoutSeconds,
                 sseProgress,
                 lastEventId: SseLastEventId
             );
-            result = MergeSseResume(result);
-            ApplyResponse(result);
-            if (result.HasResponse)
+            result = MergeSseResume(session, result);
+            if (_sessions.IsTracked(request, session))
             {
-                IsResponseCollapsed = false;
-                if (Settings.WorkspaceLayout is null)
+                ApplyResponse(request, result);
+                if (!ReferenceEquals(Editing, request))
                 {
-                    IsWorkspaceSideBySide = true;
+                    ShowToast(DescribeFinishedSend(request, result));
                 }
 
-                AddHistory(Editing, result);
+                if (result.HasResponse)
+                {
+                    AddHistory(request, result);
+                }
+            }
+            else if (result.HasResponse)
+            {
+                AddHistory(request, result);
             }
 
-            RecordAudit(Editing, stored, result, "UI", null, null, secrets);
+            RecordAudit(request, stored, result, "UI", null, null, secrets);
             Persist();
         }
         catch (Exception exception)
         {
-            Log.Error(exception, "继续接收 SSE 失败 {RequestName}", Editing.Name);
-            ApplyResponse(HttpRequestService.Failure(exception.Message));
+            Log.Error(exception, "继续接收 SSE 失败 {RequestName}", request.Name);
+            if (_sessions.IsTracked(request, session))
+            {
+                var failure = HttpRequestService.Failure(exception.Message);
+                ApplyResponse(request, failure);
+                if (!ReferenceEquals(Editing, request))
+                {
+                    ShowToast(DescribeFinishedSend(request, failure));
+                }
+            }
         }
         finally
         {
-            IsSending = false;
-            _sendCts?.Dispose();
-            _sendCts = null;
-            _sseResume = null;
+            if (ReferenceEquals(session.Cts, cts))
+            {
+                session.Cts = null;
+            }
+
+            session.SseResume = null;
+            cts.Dispose();
+            RefreshSendingState();
         }
     }
 
-    private HttpResult MergeSseResume(HttpResult result)
+    private static HttpResult MergeSseResume(RequestSendSession session, HttpResult result)
     {
-        if (_sseResume is not { } resume || !result.IsSse)
+        if (session.SseResume is not { } resume || !result.IsSse)
         {
             return result;
         }
@@ -1760,7 +1848,31 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         };
     }
 
-    private sealed record SseResumeSnapshot(string Raw, string Thinking, string Content, int Count);
+    private void ForgetSession(RequestItem request)
+    {
+        var session = _sessions.Remove(request);
+        if (session is null)
+        {
+            return;
+        }
+
+        session.Cts?.Cancel();
+        if (ReferenceEquals(request, Editing))
+        {
+            RefreshSendingState();
+        }
+    }
+
+    private void ForgetSessionsOf(RequestCollection collection)
+    {
+        foreach (var member in CollectionTree.SelfAndDescendants(collection))
+        {
+            foreach (var request in member.Requests)
+            {
+                ForgetSession(request);
+            }
+        }
+    }
 
     [RelayCommand]
     private void Save()
@@ -2026,6 +2138,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         var selectedRemoved =
             SelectedCollection is not null && IsSelfOrDescendant(SelectedCollection, collection);
         TreeTrash.TrashCollection(collection, source);
+        ForgetSessionsOf(collection);
 
         if (editingRemoved)
         {
@@ -2062,6 +2175,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         {
             return false;
         }
+
+        ForgetSession(request);
 
         if (wasOpen)
         {
@@ -2958,17 +3073,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public void OpenRequest(RequestItem request)
     {
-        var changed = !ReferenceEquals(Editing, request);
         Editing = request;
         SelectedRequest = request;
         SelectedCollection = request.Owner;
         IsDraft = request.Owner is null;
-
-        if (changed)
-        {
-            ClearResponse();
-        }
-
         NotifySelectionChanged();
     }
 
@@ -4953,6 +5061,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public void Shutdown()
     {
+        _sessions.CancelAll();
+        _sessions.Clear();
+        _suiteCts?.Cancel();
         _suiteScheduleTimer.Stop();
         _suiteScheduleTimer.Tick -= OnSuiteScheduleTick;
         Persist();
@@ -5000,172 +5111,399 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
     }
 
-    private void ApplyUploadProgress(UploadProgress progress)
+    private void ApplyUploadProgress(
+        RequestItem request,
+        RequestSendSession session,
+        UploadProgress progress
+    )
     {
-        IsUploading = progress.SentBytes < progress.TotalBytes;
-        UploadProgressValue =
-            progress.TotalBytes <= 0
-                ? 0
-                : Math.Clamp(progress.SentBytes * 100d / progress.TotalBytes, 0, 100);
-        UploadProgressText =
-            progress.TotalBytes <= 0
-                ? $"已上传 {FormatSize(progress.SentBytes)}"
-                : $"上传 {FormatSize(progress.SentBytes)} / {FormatSize(progress.TotalBytes)}";
-    }
-
-    private void ApplySseProgress(SseProgress progress)
-    {
-        if (!IsSseResponse)
+        if (!_sessions.IsTracked(request, session) || session.Cts is null)
         {
-            HasResponse = true;
-            HasResponseError = false;
-            ResponseError = null;
-            ResponseBody = string.Empty;
-            FullResponseBody = string.Empty;
-            ResponseClipboardText = string.Empty;
-            LargeResponseNotice = string.Empty;
-            IsJsonResponse = false;
-            IsLargeResponse = false;
-            IsResponseJsonView = true;
-            IsSseResponse = true;
-            SseViewMode = "内容";
-            ResponseTabIndex = 2;
-            ResponseStatusText = "流式接收中…";
-            ResponseTimeText = string.Empty;
-            ResponseSizeText = string.Empty;
-            ResponseContentType = "text/event-stream";
-            ResponseTone = BadgeTone.Info;
-        }
-
-        SseThinking = _sseResume is { } resumeThinking
-            ? resumeThinking.Thinking + progress.Thinking
-            : progress.Thinking;
-        SseContent = _sseResume is { } resumeContent
-            ? resumeContent.Content + progress.Content
-            : progress.Content;
-        SseRaw = _sseResume is { } resumeRaw ? resumeRaw.Raw + progress.Raw : progress.Raw;
-        SseEventCount = (_sseResume?.Count ?? 0) + progress.EventCount;
-        if (!string.IsNullOrWhiteSpace(progress.LastEventId))
-        {
-            SseLastEventId = progress.LastEventId;
-        }
-    }
-
-    private void ApplyResponse(HttpResult result)
-    {
-        ResponseHeaders.Clear();
-
-        if (!result.HasResponse)
-        {
-            HasResponse = false;
-            HasResponseError = true;
-            ResponseError = result.Error;
-            ResponseTone = BadgeTone.Danger;
-            ResponseStatusText = "请求失败";
-            ResponseTimeText = string.Empty;
-            ResponseSizeText = string.Empty;
-            ResponseContentType = string.Empty;
-            ResponseBody = string.Empty;
-            FullResponseBody = string.Empty;
-            ResponseClipboardText = string.Empty;
-            LargeResponseNotice = string.Empty;
-            IsJsonResponse = false;
-            IsLargeResponse = false;
-            IsResponseJsonView = true;
-            IsSseResponse = false;
-            SseThinking = string.Empty;
-            SseContent = string.Empty;
-            SseRaw = string.Empty;
-            SseEventCount = 0;
-            SseLastEventId = string.Empty;
-            SseCanResume = false;
-            ResponseTabIndex = 0;
             return;
         }
 
-        var body = result.Body;
-        var isLarge = body.Length > _largeResponseThreshold;
-        var preview = isLarge ? TakePreview(body, ResponsePreviewLimit) : body;
+        session.IsUploading = progress.SentBytes < progress.TotalBytes;
+        session.UploadProgressValue =
+            progress.TotalBytes <= 0
+                ? 0
+                : Math.Clamp(progress.SentBytes * 100d / progress.TotalBytes, 0, 100);
+        session.UploadProgressText =
+            progress.TotalBytes <= 0
+                ? $"已上传 {FormatSize(progress.SentBytes)}"
+                : $"上传 {FormatSize(progress.SentBytes)} / {FormatSize(progress.TotalBytes)}";
+        if (!ReferenceEquals(Editing, request))
+        {
+            return;
+        }
 
-        HasResponse = true;
-        HasResponseError = false;
-        ResponseError = null;
-        ResponseBody = preview;
-        FullResponseBody = body;
-        ResponseClipboardText = body;
-        IsJsonResponse = result.IsJson;
-        IsLargeResponse = isLarge;
-        IsResponseJsonView = true;
-        IsSseResponse = result.IsSse;
-        SseThinking = result.SseThinking;
-        SseContent = result.SseContent;
-        SseRaw = result.SseRaw;
-        SseEventCount = result.SseEventCount;
-        SseLastEventId = result.SseLastEventId;
-        SseCanResume =
-            result.IsSse
-            && result.SseCancelled
-            && !string.IsNullOrWhiteSpace(result.SseLastEventId);
-        SseViewMode = "内容";
-        ResponseTabIndex = result.IsSse ? 2 : 0;
-        LargeResponseNotice = isLarge
-            ? $"响应体 {FormatSize(result.SizeBytes)}，已折叠显示前 {ResponsePreviewLimit / 1024} KB。完整内容可在详情页分页查看或复制。"
-            : string.Empty;
-        ResponseStatusText =
-            result.SseCancelled
-                ? (
-                    result.ReasonPhrase == "超时"
-                        ? "超时 · 保留已接收内容"
-                        : "已取消 · 保留已接收内容"
-                )
-            : string.IsNullOrWhiteSpace(result.ReasonPhrase) ? result.StatusCode.ToString()
-            : $"{result.StatusCode} {result.ReasonPhrase}";
-        ResponseTimeText = $"耗时 {result.ElapsedMs} ms";
-        ResponseSizeText = $"大小 {FormatSize(result.SizeBytes)}";
-        ResponseContentType = string.IsNullOrWhiteSpace(result.MediaType)
-            ? "未知内容类型"
-            : result.MediaType;
-        ResponseTone = result.SseCancelled
-            ? BadgeTone.Warning
-            : result.StatusCode switch
+        IsUploading = session.IsUploading;
+        UploadProgressValue = session.UploadProgressValue;
+        UploadProgressText = session.UploadProgressText;
+    }
+
+    private void ApplySseProgress(
+        RequestItem request,
+        RequestSendSession session,
+        SseProgress progress
+    )
+    {
+        if (!_sessions.IsTracked(request, session) || session.Cts is null)
+        {
+            return;
+        }
+
+        var state = session.Response;
+        if (!state.IsSseResponse)
+        {
+            state.HasResponse = true;
+            state.HasResponseError = false;
+            state.ResponseError = null;
+            state.ResponseBody = string.Empty;
+            state.FullResponseBody = string.Empty;
+            state.ResponseClipboardText = string.Empty;
+            state.LargeResponseNotice = string.Empty;
+            state.IsJsonResponse = false;
+            state.IsLargeResponse = false;
+            state.IsResponseJsonView = true;
+            state.IsSseResponse = true;
+            state.SseViewMode = "内容";
+            state.ResponseTabIndex = 2;
+            state.ResponseStatusText = "流式接收中…";
+            state.ResponseTimeText = string.Empty;
+            state.ResponseSizeText = string.Empty;
+            state.ResponseContentType = "text/event-stream";
+            state.ResponseTone = BadgeTone.Info;
+        }
+
+        state.SseThinking = session.SseResume is { } resumeThinking
+            ? resumeThinking.Thinking + progress.Thinking
+            : progress.Thinking;
+        state.SseContent = session.SseResume is { } resumeContent
+            ? resumeContent.Content + progress.Content
+            : progress.Content;
+        state.SseRaw = session.SseResume is { } resumeRaw
+            ? resumeRaw.Raw + progress.Raw
+            : progress.Raw;
+        state.SseEventCount = (session.SseResume?.Count ?? 0) + progress.EventCount;
+        if (!string.IsNullOrWhiteSpace(progress.LastEventId))
+        {
+            state.SseLastEventId = progress.LastEventId;
+        }
+
+        if (!ReferenceEquals(Editing, request))
+        {
+            return;
+        }
+
+        if (!IsSseResponse)
+        {
+            RestoreResponseView(state);
+            return;
+        }
+
+        SseThinking = state.SseThinking;
+        SseContent = state.SseContent;
+        SseRaw = state.SseRaw;
+        SseEventCount = state.SseEventCount;
+        SseLastEventId = state.SseLastEventId;
+    }
+
+    private void ApplyResponse(RequestItem request, HttpResult result)
+    {
+        if (_sessions.Find(request) is not { } session)
+        {
+            return;
+        }
+
+        var state = CreateResponseState(result);
+        session.Response = state;
+
+        // 只有被取消的 SSE 还能续接；其余情况释放组合请求及其请求体。
+        if (!state.SseCanResume)
+        {
+            session.LastComposedRequest = null;
+        }
+
+        if (!ReferenceEquals(Editing, request))
+        {
+            return;
+        }
+
+        RestoreResponseView(state);
+        if (result.HasResponse)
+        {
+            IsResponseCollapsed = false;
+            if (Settings.WorkspaceLayout is null)
             {
-                >= 200 and < 300 => BadgeTone.Success,
-                >= 300 and < 400 => BadgeTone.Info,
-                >= 400 and < 500 => BadgeTone.Warning,
-                _ => BadgeTone.Danger,
-            };
+                IsWorkspaceSideBySide = true;
+            }
+        }
+    }
 
-        foreach (var header in result.Headers)
+    private void CaptureViewState(RequestItem? request)
+    {
+        if (request is null || _sessions.Find(request) is not { } session)
+        {
+            return;
+        }
+
+        var state = session.Response;
+        state.HasResponse = HasResponse;
+        state.HasResponseError = HasResponseError;
+        state.ResponseError = ResponseError;
+        state.IsJsonResponse = IsJsonResponse;
+        state.IsResponseJsonView = IsResponseJsonView;
+        state.IsLargeResponse = IsLargeResponse;
+        state.IsSseResponse = IsSseResponse;
+        state.SseThinking = SseThinking;
+        state.SseContent = SseContent;
+        state.SseRaw = SseRaw;
+        state.SseEventCount = SseEventCount;
+        state.SseLastEventId = SseLastEventId;
+        state.SseCanResume = SseCanResume;
+        state.SseViewMode = SseViewMode;
+        state.ResponseTabIndex = ResponseTabIndex;
+        state.ResponseBody = ResponseBody;
+        state.FullResponseBody = FullResponseBody;
+        state.ResponseClipboardText = ResponseClipboardText;
+        state.LargeResponseNotice = LargeResponseNotice;
+        state.ResponseStatusText = ResponseStatusText;
+        state.ResponseTimeText = ResponseTimeText;
+        state.ResponseSizeText = ResponseSizeText;
+        state.ResponseContentType = ResponseContentType;
+        state.ResponseTone = ResponseTone;
+        state.ResponseHeaders = ResponseHeaders.ToList();
+        session.IsUploading = IsUploading;
+        session.UploadProgressValue = UploadProgressValue;
+        session.UploadProgressText = UploadProgressText;
+
+        // 草稿或已永久删除的请求不会再被打开，先释放它的视图状态。
+        if (!IsRequestInWorkspace(request))
+        {
+            ForgetSession(request);
+        }
+    }
+
+    private void RestoreViewState(RequestItem request)
+    {
+        if (_sessions.Find(request) is not { } session)
+        {
+            RestoreResponseView(new ResponseViewState());
+            IsUploading = false;
+            UploadProgressValue = 0;
+            UploadProgressText = string.Empty;
+            return;
+        }
+
+        RestoreResponseView(session.Response);
+        IsUploading = session.IsUploading;
+        UploadProgressValue = session.UploadProgressValue;
+        UploadProgressText = session.UploadProgressText;
+    }
+
+    private void RestoreResponseView(ResponseViewState state)
+    {
+        HasResponse = state.HasResponse;
+        HasResponseError = state.HasResponseError;
+        ResponseError = state.ResponseError;
+        IsJsonResponse = state.IsJsonResponse;
+        IsResponseJsonView = state.IsResponseJsonView;
+        IsLargeResponse = state.IsLargeResponse;
+        IsSseResponse = state.IsSseResponse;
+        SseThinking = state.SseThinking;
+        SseContent = state.SseContent;
+        SseRaw = state.SseRaw;
+        SseEventCount = state.SseEventCount;
+        SseLastEventId = state.SseLastEventId;
+        SseCanResume = state.SseCanResume;
+        SseViewMode = state.SseViewMode;
+        ResponseTabIndex = state.ResponseTabIndex;
+        ResponseBody = state.ResponseBody;
+        FullResponseBody = state.FullResponseBody;
+        ResponseClipboardText = state.ResponseClipboardText;
+        LargeResponseNotice = state.LargeResponseNotice;
+        ResponseStatusText = state.ResponseStatusText;
+        ResponseTimeText = state.ResponseTimeText;
+        ResponseSizeText = state.ResponseSizeText;
+        ResponseContentType = state.ResponseContentType;
+        ResponseTone = state.ResponseTone;
+        ResponseHeaders.Clear();
+        foreach (var header in state.ResponseHeaders)
         {
             ResponseHeaders.Add(header);
         }
     }
 
+    private ResponseViewState CreateResponseState(HttpResult result)
+    {
+        if (!result.HasResponse)
+        {
+            return new ResponseViewState
+            {
+                HasResponseError = true,
+                ResponseError = result.Error,
+                ResponseTone = BadgeTone.Danger,
+                ResponseStatusText = "请求失败",
+            };
+        }
+
+        var body = result.Body;
+        var isLarge = body.Length > _largeResponseThreshold;
+        var preview = isLarge ? TakePreview(body, ResponsePreviewLimit) : body;
+        return new ResponseViewState
+        {
+            HasResponse = true,
+            IsJsonResponse = result.IsJson,
+            IsLargeResponse = isLarge,
+            IsSseResponse = result.IsSse,
+            SseThinking = result.SseThinking,
+            SseContent = result.SseContent,
+            SseRaw = result.SseRaw,
+            SseEventCount = result.SseEventCount,
+            SseLastEventId = result.SseLastEventId,
+            SseCanResume =
+                result.IsSse
+                && result.SseCancelled
+                && !string.IsNullOrWhiteSpace(result.SseLastEventId),
+            SseViewMode = "内容",
+            ResponseTabIndex = result.IsSse ? 2 : 0,
+            ResponseBody = preview,
+            FullResponseBody = body,
+            ResponseClipboardText = body,
+            LargeResponseNotice = isLarge
+                ? $"响应体 {FormatSize(result.SizeBytes)}，已折叠显示前 {ResponsePreviewLimit / 1024} KB。完整内容可在详情页分页查看或复制。"
+                : string.Empty,
+            ResponseStatusText =
+                result.SseCancelled
+                    ? (
+                        result.ReasonPhrase == "超时"
+                            ? "超时 · 保留已接收内容"
+                            : "已取消 · 保留已接收内容"
+                    )
+                : string.IsNullOrWhiteSpace(result.ReasonPhrase) ? result.StatusCode.ToString()
+                : $"{result.StatusCode} {result.ReasonPhrase}",
+            ResponseTimeText = $"耗时 {result.ElapsedMs} ms",
+            ResponseSizeText = $"大小 {FormatSize(result.SizeBytes)}",
+            ResponseContentType = string.IsNullOrWhiteSpace(result.MediaType)
+                ? "未知内容类型"
+                : result.MediaType,
+            ResponseTone = result.SseCancelled
+                ? BadgeTone.Warning
+                : result.StatusCode switch
+                {
+                    >= 200 and < 300 => BadgeTone.Success,
+                    >= 300 and < 400 => BadgeTone.Info,
+                    >= 400 and < 500 => BadgeTone.Warning,
+                    _ => BadgeTone.Danger,
+                },
+            ResponseHeaders = result.Headers,
+        };
+    }
+
     private void ClearResponse()
     {
-        HasResponse = false;
-        HasResponseError = false;
-        ResponseError = null;
-        ResponseBody = string.Empty;
-        FullResponseBody = string.Empty;
-        ResponseClipboardText = string.Empty;
-        LargeResponseNotice = string.Empty;
-        IsJsonResponse = false;
-        IsLargeResponse = false;
-        IsResponseJsonView = true;
-        IsSseResponse = false;
-        SseThinking = string.Empty;
-        SseContent = string.Empty;
-        SseRaw = string.Empty;
-        SseEventCount = 0;
-        SseLastEventId = string.Empty;
-        SseCanResume = false;
-        ResponseTabIndex = 0;
-        ResponseStatusText = string.Empty;
-        ResponseTimeText = string.Empty;
-        ResponseSizeText = string.Empty;
-        ResponseContentType = string.Empty;
-        ResponseHeaders.Clear();
+        if (_sessions.Find(Editing) is { } session)
+        {
+            session.Response = new ResponseViewState();
+        }
+
+        RestoreResponseView(new ResponseViewState());
+    }
+
+    private bool IsRequestInWorkspace(RequestItem request)
+    {
+        foreach (var collection in Collections)
+        {
+            if (collection.Requests.Any(candidate => ReferenceEquals(candidate, request)))
+            {
+                return true;
+            }
+        }
+
+        foreach (var node in TreeTrash.Items)
+        {
+            if (ReferenceEquals(node.Request, request))
+            {
+                return true;
+            }
+
+            if (node.Collection is { } collection && CollectionContains(collection, request))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool CollectionContains(RequestCollection collection, RequestItem request)
+    {
+        if (collection.Requests.Any(candidate => ReferenceEquals(candidate, request)))
+        {
+            return true;
+        }
+
+        foreach (var child in collection.Children)
+        {
+            if (CollectionContains(child, request))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void PruneSessions()
+    {
+        if (_sessions.Count == 0)
+        {
+            return;
+        }
+
+        var alive = new HashSet<RequestItem>(ReferenceEqualityComparer.Instance);
+        foreach (var collection in Collections)
+        {
+            foreach (var request in collection.Requests)
+            {
+                alive.Add(request);
+            }
+        }
+
+        foreach (var node in TreeTrash.Items)
+        {
+            if (node.Request is { } request)
+            {
+                alive.Add(request);
+                continue;
+            }
+
+            if (node.Collection is { } collection)
+            {
+                CollectRequests(collection, alive);
+            }
+        }
+
+        foreach (var request in _sessions.SnapshotRequests())
+        {
+            if (!alive.Contains(request) && !ReferenceEquals(request, Editing))
+            {
+                ForgetSession(request);
+            }
+        }
+    }
+
+    private static void CollectRequests(RequestCollection collection, HashSet<RequestItem> target)
+    {
+        foreach (var request in collection.Requests)
+        {
+            target.Add(request);
+        }
+
+        foreach (var child in collection.Children)
+        {
+            CollectRequests(child, target);
+        }
     }
 
     private static string TakePreview(string text, int limit)
@@ -5297,6 +5635,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         ApplyTreeNodes(nodes);
         TreeIsEmpty = TreeNodes.Count == 0;
+        PruneSessions();
     }
 
     /// <summary>
