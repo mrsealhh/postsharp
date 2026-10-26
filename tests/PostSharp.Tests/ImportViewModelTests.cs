@@ -143,6 +143,54 @@ public sealed class ImportViewModelTests
         Assert.False(viewModel.HasImportError);
     }
 
+    [Fact]
+    public async Task MultipleOpenApiServersRequireSelection()
+    {
+        var viewModel = Create(out var host);
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.json");
+        const string json = """
+            {
+              "openapi": "3.0.3",
+              "info": { "title": "Servers", "version": "1.0" },
+              "servers": [
+                { "url": "https://api.example.com" },
+                { "url": "https://staging.example.com" }
+              ],
+              "paths": {
+                "/items": {
+                  "get": {
+                    "responses": { "200": { "description": "ok" } }
+                  }
+                }
+              }
+            }
+            """;
+        await File.WriteAllTextAsync(path, json);
+
+        try
+        {
+            await viewModel.ImportFromFileAsync(path);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        Assert.True(viewModel.HasPendingOpenApiImport);
+        Assert.Equal(2, viewModel.OpenApiServers.Count);
+        Assert.Equal("https://api.example.com", viewModel.SelectedOpenApiServer?.Url);
+
+        viewModel.SelectedOpenApiServer = viewModel.OpenApiServers[1];
+        viewModel.ConfirmOpenApiImportCommand.Execute(null);
+
+        Assert.False(viewModel.HasPendingOpenApiImport);
+        Assert.NotNull(host.OpenApiDocument);
+        Assert.Equal(
+            "https://staging.example.com/items",
+            Assert.Single(Assert.Single(host.OpenApiDocument.Groups).Requests).Url
+        );
+    }
+
     private static ImportViewModel Create(out FakeImportHost host)
     {
         host = new FakeImportHost();
@@ -154,6 +202,8 @@ public sealed class ImportViewModelTests
         public CurlImportResult? CurlResult { get; private set; }
 
         public ImportResult? CollectionResult { get; private set; }
+
+        public OpenApiImportDocument? OpenApiDocument { get; private set; }
 
         public bool Completed { get; private set; }
 
@@ -167,6 +217,7 @@ public sealed class ImportViewModelTests
 
         public CollectionImportOutcome ApplyOpenApiImport(OpenApiImportDocument document)
         {
+            OpenApiDocument = document;
             return new CollectionImportOutcome(document.Title, document.RequestCount, 0, null);
         }
 
