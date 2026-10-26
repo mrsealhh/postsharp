@@ -53,7 +53,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    private int _auditLimit = 500;
+    private int _auditLimit;
     private int _largeResponseThreshold = 64 * 1024;
 
     private object? _pendingDelete;
@@ -103,7 +103,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         _http.AutoFormatResponse = Settings.AutoFormatResponse;
         _http.SseThinkingPath = Settings.SseThinkingPath;
         _http.SseContentPath = Settings.SseContentPath;
-        _auditLimit = Math.Max(20, Settings.AuditLimit);
+        _auditLimit = Math.Max(0, Settings.AuditLimit);
         _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
 
         _mockServer.Start();
@@ -205,7 +205,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             auditCopyHint
         );
 
-        foreach (var entry in (auditLoad.Value ?? new List<AuditEntry>()).Take(_auditLimit))
+        var loadedAudit = auditLoad.Value ?? new List<AuditEntry>();
+        foreach (var entry in _auditLimit > 0 ? loadedAudit.Take(_auditLimit) : loadedAudit)
         {
             Audit.Add(entry);
         }
@@ -1249,13 +1250,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         _http.SseThinkingPath = Settings.SseThinkingPath;
         _http.SseContentPath = Settings.SseContentPath;
         _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
-        _auditLimit = Math.Max(20, Settings.AuditLimit);
+        _auditLimit = Math.Max(0, Settings.AuditLimit);
 
-        while (Audit.Count > _auditLimit)
+        if (_auditLimit > 0)
         {
-            var oldest = Audit[^1];
-            Audit.RemoveAt(Audit.Count - 1);
-            MoveAuditToTrash(oldest);
+            while (Audit.Count > _auditLimit)
+            {
+                Audit.RemoveAt(Audit.Count - 1);
+            }
         }
 
         PersistAudit();
@@ -3365,11 +3367,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         };
 
         Audit.Insert(0, entry);
-        while (Audit.Count > _auditLimit)
+        if (_auditLimit > 0)
         {
-            var oldest = Audit[^1];
-            Audit.RemoveAt(Audit.Count - 1);
-            MoveAuditToTrash(oldest);
+            while (Audit.Count > _auditLimit)
+            {
+                Audit.RemoveAt(Audit.Count - 1);
+            }
         }
 
         PersistAudit();
@@ -3781,12 +3784,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     }
 
     [RelayCommand]
-    private void OpenSuiteBuilder()
+    private void OpenSuiteBuilder() => OpenSuiteBuilderCore(SelectedCollection ?? Editing.Owner);
+
+    /// <summary>Opens the suite builder with a specific collection preselected (used by the tree context menu).</summary>
+    public void OpenSuiteBuilderForCollection(RequestCollection collection) =>
+        OpenSuiteBuilderCore(collection);
+
+    private void OpenSuiteBuilderCore(RequestCollection? defaultCollection)
     {
         SuiteSources.Clear();
         SuiteBuilderSteps.Clear();
         MappingEditors.Clear();
-        var defaultCollection = SelectedCollection ?? Editing.Owner;
         foreach (var collection in Collections.Where(collection => collection.Parent is null))
         {
             AddSuiteSourceRows(collection, 0, defaultCollection);

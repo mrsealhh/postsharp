@@ -30,4 +30,10 @@ public sealed class MemoryLimitTests
     {
         Assert.Equal(RenderingModes.Software, new AppSettings().RenderingMode);
     }
+
+    [Fact]
+    public void AuditLimitDefaultsToUnlimited()
+    {
+        Assert.Equal(0, new AppSettings().AuditLimit);
+    }
 }

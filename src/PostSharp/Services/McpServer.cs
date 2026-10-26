@@ -1225,7 +1225,7 @@ public sealed class McpServer
                         ),
                         ["autoFormatResponse"] = BooleanSchema("自动格式化 JSON/XML 响应"),
                         ["largeResponseThresholdKb"] = IntegerSchema("大响应折叠阈值 KB", 8, 4096),
-                        ["auditLimit"] = IntegerSchema("审计保留条数", 20, 5000),
+                        ["auditLimit"] = IntegerSchema("审计最多保留条数；0 表示不限", 0, 50000),
                         ["logDirectory"] = StringSchema("日志目录"),
                         ["logLevel"] = EnumSchema(
                             "日志级别",

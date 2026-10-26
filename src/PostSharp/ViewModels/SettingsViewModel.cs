@@ -122,8 +122,6 @@ public partial class SettingsViewModel : ObservableObject
 
     public IReadOnlyList<int> LargeResponseThresholdOptions { get; } = new[] { 32, 64, 128, 256 };
 
-    public IReadOnlyList<int> AuditLimitOptions { get; } = new[] { 100, 500, 1000, 2000 };
-
     public string DefaultLogDirectory => AppPaths.DefaultLogDirectory;
 
     public string SettingsFilePath => AppPaths.DatabaseFile;

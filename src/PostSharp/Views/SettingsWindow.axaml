@@ -409,13 +409,15 @@
                                     SelectedItem="{Binding Draft.LargeResponseThresholdKb, Mode=TwoWay}"
                                     AutomationProperties.Name="大响应折叠阈值"
                                 />
-                                <arc:Select
+                                <arc:NumberField
                                     Grid.Column="1"
-                                    Label="审计保留条数"
-                                    Description="单位：条"
-                                    ItemsSource="{Binding AuditLimitOptions}"
-                                    SelectedItem="{Binding Draft.AuditLimit, Mode=TwoWay}"
-                                    AutomationProperties.Name="审计保留条数"
+                                    Label="审计最多保留"
+                                    Description="0 = 不限（默认）；设置后超出自动丢弃最早记录，套件执行仍正常写入审计"
+                                    Minimum="0"
+                                    Maximum="1000000"
+                                    Step="1"
+                                    Value="{Binding Draft.AuditLimit, Mode=TwoWay}"
+                                    AutomationProperties.Name="审计最多保留条数"
                                 />
                             </Grid>
                             <arc:Switch
