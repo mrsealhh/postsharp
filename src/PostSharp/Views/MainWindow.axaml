@@ -919,7 +919,7 @@
                         </GridSplitter>
 
                         <!-- Editor and response -->
-                        <Grid x:Name="EditorResponseLayout" Grid.Column="2" Margin="16,12,16,12">
+                        <Grid x:Name="EditorResponseLayout" Grid.Column="2" Margin="16,12,20,20">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="0" />
@@ -1250,6 +1250,7 @@
                                                         IsResizable="False"
                                                         FrameHeight="240"
                                                         MinHeight="80"
+                                                        Margin="0,0,0,8"
                                                         ClipToBounds="True"
                                                         FontFamily="{DynamicResource PostSharpCodeFont}"
                                                         FontSize="{DynamicResource PostSharpCodeFontSize}"
@@ -1491,15 +1492,7 @@
                             >
                                 <GridSplitter.Template>
                                     <ControlTemplate>
-                                        <Border Background="Transparent">
-                                            <Border
-                                                Width="42"
-                                                Height="3"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"
-                                                Background="{arc:ArcDesignTokenResource Border}"
-                                            />
-                                        </Border>
+                                        <Border Background="Transparent" />
                                     </ControlTemplate>
                                 </GridSplitter.Template>
                             </GridSplitter>
@@ -1658,33 +1651,44 @@
                                                     </arc:Button>
                                                 </Grid>
                                             </Border>
-                                            <Grid Grid.Row="2" ClipToBounds="True">
-                                                <arc:JsonViewer
-                                                    x:Name="JsonResponseViewer"
-                                                    Json="{Binding ResponseBody}"
-                                                    IsVisible="{Binding ShowJsonResponse}"
-                                                    ExpandDepth="2"
-                                                    MaxTreeHeight="220"
-                                                    SearchPlaceholder="搜索键和值"
-                                                    AutomationProperties.Name="JSON 响应"
-                                                />
-                                                <TextBox
-                                                    IsVisible="{Binding ShowRawResponse}"
-                                                    Text="{Binding ResponseBody}"
-                                                    IsReadOnly="True"
-                                                    AcceptsReturn="True"
-                                                    TextWrapping="NoWrap"
-                                                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                                    ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                                    Background="Transparent"
-                                                    BorderThickness="0"
-                                                    Padding="0"
-                                                    FontFamily="{DynamicResource PostSharpCodeFont}"
-                                                    FontSize="{DynamicResource PostSharpCodeFontSize}"
-                                                    Foreground="{arc:ArcDesignTokenResource Foreground}"
-                                                    AutomationProperties.Name="响应原始文本"
-                                                />
-                                            </Grid>
+                                            <Border
+                                                Grid.Row="2"
+                                                Background="{arc:ArcDesignTokenResource Surface}"
+                                                BorderBrush="{arc:ArcDesignTokenResource Border}"
+                                                BorderThickness="1"
+                                                CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                                                ClipToBounds="True"
+                                            >
+                                                <Grid ClipToBounds="True">
+                                                    <arc:JsonViewer
+                                                        x:Name="JsonResponseViewer"
+                                                        Json="{Binding ResponseBody}"
+                                                        IsVisible="{Binding ShowJsonResponse}"
+                                                        ExpandDepth="2"
+                                                        MaxTreeHeight="220"
+                                                        BorderThickness="0"
+                                                        Background="Transparent"
+                                                        SearchPlaceholder="搜索键和值"
+                                                        AutomationProperties.Name="JSON 响应"
+                                                    />
+                                                    <TextBox
+                                                        IsVisible="{Binding ShowRawResponse}"
+                                                        Text="{Binding ResponseBody}"
+                                                        IsReadOnly="True"
+                                                        AcceptsReturn="True"
+                                                        TextWrapping="NoWrap"
+                                                        ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                        ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                        Background="Transparent"
+                                                        BorderThickness="0"
+                                                        Padding="8"
+                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
+                                                        FontSize="{DynamicResource PostSharpCodeFontSize}"
+                                                        Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                        AutomationProperties.Name="响应原始文本"
+                                                    />
+                                                </Grid>
+                                            </Border>
                                         </Grid>
                                     </arc:TabItem>
 
