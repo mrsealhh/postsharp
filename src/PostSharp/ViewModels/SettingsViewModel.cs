@@ -355,6 +355,8 @@ public partial class SettingsViewModel : ObservableObject
         Draft.CodeFontSize = defaults.CodeFontSize;
         Draft.RequestTimeoutSeconds = defaults.RequestTimeoutSeconds;
         Draft.DefaultBodyMode = defaults.DefaultBodyMode;
+        Draft.SseThinkingPath = defaults.SseThinkingPath;
+        Draft.SseContentPath = defaults.SseContentPath;
         Draft.AutoFormatResponse = defaults.AutoFormatResponse;
         Draft.LargeResponseThresholdKb = defaults.LargeResponseThresholdKb;
         Draft.AuditLimit = defaults.AuditLimit;
@@ -462,6 +464,8 @@ public partial class SettingsViewModel : ObservableObject
         _current.CodeFontSize = Draft.CodeFontSize;
         _current.RequestTimeoutSeconds = Draft.RequestTimeoutSeconds;
         _current.DefaultBodyMode = Draft.DefaultBodyMode;
+        _current.SseThinkingPath = Draft.SseThinkingPath;
+        _current.SseContentPath = Draft.SseContentPath;
         _current.AutoFormatResponse = Draft.AutoFormatResponse;
         _current.LargeResponseThresholdKb = Draft.LargeResponseThresholdKb;
         _current.AuditLimit = Draft.AuditLimit;
@@ -491,6 +495,8 @@ public partial class SettingsViewModel : ObservableObject
             CodeFontSize = source.CodeFontSize,
             RequestTimeoutSeconds = source.RequestTimeoutSeconds,
             DefaultBodyMode = source.DefaultBodyMode,
+            SseThinkingPath = source.SseThinkingPath,
+            SseContentPath = source.SseContentPath,
             AutoFormatResponse = source.AutoFormatResponse,
             LargeResponseThresholdKb = source.LargeResponseThresholdKb,
             AuditLimit = source.AuditLimit,

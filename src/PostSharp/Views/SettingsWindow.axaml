@@ -408,6 +408,38 @@
                     </Border>
 
                     <Border Classes="settingsSection">
+                        <StackPanel Spacing="12">
+                            <TextBlock
+                                Text="SSE 自定义解析"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                FontWeight="Medium"
+                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                            />
+                            <TextBlock
+                                Text="用于非标准 SSE 响应。填写 JSON 路径后，将优先从每个 data 事件中提取对应字段；留空则使用内置的 OpenAI / Anthropic / Gemini / DashScope 自动识别。支持 data.token、items[0].id 这类路径。"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                TextWrapping="Wrap"
+                            />
+                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                <arc:Input
+                                    Label="思考节点路径"
+                                    Text="{Binding Draft.SseThinkingPath, Mode=TwoWay}"
+                                    Placeholder="output.choices[0].message.reasoning_content"
+                                    AutomationProperties.Name="SSE 思考节点路径"
+                                />
+                                <arc:Input
+                                    Grid.Column="1"
+                                    Label="内容节点路径"
+                                    Text="{Binding Draft.SseContentPath, Mode=TwoWay}"
+                                    Placeholder="output.choices[0].message.content"
+                                    AutomationProperties.Name="SSE 内容节点路径"
+                                />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="settingsSection">
                         <StackPanel Spacing="6">
                             <TextBlock
                                 Text="配置文件"

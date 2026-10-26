@@ -161,6 +161,43 @@ public sealed class HttpRequestServiceTests
     }
 
     [Fact]
+    public async Task CustomSsePathsOverrideAutomaticParsing()
+    {
+        const string body = """
+            data: {"payload":{"thought":"想","answer":"答"}}
+
+            data: [DONE]
+
+            """;
+        using var client = new HttpClient(
+            new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "text/event-stream"),
+            })
+        );
+        var service = new HttpRequestService(client)
+        {
+            SseThinkingPath = "payload.thought",
+            SseContentPath = "payload.answer",
+        };
+
+        var result = await service.SendAsync(
+            new ComposedRequest(
+                "POST",
+                "https://example.com/events",
+                Array.Empty<KeyValuePair<string, string>>(),
+                null,
+                null,
+                null
+            ),
+            CancellationToken.None
+        );
+
+        Assert.Equal("想", result.SseThinking);
+        Assert.Equal("答", result.SseContent);
+    }
+
+    [Fact]
     public async Task NonSseResponseDoesNotReportSseProgress()
     {
         using var client = new HttpClient(

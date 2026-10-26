@@ -1667,7 +1667,12 @@
                                                     SearchPlaceholder="搜索键和值"
                                                     AutomationProperties.Name="JSON 响应"
                                                 />
-                                                <arc:ScrollArea IsVisible="{Binding ShowRawResponse}">
+                                                <arc:ScrollArea
+                                                    IsVisible="{Binding ShowRawResponse}"
+                                                    OverlayScrollbarMode="Always"
+                                                    HorizontalScrollBarVisibility="Auto"
+                                                    VerticalScrollBarVisibility="Auto"
+                                                >
                                                     <SelectableTextBlock
                                                         Text="{Binding ResponseBody}"
                                                         FontFamily="{DynamicResource PostSharpCodeFont}"
@@ -1676,7 +1681,12 @@
                                                         TextWrapping="NoWrap"
                                                     />
                                                 </arc:ScrollArea>
-                                                <arc:ScrollArea IsVisible="{Binding ShowResponseSingleLine}">
+                                                <arc:ScrollArea
+                                                    IsVisible="{Binding ShowResponseSingleLine}"
+                                                    OverlayScrollbarMode="Always"
+                                                    HorizontalScrollBarVisibility="Auto"
+                                                    VerticalScrollBarVisibility="Auto"
+                                                >
                                                     <SelectableTextBlock
                                                         Text="{Binding ResponseSingleLineText}"
                                                         FontFamily="{DynamicResource PostSharpCodeFont}"

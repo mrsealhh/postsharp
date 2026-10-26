@@ -344,6 +344,7 @@ http://127.0.0.1:5199/mcp
    - Gemini：`candidates[].content.parts[].text`（含 `thought`）。
    - 阿里云 DashScope / 百炼：OpenAI 兼容模式；原生 `output.choices[].message`、`output.text` 也会自动识别。
    - 常见通用字段 `thinking` / `reasoning` / `content` / `text` / `response`。
+   - 非标准结构可在「设置 → SSE 自定义解析」填写思考/内容 JSON 路径，优先于自动识别。
 3. 将 thinking 和 content 分别追加聚合，保留原始事件流。
 4. 自动切到「AI 聚合」标签，提供内容 / 思考过程 / 原始事件三视图和复制按钮。
 5. 流式接收时每 150ms 增量刷新内容，取消后保留已接收部分并标记「已取消」。
@@ -389,6 +390,7 @@ http://127.0.0.1:5199/mcp
 
 - **主题**：跟随系统 / 浅色 / 深色。跟随系统会在启动时读取 Windows 主题，并在系统切换时同步。
 - **全局圆角**：0–2 倍滑杆，0 = 直角，1 = Arc 默认，2 = 双倍圆角；通过 `TKCode.Arc.Themes.Corners` 统一覆盖 Arc 设计令牌，不改变颜色、边框、阴影和动效。
+- **SSE 自定义解析**：可填写「思考节点路径」和「内容节点路径」，例如 `output.choices[0].message.reasoning_content`、`output.choices[0].message.content`；留空时使用内置自动识别，填写后优先按自定义路径提取。
 - **日志目录**：默认 `%APPDATA%\PostSharp\logs`；可浏览选择其他目录或直接打开。保存时会校验目录可写，校验失败会保留原设置并给出原因；若写入配置文件失败，当前会话仍会应用新值，但重启后回到上次成功保存的设置。
 - **日志级别**：调试 / 信息 / 警告 / 错误，默认「调试」。低于所选级别的日志不会写入文件，更严重的日志始终保留；保存后立即作用于当前会话，并写入 `settings.json` 供下次启动读取。
 - **界面字体 / 代码字体**：内置 Inter、系统默认、微软雅黑、Geist Mono、Consolas、Cascadia Mono；导入或扫描到的自定义字体会追加到列表。
@@ -606,10 +608,12 @@ docs/
 | 请求体 JSON 视图 | JSON 请求体可切换 JsonViewer；搜索、展开、复制路径/值可用；长 JSON 在固定高度内滚动 |
 | 响应 JSON 底部 | 响应区 JsonViewer 高度按 Tab 实际高度收敛，最后一行和底部边界在窗口内可见 |
 | 响应体工具栏 | 单行开关显示压缩后的单行文本；JSON 视图开关切换树/原文；格式化/压缩更新响应内容并提示 |
+| 响应滚动 | 原始文本、单行 JSON、压缩 JSON 均显示水平/垂直滚动条，长行可横向查看 |
+| SSE 自定义路径 | 设置 `payload.thought` / `payload.answer` 后从非标准 SSE 事件提取思考/内容，留空回到自动识别 |
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：69 个测试全部通过 |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：70 个测试全部通过 |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
@@ -709,7 +713,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：69 个 xUnit 测试。
+- 自测：70 个 xUnit 测试。
 
 ### 当前 MVP 限制
 

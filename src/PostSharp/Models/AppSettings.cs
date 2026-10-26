@@ -28,6 +28,12 @@ public partial class AppSettings : ObservableObject
     private string _defaultBodyMode = "None";
 
     [ObservableProperty]
+    private string _sseThinkingPath = string.Empty;
+
+    [ObservableProperty]
+    private string _sseContentPath = string.Empty;
+
+    [ObservableProperty]
     private bool _autoFormatResponse = true;
 
     [ObservableProperty]

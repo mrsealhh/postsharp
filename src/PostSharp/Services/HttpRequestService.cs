@@ -66,6 +66,12 @@ public sealed class HttpRequestService
 
     public bool AutoFormatResponse { get; set; } = true;
 
+    /// <summary>Optional JSON path for thinking text in non-standard SSE events.</summary>
+    public string SseThinkingPath { get; set; } = string.Empty;
+
+    /// <summary>Optional JSON path for content text in non-standard SSE events.</summary>
+    public string SseContentPath { get; set; } = string.Empty;
+
     public async Task<HttpResult> SendAsync(
         ComposedRequest composed,
         CancellationToken cancellationToken,
@@ -229,7 +235,13 @@ public sealed class HttpRequestService
 
             if (mediaType.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase))
             {
-                var sse = await ReadSseAsync(response, linked.Token, sseProgress)
+                var sse = await ReadSseAsync(
+                        response,
+                        linked.Token,
+                        sseProgress,
+                        SseThinkingPath,
+                        SseContentPath
+                    )
                     .ConfigureAwait(false);
                 stopwatch.Stop();
                 var cancelled = sse.Cancelled;
@@ -444,7 +456,9 @@ public sealed class HttpRequestService
     private static async Task<SseReadResult> ReadSseAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken,
-        IProgress<SseProgress>? progress = null
+        IProgress<SseProgress>? progress = null,
+        string? thinkingPath = null,
+        string? contentPath = null
     )
     {
         var raw = new StringBuilder();
@@ -498,7 +512,7 @@ public sealed class HttpRequestService
                     {
                         var payload = string.Join("\n", dataLines);
                         eventCount++;
-                        AppendSsePayload(payload, thinking, content);
+                        AppendSsePayload(payload, thinking, content, thinkingPath, contentPath);
                         dataLines.Clear();
                         if (!string.IsNullOrWhiteSpace(currentEventId))
                         {
@@ -550,7 +564,13 @@ public sealed class HttpRequestService
         if (dataLines.Count > 0)
         {
             eventCount++;
-            AppendSsePayload(string.Join("\n", dataLines), thinking, content);
+            AppendSsePayload(
+                string.Join("\n", dataLines),
+                thinking,
+                content,
+                thinkingPath,
+                contentPath
+            );
             if (!string.IsNullOrWhiteSpace(currentEventId))
             {
                 lastEventId = currentEventId;
@@ -568,11 +588,44 @@ public sealed class HttpRequestService
         );
     }
 
-    private static void AppendSsePayload(string data, StringBuilder thinking, StringBuilder content)
+    private static void AppendSsePayload(
+        string data,
+        StringBuilder thinking,
+        StringBuilder content,
+        string? thinkingPath,
+        string? contentPath
+    )
     {
         if (string.IsNullOrWhiteSpace(data) || data.Trim() == "[DONE]")
         {
             return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(thinkingPath) || !string.IsNullOrWhiteSpace(contentPath))
+        {
+            var matched = false;
+            if (
+                !string.IsNullOrWhiteSpace(thinkingPath)
+                && JsonValuePath.TryEvaluate(data, thinkingPath, out var customThinking)
+            )
+            {
+                thinking.Append(customThinking);
+                matched = true;
+            }
+
+            if (
+                !string.IsNullOrWhiteSpace(contentPath)
+                && JsonValuePath.TryEvaluate(data, contentPath, out var customContent)
+            )
+            {
+                content.Append(customContent);
+                matched = true;
+            }
+
+            if (matched)
+            {
+                return;
+            }
         }
 
         try

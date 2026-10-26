@@ -84,6 +84,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         Settings.PropertyChanged += OnSettingsChanged;
         _http.TimeoutSeconds = Settings.RequestTimeoutSeconds;
         _http.AutoFormatResponse = Settings.AutoFormatResponse;
+        _http.SseThinkingPath = Settings.SseThinkingPath;
+        _http.SseContentPath = Settings.SseContentPath;
         _auditLimit = Math.Max(20, Settings.AuditLimit);
         _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
 
@@ -932,6 +934,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         _http.TimeoutSeconds = Math.Clamp(Settings.RequestTimeoutSeconds, 5, 600);
         _http.AutoFormatResponse = Settings.AutoFormatResponse;
+        _http.SseThinkingPath = Settings.SseThinkingPath;
+        _http.SseContentPath = Settings.SseContentPath;
         _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
         _auditLimit = Math.Max(20, Settings.AuditLimit);
 
