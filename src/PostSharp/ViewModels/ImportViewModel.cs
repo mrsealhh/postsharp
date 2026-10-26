@@ -11,12 +11,14 @@ namespace PostSharp.ViewModels;
 public partial class ImportViewModel : ObservableObject
 {
     private readonly IImportHost _host;
+    private readonly ImportProviderRegistry _providers;
 
     private CancellationTokenSource? _importCts;
 
-    public ImportViewModel(IImportHost host)
+    public ImportViewModel(IImportHost host, ImportProviderRegistry? providers = null)
     {
         _host = host;
+        _providers = providers ?? ImportProviderRegistry.CreateDefault();
         ImportWarnings.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasImportWarnings));
         ImportReport.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasImportReport));
     }
@@ -652,35 +654,42 @@ public partial class ImportViewModel : ObservableObject
                     var content = await File.ReadAllTextAsync(path, _importCts.Token)
                         .ConfigureAwait(true);
                     var kind = ImportFileDetector.Detect(path, content);
-                    switch (kind)
+                    var provider =
+                        _providers.Find(kind)
+                        ?? throw new InvalidOperationException(
+                            "无法识别导入格式，请使用 Postman / OpenAPI / HAR / Insomnia / Hoppscotch 文件。"
+                        );
+                    var payload = await Task.Run(
+                            () =>
+                                provider.Parse(
+                                    fileName,
+                                    content,
+                                    new ImportProviderContext(HarIncludeStaticResources)
+                                ),
+                            _importCts.Token
+                        )
+                        .ConfigureAwait(true);
+                    switch (payload)
                     {
-                        case ImportFileKind.OpenApi:
+                        case OpenApiImportPayload openApi:
                         {
-                            var document = await Task.Run(
-                                    () => OpenApiImportService.Parse(content, fileName),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var outcome = _host.ApplyOpenApiImport(document);
+                            var outcome = _host.ApplyOpenApiImport(openApi.Document);
                             requests += outcome.RequestCount;
                             folders += outcome.FolderCount;
                             AddImportReport(
-                                $"成功：{fileName} · OpenAPI · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
+                                $"成功：{fileName} · {provider.FormatName} · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
                             );
                             warnings.AddRange(
-                                document.Warnings.Select(warning => $"{fileName}：{warning}")
+                                openApi.Document.Warnings.Select(warning =>
+                                    $"{fileName}：{warning}"
+                                )
                             );
                             succeeded++;
                             break;
                         }
-                        case ImportFileKind.PostmanCollection:
+                        case CollectionImportPayload collection:
                         {
-                            var result = await Task.Run(
-                                    () => PostmanImportService.Parse(content, fileName),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var outcome = _host.ApplyCollectionImport(result);
+                            var outcome = _host.ApplyCollectionImport(collection.Result);
                             requests += outcome.RequestCount;
                             folders += outcome.FolderCount;
                             if (outcome.EnvironmentName is not null)
@@ -689,115 +698,42 @@ public partial class ImportViewModel : ObservableObject
                             }
 
                             AddImportReport(
-                                $"成功：{fileName} · Postman Collection · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
+                                $"成功：{fileName} · {provider.FormatName} · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
                             );
                             warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
+                                collection.Result.Warnings.Select(warning =>
+                                    $"{fileName}：{warning}"
+                                )
                             );
                             succeeded++;
                             break;
                         }
-                        case ImportFileKind.PostmanEnvironment:
+                        case EnvironmentImportPayload environment:
                         {
-                            var result = await Task.Run(
-                                    () => PostmanEnvironmentImportService.Parse(content, fileName),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
                             var environmentName =
-                                _host.ApplyImportedEnvironment(result.Environment)
-                                ?? result.Environment.Name;
+                                _host.ApplyImportedEnvironment(environment.Result.Environment)
+                                ?? environment.Result.Environment.Name;
                             environments++;
                             AddImportReport(
-                                $"成功：{fileName} · Postman Environment · 环境「{environmentName}」"
+                                $"成功：{fileName} · {provider.FormatName} · 环境「{environmentName}」"
                             );
                             warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
+                                environment.Result.Warnings.Select(warning =>
+                                    $"{fileName}：{warning}"
+                                )
                             );
                             succeeded++;
                             break;
                         }
-                        case ImportFileKind.Har:
+                        case CurlImportPayload curl:
                         {
-                            var result = await Task.Run(
-                                    () =>
-                                        HarImportService.Parse(
-                                            content,
-                                            fileName,
-                                            HarIncludeStaticResources
-                                        ),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var outcome = _host.ApplyCollectionImport(result);
-                            requests += outcome.RequestCount;
-                            folders += outcome.FolderCount;
-                            AddImportReport(
-                                $"成功：{fileName} · HAR · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
-                            );
-                            warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
-                            );
-                            succeeded++;
-                            break;
-                        }
-                        case ImportFileKind.Insomnia:
-                        {
-                            var result = await Task.Run(
-                                    () => InsomniaImportService.Parse(content, fileName),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var outcome = _host.ApplyCollectionImport(result);
-                            requests += outcome.RequestCount;
-                            folders += outcome.FolderCount;
-                            if (outcome.EnvironmentName is not null)
-                            {
-                                environments++;
-                            }
-
-                            AddImportReport(
-                                $"成功：{fileName} · Insomnia · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
-                            );
-                            warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
-                            );
-                            succeeded++;
-                            break;
-                        }
-                        case ImportFileKind.Hoppscotch:
-                        {
-                            var result = await Task.Run(
-                                    () => HoppscotchImportService.Parse(content, fileName),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var outcome = _host.ApplyCollectionImport(result);
-                            requests += outcome.RequestCount;
-                            folders += outcome.FolderCount;
-                            AddImportReport(
-                                $"成功：{fileName} · Hoppscotch · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
-                            );
-                            warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
-                            );
-                            succeeded++;
-                            break;
-                        }
-                        case ImportFileKind.Curl:
-                        {
-                            var result = await Task.Run(
-                                    () => CurlImportService.Parse(content),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var request = _host.ApplyCurlImport(result);
+                            var request = _host.ApplyCurlImport(curl.Result);
                             requests++;
                             AddImportReport(
-                                $"成功：{fileName} · cURL · {request.Method} {request.Url}"
+                                $"成功：{fileName} · {provider.FormatName} · {request.Method} {request.Url}"
                             );
                             warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
+                                curl.Result.Warnings.Select(warning => $"{fileName}：{warning}")
                             );
                             succeeded++;
                             break;
