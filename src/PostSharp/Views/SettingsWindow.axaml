@@ -440,9 +440,166 @@
                     </Border>
 
                     <Border Classes="settingsSection">
+                        <StackPanel Spacing="12">
+                            <TextBlock
+                                Text="存储"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                FontWeight="Medium"
+                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                            />
+                            <TextBlock
+                                Text="默认使用项目目录 .postsharp 下的本地 SQLite；可为系统配置、集合与接口记录、套件自动化分别选择远程 PostgreSQL、MySQL 或 SQL Server。远程连接失败时，本地 SQLite 仍作为离线缓存。"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                TextWrapping="Wrap"
+                            />
+                            <TextBlock
+                                Text="{Binding LocalDatabasePath}"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                TextWrapping="Wrap"
+                            />
+                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                <arc:Select
+                                    Label="存储配置"
+                                    ItemsSource="{Binding StorageProfiles}"
+                                    SelectedItem="{Binding SelectedStorageProfile, Mode=TwoWay}"
+                                    AutomationProperties.Name="存储配置"
+                                />
+                                <arc:Select
+                                    Grid.Column="1"
+                                    Label="数据库类型"
+                                    ItemsSource="{Binding StorageProviderOptions}"
+                                    SelectedItem="{Binding SelectedStorageProvider, Mode=TwoWay}"
+                                    IsEnabled="{Binding IsStorageProfileEditable}"
+                                    AutomationProperties.Name="数据库类型"
+                                />
+                            </Grid>
+                            <Grid ColumnDefinitions="1*,2*" ColumnSpacing="12">
+                                <arc:Input
+                                    Label="名称"
+                                    Text="{Binding SelectedStorageProfile.Name, Mode=TwoWay}"
+                                    IsEnabled="{Binding IsStorageProfileEditable}"
+                                    AutomationProperties.Name="存储配置名称"
+                                />
+                                <arc:Input
+                                    Grid.Column="1"
+                                    Label="连接串"
+                                    Text="{Binding SelectedStorageProfile.ConnectionString, Mode=TwoWay}"
+                                    IsEnabled="{Binding IsStorageProfileEditable}"
+                                    Placeholder="Host=127.0.0.1;Port=5432;Database=postsharp;Username=postsharp;Password=..."
+                                    AutomationProperties.Name="存储连接串"
+                                />
+                            </Grid>
+                            <WrapPanel ItemSpacing="8" LineSpacing="8">
+                                <arc:Button
+                                    Content="新增远程库"
+                                    Variant="Secondary"
+                                    Size="Small"
+                                    Command="{Binding AddStorageProfileCommand}"
+                                    IsEnabled="{Binding !IsStorageBusy}"
+                                    AutomationProperties.Name="新增远程库"
+                                />
+                                <arc:Button
+                                    Content="移除远程库"
+                                    Variant="Ghost"
+                                    Size="Small"
+                                    Command="{Binding RemoveStorageProfileCommand}"
+                                    IsEnabled="{Binding IsStorageProfileEditable}"
+                                    AutomationProperties.Name="移除远程库"
+                                />
+                                <arc:Button
+                                    Content="测试连接"
+                                    Variant="Secondary"
+                                    Size="Small"
+                                    Command="{Binding TestStorageCommand}"
+                                    IsEnabled="{Binding !IsStorageBusy}"
+                                    AutomationProperties.Name="测试存储连接"
+                                />
+                            </WrapPanel>
+                            <Grid ColumnDefinitions="1*,1*,1*" ColumnSpacing="12">
+                                <StackPanel Spacing="4">
+                                    <TextBlock
+                                        Text="系统配置"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <arc:Select
+                                        ItemsSource="{Binding StorageProfiles}"
+                                        SelectedItem="{Binding SettingsStorageProfile, Mode=TwoWay}"
+                                        AutomationProperties.Name="系统配置存储"
+                                    />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="4">
+                                    <TextBlock
+                                        Text="集合与接口记录"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <arc:Select
+                                        ItemsSource="{Binding StorageProfiles}"
+                                        SelectedItem="{Binding WorkspaceStorageProfile, Mode=TwoWay}"
+                                        AutomationProperties.Name="集合与接口记录存储"
+                                    />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Spacing="4">
+                                    <TextBlock
+                                        Text="套件自动化"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <arc:Select
+                                        ItemsSource="{Binding StorageProfiles}"
+                                        SelectedItem="{Binding SuitesStorageProfile, Mode=TwoWay}"
+                                        AutomationProperties.Name="套件自动化存储"
+                                    />
+                                </StackPanel>
+                            </Grid>
+                            <WrapPanel ItemSpacing="8" LineSpacing="8">
+                                <arc:Button
+                                    Content="同步到所选库"
+                                    Variant="Secondary"
+                                    Size="Small"
+                                    Command="{Binding SyncStorageCommand}"
+                                    IsEnabled="{Binding !IsStorageBusy}"
+                                    AutomationProperties.Name="同步存储数据"
+                                />
+                                <arc:Button
+                                    Content="切换并备份"
+                                    Variant="Secondary"
+                                    Size="Small"
+                                    Command="{Binding SwitchStorageCommand}"
+                                    IsEnabled="{Binding !IsStorageBusy}"
+                                    AutomationProperties.Name="切换存储"
+                                />
+                                <TextBlock
+                                    Text="切换会先备份本地数据库，重启 PostSharp 后使用新存储。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    VerticalAlignment="Center"
+                                />
+                            </WrapPanel>
+                            <TextBlock
+                                IsVisible="{Binding !HasStorageError}"
+                                Text="{Binding StorageStatusMessage}"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                TextWrapping="Wrap"
+                            />
+                            <TextBlock
+                                IsVisible="{Binding HasStorageError}"
+                                Text="{Binding StorageStatusMessage}"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                Foreground="{arc:ArcDesignTokenResource Danger}"
+                                TextWrapping="Wrap"
+                            />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="settingsSection">
                         <StackPanel Spacing="6">
                             <TextBlock
-                                Text="配置文件"
+                                Text="本地数据库"
                                 FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                 FontWeight="Medium"
                                 Foreground="{arc:ArcDesignTokenResource TextSecondary}"
@@ -454,7 +611,7 @@
                                 TextWrapping="Wrap"
                             />
                             <TextBlock
-                                Text="工作区和设置以 UTF-8 JSON 保存，审计记录保存到 SQLite；均位于 %APPDATA%\PostSharp 下，不会上传到任何服务。"
+                                Text="系统配置、集合与接口记录、套件自动化和审计保存在本地 SQLite；默认位于项目目录 .postsharp 下。远程数据库仅按上方分类绑定使用，连接串以当前 Windows 用户加密保存。"
                                 FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                 Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                 TextWrapping="Wrap"

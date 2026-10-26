@@ -1,3 +1,4 @@
+using System.Text.Json;
 using PostSharp.Services;
 
 namespace PostSharp.Tests;
@@ -28,6 +29,38 @@ public sealed class McpServerSecurityTests
 
         Assert.Equal(200, response.StatusCode);
         Assert.False(HasHeader(response, "Access-Control-Allow-Origin"));
+    }
+
+    [Fact]
+    public async Task ListsSemanticSettingsAndStorageTools()
+    {
+        var response = await SendAsync(
+            "POST",
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            null,
+            "127.0.0.1:5199"
+        );
+        Assert.Equal(200, response.StatusCode);
+        Assert.NotNull(response.Body);
+
+        using var document = JsonDocument.Parse(response.Body);
+        var names = document
+            .RootElement.GetProperty("result")
+            .GetProperty("tools")
+            .EnumerateArray()
+            .Select(tool => tool.GetProperty("name").GetString())
+            .ToList();
+
+        Assert.Contains("get_settings", names);
+        Assert.Contains("update_settings", names);
+        Assert.Contains("get_storage_config", names);
+        Assert.Contains("sync_storage", names);
+        Assert.Contains("switch_storage", names);
+        Assert.Contains("import_content", names);
+        Assert.Contains("export_workspace", names);
+        Assert.Contains("create_environment", names);
+        Assert.Contains("clear_audit", names);
+        Assert.Contains("restore_collection_trash", names);
     }
 
     [Theory]

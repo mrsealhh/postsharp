@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using PostSharp.Models;
 
 namespace PostSharp.Services;
 
@@ -12,7 +13,7 @@ namespace PostSharp.Services;
 /// </summary>
 public sealed class McpServer
 {
-    private const string ServerVersion = "0.2.0";
+    private const string ServerVersion = "0.3.0";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -255,8 +256,14 @@ public sealed class McpServer
                                 + "自动化优先用 create_suite / create_suite_from_collections 创建套件，再用 update_suite 反复调整。每个步骤按数组顺序执行，"
                                 + "支持 expectedStatus、bodyContains、delayMs（默认 200ms，0-60000）和 mappings。mappings 用 sourceStepIndex（从 0 开始，只能引用更早步骤）"
                                 + "或 sourceStepId 提取上一步 JSON 响应字段（支持 data.token、items[0].id），通过 targetKind=Body/Header/Query/Path 和 targetPath 注入下一步请求，"
-                                + "template 支持 Bearer {value} 这类格式。用 run_suite 运行并读取每步断言，用 list_suites / get_suite 检查规则。"
-                                + "send_request、run_sequence 和 run_suite 都会写入审计记录；list_audit / get_audit 可查所有 UI 和 AI 触发记录。",
+                                + "template 支持 Bearer {value} 这类格式。步骤还支持 retryCount、retryDelayMs、condition、parallelGroup 和 assertions；用 run_suite 运行并读取每步断言，用 list_suites / get_suite 检查规则。"
+                                + "send_request、run_sequence 和 run_suite 都会写入审计记录；list_audit / get_audit 可查所有 UI 和 AI 触发记录。"
+                                + "环境和历史：list_environments / create_environment / rename_environment / delete_environment / activate_environment / set_variable / delete_variable；"
+                                + "list_history / clear_history / list_history_trash / restore_history / purge_history / empty_history_trash。"
+                                + "审计与集合回收站：clear_audit / list_audit_trash / restore_audit / purge_audit / empty_audit_trash；"
+                                + "list_collection_trash / restore_collection_trash / purge_collection_trash / empty_collection_trash。"
+                                + "系统配置和存储：get_settings / update_settings；get_storage_config / upsert_storage_profile / delete_storage_profile / set_storage_binding / test_storage_profile / sync_storage / switch_storage。"
+                                + "导入导出：import_content 支持 Postman/OpenAPI/HAR/Insomnia/Hoppscotch/cURL/PowerShell，export_workspace 导出 Postman Collection。",
                         }
                     );
 
@@ -309,7 +316,8 @@ public sealed class McpServer
                         OptionalString(arguments, "name") ?? "MCP 集合",
                         OptionalGuid(arguments, "parentId"),
                         OptionalBool(arguments, "favorite") ?? false,
-                        OptionalInt(arguments, "position")
+                        OptionalInt(arguments, "position"),
+                        ReadAuth(arguments)
                     )
                     .ConfigureAwait(false),
                 "update_collection" => await _workspace
@@ -319,7 +327,8 @@ public sealed class McpServer
                         OptionalGuid(arguments, "parentId"),
                         arguments.TryGetPropertyValue("parentId", out _),
                         OptionalBool(arguments, "favorite"),
-                        OptionalInt(arguments, "position")
+                        OptionalInt(arguments, "position"),
+                        ReadAuth(arguments)
                     )
                     .ConfigureAwait(false),
                 "move_collection" => await _workspace
@@ -357,6 +366,85 @@ public sealed class McpServer
                         .DeleteRequestAsync(RequireGuid(arguments, "id"))
                         .ConfigureAwait(false),
                 },
+                "duplicate_request" => await _workspace
+                    .DuplicateRequestAsync(RequireGuid(arguments, "id"))
+                    .ConfigureAwait(false),
+                "export_workspace" => new
+                {
+                    format = "Postman Collection v2.1",
+                    content = await _workspace.ExportWorkspaceAsync().ConfigureAwait(false),
+                },
+                "import_content" => await _workspace
+                    .ImportContentAsync(
+                        OptionalString(arguments, "source"),
+                        RequireString(arguments, "content"),
+                        OptionalString(arguments, "fileName"),
+                        OptionalBool(arguments, "includeStaticResources") ?? false,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
+                "get_settings" => await _workspace.GetSettingsAsync().ConfigureAwait(false),
+                "update_settings" => await _workspace
+                    .UpdateSettingsAsync(
+                        new McpSettingsDraft(
+                            OptionalString(arguments, "theme"),
+                            OptionalDouble(arguments, "cornerScale"),
+                            OptionalString(arguments, "uiFont"),
+                            OptionalString(arguments, "codeFont"),
+                            OptionalString(arguments, "codeFontSize"),
+                            OptionalInt(arguments, "requestTimeoutSeconds"),
+                            OptionalString(arguments, "defaultBodyMode"),
+                            OptionalBool(arguments, "autoFormatResponse"),
+                            OptionalInt(arguments, "largeResponseThresholdKb"),
+                            OptionalInt(arguments, "auditLimit"),
+                            OptionalString(arguments, "logDirectory"),
+                            OptionalString(arguments, "logLevel"),
+                            OptionalString(arguments, "sseThinkingPath"),
+                            OptionalString(arguments, "sseContentPath")
+                        )
+                    )
+                    .ConfigureAwait(false),
+                "get_storage_config" => await _workspace
+                    .GetStorageConfigAsync()
+                    .ConfigureAwait(false),
+                "upsert_storage_profile" => await _workspace
+                    .UpsertStorageProfileAsync(
+                        OptionalString(arguments, "id"),
+                        RequireString(arguments, "name"),
+                        RequireString(arguments, "provider"),
+                        OptionalString(arguments, "connectionString")
+                    )
+                    .ConfigureAwait(false),
+                "delete_storage_profile" => new
+                {
+                    deleted = await _workspace
+                        .DeleteStorageProfileAsync(RequireString(arguments, "id"))
+                        .ConfigureAwait(false),
+                },
+                "set_storage_binding" => await _workspace
+                    .SetStorageBindingAsync(
+                        RequireString(arguments, "category"),
+                        RequireString(arguments, "profileId")
+                    )
+                    .ConfigureAwait(false),
+                "test_storage_profile" => await _workspace
+                    .TestStorageAsync(RequireString(arguments, "profileId"))
+                    .ConfigureAwait(false),
+                "sync_storage" => await _workspace
+                    .SyncStorageAsync(
+                        RequireString(arguments, "sourceProfileId"),
+                        RequireString(arguments, "targetProfileId"),
+                        ReadStringArray(arguments, "categories"),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
+                "switch_storage" => await _workspace
+                    .SwitchStorageAsync(
+                        RequireString(arguments, "targetProfileId"),
+                        ReadStringArray(arguments, "categories"),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
                 "send_request" => await SendToolAsync(arguments, cancellationToken)
                     .ConfigureAwait(false),
                 "run_sequence" => await RunSequenceToolAsync(arguments, cancellationToken)
@@ -397,6 +485,8 @@ public sealed class McpServer
                         RequireGuid(arguments, "id"),
                         OptionalString(arguments, "name"),
                         OptionalBool(arguments, "stopOnError"),
+                        OptionalBool(arguments, "runInParallel"),
+                        OptionalInt(arguments, "scheduleMinutes"),
                         ReadOptionalSuiteSteps(arguments)
                     )
                     .ConfigureAwait(false),
@@ -420,9 +510,101 @@ public sealed class McpServer
                 "list_history" => await _workspace
                     .ListHistoryAsync(OptionalInt(arguments, "limit") ?? 20)
                     .ConfigureAwait(false),
+                "list_history_trash" => await _workspace
+                    .ListHistoryTrashAsync(OptionalInt(arguments, "limit") ?? 20)
+                    .ConfigureAwait(false),
+                "clear_history" => new
+                {
+                    moved = await _workspace.ClearHistoryAsync().ConfigureAwait(false),
+                },
+                "restore_history" => new
+                {
+                    restored = await _workspace
+                        .RestoreHistoryAsync(RequireDate(arguments, "timestamp"))
+                        .ConfigureAwait(false),
+                },
+                "purge_history" => new
+                {
+                    deleted = await _workspace
+                        .PurgeHistoryAsync(RequireDate(arguments, "timestamp"))
+                        .ConfigureAwait(false),
+                },
+                "empty_history_trash" => new
+                {
+                    deleted = await _workspace.EmptyHistoryTrashAsync().ConfigureAwait(false),
+                },
+                "clear_audit" => new
+                {
+                    moved = await _workspace.ClearAuditAsync().ConfigureAwait(false),
+                },
+                "list_audit_trash" => await _workspace
+                    .ListAuditTrashAsync(OptionalInt(arguments, "limit") ?? 50)
+                    .ConfigureAwait(false),
+                "restore_audit" => new
+                {
+                    restored = await _workspace
+                        .RestoreAuditAsync(RequireGuid(arguments, "id"))
+                        .ConfigureAwait(false),
+                },
+                "purge_audit" => new
+                {
+                    deleted = await _workspace
+                        .PurgeAuditAsync(RequireGuid(arguments, "id"))
+                        .ConfigureAwait(false),
+                },
+                "empty_audit_trash" => new
+                {
+                    deleted = await _workspace.EmptyAuditTrashAsync().ConfigureAwait(false),
+                },
+                "list_collection_trash" => await _workspace
+                    .ListCollectionTrashAsync()
+                    .ConfigureAwait(false),
+                "restore_collection_trash" => new
+                {
+                    restored = await _workspace
+                        .RestoreCollectionTrashAsync(RequireGuid(arguments, "id"))
+                        .ConfigureAwait(false),
+                },
+                "purge_collection_trash" => new
+                {
+                    deleted = await _workspace
+                        .PurgeCollectionTrashAsync(RequireGuid(arguments, "id"))
+                        .ConfigureAwait(false),
+                },
+                "empty_collection_trash" => new
+                {
+                    deleted = await _workspace.EmptyCollectionTrashAsync().ConfigureAwait(false),
+                },
                 "list_environments" => await _workspace
                     .ListEnvironmentsAsync()
                     .ConfigureAwait(false),
+                "create_environment" => await _workspace
+                    .CreateEnvironmentAsync(OptionalString(arguments, "name") ?? "MCP 环境")
+                    .ConfigureAwait(false),
+                "rename_environment" => await _workspace
+                    .RenameEnvironmentAsync(
+                        RequireGuid(arguments, "id"),
+                        RequireString(arguments, "name")
+                    )
+                    .ConfigureAwait(false),
+                "delete_environment" => new
+                {
+                    deleted = await _workspace
+                        .DeleteEnvironmentAsync(RequireGuid(arguments, "id"))
+                        .ConfigureAwait(false),
+                },
+                "activate_environment" => await _workspace
+                    .ActivateEnvironmentAsync(RequireGuid(arguments, "id"))
+                    .ConfigureAwait(false),
+                "delete_variable" => new
+                {
+                    deleted = await _workspace
+                        .DeleteVariableAsync(
+                            OptionalGuid(arguments, "environmentId"),
+                            RequireString(arguments, "key")
+                        )
+                        .ConfigureAwait(false),
+                },
                 "set_variable" => await _workspace
                     .SetVariableAsync(
                         OptionalGuid(arguments, "environmentId"),
@@ -528,12 +710,34 @@ public sealed class McpServer
                     OptionalInt(step, "expectedStatus"),
                     OptionalString(step, "bodyContains"),
                     OptionalInt(step, "delayMs"),
-                    ReadMappings(step)
+                    ReadMappings(step),
+                    OptionalInt(step, "retryCount"),
+                    OptionalInt(step, "retryDelayMs"),
+                    OptionalString(step, "condition"),
+                    OptionalInt(step, "parallelGroup"),
+                    ReadAssertions(step)
                 )
             );
         }
 
         return steps;
+    }
+
+    private static IReadOnlyList<McpSuiteAssertionInput>? ReadAssertions(JsonObject step)
+    {
+        if (step["assertions"] is not JsonArray array)
+        {
+            return null;
+        }
+
+        return array
+            .OfType<JsonObject>()
+            .Select(assertion => new McpSuiteAssertionInput(
+                OptionalString(assertion, "kind") ?? "JSONPath",
+                RequireString(assertion, "path"),
+                RequireString(assertion, "expected")
+            ))
+            .ToList();
     }
 
     private static IReadOnlyList<McpSuiteStepInput>? ReadOptionalSuiteSteps(JsonObject arguments)
@@ -621,6 +825,7 @@ public sealed class McpServer
                             "在兄弟集合中的顺序，从 0 开始；省略时追加",
                             0
                         ),
+                        ["auth"] = AuthSchema("集合级授权；请求可以继承"),
                     }
                 )
             ),
@@ -637,6 +842,7 @@ public sealed class McpServer
                         ),
                         ["favorite"] = BooleanSchema("是否收藏"),
                         ["position"] = IntegerSchema("在目标父级中的顺序，从 0 开始", 0),
+                        ["auth"] = AuthSchema("集合级授权；省略时保持原配置"),
                     },
                     "id"
                 )
@@ -693,6 +899,12 @@ public sealed class McpServer
                         ["uploadFieldName"] = StringSchema("上传文件字段名，默认 file"),
                         ["favorite"] = BooleanSchema("是否收藏"),
                         ["position"] = IntegerSchema("在集合中的顺序，从 0 开始；省略时追加", 0),
+                        ["timeoutSeconds"] = IntegerSchema(
+                            "请求超时秒数，0 表示使用全局默认",
+                            0,
+                            3600
+                        ),
+                        ["auth"] = AuthSchema("请求级授权；敏感值只在写入时使用"),
                     },
                     "url"
                 )
@@ -732,6 +944,12 @@ public sealed class McpServer
                         ["uploadFilePath"] = StringSchema("multipart 上传文件的绝对路径"),
                         ["uploadFieldName"] = StringSchema("上传文件字段名"),
                         ["favorite"] = BooleanSchema("是否收藏"),
+                        ["timeoutSeconds"] = IntegerSchema(
+                            "请求超时秒数，0 表示使用全局默认",
+                            0,
+                            3600
+                        ),
+                        ["auth"] = AuthSchema("请求级授权；省略时保持原配置"),
                     },
                     "id"
                 )
@@ -907,6 +1125,12 @@ public sealed class McpServer
                         ["id"] = StringSchema("套件 id"),
                         ["name"] = StringSchema("新名称"),
                         ["stopOnError"] = BooleanSchema("失败后停止"),
+                        ["runInParallel"] = BooleanSchema("并行执行"),
+                        ["scheduleMinutes"] = IntegerSchema(
+                            "定时运行间隔分钟，0 表示不启用",
+                            0,
+                            1440
+                        ),
                         ["steps"] = SuiteStepsSchema("新的完整步骤数组；省略则只改名称/策略"),
                     },
                     "id"
@@ -921,7 +1145,271 @@ public sealed class McpServer
                 "delete_suite",
                 "删除自动化测试套件",
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("套件 id") }, "id")
-            )
+            ),
+            Tool(
+                "duplicate_request",
+                "复制一个请求到同一集合的下一位置",
+                ObjectSchema(new JsonObject { ["id"] = StringSchema("请求 id") }, "id")
+            ),
+            Tool(
+                "export_workspace",
+                "把全部集合和请求导出为 Postman Collection v2.1 JSON",
+                ObjectSchema(new JsonObject())
+            ),
+            Tool(
+                "import_content",
+                "导入 Postman、OpenAPI、HAR、Insomnia、Hoppscotch、cURL 或 PowerShell 内容，并把结果合并到工作区",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["source"] = EnumSchema(
+                            "导入格式；省略时根据 fileName 和内容自动识别",
+                            "OpenApi",
+                            "PostmanCollection",
+                            "PostmanEnvironment",
+                            "Har",
+                            "Insomnia",
+                            "Hoppscotch",
+                            "Curl",
+                            "PowerShell"
+                        ),
+                        ["content"] = StringSchema("要导入的原始文本"),
+                        ["fileName"] = StringSchema("可选文件名，用于识别扩展名"),
+                        ["includeStaticResources"] = BooleanSchema(
+                            "HAR 导入是否包含静态资源，默认 false"
+                        ),
+                    },
+                    "content"
+                )
+            ),
+            Tool(
+                "get_settings",
+                "读取系统配置：主题、字体、超时、响应格式、审计保留、日志和 SSE 路径",
+                ObjectSchema(new JsonObject())
+            ),
+            Tool(
+                "update_settings",
+                "修改系统配置；只传需要修改的字段，保存到当前系统配置存储",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["theme"] = StringSchema("主题：跟随系统/浅色/深色"),
+                        ["cornerScale"] = new JsonObject
+                        {
+                            ["type"] = "number",
+                            ["description"] = "全局圆角倍数，0-2",
+                            ["minimum"] = 0,
+                            ["maximum"] = 2,
+                        },
+                        ["uiFont"] = StringSchema("界面字体"),
+                        ["codeFont"] = StringSchema("代码字体"),
+                        ["codeFontSize"] = StringSchema("代码字号"),
+                        ["requestTimeoutSeconds"] = IntegerSchema("默认请求超时秒数", 1, 3600),
+                        ["defaultBodyMode"] = EnumSchema(
+                            "默认请求体格式",
+                            "None",
+                            "Json",
+                            "Text",
+                            "Multipart"
+                        ),
+                        ["autoFormatResponse"] = BooleanSchema("自动格式化 JSON/XML 响应"),
+                        ["largeResponseThresholdKb"] = IntegerSchema("大响应折叠阈值 KB", 8, 4096),
+                        ["auditLimit"] = IntegerSchema("审计保留条数", 20, 5000),
+                        ["logDirectory"] = StringSchema("日志目录"),
+                        ["logLevel"] = EnumSchema(
+                            "日志级别",
+                            "Debug",
+                            "Information",
+                            "Warning",
+                            "Error"
+                        ),
+                        ["sseThinkingPath"] = StringSchema("SSE 思考节点路径"),
+                        ["sseContentPath"] = StringSchema("SSE 内容节点路径"),
+                    }
+                )
+            ),
+            Tool(
+                "get_storage_config",
+                "读取本地 SQLite 路径、存储配置和系统配置/集合与接口/套件三个分类的绑定",
+                ObjectSchema(new JsonObject())
+            ),
+            Tool(
+                "upsert_storage_profile",
+                "新增或修改远程存储配置；连接串只写不读，读取时隐藏",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["id"] = StringSchema("已有配置 id；省略时新增"),
+                        ["name"] = StringSchema("配置名称"),
+                        ["provider"] = EnumSchema(
+                            "数据库类型",
+                            StorageProviders.PostgreSql,
+                            StorageProviders.MySql,
+                            StorageProviders.SqlServer
+                        ),
+                        ["connectionString"] = StringSchema("ADO.NET 连接串；修改已有配置时可省略"),
+                    },
+                    "name",
+                    "provider"
+                )
+            ),
+            Tool(
+                "delete_storage_profile",
+                "删除远程存储配置；使用它的分类自动回到本地 SQLite",
+                ObjectSchema(new JsonObject { ["id"] = StringSchema("存储配置 id") }, "id")
+            ),
+            Tool(
+                "set_storage_binding",
+                "把系统配置、集合与接口记录或套件自动化绑定到指定存储",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["category"] = EnumSchema(
+                            "数据分类",
+                            StorageCategories.Settings,
+                            StorageCategories.Workspace,
+                            StorageCategories.Suites
+                        ),
+                        ["profileId"] = StringSchema("存储配置 id"),
+                    },
+                    "category",
+                    "profileId"
+                )
+            ),
+            Tool(
+                "test_storage_profile",
+                "测试存储连接并确保文档表存在",
+                ObjectSchema(
+                    new JsonObject { ["profileId"] = StringSchema("存储配置 id") },
+                    "profileId"
+                )
+            ),
+            Tool(
+                "sync_storage",
+                "从源存储单向同步指定分类到目标存储，不切换绑定",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["sourceProfileId"] = StringSchema("源存储配置 id"),
+                        ["targetProfileId"] = StringSchema("目标存储配置 id"),
+                        ["categories"] = StorageCategoriesSchema(
+                            "要同步的分类；省略时同步全部三类"
+                        ),
+                    },
+                    "sourceProfileId",
+                    "targetProfileId"
+                )
+            ),
+            Tool(
+                "switch_storage",
+                "备份本地数据库，复制当前数据到目标存储并切换三个分类的绑定；重启后使用新存储",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["targetProfileId"] = StringSchema("目标存储配置 id"),
+                        ["categories"] = StorageCategoriesSchema(
+                            "要切换的分类；省略时切换全部三类"
+                        ),
+                    },
+                    "targetProfileId"
+                )
+            ),
+            Tool(
+                "create_environment",
+                "新建环境并设为当前环境",
+                ObjectSchema(new JsonObject { ["name"] = StringSchema("环境名称") })
+            ),
+            Tool(
+                "rename_environment",
+                "重命名环境",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["id"] = StringSchema("环境 id"),
+                        ["name"] = StringSchema("新名称"),
+                    },
+                    "id",
+                    "name"
+                )
+            ),
+            Tool(
+                "delete_environment",
+                "删除环境；至少保留一个环境",
+                ObjectSchema(new JsonObject { ["id"] = StringSchema("环境 id") }, "id")
+            ),
+            Tool(
+                "activate_environment",
+                "切换当前环境",
+                ObjectSchema(new JsonObject { ["id"] = StringSchema("环境 id") }, "id")
+            ),
+            Tool(
+                "delete_variable",
+                "删除环境变量",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["environmentId"] = StringSchema("环境 id；省略时使用当前环境"),
+                        ["key"] = StringSchema("变量名"),
+                    },
+                    "key"
+                )
+            ),
+            Tool(
+                "list_history_trash",
+                "列出历史回收站",
+                ObjectSchema(
+                    new JsonObject { ["limit"] = IntegerSchema("返回条数，默认 20", 1, 200) }
+                )
+            ),
+            Tool("clear_history", "把全部发送历史移入历史回收站", ObjectSchema(new JsonObject())),
+            Tool(
+                "restore_history",
+                "按时间戳从历史回收站恢复一条记录",
+                ObjectSchema(
+                    new JsonObject { ["timestamp"] = StringSchema("ISO 8601 时间戳") },
+                    "timestamp"
+                )
+            ),
+            Tool(
+                "purge_history",
+                "按时间戳永久删除历史回收站记录",
+                ObjectSchema(
+                    new JsonObject { ["timestamp"] = StringSchema("ISO 8601 时间戳") },
+                    "timestamp"
+                )
+            ),
+            Tool("empty_history_trash", "永久清空历史回收站", ObjectSchema(new JsonObject())),
+            Tool("clear_audit", "把全部审计记录移入审计回收站", ObjectSchema(new JsonObject())),
+            Tool(
+                "list_audit_trash",
+                "列出审计回收站",
+                ObjectSchema(
+                    new JsonObject { ["limit"] = IntegerSchema("返回条数，默认 50", 1, 500) }
+                )
+            ),
+            Tool(
+                "restore_audit",
+                "从审计回收站恢复一条记录",
+                ObjectSchema(new JsonObject { ["id"] = StringSchema("审计记录 id") }, "id")
+            ),
+            Tool(
+                "purge_audit",
+                "永久删除一条审计回收站记录",
+                ObjectSchema(new JsonObject { ["id"] = StringSchema("审计记录 id") }, "id")
+            ),
+            Tool("empty_audit_trash", "永久清空审计回收站", ObjectSchema(new JsonObject())),
+            Tool("list_collection_trash", "列出集合回收站", ObjectSchema(new JsonObject())),
+            Tool(
+                "restore_collection_trash",
+                "恢复集合回收站中的集合或请求",
+                ObjectSchema(new JsonObject { ["id"] = StringSchema("回收站 id") }, "id")
+            ),
+            Tool(
+                "purge_collection_trash",
+                "永久删除集合回收站中的集合或请求",
+                ObjectSchema(new JsonObject { ["id"] = StringSchema("回收站 id") }, "id")
+            ),
+            Tool("empty_collection_trash", "永久清空集合回收站", ObjectSchema(new JsonObject()))
         );
 
     private static JsonObject Tool(string name, string description, JsonObject schema) =>
@@ -988,6 +1476,22 @@ public sealed class McpServer
             ["items"] = new JsonObject { ["type"] = "string" },
         };
 
+    private static JsonObject StorageCategoriesSchema(string description)
+    {
+        var values = new JsonArray();
+        foreach (var category in StorageCategories.All)
+        {
+            values.Add(category);
+        }
+
+        return new JsonObject
+        {
+            ["type"] = "array",
+            ["description"] = description,
+            ["items"] = new JsonObject { ["type"] = "string", ["enum"] = values },
+        };
+    }
+
     private static JsonObject EnumSchema(string description, params string[] values)
     {
         var array = new JsonArray();
@@ -1003,6 +1507,32 @@ public sealed class McpServer
             ["enum"] = array,
         };
     }
+
+    private static JsonObject AuthSchema(string description) =>
+        new()
+        {
+            ["type"] = "object",
+            ["description"] = description,
+            ["properties"] = new JsonObject
+            {
+                ["authType"] = EnumSchema(
+                    "授权类型",
+                    "Inherit",
+                    "None",
+                    "Bearer",
+                    "Basic",
+                    "ApiKey",
+                    "OAuth2"
+                ),
+                ["target"] = EnumSchema("附加位置", "Header", "Query"),
+                ["token"] = StringSchema("Bearer 令牌；传 ****** 表示保持原值"),
+                ["username"] = StringSchema("Basic 用户名"),
+                ["password"] = StringSchema("Basic 密码；传 ****** 表示保持原值"),
+                ["apiKeyName"] = StringSchema("API Key 名称"),
+                ["apiKeyValue"] = StringSchema("API Key 值；传 ****** 表示保持原值"),
+                ["apiKeyLocation"] = EnumSchema("API Key 位置", "Header", "Query"),
+            },
+        };
 
     private static JsonObject RowsSchema(string description) =>
         new()
@@ -1050,6 +1580,31 @@ public sealed class McpServer
                         0,
                         60000
                     ),
+                    ["retryCount"] = IntegerSchema("失败重试次数，0-10", 0, 10),
+                    ["retryDelayMs"] = IntegerSchema("每次重试前等待毫秒", 0, 60000),
+                    ["condition"] = EnumSchema(
+                        "执行条件",
+                        "Always",
+                        "OnPreviousSuccess",
+                        "OnPreviousFailure"
+                    ),
+                    ["parallelGroup"] = IntegerSchema("并行组，0 表示不并行", 0, 1000),
+                    ["assertions"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["description"] = "JSONPath 或响应头断言",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["kind"] = EnumSchema("断言类型", "JSONPath", "Header"),
+                                ["path"] = StringSchema("JSONPath 或响应头名"),
+                                ["expected"] = StringSchema("期望值"),
+                            },
+                            ["required"] = new JsonArray("path", "expected"),
+                        },
+                    },
                     ["mappings"] = MappingArraySchema(),
                 },
                 ["required"] = new JsonArray("requestId"),
@@ -1103,8 +1658,29 @@ public sealed class McpServer
             OptionalString(arguments, "uploadFilePath"),
             OptionalString(arguments, "uploadFieldName"),
             OptionalBool(arguments, "favorite"),
-            OptionalInt(arguments, "position")
+            OptionalInt(arguments, "position"),
+            OptionalInt(arguments, "timeoutSeconds"),
+            ReadAuth(arguments)
         );
+
+    private static McpAuthInput? ReadAuth(JsonObject arguments)
+    {
+        if (arguments["auth"] is not JsonObject auth)
+        {
+            return null;
+        }
+
+        return new McpAuthInput(
+            OptionalString(auth, "authType"),
+            OptionalString(auth, "target"),
+            OptionalString(auth, "token"),
+            OptionalString(auth, "username"),
+            OptionalString(auth, "password"),
+            OptionalString(auth, "apiKeyName"),
+            OptionalString(auth, "apiKeyValue"),
+            OptionalString(auth, "apiKeyLocation")
+        );
+    }
 
     private static IReadOnlyList<McpRowInfo>? OptionalRows(JsonObject arguments, string name)
     {
@@ -1205,6 +1781,39 @@ public sealed class McpServer
     {
         var node = arguments[name];
         return node is JsonValue value && value.TryGetValue<int>(out var number) ? number : null;
+    }
+
+    private static double? OptionalDouble(JsonObject arguments, string name)
+    {
+        var node = arguments[name];
+        return node is JsonValue value && value.TryGetValue<double>(out var number) ? number : null;
+    }
+
+    private static IReadOnlyList<string> ReadStringArray(JsonObject arguments, string name)
+    {
+        if (arguments[name] is not JsonArray array || array.Count == 0)
+        {
+            return StorageCategories.All;
+        }
+
+        return array
+            .Select(node => node?.GetValue<string>())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .ToList();
+    }
+
+    private static DateTimeOffset RequireDate(JsonObject arguments, string name)
+    {
+        var value = RequireString(arguments, name);
+        return DateTimeOffset.TryParse(
+            value,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out var timestamp
+        )
+            ? timestamp
+            : throw new InvalidOperationException($"{name} 不是有效时间：{value}");
     }
 
     private static string Truncate(string text, int max)

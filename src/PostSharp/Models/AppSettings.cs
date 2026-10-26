@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using PostSharp.Services;
 
 namespace PostSharp.Models;
 
@@ -43,11 +44,7 @@ public partial class AppSettings : ObservableObject
     private int _auditLimit = 500;
 
     [ObservableProperty]
-    private string _logDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "PostSharp",
-        "logs"
-    );
+    private string _logDirectory = AppPaths.DefaultLogDirectory;
 
     [ObservableProperty]
     private string _logLevel = LogLevels.Default;

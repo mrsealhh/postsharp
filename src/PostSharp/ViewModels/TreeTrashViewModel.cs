@@ -152,6 +152,46 @@ public partial class TreeTrashViewModel(
     [RelayCommand]
     private void CancelPurge() => ResetPurge();
 
+    public bool RestoreById(Guid id)
+    {
+        var node = Items.FirstOrDefault(candidate => candidate.Id == id);
+        if (node is null)
+        {
+            return false;
+        }
+
+        Restore(node);
+        return true;
+    }
+
+    public bool PurgeById(Guid id)
+    {
+        var node = Items.FirstOrDefault(candidate => candidate.Id == id);
+        if (node is null)
+        {
+            return false;
+        }
+
+        Items.Remove(node);
+        NotifyItemsChanged();
+        changed();
+        toast("已永久删除");
+        return true;
+    }
+
+    public int Empty()
+    {
+        var count = Items.Count;
+        Items.Clear();
+        NotifyItemsChanged();
+        if (count > 0)
+        {
+            changed();
+        }
+
+        return count;
+    }
+
     private void Add(TrashedNode node)
     {
         Wire(node);

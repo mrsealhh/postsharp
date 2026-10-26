@@ -26,6 +26,7 @@ public enum TreeDropPosition
 public partial class MainWindowViewModel : ObservableObject, IImportHost
 {
     private readonly WorkspaceStore _store = new();
+    private readonly SuiteStore _suiteStore = new();
     private readonly AuditStore _auditStore = new();
     private readonly SettingsStore _settingsStore = new();
     private readonly HttpRequestService _http = new();
@@ -119,6 +120,22 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         else
         {
             SeedWorkspace();
+        }
+
+        var suiteLoad = _suiteStore.Load();
+        DataNotice.Report(suiteLoad, "套件文档 ", "套件列表从空白开始");
+        if (suiteLoad.Value is { } storedSuites)
+        {
+            Suites.Clear();
+            foreach (var suiteDto in storedSuites)
+            {
+                Suites.Add(WorkspaceStore.ToSuiteModel(suiteDto));
+            }
+        }
+        else if (Suites.Count > 0)
+        {
+            // Workspaces written before suites had their own storage still contain the list.
+            _suiteStore.Save(Suites);
         }
 
         ActiveEnvironment ??= Environments.FirstOrDefault();
@@ -1519,9 +1536,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public string McpToolSummary =>
         "集合/请求：list_collections、create_collection、update_collection、move_collection、delete_collection、"
-        + "get_request、create_request、update_request、move_request、delete_request；"
+        + "get_request、create_request、update_request、move_request、delete_request、duplicate_request；"
         + "套件：list_suites、get_suite、create_suite、create_suite_from_collections、update_suite、run_suite、delete_suite；"
-        + "运行与审计：send_request、run_sequence、get_curl、list_audit、get_audit、list_history、list_environments、set_variable。";
+        + "环境与历史：list_environments、create_environment、rename_environment、delete_environment、activate_environment、set_variable、delete_variable、"
+        + "list_history、clear_history、list_history_trash、restore_history、purge_history、empty_history_trash；"
+        + "审计/回收站：list_audit、get_audit、clear_audit、list_audit_trash、restore_audit、purge_audit、empty_audit_trash、"
+        + "list_collection_trash、restore_collection_trash、purge_collection_trash、empty_collection_trash；"
+        + "设置/存储：get_settings、update_settings、get_storage_config、upsert_storage_profile、delete_storage_profile、set_storage_binding、test_storage_profile、sync_storage、switch_storage；"
+        + "导入导出：import_content、export_workspace、send_request、run_sequence、get_curl。";
 
     public string EditorHint =>
         IsCollectionSelected ? "已选中集合 · 「授权」标签页正在配置集合授权"
@@ -3413,6 +3435,212 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     /// <summary>Masks stored audit records again when a variable may have become secret.</summary>
     public void ScrubAuditSecrets() => _auditScrubber.Scrub();
+
+    public SaveResult SaveSettingsForMcp()
+    {
+        var saved = _settingsStore.Save(Settings);
+        Persist();
+        return saved;
+    }
+
+    public EnvironmentModel CreateEnvironmentForMcp(string name)
+    {
+        var environment = new EnvironmentModel
+        {
+            Name = string.IsNullOrWhiteSpace(name)
+                ? $"新环境 {Environments.Count + 1}"
+                : name.Trim(),
+        };
+        environment.Variables.AddRow("baseUrl", _mockServer.BaseUrl);
+        environment.Variables.EnsureTrailingRow();
+        Environments.Add(environment);
+        ActiveEnvironment = environment;
+        NotifyWorkspaceChanged();
+        return environment;
+    }
+
+    public EnvironmentModel RenameEnvironmentForMcp(Guid id, string name)
+    {
+        var environment =
+            Environments.FirstOrDefault(candidate => candidate.Id == id)
+            ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的环境。");
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new InvalidOperationException("环境名称不能为空。");
+        }
+
+        environment.Name = name.Trim();
+        NotifyWorkspaceChanged();
+        return environment;
+    }
+
+    public bool ActivateEnvironmentForMcp(Guid id)
+    {
+        var environment = Environments.FirstOrDefault(candidate => candidate.Id == id);
+        if (environment is null)
+        {
+            return false;
+        }
+
+        ActiveEnvironment = environment;
+        NotifyWorkspaceChanged();
+        return true;
+    }
+
+    public bool DeleteEnvironmentForMcp(Guid id)
+    {
+        if (Environments.Count <= 1)
+        {
+            throw new InvalidOperationException("至少保留一个环境。");
+        }
+
+        var environment = Environments.FirstOrDefault(candidate => candidate.Id == id);
+        if (environment is null)
+        {
+            return false;
+        }
+
+        Environments.Remove(environment);
+        if (ReferenceEquals(ActiveEnvironment, environment))
+        {
+            ActiveEnvironment = Environments.FirstOrDefault();
+        }
+
+        NotifyWorkspaceChanged();
+        return true;
+    }
+
+    public bool DeleteVariableForMcp(Guid? environmentId, string key)
+    {
+        var environment = environmentId is { } requested
+            ? Environments.FirstOrDefault(candidate => candidate.Id == requested)
+            : ActiveEnvironment;
+        if (environment is null)
+        {
+            return false;
+        }
+
+        var row = environment.Variables.FirstOrDefault(candidate =>
+            candidate.Key.Equals(key, StringComparison.OrdinalIgnoreCase)
+        );
+        if (row is null)
+        {
+            return false;
+        }
+
+        environment.Variables.Remove(row);
+        environment.Variables.EnsureTrailingRow();
+        NotifyWorkspaceChanged();
+        return true;
+    }
+
+    public int MoveAllHistoryToTrash()
+    {
+        var count = History.Count;
+        for (var index = History.Count - 1; index >= 0; index--)
+        {
+            MoveToRecycleBin(History[index]);
+        }
+
+        History.Clear();
+        if (count > 0)
+        {
+            Persist();
+        }
+
+        return count;
+    }
+
+    public bool RestoreHistoryForMcp(DateTimeOffset timestamp)
+    {
+        var entry = RecycledHistory.FirstOrDefault(candidate => candidate.Timestamp == timestamp);
+        if (entry is null)
+        {
+            return false;
+        }
+
+        RestoreFromRecycleBin(entry);
+        return true;
+    }
+
+    public bool PurgeHistoryForMcp(DateTimeOffset timestamp)
+    {
+        var entry = RecycledHistory.FirstOrDefault(candidate => candidate.Timestamp == timestamp);
+        if (entry is null)
+        {
+            return false;
+        }
+
+        RecycledHistory.Remove(entry);
+        Persist();
+        return true;
+    }
+
+    public int EmptyHistoryTrashForMcp()
+    {
+        var count = RecycledHistory.Count;
+        RecycledHistory.Clear();
+        if (count > 0)
+        {
+            Persist();
+        }
+
+        return count;
+    }
+
+    public int MoveAllAuditToTrash()
+    {
+        var count = Audit.Count;
+        for (var index = Audit.Count - 1; index >= 0; index--)
+        {
+            MoveAuditToTrash(Audit[index]);
+        }
+
+        Audit.Clear();
+        if (count > 0)
+        {
+            PersistAudit();
+        }
+
+        return count;
+    }
+
+    public bool RestoreAuditForMcp(Guid id)
+    {
+        var entry = AuditTrash.FirstOrDefault(candidate => candidate.Id == id);
+        if (entry is null)
+        {
+            return false;
+        }
+
+        RestoreAudit(entry);
+        return true;
+    }
+
+    public bool PurgeAuditForMcp(Guid id)
+    {
+        var entry = AuditTrash.FirstOrDefault(candidate => candidate.Id == id);
+        if (entry is null)
+        {
+            return false;
+        }
+
+        AuditTrash.Remove(entry);
+        PersistAudit();
+        return true;
+    }
+
+    public int EmptyAuditTrashForMcp()
+    {
+        var count = AuditTrash.Count;
+        AuditTrash.Clear();
+        if (count > 0)
+        {
+            PersistAudit();
+        }
+
+        return count;
+    }
 
     [RelayCommand]
     private void OpenSelectedAuditRequest()
@@ -5547,13 +5775,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 RecycledHistory,
                 Suites,
                 TreeTrash.Items,
-                ActiveEnvironment?.Id
+                ActiveEnvironment?.Id,
+                includeSuites: false
             )
         );
-        if (saved == SaveResult.Failed)
+        var suitesSaved = _suiteStore.Save(Suites);
+        if (saved == SaveResult.Failed || suitesSaved == SaveResult.Failed)
         {
             DataNotice.Warn(
-                "工作区保存失败：无法写入 workspace.json，最近的修改还没有保存到磁盘。请检查数据目录是否可写、workspace.json 或其备份是否被其他程序打开；下次保存时会自动重试。"
+                "工作区保存失败：无法写入本地 SQLite 数据库，最近的修改还没有保存到磁盘。请检查数据目录是否可写、数据库是否被其他程序占用；下次保存时会自动重试。"
             );
         }
     }

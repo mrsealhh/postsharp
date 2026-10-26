@@ -43,7 +43,7 @@ PostSharp 的定位是：
 
 ### AI 方向
 
-- **MCP 工具**：接口 CRUD、发送请求、获取 cURL、审计查询、自动化套件创建/运行/删除。
+- **MCP 工具**：集合/请求、环境变量、历史与回收站、审计与回收站、自动化套件、系统配置、存储配置/同步/切换、导入导出等语义操作均可由 MCP 调用（窗口尺寸、剪贴板等纯界面动作除外）。
 - **完整审计**：来源 `UI` / `MCP`、MCP 客户端名称、工具名、时间、状态、耗时、大小、cURL、请求头和请求/响应预览。
 - **SSE / AI 输出聚合**：自动解析 `text/event-stream`，聚合常见 AI 协议的 thinking 与 content，接收中增量刷新，取消后保留已接收内容。
 - **自动化套件**：步骤支持 `expectedStatus` / `bodyContains`，以及 JSONPath、响应头断言；支持失败重试、条件执行、并行组、定时运行与失败停止；运行结果进入审计。
@@ -111,7 +111,7 @@ PostSharp 的定位是：
 - 启动时读取系统深色 / 浅色主题；设置窗口可固定为浅色或深色，原生标题栏同步。
 - **单实例**：使用命名 Mutex 限制同一用户只运行一个 PostSharp；重复启动直接退出，避免多个窗口同时写工作区和审计。
 - 顶栏「设置」直达独立设置窗口；外观、日志和请求默认值分组展示，保存后立即生效。
-- **Serilog 文件日志**：默认写入 `%APPDATA%\PostSharp\logs\postsharp-YYYYMMDD.log`，按天滚动，保留最近 30 个文件；日志目录与最低日志级别可在设置窗口修改，保存后立即生效。所有 `catch` 都会留下结构化异常日志。
+- **Serilog 文件日志**：默认写入 `<项目目录>\.postsharp\logs\postsharp-YYYYMMDD.log`，按天滚动，保留最近 30 个文件；日志目录与最低日志级别可在设置窗口修改，保存后立即生效。所有 `catch` 都会留下结构化异常日志。
 - 界面字体、代码字体、代码字号、窗口自适应；设置窗口可导入本地字体或添加字体目录，导入后的字体会出现在界面/代码字体选项中。
 - 设置窗口新增「全局圆角」滑杆：0 = 直角、1 = Arc 默认、2 = 双倍圆角，保存后立即应用到全部 Arc 控件。
 - 左侧集合栏与编辑区之间有可拖拽分隔条（240–520 DIP），双击恢复默认 320 DIP；宽度随设置持久化。
@@ -156,7 +156,7 @@ PostSharp 的定位是：
 | TKCode.Arc.Themes.Corners | `0.3.1-preview.2` |
 | AtomUI | 由 TKCode.Arc 带入，`6.2.8` |
 | MVVM | CommunityToolkit.Mvvm `8.4.0` |
-| 持久化 | 工作区/设置：`System.Text.Json`；审计：`Microsoft.Data.Sqlite` `10.0.14` |
+| 持久化 | 本地 SQLite：`Microsoft.Data.Sqlite` `10.0.14`；远程 PostgreSQL：`Npgsql` `10.0.3`；MySQL：`MySqlConnector` `2.6.2`；SQL Server：`Microsoft.Data.SqlClient` `7.1.1` |
 | 内嵌浏览器 | `Avalonia.Controls.WebView` `12.1.1`（Windows 走 WebView2 运行时） |
 | 令牌存储 | Windows DPAPI：`System.Security.Cryptography.ProtectedData` `10.0.13` |
 | 日志 | Serilog `4.3.0` + Serilog.Sinks.File `7.0.0`，按天滚动 |
@@ -290,9 +290,18 @@ http://127.0.0.1:5199/mcp
 | `delete_suite` | 删除套件 |
 | `list_audit` | 查询 UI/MCP 审计摘要，支持 `source=UI|MCP` |
 | `get_audit` | 读取单条审计详情（含完整请求/响应预览、cURL、AI 聚合输出） |
-| `list_history` | 查看最近发送历史 |
+| `list_history` / `list_history_trash` | 查看发送历史 / 历史回收站 |
+| `clear_history` / `restore_history` / `purge_history` / `empty_history_trash` | 历史移入回收站、恢复、永久删除、清空 |
 | `list_environments` | 查看环境和变量（机密变量值为 `******`，并带 `secret: true`） |
-| `set_variable` | 新增/更新环境变量，可用 `secret` 设为机密 |
+| `create_environment` / `rename_environment` / `delete_environment` / `activate_environment` | 环境新建、重命名、删除、切换 |
+| `set_variable` / `delete_variable` | 新增/更新/删除环境变量，可用 `secret` 设为机密 |
+| `clear_audit` / `list_audit_trash` / `restore_audit` / `purge_audit` / `empty_audit_trash` | 审计移入回收站、查询、恢复、永久删除、清空 |
+| `list_collection_trash` / `restore_collection_trash` / `purge_collection_trash` / `empty_collection_trash` | 集合/请求回收站查询、恢复、永久删除、清空 |
+| `duplicate_request` | 复制请求到同一集合的下一位置 |
+| `get_settings` / `update_settings` | 读取或修改系统配置 |
+| `get_storage_config` / `upsert_storage_profile` / `delete_storage_profile` / `set_storage_binding` | 查看/新增/删除远程存储配置，绑定三个数据分类 |
+| `test_storage_profile` / `sync_storage` / `switch_storage` | 测试连接、单向同步、备份后切换存储 |
+| `import_content` / `export_workspace` | 导入 Postman/OpenAPI/HAR/Insomnia/Hoppscotch/cURL/PowerShell，导出 Postman Collection |
 
 `create_suite` 的映射规则字段：`sourceStepIndex`（从 0 开始，只能引用更早步骤）或 `sourceStepId`、`sourcePath`（支持 `data.token`、`items[0].id`）、`targetKind`（`Body`/`Header`/`Query`/`Path`）、`targetPath`、`template`（如 `Bearer {value}`）。
 
@@ -430,24 +439,27 @@ http://127.0.0.1:5199/mcp
 
 ## 系统全局设置
 
-顶栏「设置」打开独立设置窗口。窗口内编辑的是草稿，点「保存设置」后写入 `%APPDATA%\PostSharp\settings.json`，并立即更新内存中的设置；下次启动重新读取该文件。
+顶栏「设置」打开独立设置窗口。窗口内编辑的是草稿，点「保存设置」后写入本地 SQLite 的 settings 文档，并立即更新内存中的设置；下次启动重新读取该文档。
 
 - **主题**：跟随系统 / 浅色 / 深色。跟随系统会在启动时读取 Windows 主题，并在系统切换时同步。
 - **全局圆角**：0–2 倍滑杆，0 = 直角，1 = Arc 默认，2 = 双倍圆角；通过 `TKCode.Arc.Themes.Corners` 统一覆盖 Arc 设计令牌，不改变颜色、边框、阴影和动效。
 - **SSE 自定义解析**：可填写「思考节点路径」和「内容节点路径」，例如 `output.choices[0].message.reasoning_content`、`output.choices[0].message.content`；留空时使用内置自动识别，填写后优先按自定义路径提取。
-- **日志目录**：默认 `%APPDATA%\PostSharp\logs`；可浏览选择其他目录或直接打开。保存时会校验目录可写，校验失败会保留原设置并给出原因；若写入配置文件失败，当前会话仍会应用新值，但重启后回到上次成功保存的设置。
-- **日志级别**：调试 / 信息 / 警告 / 错误，默认「调试」。低于所选级别的日志不会写入文件，更严重的日志始终保留；保存后立即作用于当前会话，并写入 `settings.json` 供下次启动读取。
+- **日志目录**：默认 `<项目目录>\.postsharp\logs`；可浏览选择其他目录或直接打开。保存时会校验目录可写，校验失败会保留原设置并给出原因；若写入 SQLite 失败，当前会话仍会应用新值，但重启后回到上次成功保存的设置。
+- **日志级别**：调试 / 信息 / 警告 / 错误，默认「调试」。低于所选级别的日志不会写入文件，更严重的日志始终保留；保存后立即作用于当前会话，并写入 SQLite 的 settings 文档供下次启动读取。
 - **界面字体 / 代码字体**：内置 Inter、系统默认、微软雅黑、Geist Mono、Consolas、Cascadia Mono；导入或扫描到的自定义字体会追加到列表。
-- **字体**：「导入字体文件…」把 TTF / OTF / TTC 复制到 `%APPDATA%\PostSharp\fonts` 并立即加载；「添加字体目录…」直接扫描已有目录（例如系统字体目录或下载的字体包）。点击已加载字体名可同时设为界面和代码字体；「打开字体库」「重新扫描」分别定位目录和重新读取。字体目录列表支持移除外部目录。
+- **字体**：「导入字体文件…」把 TTF / OTF / TTC 复制到 `<项目目录>\.postsharp\fonts` 并立即加载；「添加字体目录…」直接扫描已有目录（例如系统字体目录或下载的字体包）。点击已加载字体名可同时设为界面和代码字体；「打开字体库」「重新扫描」分别定位目录和重新读取。字体目录列表支持移除外部目录。
 - **代码字号**：12 / 13 / 14 / 16。
 - **请求超时**：10 / 30 / 60 / 120 / 300 秒，作为未单独设置超时的请求的全局默认值。
 - **默认请求体**：无 / JSON / 文本 / 表单上传（用于新建请求）。
 - **大响应折叠阈值**：32 / 64 / 128 / 256 KB。
 - **审计保留条数**：100 / 500 / 1000 / 2000。
+- **存储**：系统配置、集合与接口记录、套件自动化分别绑定本地 SQLite 或远程 PostgreSQL / MySQL / SQL Server；支持测试连接、单向同步和备份后切换，切换后重启生效。
 - **自动格式化 JSON/XML 响应**。
 - **恢复默认**：把草稿恢复为默认值，保存后生效。
 
 ![系统设置](docs/settings.png)
+
+![存储配置](docs/settings-storage.png)
 
 ## 快捷键
 
@@ -467,29 +479,27 @@ http://127.0.0.1:5199/mcp
 ## 数据与配置
 
 ```text
-Windows: %APPDATA%\PostSharp\
-  workspace.json   集合、请求、环境（含机密标记）、历史、历史回收站、集合回收站、自动化套件、按请求/集合保存的授权配置与加密令牌
-  *.json.bak       上一次成功保存的版本，主文件损坏时自动使用
-  *.unreadable-YYYYMMDD-HHmmss.json  启动时无法读取的原文件，移到旁边保留、不会被覆盖
-  postsharp.db     UI / MCP 请求审计与审计回收站（SQLite，含 AI 聚合输出）
-  audit.json       旧版审计文件，首次启动自动导入 SQLite 后保留为兼容副本
-  audit-trash.json 旧版审计回收站文件，首次启动自动导入 SQLite
-  settings.json    主题、字体、字体目录、侧栏宽度、历史折叠、日志目录、日志级别、超时、阈值、审计保留条数
+Windows 默认: <项目目录>\.postsharp\
+  postsharp.db     本地 SQLite：settings/workspace/suites 文档、审计与审计回收站
+  storage.json     存储配置与三个分类的绑定；远程连接串用当前 Windows 用户 DPAPI 加密
+  backups\         切换存储前自动备份的 SQLite 文件
   fonts\           导入的字体文件（应用字体库），启动时自动加载
   logs\            默认日志目录；postsharp-YYYYMMDD.log，按天滚动
+  settings.json    旧版设置文件，首次启动导入 SQLite 后保留为兼容副本
+  workspace.json   旧版工作区文件，首次启动导入 SQLite 后保留为兼容副本
+  audit.json       旧版审计文件，首次启动自动导入 SQLite 后保留为兼容副本
+  audit-trash.json 旧版审计回收站文件，首次启动自动导入 SQLite
 ```
 
+- 默认数据目录是项目目录下的 `.postsharp`（已加入 `.gitignore`）；如果当前目录不可写，回退到 `%APPDATA%\PostSharp`。可用环境变量 `POSTSHARP_DATA_DIR` 指定其它目录。
 - 删除整个目录即可恢复首次运行的示例。
-- 工作区和设置为 UTF-8 JSON；审计记录写入 SQLite `postsharp.db`，避免审计记录增长拖大 JSON 文件。旧版 `audit.json` / `audit-trash.json` 会在首次启动时导入数据库，原文件保留作兼容副本。
-- 工作区和设置保存时先写 `.tmp` 再替换，崩溃或断电不会留下写了一半的文件；SQLite 使用 WAL 和事务写入。
-- 工作区文件内容无法解析时会移到旁边；文件暂时被占用（杀毒软件、同步盘）时会短暂重试，仍读不到则原地保留、本次运行不写入该文件，以免覆盖原内容；若 `.bak` 可读，会用备份打开，否则使用示例或默认值，顶部提示条会说明是哪一种。
-- 主文件缺失或损坏时会读 `.bak`；`.bak` 也损坏则移到旁边保留，`.bak` 被占用则本次运行不写入该文件，保证唯一的好备份不会被覆盖。
-- `.bak` 被其他程序打开时，保存仍会完成，只是本次不更新备份；保存真正失败（如目录不可写）时，顶部提示条会显示原因，下次保存自动重试。
-- 只删除 `workspace.json` 而保留 `workspace.json.bak` 时，启动会从备份恢复；要恢复首次运行的示例，请删除整个数据目录。
-- 机密变量的值仍以明文保存在本机 `workspace.json` 中（发送请求需要原值），打码只作用于审计、MCP 返回与套件结果；授权配置跟着请求/集合走，令牌用 DPAPI 以当前用户为范围加密后写入 `workspace.json`，换机器或换用户后需要重新登录。
+- 系统配置、集合与接口记录、套件自动化分别保存为 SQLite 文档 `settings` / `workspace` / `suites`；审计和审计回收站保存在同一数据库的 `AuditEntries` 表。旧版 JSON 会在首次启动导入，原文件保留作兼容副本。
+- SQLite 使用 WAL、事务和参数化 SQL；保存失败会在顶部提示条显示原因，下次保存自动重试。
+- 设置窗口「存储」可为三个分类分别绑定本地 SQLite 或远程 PostgreSQL / MySQL / SQL Server；本地 SQLite 同时作为离线缓存。切换或同步会先备份本地数据库，切换后重启 PostSharp 使用新存储。
+- 机密变量的值仍以明文保存在本机 SQLite 工作区文档中（发送请求需要原值），打码只作用于审计、MCP 返回与套件结果；授权配置跟着请求/集合走，令牌用 DPAPI 以当前用户为范围加密后写入工作区，换机器或换用户后需要重新登录。
 - 日志为 UTF-8 文本，默认保留最近 30 个文件；修改设置中的日志目录或日志级别后立即生效，旧日志不会自动迁移。
 - 字体文件只在本机读取；导入时复制到应用字体库，移除字体目录不会删除已导入的文件。
-- 数据不上传任何服务。
+- 本地数据不主动上传；绑定远程数据库并由用户执行同步/切换时才会写入对应远程库。
 
 ## 项目结构
 
@@ -503,6 +513,8 @@ src/PostSharp/
     TreeDisplayNode.cs    展平后的侧栏树行
     SuiteSourceCollection.cs 套件来源集合选择
     AppSettings.cs        全局设置（字体、字体目录、侧栏宽度、历史折叠等）
+    StorageProfile.cs     本地/远程存储配置与 DPAPI 连接串
+    StorageConfig.cs      存储分类绑定与默认本地 SQLite
     FontDirectoryItem.cs  设置窗口中的字体目录行
     AuditEntry.cs         审计记录
     TestSuite.cs          自动化套件、步骤、结果
@@ -538,8 +550,12 @@ src/PostSharp/
     McpServer.cs          MCP JSON-RPC 协议与工具
     McpWorkspaceAdapter.cs MCP 与 UI 线程的适配
     WorkspaceStore.cs     工作区持久化（含授权配置）
+    SuiteStore.cs         自动化套件独立持久化
     AuditStore.cs         审计持久化
     SettingsStore.cs      设置持久化
+    DocumentBackends.cs   SQLite/PostgreSQL/MySQL/SQL Server 文档表
+    StorageConfigStore.cs 本地存储配置与分类绑定
+    StorageCoordinator.cs 本地缓存、远程同步、备份与切换
   ViewModels/
     MainWindowViewModel.cs 状态、命令、审计、套件运行、导入导出
     SettingsViewModel.cs  设置草稿、校验与保存
@@ -700,7 +716,11 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：115 个测试全部通过（含数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码与 SQLite 审计读写） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：119 个测试全部通过（含数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写与存储配置） |
+| 存储配置 | 设置窗口「存储」显示本地 SQLite 路径、数据库类型、连接串、三个分类绑定、测试连接、同步和切换按钮；新增远程库后字段可编辑 |
+| 项目数据目录 | 首次启动把旧 `%APPDATA%\PostSharp` 的 settings/workspace/audit/postsharp.db 复制到项目 `.postsharp`，本地文档表看到 settings/workspace/suites 三类 |
+| MCP 语义工具 | `tools/list` 返回 56 个工具；实测 `get_settings`、`update_settings`、`get_storage_config`、`test_storage_profile`、`switch_storage`、集合授权、环境 CRUD、导出工作区均返回结果 |
+| 远程存储错误 | 用不可达 PostgreSQL 配置测试连接，返回 `success=false` 和连接失败原因，未阻塞本地 SQLite |
 | 发送 loading | 慢响应发送中切换到创建订单，发送按钮不显示其他请求的 loading；两个请求均完成并写入历史 |
 | 审计 SQLite | 旧 `audit.json` 55 条启动导入 `postsharp.db`，新请求写入数据库；`audit.json` 时间戳不再变化；SQLite 读写单测通过 |
 | 审核修复 | 套件映射后的机密不再写入历史；授权查询令牌与 API Key 请求头不进入审计、MCP 返回或日志；授权刷新超时显示错误而不崩溃（单测/构建） |
@@ -725,10 +745,10 @@ docs/
 | Maple Mono | 界面与代码字体均设为 `Maple Mono NF CN`，启动日志确认字形解析为同一字体族，主界面/请求/响应/历史均使用该字体 |
 | Tooltip 视觉 | 按钮、历史 URL、分隔条的悬浮提示统一为浮层卡片；深色/浅色主题下背景、边框、阴影和文字对比正常，不再是无底色的裸文本 |
 | MCP 来源校验 | 实机 `curl`：无 `Origin` 的 `ping` 返回 200；`Origin: https://evil.example`、`text/plain` 无预检请求、`Host: rebind.evil.example` 均返回 403；`http://localhost:6274` 预检回显该 Origin，不再返回 `*`；Mock API 的 CORS 不变 |
-| 机密变量 | MCP `set_variable secret=true` 后 `list_environments` 显示 `******`，回传 `******` 不覆盖原值；`send_request` 回显、`get_curl`、`get_audit` 与 `audit.json` 均不含 `demo-token-123`；环境变量对话框中该值以圆点显示 |
+| 机密变量 | MCP `set_variable secret=true` 后 `list_environments` 显示 `******`，回传 `******` 不覆盖原值；`send_request` 回显、`get_curl`、`get_audit` 与 SQLite 审计均不含 `demo-token-123`；环境变量对话框中该值以圆点显示 |
 | 集合回收站 | MCP 删除集合（含 1 个请求）与「健康检查」后，二者进入集合回收站并标注来源；点「恢复」后「健康检查」回到「内置 Mock 示例」第一位且 id 不变 |
 | 损坏恢复 | 在 `workspace.json` 写入半截 JSON 后启动：原文件移到 `workspace.unreadable-*.json`（内容原样保留），工作区从 `.bak` 恢复，顶部显示「数据文件已从备份恢复」提示条；日志无 ERR |
-| 审核复测 | MCP `set_variable` 省略 `value` 设为机密后原值保留；`secret=false` 被拒绝；运行中设为机密后，此前的审计记录、`audit.json` 与 `audit.json.bak` 均不再含明文；文件被独占打开时原地保留、不移动不覆盖（单测） |
+| 审核复测 | MCP `set_variable` 省略 `value` 设为机密后原值保留；`secret=false` 被拒绝；运行中设为机密后，此前的审计记录与本地 SQLite 均不再含明文；文件被独占打开时原地保留、不移动不覆盖（单测） |
 | 二次审核复测 | 5 个字符且含单引号的机密值用于请求头和查询参数时，打码后的 cURL 中不含原值（单测）；文件被独占时改用 `.bak` 打开且之后写入被拒绝（单测）；集合连同子集合移入回收站后按原顺序恢复，原集合已不存在的请求恢复到根级集合（单测） |
 | 三次审核复测 | 重建打码请求失败时按当前环境全部机密值兜底，短机密与上传文件路径均不出现在 cURL 中；同一机密重复 600 次时预览截断处不残留机密片段；审计补做打码写盘失败后下次触发会重试；关闭后重复出现的警告会重新打开提示条（单测） |
 | 四次审核复测 | 主文件缺失且 `.bak` 被占用时两次保存均被拒绝、`.bak` 原样保留；`.bak` 损坏时移到旁边；`.bak` 被独占打开时保存仍成功；目录不可写时保存返回失败而不抛异常；`\/` 与 `\u002B` 转义的机密回显被打码；集合回收站超过 200 项时丢弃最早一项；无所属集合的请求删除返回失败（单测） |
@@ -794,13 +814,13 @@ master                 稳定可发布
 确认 `EnablePopupOverlayLayer()` 被调用，窗口内有 `VisualLayerManager EnableOverlayLayer="True"`；管理层、对话框和 Toast 需放在该 `VisualLayerManager` 的内容中，才能让下拉层显示在它们之上。
 
 **如何恢复示例？**  
-关闭应用，删除整个 `%APPDATA%\PostSharp` 目录（包括 `.bak` 备份），重新启动。
+关闭应用，删除项目目录下的 `.postsharp` 目录（包括 `postsharp.db`、`storage.json` 和 `backups`），重新启动。
 
 **日志在哪里？**  
-默认 `%APPDATA%\PostSharp\logs\postsharp-YYYYMMDD.log`，按天滚动、保留最近 30 个文件；可在设置窗口修改目录和日志级别，保存后新日志立即按新设置写入。
+默认 `<项目目录>\.postsharp\logs\postsharp-YYYYMMDD.log`，按天滚动、保留最近 30 个文件；可在设置窗口修改目录和日志级别，保存后新日志立即按新设置写入。
 
 **设置保存失败怎么办？**  
-设置窗口会保留原设置并显示失败原因。优先检查日志目录是否存在写权限，或 `settings.json` 是否被其他程序占用。
+设置窗口会保留原设置并显示失败原因。优先检查项目目录和数据库文件的写权限，或 `postsharp.db` 是否被其他程序占用。
 
 **SSE 请求一直等到超时？**  
 当前按流结束或 `[DONE]` 结束；若服务端保持连接不关闭，会受请求超时控制。
@@ -829,7 +849,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：115 个 xUnit 测试。
+- 自测：119 个 xUnit 测试。
 
 ### 当前 MVP 限制
 

@@ -10,3 +10,6 @@
 
 # Local workspace snapshots
 workspace.json
+
+# Project-local PostSharp data (SQLite, backups, imported fonts)
+.postsharp/

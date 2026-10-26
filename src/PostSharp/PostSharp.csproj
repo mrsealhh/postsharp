@@ -23,7 +23,10 @@
         <PackageReference Include="Avalonia.Controls.WebView" Version="12.1.1" />
         <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
         <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+        <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.1" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+        <PackageReference Include="MySqlConnector" Version="2.6.2" />
+        <PackageReference Include="Npgsql" Version="10.0.3" />
         <PackageReference Include="TKCode.Arc" Version="0.3.1-preview.2" />
         <PackageReference Include="TKCode.Arc.Fonts" Version="0.3.1-preview.2" />
         <PackageReference Include="TKCode.Arc.Themes.Corners" Version="0.3.1-preview.2" />
