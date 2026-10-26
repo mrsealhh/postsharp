@@ -3166,6 +3166,26 @@
                                     />
                                 </StackPanel>
 
+                                <StackPanel
+                                    IsVisible="{Binding Import.HasPendingOpenApiImport}"
+                                    Spacing="8"
+                                >
+                                    <arc:Select
+                                        Label="服务器"
+                                        ItemsSource="{Binding Import.OpenApiServers}"
+                                        SelectedItem="{Binding Import.SelectedOpenApiServer, Mode=TwoWay}"
+                                        AutomationProperties.Name="OpenAPI 服务器"
+                                    />
+                                    <arc:Button
+                                        Content="导入所选服务器"
+                                        Variant="Primary"
+                                        HorizontalAlignment="Left"
+                                        Command="{Binding Import.ConfirmOpenApiImportCommand}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        AutomationProperties.Name="导入所选服务器的 OpenAPI 请求"
+                                    />
+                                </StackPanel>
+
                                 <Border
                                     Height="1"
                                     Background="{arc:ArcDesignTokenResource BorderSubtle}"

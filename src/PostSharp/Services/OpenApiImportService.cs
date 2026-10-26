@@ -115,12 +115,12 @@ public static class OpenApiImportService
         }
 
         var version = GetText(info?["version"]) ?? (isVersion3 ? openApi : swagger) ?? string.Empty;
-        var baseUrl = ResolveBaseUrl(document, isVersion3);
+        var servers = ResolveServers(document, isVersion3);
+        var baseUrl = servers.Count > 0 ? servers[0].Url : "{{baseUrl}}";
         var warnings = new WarningBag();
-        var serverCount = document["servers"] is JsonArray serverItems ? serverItems.Count : 0;
-        if (serverCount > 1)
+        if (servers.Count > 1)
         {
-            warnings.Add($"文档包含 {serverCount} 个服务器，当前使用第一个服务器地址。");
+            warnings.Add($"文档包含 {servers.Count} 个服务器，当前使用第一个服务器地址。");
         }
 
         var externalRefCount = CountExternalReferences(document);
@@ -244,6 +244,8 @@ public static class OpenApiImportService
             Title = title.Trim(),
             Version = version,
             Source = source,
+            Servers = servers,
+            BaseUrl = baseUrl,
             Groups = groups
                 .Select(group => new OpenApiImportGroup
                 {
@@ -674,38 +676,34 @@ public static class OpenApiImportService
         };
     }
 
-    private static string ResolveBaseUrl(JsonObject document, bool isVersion3)
+    private static IReadOnlyList<OpenApiImportServer> ResolveServers(
+        JsonObject document,
+        bool isVersion3
+    )
     {
-        if (
-            isVersion3
-            && document["servers"] is JsonArray servers
-            && servers.Count > 0
-            && servers[0] is JsonObject server
-        )
+        var servers = new List<OpenApiImportServer>();
+        if (isVersion3 && document["servers"] is JsonArray items)
         {
-            var url = GetText(server["url"]);
-            if (!string.IsNullOrWhiteSpace(url))
+            foreach (var item in items)
             {
-                if (server["variables"] is JsonObject variables)
+                if (item is not JsonObject server)
                 {
-                    foreach (var variable in variables)
-                    {
-                        if (variable.Value is JsonObject definition)
-                        {
-                            var value = GetText(definition["default"]);
-                            if (!string.IsNullOrWhiteSpace(value))
-                            {
-                                url = url.Replace(
-                                    $"{{{variable.Key}}}",
-                                    value,
-                                    StringComparison.Ordinal
-                                );
-                            }
-                        }
-                    }
+                    continue;
                 }
 
-                return NormalizeBaseUrl(url);
+                var url = ResolveServerUrl(server);
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    continue;
+                }
+
+                servers.Add(
+                    new OpenApiImportServer(
+                        servers.Count,
+                        url,
+                        (GetText(server["description"]) ?? string.Empty).Trim()
+                    )
+                );
             }
         }
 
@@ -718,13 +716,45 @@ public static class OpenApiImportService
                 var scheme = schemes is { Count: > 0 } ? GetText(schemes[0]) : null;
                 var basePath = GetText(document["basePath"]) ?? string.Empty;
                 var prefix = string.IsNullOrWhiteSpace(scheme) ? "https" : scheme;
-                return NormalizeBaseUrl(
-                    $"{prefix}://{host.TrimEnd('/')}/{basePath.TrimStart('/')}"
+                servers.Add(
+                    new OpenApiImportServer(
+                        0,
+                        NormalizeBaseUrl(
+                            $"{prefix}://{host.TrimEnd('/')}/{basePath.TrimStart('/')}"
+                        ),
+                        "Swagger host"
+                    )
                 );
             }
         }
 
-        return "{{baseUrl}}";
+        return servers;
+    }
+
+    private static string ResolveServerUrl(JsonObject server)
+    {
+        var url = GetText(server["url"]);
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        if (server["variables"] is JsonObject variables)
+        {
+            foreach (var variable in variables)
+            {
+                if (variable.Value is JsonObject definition)
+                {
+                    var value = GetText(definition["default"]);
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        url = url.Replace($"{{{variable.Key}}}", value, StringComparison.Ordinal);
+                    }
+                }
+            }
+        }
+
+        return NormalizeBaseUrl(url);
     }
 
     private static string NormalizeBaseUrl(string url)

@@ -14,6 +14,7 @@ public partial class ImportViewModel : ObservableObject
     private readonly ImportProviderRegistry _providers;
 
     private CancellationTokenSource? _importCts;
+    private OpenApiImportDocument? _pendingOpenApiDocument;
 
     public ImportViewModel(IImportHost host, ImportProviderRegistry? providers = null)
     {
@@ -110,9 +111,18 @@ public partial class ImportViewModel : ObservableObject
 
     public bool IsApifoxImport => ImportSource == "Apifox";
 
+    public ObservableCollection<OpenApiImportServer> OpenApiServers { get; } = new();
+
+    [ObservableProperty]
+    private OpenApiImportServer? _selectedOpenApiServer;
+
+    [ObservableProperty]
+    private bool _hasPendingOpenApiImport;
+
     [RelayCommand]
     private void OpenImportDialog()
     {
+        ClearPendingOpenApiImport();
         ImportSource = "PostmanCollection";
         ImportUrl = string.Empty;
         PostmanJson = string.Empty;
@@ -162,6 +172,7 @@ public partial class ImportViewModel : ObservableObject
 
     partial void OnImportSourceChanged(string value)
     {
+        ClearPendingOpenApiImport();
         OnPropertyChanged(nameof(IsOpenApiImport));
         OnPropertyChanged(nameof(IsPostmanCollectionImport));
         OnPropertyChanged(nameof(IsPostmanEnvironmentImport));
@@ -916,6 +927,42 @@ public partial class ImportViewModel : ObservableObject
 
     private void ApplyOpenApiDocument(OpenApiImportDocument document)
     {
+        if (document.Servers.Count > 1)
+        {
+            _pendingOpenApiDocument = document;
+            OpenApiServers.Clear();
+            foreach (var server in document.Servers)
+            {
+                OpenApiServers.Add(server);
+            }
+
+            SelectedOpenApiServer = OpenApiServers[0];
+            HasPendingOpenApiImport = true;
+            HasImportError = false;
+            ImportStatus = $"检测到 {document.Servers.Count} 个服务器，请选择后导入。";
+            IsImportDialogOpen = true;
+            return;
+        }
+
+        ApplyOpenApiDocumentCore(document);
+    }
+
+    [RelayCommand]
+    private void ConfirmOpenApiImport()
+    {
+        if (_pendingOpenApiDocument is not { } pending)
+        {
+            return;
+        }
+
+        var index = SelectedOpenApiServer?.Index ?? 0;
+        var document = pending.WithServer(index);
+        ClearPendingOpenApiImport();
+        ApplyOpenApiDocumentCore(document);
+    }
+
+    private void ApplyOpenApiDocumentCore(OpenApiImportDocument document)
+    {
         var outcome = _host.ApplyOpenApiImport(document);
         SetImportWarnings(document.Warnings);
         AddImportReport(
@@ -945,6 +992,14 @@ public partial class ImportViewModel : ObservableObject
             outcome.RequestCount,
             outcome.FolderCount
         );
+    }
+
+    private void ClearPendingOpenApiImport()
+    {
+        _pendingOpenApiDocument = null;
+        OpenApiServers.Clear();
+        SelectedOpenApiServer = null;
+        HasPendingOpenApiImport = false;
     }
 
     private void ApplyCollectionResult(ImportResult result)
@@ -1041,6 +1096,7 @@ public partial class ImportViewModel : ObservableObject
 
     private void BeginImport(string status, CancellationToken cancellationToken)
     {
+        ClearPendingOpenApiImport();
         _importCts?.Dispose();
         _importCts = cancellationToken.CanBeCanceled
             ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
