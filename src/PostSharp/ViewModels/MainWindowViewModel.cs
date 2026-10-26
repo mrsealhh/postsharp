@@ -62,7 +62,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _purgeAllPending;
     private AuditEntry? _pendingAuditPurge;
     private bool _auditPurgeAllPending;
-    private CancellationTokenSource? _sendCts;
+    private readonly Dictionary<Guid, CancellationTokenSource> _sendCancellations = new();
     private CancellationTokenSource? _suiteCts;
     private ComposedRequest? _lastComposedRequest;
     private SseResumeSnapshot? _sseResume;
@@ -167,12 +167,16 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         var auditLoad = _auditStore.Load();
         var auditTrashLoad = _auditStore.LoadTrash();
-        // A moved-aside audit file is never scrubbed, so the notice asks for it to be removed once recovered.
-        const string auditCopyHint = "该文件可能含打码前的明文凭据，找回需要的内容后请删除。";
-        DataNotice.Report(auditLoad, "审计文件 audit.json ", "审计列表从空白开始", auditCopyHint);
+        const string auditCopyHint = "数据库文件可能包含审计内容，请勿分享给其他人。";
+        DataNotice.Report(
+            auditLoad,
+            "审计数据库 postsharp.db ",
+            "审计列表从空白开始",
+            auditCopyHint
+        );
         DataNotice.Report(
             auditTrashLoad,
-            "审计回收站文件 audit-trash.json ",
+            "审计回收站（postsharp.db）",
             "审计回收站从空白开始",
             auditCopyHint
         );
@@ -1601,26 +1605,30 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task SendAsync()
     {
-        if (IsSending)
+        var request = Editing;
+        if (request.IsSending)
         {
             return;
         }
 
+        var cancellation = new CancellationTokenSource();
+        _sendCancellations[request.Id] = cancellation;
+        request.IsSending = true;
         IsSending = true;
-        IsUploading = false;
-        UploadProgressValue = 0;
-        UploadProgressText = string.Empty;
-        _sseResume = null;
-        SseCanResume = false;
-        SseLastEventId = string.Empty;
-        _sendCts = new CancellationTokenSource();
-        var secrets = SecretMasker.CollectSecrets(Environments);
+        if (ReferenceEquals(Editing, request))
+        {
+            IsUploading = false;
+            UploadProgressValue = 0;
+            UploadProgressText = string.Empty;
+            _sseResume = null;
+            SseCanResume = false;
+            SseLastEventId = string.Empty;
+        }
 
-        // Another request may be opened while this one is on its way; history and audit describe this one.
-        var request = Editing;
+        var secrets = SecretMasker.CollectSecrets(Environments);
         ComposedRequest? stored = null;
 
         try
@@ -1628,23 +1636,41 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             HttpResult result;
             try
             {
-                var auth = await ResolveAuthAsync(request, _sendCts.Token);
+                var auth = await ResolveAuthAsync(request, cancellation.Token);
                 var composed = RequestComposer.Compose(request, ActiveEnvironment, auth);
-                _lastComposedRequest = composed;
+                if (ReferenceEquals(Editing, request))
+                {
+                    _lastComposedRequest = composed;
+                }
 
                 // Masked before the await: the request and environment can be edited while it is on its way.
                 stored = SecretMasker.MaskComposed(request, ActiveEnvironment, composed, secrets);
-                var sseProgress = new Progress<SseProgress>(ApplySseProgress);
-                var uploadProgress = new Progress<UploadProgress>(ApplyUploadProgress);
+                var sseProgress = new Progress<SseProgress>(progress =>
+                {
+                    if (ReferenceEquals(Editing, request))
+                    {
+                        ApplySseProgress(progress);
+                    }
+                });
+                var uploadProgress = new Progress<UploadProgress>(progress =>
+                {
+                    if (ReferenceEquals(Editing, request))
+                    {
+                        ApplyUploadProgress(progress);
+                    }
+                });
                 result = await _http.SendAsync(
                     composed,
                     stored.Url,
-                    _sendCts.Token,
+                    cancellation.Token,
                     request.TimeoutSeconds,
                     sseProgress,
                     uploadProgress
                 );
-                result = MergeSseResume(result);
+                if (ReferenceEquals(Editing, request))
+                {
+                    result = MergeSseResume(result);
+                }
             }
             catch (Exception exception)
             {
@@ -1652,14 +1678,20 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 result = HttpRequestService.Failure(exception.Message);
             }
 
-            ApplyResponse(result);
+            if (ReferenceEquals(Editing, request))
+            {
+                ApplyResponse(result);
+            }
 
             if (result.HasResponse)
             {
-                IsResponseCollapsed = false;
-                if (Settings.WorkspaceLayout is null)
+                if (ReferenceEquals(Editing, request))
                 {
-                    IsWorkspaceSideBySide = true;
+                    IsResponseCollapsed = false;
+                    if (Settings.WorkspaceLayout is null)
+                    {
+                        IsWorkspaceSideBySide = true;
+                    }
                 }
 
                 AddHistory(request, result);
@@ -1670,15 +1702,26 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
         finally
         {
-            IsSending = false;
-            IsUploading = false;
-            _sendCts?.Dispose();
-            _sendCts = null;
+            _sendCancellations.Remove(request.Id);
+            request.IsSending = false;
+            IsSending = _sendCancellations.Count > 0;
+            if (ReferenceEquals(Editing, request))
+            {
+                IsUploading = false;
+            }
+
+            cancellation.Dispose();
         }
     }
 
     [RelayCommand]
-    private void CancelSend() => _sendCts?.Cancel();
+    private void CancelSend()
+    {
+        if (_sendCancellations.TryGetValue(Editing.Id, out var cancellation))
+        {
+            cancellation.Cancel();
+        }
+    }
 
     [RelayCommand]
     private void ToggleResponseCollapsed()
@@ -1689,18 +1732,27 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [RelayCommand]
     private async Task ResumeSseAsync()
     {
-        if (IsSending || !CanResumeSse || _lastComposedRequest is not { } composed)
+        var request = Editing;
+        if (request.IsSending || !CanResumeSse || _lastComposedRequest is not { } composed)
         {
             return;
         }
 
-        _sseResume = new SseResumeSnapshot(SseRaw, SseThinking, SseContent, SseEventCount);
+        var cancellation = new CancellationTokenSource();
+        _sendCancellations[request.Id] = cancellation;
+        request.IsSending = true;
         IsSending = true;
+        _sseResume = new SseResumeSnapshot(SseRaw, SseThinking, SseContent, SseEventCount);
         SseCanResume = false;
-        _sendCts = new CancellationTokenSource();
         try
         {
-            var sseProgress = new Progress<SseProgress>(ApplySseProgress);
+            var sseProgress = new Progress<SseProgress>(progress =>
+            {
+                if (ReferenceEquals(Editing, request))
+                {
+                    ApplySseProgress(progress);
+                }
+            });
             var secrets = SecretMasker.CollectSecrets(Environments);
             var stored = RequestComposer.MaskAuthorization(
                 SecretMasker.MaskRequest(composed, SecretMasker.CollectAllSecrets(Environments))
@@ -1709,38 +1761,52 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             var result = await _http.SendAsync(
                 composed,
                 logUrl,
-                _sendCts.Token,
-                Editing.TimeoutSeconds,
+                cancellation.Token,
+                request.TimeoutSeconds,
                 sseProgress,
                 lastEventId: SseLastEventId
             );
-            result = MergeSseResume(result);
-            ApplyResponse(result);
-            if (result.HasResponse)
+            if (ReferenceEquals(Editing, request))
             {
-                IsResponseCollapsed = false;
-                if (Settings.WorkspaceLayout is null)
+                result = MergeSseResume(result);
+                ApplyResponse(result);
+                if (result.HasResponse)
                 {
-                    IsWorkspaceSideBySide = true;
+                    IsResponseCollapsed = false;
+                    if (Settings.WorkspaceLayout is null)
+                    {
+                        IsWorkspaceSideBySide = true;
+                    }
                 }
-
-                AddHistory(Editing, result);
             }
 
-            RecordAudit(Editing, stored, result, "UI", null, null, secrets);
+            if (result.HasResponse)
+            {
+                AddHistory(request, result);
+            }
+
+            RecordAudit(request, stored, result, "UI", null, null, secrets);
             Persist();
         }
         catch (Exception exception)
         {
-            Log.Error(exception, "继续接收 SSE 失败 {RequestName}", Editing.Name);
-            ApplyResponse(HttpRequestService.Failure(exception.Message));
+            Log.Error(exception, "继续接收 SSE 失败 {RequestName}", request.Name);
+            if (ReferenceEquals(Editing, request))
+            {
+                ApplyResponse(HttpRequestService.Failure(exception.Message));
+            }
         }
         finally
         {
-            IsSending = false;
-            _sendCts?.Dispose();
-            _sendCts = null;
-            _sseResume = null;
+            _sendCancellations.Remove(request.Id);
+            request.IsSending = false;
+            IsSending = _sendCancellations.Count > 0;
+            if (ReferenceEquals(Editing, request))
+            {
+                _sseResume = null;
+            }
+
+            cancellation.Dispose();
         }
     }
 
@@ -3326,8 +3392,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     /// <summary>Returns false when either audit file could not be written.</summary>
     /// <summary>
-    /// Writes both audit files. Failed when either write failed, Blocked when either is protected after a failed
-    /// read at startup (the startup notice explains that), Saved otherwise.
+    /// Writes audit records to the SQLite database. Failed when either table could not be written.
     /// </summary>
     private SaveResult PersistAudit()
     {
@@ -3336,7 +3401,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (saved == SaveResult.Failed || trashSaved == SaveResult.Failed)
         {
             DataNotice.Warn(
-                "审计记录保存失败：无法写入 audit.json 或 audit-trash.json，新的审计记录暂时只在界面中。请检查数据目录是否可写；下次发送请求时会自动重试。"
+                "审计记录保存失败：无法写入审计数据库 postsharp.db，新的审计记录暂时只在界面中。请检查数据目录是否可写；下次发送请求时会自动重试。"
             );
             return SaveResult.Failed;
         }

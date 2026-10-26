@@ -44,6 +44,8 @@ public partial class DataNoticeViewModel : ObservableObject
                 $"{fileLabel}无法读取，已改用上次保存的备份恢复，最近一次改动可能缺失。原文件已移到 {load.SetAsidePath}，没有被覆盖。{setAsideHint}",
             DataFileState.RestoredFromBackup =>
                 $"{fileLabel}不存在，已改用上次保存的备份恢复，最近一次改动可能缺失。",
+            DataFileState.Unreadable when load.SetAsidePath is null =>
+                $"{fileLabel}无法读取，{fallback}。原文件仍在原位置，没有被覆盖，请检查文件是否被其他程序占用。{setAsideHint}",
             DataFileState.Unreadable =>
                 $"{fileLabel}无法读取，也没有可用的备份，{fallback}。原文件已移到 {load.SetAsidePath}，没有被覆盖，可以用文本编辑器打开找回内容。{setAsideHint}",
             DataFileState.Inaccessible when load.Value is not null =>

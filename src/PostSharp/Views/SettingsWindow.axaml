@@ -454,7 +454,7 @@
                                 TextWrapping="Wrap"
                             />
                             <TextBlock
-                                Text="工作区、审计和设置都以 UTF-8 JSON 保存在 %APPDATA%\PostSharp 下，不会上传到任何服务。"
+                                Text="工作区和设置以 UTF-8 JSON 保存，审计记录保存到 SQLite；均位于 %APPDATA%\PostSharp 下，不会上传到任何服务。"
                                 FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                 Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                 TextWrapping="Wrap"
