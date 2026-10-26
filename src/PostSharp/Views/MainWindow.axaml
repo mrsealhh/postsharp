@@ -427,7 +427,7 @@
                                         Variant="Ghost"
                                         Size="Small"
                                         Padding="8,0"
-                                        Command="{Binding OpenImportDialogCommand}"
+                                        Command="{Binding Import.OpenImportDialogCommand}"
                                         ToolTip.Tip="导入或导出 OpenAPI、Postman Collection、cURL"
                                         AutomationProperties.Name="导入或导出"
                                     >
@@ -3044,7 +3044,7 @@
 
                 <arc:Dialog
                     x:Name="ImportDialog"
-                    IsOpen="{Binding IsImportDialogOpen, Mode=TwoWay}"
+                    IsOpen="{Binding Import.IsImportDialogOpen, Mode=TwoWay}"
                     Title="导入 / 导出"
                     Description="支持 OpenAPI、Postman、cURL、HAR、Insomnia、Hoppscotch；导入成功后可以继续手工调整请求。"
                     Size="Large"
@@ -3062,17 +3062,17 @@
                                 />
                                 <arc:Button
                                     Grid.Column="1"
-                                    Content="{Binding ImportSourceToggleLabel}"
+                                    Content="{Binding Import.ImportSourceToggleLabel}"
                                     Variant="Ghost"
                                     Size="Small"
-                                    Command="{Binding ToggleImportSourceCommand}"
+                                    Command="{Binding Import.ToggleImportSourceCommand}"
                                     AutomationProperties.Name="展开或收起导入来源"
                                 />
                             </Grid>
                             <arc:RadioCards
-                                SelectedValue="{Binding ImportSource, Mode=TwoWay}"
+                                SelectedValue="{Binding Import.ImportSource, Mode=TwoWay}"
                                 MinColumnWidth="150"
-                                IsVisible="{Binding IsImportSourceExpanded}"
+                                IsVisible="{Binding Import.IsImportSourceExpanded}"
                                 AutomationProperties.Name="导入来源"
                             >
                                 <arc:RadioCardOption
@@ -3124,7 +3124,7 @@
                         </StackPanel>
 
                         <Panel Grid.Row="1">
-                            <StackPanel IsVisible="{Binding IsOpenApiImport}" Spacing="12">
+                            <StackPanel IsVisible="{Binding Import.IsOpenApiImport}" Spacing="12">
                                 <TextBlock
                                     Text="从 URL 导入"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3134,7 +3134,7 @@
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                     <arc:Input
                                         Label="文档 URL"
-                                        Text="{Binding ImportUrl, Mode=TwoWay}"
+                                        Text="{Binding Import.ImportUrl, Mode=TwoWay}"
                                         Placeholder="https://petstore3.swagger.io/api/v3/openapi.json"
                                         AutomationProperties.Name="OpenAPI 文档地址"
                                     />
@@ -3143,9 +3143,9 @@
                                         Content="下载并导入"
                                         Variant="Primary"
                                         VerticalAlignment="Bottom"
-                                        Command="{Binding ImportFromUrlCommand}"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        Command="{Binding Import.ImportFromUrlCommand}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="下载并导入 OpenAPI 文档"
                                     />
                                 </Grid>
@@ -3154,7 +3154,7 @@
                                         Content="填入 springdoc / Knife4j 地址"
                                         Variant="Ghost"
                                         Size="Small"
-                                        Command="{Binding FillSpringDocUrlCommand}"
+                                        Command="{Binding Import.FillSpringDocUrlCommand}"
                                         AutomationProperties.Name="填入 springdoc 或 Knife4j 地址"
                                     />
                                     <TextBlock
@@ -3182,7 +3182,7 @@
                                         Content="选择 JSON / YAML 文件…"
                                         Variant="Secondary"
                                         Click="OnPickOpenApiFileClick"
-                                        IsEnabled="{Binding !IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
                                         AutomationProperties.Name="选择 OpenAPI 文件"
                                     />
                                     <TextBlock
@@ -3195,7 +3195,7 @@
                             </StackPanel>
 
                             <StackPanel
-                                IsVisible="{Binding IsPostmanCollectionImport}"
+                                IsVisible="{Binding Import.IsPostmanCollectionImport}"
                                 Spacing="10"
                             >
                                 <TextBlock
@@ -3221,15 +3221,15 @@
                                         Content="选择 Collection 文件…"
                                         Variant="Primary"
                                         Click="OnPickPostmanFileClick"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="选择 Postman Collection 文件"
                                     />
                                     <arc:Button
                                         Content="导出当前集合…"
                                         Variant="Secondary"
                                         Click="OnExportPostmanClick"
-                                        IsEnabled="{Binding !IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
                                         AutomationProperties.Name="导出 Postman Collection"
                                     />
                                     <TextBlock
@@ -3244,7 +3244,7 @@
                                     Height="124"
                                     Margin="0,0,0,8"
                                     Label="或者粘贴 Collection JSON"
-                                    Text="{Binding PostmanJson, Mode=TwoWay}"
+                                    Text="{Binding Import.PostmanJson, Mode=TwoWay}"
                                     Placeholder="粘贴 Postman Collection v2.1 JSON"
                                     FrameHeight="100"
                                     IsResizable="False"
@@ -3254,15 +3254,15 @@
                                     Content="导入粘贴内容"
                                     Variant="Primary"
                                     HorizontalAlignment="Left"
-                                    Command="{Binding ImportPostmanTextCommand}"
-                                    IsEnabled="{Binding !IsImporting}"
-                                    IsLoading="{Binding IsImporting}"
+                                    Command="{Binding Import.ImportPostmanTextCommand}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
+                                    IsLoading="{Binding Import.IsImporting}"
                                     AutomationProperties.Name="导入粘贴的 Postman Collection"
                                 />
                             </StackPanel>
 
                             <StackPanel
-                                IsVisible="{Binding IsPostmanEnvironmentImport}"
+                                IsVisible="{Binding Import.IsPostmanEnvironmentImport}"
                                 Spacing="10"
                             >
                                 <TextBlock
@@ -3282,13 +3282,13 @@
                                     Variant="Primary"
                                     HorizontalAlignment="Left"
                                     Click="OnPickPostmanEnvironmentFileClick"
-                                    IsEnabled="{Binding !IsImporting}"
-                                    IsLoading="{Binding IsImporting}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
+                                    IsLoading="{Binding Import.IsImporting}"
                                     AutomationProperties.Name="导入 Postman 环境文件"
                                 />
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsCurlImport}" Spacing="10">
+                            <StackPanel IsVisible="{Binding Import.IsCurlImport}" Spacing="10">
                                 <TextBlock
                                     Text="从 cURL 导入"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3305,7 +3305,7 @@
                                     Height="124"
                                     Margin="0,0,0,8"
                                     Label="cURL 命令"
-                                    Text="{Binding CurlCommand, Mode=TwoWay}"
+                                    Text="{Binding Import.CurlCommand, Mode=TwoWay}"
                                     Placeholder="curl -X POST 'https://api.example.com/health' -H 'Accept: application/json'"
                                     FrameHeight="100"
                                     IsResizable="False"
@@ -3315,9 +3315,9 @@
                                     <arc:Button
                                         Content="导入 cURL"
                                         Variant="Primary"
-                                        Command="{Binding ImportCurlCommand}"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        Command="{Binding Import.ImportCurlCommand}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="导入 cURL 命令"
                                     />
                                     <arc:Button
@@ -3330,7 +3330,7 @@
                                 </StackPanel>
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsHarImport}" Spacing="10">
+                            <StackPanel IsVisible="{Binding Import.IsHarImport}" Spacing="10">
                                 <TextBlock
                                     Text="从 HAR 导入"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3348,12 +3348,12 @@
                                         Content="选择 HAR 文件…"
                                         Variant="Primary"
                                         Click="OnPickHarFileClick"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="选择 HAR 文件"
                                     />
                                     <arc:Checkbox
-                                        IsChecked="{Binding HarIncludeStaticResources, Mode=TwoWay}"
+                                        IsChecked="{Binding Import.HarIncludeStaticResources, Mode=TwoWay}"
                                         VerticalAlignment="Center"
                                         AutomationProperties.Name="包含静态资源"
                                     />
@@ -3368,7 +3368,7 @@
                                     Height="124"
                                     Margin="0,0,0,8"
                                     Label="或者粘贴 HAR JSON"
-                                    Text="{Binding HarJson, Mode=TwoWay}"
+                                    Text="{Binding Import.HarJson, Mode=TwoWay}"
                                     Placeholder="粘贴 HAR 1.2 JSON"
                                     FrameHeight="100"
                                     IsResizable="False"
@@ -3378,14 +3378,14 @@
                                     Content="导入粘贴的 HAR"
                                     Variant="Primary"
                                     HorizontalAlignment="Left"
-                                    Command="{Binding ImportHarTextCommand}"
-                                    IsEnabled="{Binding !IsImporting}"
-                                    IsLoading="{Binding IsImporting}"
+                                    Command="{Binding Import.ImportHarTextCommand}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
+                                    IsLoading="{Binding Import.IsImporting}"
                                     AutomationProperties.Name="导入粘贴的 HAR"
                                 />
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsInsomniaImport}" Spacing="10">
+                            <StackPanel IsVisible="{Binding Import.IsInsomniaImport}" Spacing="10">
                                 <TextBlock
                                     Text="从 Insomnia V4 导入"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3403,8 +3403,8 @@
                                         Content="选择 Insomnia JSON 文件…"
                                         Variant="Primary"
                                         Click="OnPickInsomniaFileClick"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="选择 Insomnia 导出文件"
                                     />
                                     <TextBlock
@@ -3419,7 +3419,7 @@
                                     Height="124"
                                     Margin="0,0,0,8"
                                     Label="或者粘贴 Insomnia JSON"
-                                    Text="{Binding InsomniaJson, Mode=TwoWay}"
+                                    Text="{Binding Import.InsomniaJson, Mode=TwoWay}"
                                     Placeholder="粘贴 Insomnia v4 JSON"
                                     FrameHeight="100"
                                     IsResizable="False"
@@ -3429,14 +3429,17 @@
                                     Content="导入粘贴的 Insomnia"
                                     Variant="Primary"
                                     HorizontalAlignment="Left"
-                                    Command="{Binding ImportInsomniaTextCommand}"
-                                    IsEnabled="{Binding !IsImporting}"
-                                    IsLoading="{Binding IsImporting}"
+                                    Command="{Binding Import.ImportInsomniaTextCommand}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
+                                    IsLoading="{Binding Import.IsImporting}"
                                     AutomationProperties.Name="导入粘贴的 Insomnia"
                                 />
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsHoppscotchImport}" Spacing="10">
+                            <StackPanel
+                                IsVisible="{Binding Import.IsHoppscotchImport}"
+                                Spacing="10"
+                            >
                                 <TextBlock
                                     Text="从 Hoppscotch 导入"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3454,8 +3457,8 @@
                                         Content="选择 Hoppscotch JSON 文件…"
                                         Variant="Primary"
                                         Click="OnPickHoppscotchFileClick"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="选择 Hoppscotch Collection 文件"
                                     />
                                     <TextBlock
@@ -3470,7 +3473,7 @@
                                     Height="124"
                                     Margin="0,0,0,8"
                                     Label="或者粘贴 Hoppscotch JSON"
-                                    Text="{Binding HoppscotchJson, Mode=TwoWay}"
+                                    Text="{Binding Import.HoppscotchJson, Mode=TwoWay}"
                                     Placeholder="粘贴 Hoppscotch Collection JSON"
                                     FrameHeight="100"
                                     IsResizable="False"
@@ -3480,14 +3483,17 @@
                                     Content="导入粘贴的 Hoppscotch"
                                     Variant="Primary"
                                     HorizontalAlignment="Left"
-                                    Command="{Binding ImportHoppscotchTextCommand}"
-                                    IsEnabled="{Binding !IsImporting}"
-                                    IsLoading="{Binding IsImporting}"
+                                    Command="{Binding Import.ImportHoppscotchTextCommand}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
+                                    IsLoading="{Binding Import.IsImporting}"
                                     AutomationProperties.Name="导入粘贴的 Hoppscotch"
                                 />
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsOtherToolsImport}" Spacing="10">
+                            <StackPanel
+                                IsVisible="{Binding Import.IsOtherToolsImport}"
+                                Spacing="10"
+                            >
                                 <TextBlock
                                     Text="YApi / ApiPost / Eolink"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3504,21 +3510,21 @@
                                     <arc:Button
                                         Content="用 OpenAPI 导入"
                                         Variant="Primary"
-                                        Command="{Binding SelectImportSourceCommand}"
+                                        Command="{Binding Import.SelectImportSourceCommand}"
                                         CommandParameter="OpenApi"
                                         AutomationProperties.Name="切换到 OpenAPI 导入"
                                     />
                                     <arc:Button
                                         Content="用 Postman 导入"
                                         Variant="Secondary"
-                                        Command="{Binding SelectImportSourceCommand}"
+                                        Command="{Binding Import.SelectImportSourceCommand}"
                                         CommandParameter="PostmanCollection"
                                         AutomationProperties.Name="切换到 Postman Collection 导入"
                                     />
                                 </StackPanel>
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsApifoxImport}" Spacing="10">
+                            <StackPanel IsVisible="{Binding Import.IsApifoxImport}" Spacing="10">
                                 <TextBlock
                                     Text="从 Apifox 迁移"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3535,21 +3541,21 @@
                                     <arc:Button
                                         Content="用 Postman 导入"
                                         Variant="Primary"
-                                        Command="{Binding SelectImportSourceCommand}"
+                                        Command="{Binding Import.SelectImportSourceCommand}"
                                         CommandParameter="PostmanCollection"
                                         AutomationProperties.Name="切换到 Postman Collection 导入"
                                     />
                                     <arc:Button
                                         Content="用 OpenAPI 导入"
                                         Variant="Secondary"
-                                        Command="{Binding SelectImportSourceCommand}"
+                                        Command="{Binding Import.SelectImportSourceCommand}"
                                         CommandParameter="OpenApi"
                                         AutomationProperties.Name="切换到 OpenAPI 导入"
                                     />
                                     <arc:Button
                                         Content="用 HAR 导入"
                                         Variant="Secondary"
-                                        Command="{Binding SelectImportSourceCommand}"
+                                        Command="{Binding Import.SelectImportSourceCommand}"
                                         CommandParameter="Har"
                                         AutomationProperties.Name="切换到 HAR 导入"
                                     />
@@ -3559,15 +3565,15 @@
 
                         <Grid Grid.Row="2" MinHeight="40">
                             <TextBlock
-                                IsVisible="{Binding !HasImportError}"
-                                Text="{Binding ImportStatus}"
+                                IsVisible="{Binding Import.HasNoImportError}"
+                                Text="{Binding Import.ImportStatus}"
                                 FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                 Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                 TextWrapping="Wrap"
                             />
                             <TextBlock
-                                IsVisible="{Binding HasImportError}"
-                                Text="{Binding ImportStatus}"
+                                IsVisible="{Binding Import.HasImportError}"
+                                Text="{Binding Import.ImportStatus}"
                                 FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                 Foreground="{arc:ArcDesignTokenResource Danger}"
                                 TextWrapping="Wrap"
@@ -3576,7 +3582,7 @@
 
                         <Border
                             Grid.Row="3"
-                            IsVisible="{Binding HasImportReport}"
+                            IsVisible="{Binding Import.HasImportReport}"
                             BorderBrush="{arc:ArcDesignTokenResource Success}"
                             BorderThickness="1"
                             CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
@@ -3593,18 +3599,18 @@
                                     />
                                     <arc:Button
                                         Grid.Column="1"
-                                        Content="{Binding ImportReportToggleLabel}"
+                                        Content="{Binding Import.ImportReportToggleLabel}"
                                         Variant="Ghost"
                                         Size="Small"
-                                        Command="{Binding ToggleImportReportCommand}"
+                                        Command="{Binding Import.ToggleImportReportCommand}"
                                         AutomationProperties.Name="展开或收起导入结果"
                                     />
                                 </Grid>
                                 <arc:ScrollArea
                                     Height="80"
-                                    IsVisible="{Binding IsImportReportExpanded}"
+                                    IsVisible="{Binding Import.IsImportReportExpanded}"
                                 >
-                                    <ItemsControl ItemsSource="{Binding ImportReport}">
+                                    <ItemsControl ItemsSource="{Binding Import.ImportReport}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <TextBlock
@@ -3623,7 +3629,7 @@
 
                         <Border
                             Grid.Row="4"
-                            IsVisible="{Binding HasImportWarnings}"
+                            IsVisible="{Binding Import.HasImportWarnings}"
                             BorderBrush="{arc:ArcDesignTokenResource Warning}"
                             BorderThickness="1"
                             CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
@@ -3640,18 +3646,18 @@
                                     />
                                     <arc:Button
                                         Grid.Column="1"
-                                        Content="{Binding ImportWarningsToggleLabel}"
+                                        Content="{Binding Import.ImportWarningsToggleLabel}"
                                         Variant="Ghost"
                                         Size="Small"
-                                        Command="{Binding ToggleImportWarningsCommand}"
+                                        Command="{Binding Import.ToggleImportWarningsCommand}"
                                         AutomationProperties.Name="展开或收起兼容性提示"
                                     />
                                 </Grid>
                                 <arc:ScrollArea
                                     Height="80"
-                                    IsVisible="{Binding IsImportWarningsExpanded}"
+                                    IsVisible="{Binding Import.IsImportWarningsExpanded}"
                                 >
-                                    <ItemsControl ItemsSource="{Binding ImportWarnings}">
+                                    <ItemsControl ItemsSource="{Binding Import.ImportWarnings}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <TextBlock
@@ -3680,7 +3686,7 @@
                                     Content="批量导入文件…"
                                     Variant="Secondary"
                                     Click="OnPickBatchImportFilesClick"
-                                    IsEnabled="{Binding !IsImporting}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
                                     AutomationProperties.Name="批量导入文件"
                                 />
                                 <TextBlock
@@ -3694,7 +3700,7 @@
                                 Grid.Column="1"
                                 Content="关闭"
                                 Variant="Secondary"
-                                Command="{Binding CloseImportDialogCommand}"
+                                Command="{Binding Import.CloseImportDialogCommand}"
                                 HorizontalAlignment="Right"
                             />
                         </Grid>
