@@ -58,6 +58,19 @@ public static partial class SecretMasker
                 .Where(row => row.IsSecret && row.Value.Length >= MinimumSecretLength)
         );
 
+    /// <summary>
+    /// Every secret value regardless of length, for text PostSharp itself builds (history, mapped URLs and request
+    /// snapshots). Unlike server-provided text, replacing short values here cannot damage unrelated prose.
+    /// </summary>
+    public static IReadOnlyList<string> CollectAllSecrets(
+        IEnumerable<EnvironmentModel> environments
+    ) =>
+        Variants(
+            environments
+                .SelectMany(environment => environment.Variables)
+                .Where(row => row.IsSecret && row.Value.Length > 0)
+        );
+
     /// <summary>A copy of the environment in which every secret variable resolves to the mask.</summary>
     public static EnvironmentModel? MaskEnvironment(EnvironmentModel? environment)
     {

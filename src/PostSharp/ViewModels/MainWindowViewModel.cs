@@ -4369,23 +4369,30 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     private void AddHistory(RequestItem request, HttpResult result)
     {
+        // Suite input mappings can write a resolved secret directly into the URL or body. Mask the stored snapshot
+        // before it reaches workspace.json or list_history, including short secrets that server-text masking skips.
+        var secrets = SecretMasker.CollectAllSecrets(Environments);
         var entry = new HistoryEntry
         {
             Name = request.Name,
             Method = request.Method,
-            Url = request.Url,
+            Url = SecretMasker.MaskSecrets(request.Url, secrets),
             TimeoutSeconds = request.TimeoutSeconds,
             BodyMode = request.BodyMode,
-            Body = request.Body,
+            Body = SecretMasker.MaskSecrets(request.Body, secrets),
             StatusCode = result.StatusCode,
             DurationMs = result.ElapsedMs,
             Params = request
-                .Params.ActiveRows.Select(row => new RowSnapshot(row.Key, row.Value, row.IsEnabled))
+                .Params.ActiveRows.Select(row => new RowSnapshot(
+                    row.Key,
+                    SecretMasker.MaskSecrets(row.Value, secrets),
+                    row.IsEnabled
+                ))
                 .ToList(),
             Headers = request
                 .Headers.ActiveRows.Select(row => new RowSnapshot(
                     row.Key,
-                    row.Value,
+                    SecretMasker.MaskHeaderValue(row.Key, row.Value, secrets),
                     row.IsEnabled
                 ))
                 .ToList(),

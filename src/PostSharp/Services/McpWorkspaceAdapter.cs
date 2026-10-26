@@ -754,19 +754,22 @@ public sealed class McpWorkspaceAdapter
     public async Task<IReadOnlyList<McpHistoryInfo>> ListHistoryAsync(int limit)
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
-            (IReadOnlyList<McpHistoryInfo>)
+        {
+            // Older history entries were stored before suite mappings were masked; mask again at the MCP boundary.
+            var secrets = SecretMasker.CollectAllSecrets(_viewModel.Environments);
+            return (IReadOnlyList<McpHistoryInfo>)
                 _viewModel
                     .History.Take(Math.Clamp(limit, 1, 200))
                     .Select(entry => new McpHistoryInfo(
                         entry.Timestamp,
                         entry.Name,
                         entry.Method,
-                        entry.Url,
+                        SecretMasker.MaskSecrets(entry.Url, secrets),
                         entry.StatusCode,
                         entry.DurationMs
                     ))
-                    .ToList()
-        );
+                    .ToList();
+        });
     }
 
     public async Task<IReadOnlyList<McpEnvironmentInfo>> ListEnvironmentsAsync()
