@@ -37,10 +37,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private const int AuditPreviewLimit = 2000;
     private const int ResponsePreviewLimit = 8 * 1024;
     private const int DetailPageSize = 16 * 1024;
+    private const int MaxCollectionDepth = 5;
+    private const string SideBySideLayout = "SideBySide";
+    private const string StackedLayout = "Stacked";
 
     private static readonly JsonSerializerOptions MappingJsonOptions = new()
     {
         WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    private static readonly JsonSerializerOptions CompactJsonOptions = new()
+    {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
@@ -56,6 +64,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
     private CancellationTokenSource? _suiteCts;
+    private ComposedRequest? _lastComposedRequest;
+    private SseResumeSnapshot? _sseResume;
+    private readonly DispatcherTimer _suiteScheduleTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(30),
+    };
+    private readonly Dictionary<Guid, DateTimeOffset> _lastScheduledRuns = new();
     private bool _initializing = true;
     private IReadOnlyList<SuiteStepOption> _mappingSourceOptions = Array.Empty<SuiteStepOption>();
 
@@ -81,8 +96,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Settings.LogLevel
         );
         Settings.PropertyChanged += OnSettingsChanged;
+        IsWorkspaceSideBySide = Settings.WorkspaceLayout == SideBySideLayout;
         _http.TimeoutSeconds = Settings.RequestTimeoutSeconds;
         _http.AutoFormatResponse = Settings.AutoFormatResponse;
+        _http.SseThinkingPath = Settings.SseThinkingPath;
+        _http.SseContentPath = Settings.SseContentPath;
         _auditLimit = Math.Max(20, Settings.AuditLimit);
         _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
 
@@ -179,6 +197,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         RefreshAuthState();
         RefreshTree();
         UpdateSelectionFlags();
+        _suiteScheduleTimer.Tick += OnSuiteScheduleTick;
+        _suiteScheduleTimer.Start();
 
         Persist();
     }
@@ -248,6 +268,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _isSending;
 
     [ObservableProperty]
+    private double _uploadProgressValue;
+
+    [ObservableProperty]
+    private string _uploadProgressText = string.Empty;
+
+    [ObservableProperty]
+    private bool _isUploading;
+
+    [ObservableProperty]
     private bool _isEnvironmentDialogOpen;
 
     [ObservableProperty]
@@ -281,6 +310,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private string _suiteBuilderName = string.Empty;
 
     [ObservableProperty]
+    private string _suiteScheduleMinutesText = "0";
+
+    [ObservableProperty]
+    private bool _suiteRunInParallel;
+
+    [ObservableProperty]
+    private bool _suiteStopOnError = true;
+
+    [ObservableProperty]
     private bool _isMappingEditorOpen;
 
     [ObservableProperty]
@@ -299,7 +337,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private string _assertionTitle = string.Empty;
 
     [ObservableProperty]
-    private bool _isBodySingleLine;
+    [NotifyPropertyChangedFor(nameof(ShowRequestBodyJsonViewer))]
+    [NotifyPropertyChangedFor(nameof(ShowRequestBodyEditor))]
+    private bool _isRequestBodyJsonView;
 
     [ObservableProperty]
     private string _bodyPreview = string.Empty;
@@ -412,6 +452,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowJsonResponse))]
     [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
+    private bool _isResponseJsonView = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowJsonResponse))]
+    [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
     [NotifyPropertyChangedFor(nameof(ShowLargeResponseBanner))]
     private bool _isLargeResponse;
 
@@ -440,6 +485,36 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private int _sseEventCount;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanResumeSse))]
+    private string _sseLastEventId = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanResumeSse))]
+    private bool _sseCanResume;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResponseCollapseLabel))]
+    private bool _isResponseCollapsed;
+
+    public string ResponseCollapseLabel => IsResponseCollapsed ? "展开响应" : "收起响应";
+
+    [ObservableProperty]
+    private bool _isWorkspaceSideBySide;
+
+    public string WorkspaceLayoutMode
+    {
+        get => IsWorkspaceSideBySide ? SideBySideLayout : StackedLayout;
+        set
+        {
+            var layout = value == SideBySideLayout ? SideBySideLayout : StackedLayout;
+            IsWorkspaceSideBySide = layout == SideBySideLayout;
+            Settings.WorkspaceLayout = layout;
+        }
+    }
+
+    public bool CanResumeSse => SseCanResume && !string.IsNullOrWhiteSpace(SseLastEventId);
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSseContent))]
     [NotifyPropertyChangedFor(nameof(ShowSseThinking))]
     [NotifyPropertyChangedFor(nameof(ShowSseRaw))]
@@ -449,6 +524,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private int _responseTabIndex;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResponseTextWidth))]
     private string _responseBody = string.Empty;
 
     [ObservableProperty]
@@ -768,6 +844,31 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         return new ExportDocument(CurlPreview, $"{safeName}.sh");
     }
 
+    public ExportDocument? BuildPowerShellExport()
+    {
+        if (!CanExportCurl)
+        {
+            return null;
+        }
+
+        var name = string.IsNullOrWhiteSpace(Editing.Name) ? "request" : Editing.Name.Trim();
+        var invalid = Path.GetInvalidFileNameChars();
+        var safeName = new string(
+            name.Select(character => invalid.Contains(character) ? '-' : character).ToArray()
+        )
+            .Trim()
+            .TrimEnd('.');
+        if (string.IsNullOrEmpty(safeName))
+        {
+            safeName = "request";
+        }
+
+        return new ExportDocument(
+            RequestComposer.BuildPowerShell(Editing, ActiveEnvironment),
+            $"{safeName}.ps1"
+        );
+    }
+
     public CollectionImportOutcome ApplyOpenApiImport(OpenApiImportDocument document)
     {
         var root = new RequestCollection { Name = document.Title, IsExpanded = true };
@@ -1085,6 +1186,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         _http.TimeoutSeconds = Math.Clamp(Settings.RequestTimeoutSeconds, 5, 600);
         _http.AutoFormatResponse = Settings.AutoFormatResponse;
+        _http.SseThinkingPath = Settings.SseThinkingPath;
+        _http.SseContentPath = Settings.SseContentPath;
         _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
         _auditLimit = Math.Max(20, Settings.AuditLimit);
 
@@ -1097,9 +1200,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         PersistAudit();
 
-        if (e.PropertyName == nameof(AppSettings.Theme))
+        if (
+            e.PropertyName == nameof(AppSettings.Theme)
+            || e.PropertyName == nameof(AppSettings.CornerScale)
+        )
         {
-            _ = ThemeService.ApplyAsync(Settings.Theme);
+            _ = ThemeService.ApplyAsync(Settings.Theme, cornerScale: Settings.CornerScale);
         }
 
         if (
@@ -1322,9 +1428,24 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public int SuiteCount => Suites.Count;
 
-    public bool ShowJsonResponse => HasResponse && IsJsonResponse && !IsLargeResponse;
+    public bool ShowJsonResponse =>
+        HasResponse && IsJsonResponse && !IsLargeResponse && IsResponseJsonView;
 
     public bool ShowRawResponse => HasResponse && !ShowJsonResponse;
+
+    public double ResponseTextWidth
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(ResponseBody))
+            {
+                return 600;
+            }
+
+            var longest = ResponseBody.Split('\n').Max(line => line.Length);
+            return Math.Clamp(longest * 12.0, 600, 80000);
+        }
+    }
 
     public bool ShowEmptyResponse => !HasResponse && !HasResponseError;
 
@@ -1346,7 +1467,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public bool IsMultipartBody => Editing.BodyMode == "Multipart";
 
+    public bool IsJsonBody => Editing.BodyMode == "Json";
+
     public bool IsTextBody => !IsMultipartBody;
+
+    public bool ShowRequestBodyJsonViewer => IsJsonBody && IsRequestBodyJsonView;
+
+    public bool ShowRequestBodyEditor => IsTextBody && !ShowRequestBodyJsonViewer;
 
     public bool HasUploadFile => Editing.UploadFiles.Count > 0;
 
@@ -1463,6 +1590,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         OnPropertyChanged(nameof(ShowSseRaw));
     }
 
+    partial void OnIsWorkspaceSideBySideChanged(bool value) =>
+        OnPropertyChanged(nameof(WorkspaceLayoutMode));
+
     partial void OnIsManagementOpenChanged(bool value)
     {
         if (value)
@@ -1480,6 +1610,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         IsSending = true;
+        IsUploading = false;
+        UploadProgressValue = 0;
+        UploadProgressText = string.Empty;
+        _sseResume = null;
+        SseCanResume = false;
+        SseLastEventId = string.Empty;
         _sendCts = new CancellationTokenSource();
         var secrets = SecretMasker.CollectSecrets(Environments);
 
@@ -1494,17 +1630,21 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             {
                 var auth = await ResolveAuthAsync(request, _sendCts.Token);
                 var composed = RequestComposer.Compose(request, ActiveEnvironment, auth);
+                _lastComposedRequest = composed;
 
                 // Masked before the await: the request and environment can be edited while it is on its way.
                 stored = SecretMasker.MaskComposed(request, ActiveEnvironment, composed, secrets);
                 var sseProgress = new Progress<SseProgress>(ApplySseProgress);
+                var uploadProgress = new Progress<UploadProgress>(ApplyUploadProgress);
                 result = await _http.SendAsync(
                     composed,
                     stored.Url,
                     _sendCts.Token,
                     request.TimeoutSeconds,
-                    sseProgress
+                    sseProgress,
+                    uploadProgress
                 );
+                result = MergeSseResume(result);
             }
             catch (Exception exception)
             {
@@ -1516,6 +1656,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
             if (result.HasResponse)
             {
+                IsResponseCollapsed = false;
+                if (Settings.WorkspaceLayout is null)
+                {
+                    IsWorkspaceSideBySide = true;
+                }
+
                 AddHistory(request, result);
             }
 
@@ -1525,6 +1671,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         finally
         {
             IsSending = false;
+            IsUploading = false;
             _sendCts?.Dispose();
             _sendCts = null;
         }
@@ -1532,6 +1679,88 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [RelayCommand]
     private void CancelSend() => _sendCts?.Cancel();
+
+    [RelayCommand]
+    private void ToggleResponseCollapsed()
+    {
+        IsResponseCollapsed = !IsResponseCollapsed;
+    }
+
+    [RelayCommand]
+    private async Task ResumeSseAsync()
+    {
+        if (IsSending || !CanResumeSse || _lastComposedRequest is not { } composed)
+        {
+            return;
+        }
+
+        _sseResume = new SseResumeSnapshot(SseRaw, SseThinking, SseContent, SseEventCount);
+        IsSending = true;
+        SseCanResume = false;
+        _sendCts = new CancellationTokenSource();
+        try
+        {
+            var sseProgress = new Progress<SseProgress>(ApplySseProgress);
+            var secrets = SecretMasker.CollectSecrets(Environments);
+            var stored = RequestComposer.MaskAuthorization(
+                SecretMasker.MaskRequest(composed, SecretMasker.CollectAllSecrets(Environments))
+            );
+            var logUrl = stored.Url;
+            var result = await _http.SendAsync(
+                composed,
+                logUrl,
+                _sendCts.Token,
+                Editing.TimeoutSeconds,
+                sseProgress,
+                lastEventId: SseLastEventId
+            );
+            result = MergeSseResume(result);
+            ApplyResponse(result);
+            if (result.HasResponse)
+            {
+                IsResponseCollapsed = false;
+                if (Settings.WorkspaceLayout is null)
+                {
+                    IsWorkspaceSideBySide = true;
+                }
+
+                AddHistory(Editing, result);
+            }
+
+            RecordAudit(Editing, stored, result, "UI", null, null, secrets);
+            Persist();
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "继续接收 SSE 失败 {RequestName}", Editing.Name);
+            ApplyResponse(HttpRequestService.Failure(exception.Message));
+        }
+        finally
+        {
+            IsSending = false;
+            _sendCts?.Dispose();
+            _sendCts = null;
+            _sseResume = null;
+        }
+    }
+
+    private HttpResult MergeSseResume(HttpResult result)
+    {
+        if (_sseResume is not { } resume || !result.IsSse)
+        {
+            return result;
+        }
+
+        return result with
+        {
+            SseRaw = resume.Raw + result.SseRaw,
+            SseThinking = resume.Thinking + result.SseThinking,
+            SseContent = resume.Content + result.SseContent,
+            SseEventCount = resume.Count + result.SseEventCount,
+        };
+    }
+
+    private sealed record SseResumeSnapshot(string Raw, string Thinking, string Content, int Count);
 
     [RelayCommand]
     private void Save()
@@ -3161,6 +3390,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         RebuildSuiteBuilderSteps();
         SuiteBuilderName = $"组装套件 {Suites.Count + 1}";
+        SuiteScheduleMinutesText = "0";
+        SuiteRunInParallel = false;
+        SuiteStopOnError = true;
         IsSuiteBuilderOpen = true;
     }
 
@@ -3441,6 +3673,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 retryDelay = 500;
             }
 
+            if (!int.TryParse(wrapper.ParallelGroupText, out var parallelGroup))
+            {
+                parallelGroup = 0;
+            }
+
             foreach (var mapping in wrapper.Step.InputMappings)
             {
                 if (!previousStepIds.Contains(mapping.SourceStepId))
@@ -3453,6 +3690,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             wrapper.Step.DelayMs = Math.Clamp(delay, 0, 60_000);
             wrapper.Step.RetryCount = Math.Clamp(retryCount, 0, SuiteRetryPolicy.MaxRetries);
             wrapper.Step.RetryDelayMs = Math.Clamp(retryDelay, 0, 60_000);
+            wrapper.Step.Condition = wrapper.Condition;
+            wrapper.Step.ParallelGroup = Math.Clamp(parallelGroup, 0, 9);
             previousStepIds.Add(wrapper.Step.Id);
             steps.Add(wrapper.Step);
         }
@@ -3469,7 +3708,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             name = $"组装套件 {Suites.Count + 1}";
         }
 
-        var suite = new TestSuite { Name = name, StopOnError = true };
+        if (!int.TryParse(SuiteScheduleMinutesText, out var scheduleMinutes))
+        {
+            scheduleMinutes = 0;
+        }
+
+        var suite = new TestSuite
+        {
+            Name = name,
+            StopOnError = SuiteStopOnError,
+            ScheduleMinutes = Math.Clamp(scheduleMinutes, 0, 1440),
+            RunInParallel = SuiteRunInParallel,
+        };
 
         foreach (var step in steps)
         {
@@ -3594,6 +3844,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         CancellationToken cancellationToken
     )
     {
+        if (
+            suite.RunInParallel
+            && suite.Steps.All(step => step.InputMappings.Count == 0 && step.Condition == "Always")
+        )
+        {
+            return await RunSuiteInParallelAsync(suite, source, tool, client, cancellationToken);
+        }
+
         var steps = new List<TestStepResult>();
         var stopped = false;
         var cancelled = false;
@@ -3603,6 +3861,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         for (var index = 0; index < suite.Steps.Count; index++)
         {
             var step = suite.Steps[index];
+
+            if (!ShouldRunStep(step, steps.LastOrDefault()))
+            {
+                steps.Add(CreateSkippedStepResult(step));
+                continue;
+            }
 
             if (index > 0 && suite.Steps[index - 1].DelayMs > 0)
             {
@@ -3848,13 +4112,24 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             }
         }
 
+        return CompleteSuiteRun(suite, steps, stopped, cancelled);
+    }
+
+    private TestRunResult CompleteSuiteRun(
+        TestSuite suite,
+        List<TestStepResult> steps,
+        bool stopped,
+        bool cancelled
+    )
+    {
         var run = new TestRunResult
         {
             SuiteId = suite.Id,
             SuiteName = suite.Name,
             Total = steps.Count,
-            Passed = steps.Count(step => step.Passed),
-            Failed = steps.Count(step => !step.Passed),
+            Passed = steps.Count(step => step.Passed && !step.Skipped),
+            Failed = steps.Count(step => !step.Passed && !step.Skipped),
+            Skipped = steps.Count(step => step.Skipped),
             Stopped = stopped,
             Cancelled = cancelled,
             NotRun = suite.Steps.Count - steps.Count,
@@ -3870,6 +4145,165 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         Persist();
         return run;
+    }
+
+    private async Task<TestRunResult> RunSuiteInParallelAsync(
+        TestSuite suite,
+        string source,
+        string tool,
+        string? client,
+        CancellationToken cancellationToken
+    )
+    {
+        Log.Warning("套件启用并行执行，步骤延迟和映射依赖将被忽略 {SuiteName}", suite.Name);
+        var tasks = suite
+            .Steps.Select(step =>
+                RunParallelStepAsync(suite, step, source, tool, client, cancellationToken)
+            )
+            .ToList();
+        var results = await Task.WhenAll(tasks);
+        return CompleteSuiteRun(suite, results.ToList(), false, false);
+    }
+
+    private async Task<TestStepResult> RunParallelStepAsync(
+        TestSuite suite,
+        TestStep step,
+        string source,
+        string tool,
+        string? client,
+        CancellationToken cancellationToken
+    )
+    {
+        var request = Collections
+            .SelectMany(collection => collection.Requests)
+            .FirstOrDefault(candidate => candidate.Id == step.RequestId);
+        if (request is null)
+        {
+            return new TestStepResult
+            {
+                StepId = step.Id,
+                RequestId = step.RequestId,
+                Name = step.RequestName,
+                Method = step.Method,
+                Url = step.Url,
+                StatusText = "请求已删除",
+                Error = "请求已删除",
+                Passed = false,
+            };
+        }
+
+        var secrets = SecretMasker.CollectSecrets(Environments);
+        ComposedRequest? composed = null;
+        ComposedRequest? stored = null;
+        HttpResult result = HttpRequestService.Failure("步骤未执行。");
+        var attempts = 0;
+        var passed = false;
+        var assertionResults = new List<TestAssertionResult>();
+        string? error = null;
+        var maxAttempts = SuiteRetryPolicy.MaxAttempts(step.RetryCount);
+
+        while (true)
+        {
+            attempts++;
+            try
+            {
+                var auth = await ResolveAuthAsync(request, cancellationToken);
+                composed = RequestComposer.Compose(request, ActiveEnvironment, auth);
+                stored = SecretMasker.MaskComposed(request, ActiveEnvironment, composed, secrets);
+                result = await _http.SendAsync(
+                    composed,
+                    stored.Url,
+                    cancellationToken,
+                    request.TimeoutSeconds
+                );
+            }
+            catch (Exception exception)
+            {
+                result = HttpRequestService.Failure(exception.Message);
+            }
+
+            var statusMatches = step.ExpectedStatus is null
+                ? result.StatusCode is >= 200 and < 400
+                : result.StatusCode == step.ExpectedStatus;
+            var bodyMatches =
+                string.IsNullOrWhiteSpace(step.BodyContains)
+                || result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
+            assertionResults = SuiteAssertionEvaluator.Evaluate(step.Assertions, result).ToList();
+            passed =
+                result.HasResponse
+                && statusMatches
+                && bodyMatches
+                && assertionResults.All(assertion => assertion.Passed);
+            error = result.Error;
+            if (!passed && error is null)
+            {
+                error =
+                    !statusMatches
+                        ? $"期望状态 {step.ExpectedStatus?.ToString() ?? "2xx/3xx"}，实际 {result.StatusCode}"
+                    : !bodyMatches ? $"响应不包含 \"{step.BodyContains}\""
+                    : assertionResults.FirstOrDefault(assertion => !assertion.Passed)?.Detail;
+            }
+
+            if (!SuiteRetryPolicy.ShouldRetry(passed, attempts, step.RetryCount))
+            {
+                break;
+            }
+
+            try
+            {
+                await Task.Delay(SuiteRetryPolicy.Delay(step.RetryDelayMs), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+
+        AddHistory(request, result);
+        var audited = RecordAudit(request, stored, result, source, tool, client, secrets);
+        var stepResult = new TestStepResult
+        {
+            StepId = step.Id,
+            RequestId = request.Id,
+            Name = request.Name,
+            Method = request.Method,
+            Url = audited.Url,
+            StatusCode = result.StatusCode,
+            StatusText = result.ReasonPhrase,
+            ElapsedMs = result.ElapsedMs,
+            Attempts = attempts,
+            Passed = passed,
+            Error = error is null ? null : SecretMasker.MaskSecrets(error, secrets),
+            ResponsePreview = SecretMasker.MaskPreview(result.Body, 500, secrets),
+        };
+        stepResult.Assertions.AddRange(assertionResults);
+        return stepResult;
+    }
+
+    private static bool ShouldRunStep(TestStep step, TestStepResult? previous)
+    {
+        return step.Condition switch
+        {
+            "OnPreviousSuccess" => previous is null || (previous.Passed && !previous.Skipped),
+            "OnPreviousFailure" => previous is { } result && !result.Passed && !result.Skipped,
+            _ => true,
+        };
+    }
+
+    private static TestStepResult CreateSkippedStepResult(TestStep step)
+    {
+        return new TestStepResult
+        {
+            StepId = step.Id,
+            RequestId = step.RequestId,
+            Name = step.RequestName,
+            Method = step.Method,
+            Url = step.Url,
+            Passed = true,
+            Skipped = true,
+            StatusText = "已跳过",
+            Error = $"条件 {step.Condition} 不满足",
+        };
     }
 
     private static string? ApplyInputMappings(
@@ -4299,6 +4733,47 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     }
 
     [RelayCommand]
+    private void FormatResponse()
+    {
+        TransformResponse(indented: true);
+    }
+
+    [RelayCommand]
+    private void MinifyResponse()
+    {
+        TransformResponse(indented: false);
+    }
+
+    private void TransformResponse(bool indented)
+    {
+        if (!HasResponse || string.IsNullOrWhiteSpace(FullResponseBody))
+        {
+            return;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(FullResponseBody);
+            var text = JsonSerializer.Serialize(
+                document.RootElement,
+                indented ? MappingJsonOptions : CompactJsonOptions
+            );
+            ResponseBody = text;
+            FullResponseBody = text;
+            ResponseClipboardText = text;
+            IsJsonResponse = true;
+            IsLargeResponse = false;
+            IsResponseJsonView = indented;
+            ShowToast(indented ? "响应 JSON 已格式化" : "响应 JSON 已压缩");
+        }
+        catch (JsonException exception)
+        {
+            Log.Debug(exception, "响应不是 JSON，无法格式化");
+            ShowToast("当前响应不是合法 JSON");
+        }
+    }
+
+    [RelayCommand]
     private void AddJsonContentType()
     {
         Editing.Headers.AddRow("Content-Type", "application/json");
@@ -4445,7 +4920,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             );
 
         OnPropertyChanged(nameof(IsMultipartBody));
+        OnPropertyChanged(nameof(IsJsonBody));
         OnPropertyChanged(nameof(IsTextBody));
+        OnPropertyChanged(nameof(ShowRequestBodyJsonViewer));
+        OnPropertyChanged(nameof(ShowRequestBodyEditor));
         OnPropertyChanged(nameof(HasUploadFile));
 
         var duplicates = Editing
@@ -4475,8 +4953,64 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public void Shutdown()
     {
+        _suiteScheduleTimer.Stop();
+        _suiteScheduleTimer.Tick -= OnSuiteScheduleTick;
         Persist();
         _mockServer.Dispose();
+    }
+
+    private async void OnSuiteScheduleTick(object? sender, EventArgs e)
+    {
+        if (IsRunningSuite)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.Now;
+        foreach (var suite in Suites.Where(candidate => candidate.ScheduleMinutes > 0).ToList())
+        {
+            var last = _lastScheduledRuns.TryGetValue(suite.Id, out var value)
+                ? value
+                : DateTimeOffset.MinValue;
+            if (last == DateTimeOffset.MinValue)
+            {
+                _lastScheduledRuns[suite.Id] = now;
+                continue;
+            }
+
+            if (now - last < TimeSpan.FromMinutes(Math.Clamp(suite.ScheduleMinutes, 1, 1440)))
+            {
+                continue;
+            }
+
+            _lastScheduledRuns[suite.Id] = now;
+            try
+            {
+                IsRunningSuite = true;
+                await RunSuiteCoreAsync(suite, "定时", "schedule", null, CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                Log.Error(exception, "定时运行套件失败 {SuiteName}", suite.Name);
+            }
+            finally
+            {
+                IsRunningSuite = false;
+            }
+        }
+    }
+
+    private void ApplyUploadProgress(UploadProgress progress)
+    {
+        IsUploading = progress.SentBytes < progress.TotalBytes;
+        UploadProgressValue =
+            progress.TotalBytes <= 0
+                ? 0
+                : Math.Clamp(progress.SentBytes * 100d / progress.TotalBytes, 0, 100);
+        UploadProgressText =
+            progress.TotalBytes <= 0
+                ? $"已上传 {FormatSize(progress.SentBytes)}"
+                : $"上传 {FormatSize(progress.SentBytes)} / {FormatSize(progress.TotalBytes)}";
     }
 
     private void ApplySseProgress(SseProgress progress)
@@ -4492,6 +5026,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             LargeResponseNotice = string.Empty;
             IsJsonResponse = false;
             IsLargeResponse = false;
+            IsResponseJsonView = true;
             IsSseResponse = true;
             SseViewMode = "内容";
             ResponseTabIndex = 2;
@@ -4502,10 +5037,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             ResponseTone = BadgeTone.Info;
         }
 
-        SseThinking = progress.Thinking;
-        SseContent = progress.Content;
-        SseRaw = progress.Raw;
-        SseEventCount = progress.EventCount;
+        SseThinking = _sseResume is { } resumeThinking
+            ? resumeThinking.Thinking + progress.Thinking
+            : progress.Thinking;
+        SseContent = _sseResume is { } resumeContent
+            ? resumeContent.Content + progress.Content
+            : progress.Content;
+        SseRaw = _sseResume is { } resumeRaw ? resumeRaw.Raw + progress.Raw : progress.Raw;
+        SseEventCount = (_sseResume?.Count ?? 0) + progress.EventCount;
+        if (!string.IsNullOrWhiteSpace(progress.LastEventId))
+        {
+            SseLastEventId = progress.LastEventId;
+        }
     }
 
     private void ApplyResponse(HttpResult result)
@@ -4528,11 +5071,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             LargeResponseNotice = string.Empty;
             IsJsonResponse = false;
             IsLargeResponse = false;
+            IsResponseJsonView = true;
             IsSseResponse = false;
             SseThinking = string.Empty;
             SseContent = string.Empty;
             SseRaw = string.Empty;
             SseEventCount = 0;
+            SseLastEventId = string.Empty;
+            SseCanResume = false;
             ResponseTabIndex = 0;
             return;
         }
@@ -4549,11 +5095,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         ResponseClipboardText = body;
         IsJsonResponse = result.IsJson;
         IsLargeResponse = isLarge;
+        IsResponseJsonView = true;
         IsSseResponse = result.IsSse;
         SseThinking = result.SseThinking;
         SseContent = result.SseContent;
         SseRaw = result.SseRaw;
         SseEventCount = result.SseEventCount;
+        SseLastEventId = result.SseLastEventId;
+        SseCanResume =
+            result.IsSse
+            && result.SseCancelled
+            && !string.IsNullOrWhiteSpace(result.SseLastEventId);
         SseViewMode = "内容";
         ResponseTabIndex = result.IsSse ? 2 : 0;
         LargeResponseNotice = isLarge
@@ -4600,11 +5152,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         LargeResponseNotice = string.Empty;
         IsJsonResponse = false;
         IsLargeResponse = false;
+        IsResponseJsonView = true;
         IsSseResponse = false;
         SseThinking = string.Empty;
         SseContent = string.Empty;
         SseRaw = string.Empty;
         SseEventCount = 0;
+        SseLastEventId = string.Empty;
+        SseCanResume = false;
         ResponseTabIndex = 0;
         ResponseStatusText = string.Empty;
         ResponseTimeText = string.Empty;
@@ -5000,6 +5555,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 Id = suiteDto.Id == Guid.Empty ? Guid.NewGuid() : suiteDto.Id,
                 Name = suiteDto.Name,
                 StopOnError = suiteDto.StopOnError,
+                RunInParallel = suiteDto.RunInParallel,
+                ScheduleMinutes = suiteDto.ScheduleMinutes,
                 LastSummary = string.IsNullOrWhiteSpace(suiteDto.LastSummary)
                     ? "尚未运行"
                     : suiteDto.LastSummary,
@@ -5017,6 +5574,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                     DelayMs = stepDto.DelayMs,
                     RetryCount = stepDto.RetryCount,
                     RetryDelayMs = stepDto.RetryDelayMs,
+                    Condition = string.IsNullOrWhiteSpace(stepDto.Condition)
+                        ? "Always"
+                        : stepDto.Condition,
+                    ParallelGroup = stepDto.ParallelGroup,
                     ExpectedStatus = stepDto.ExpectedStatus,
                     BodyContains = stepDto.BodyContains,
                 };

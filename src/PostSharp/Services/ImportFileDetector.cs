@@ -13,6 +13,7 @@ public enum ImportFileKind
     Insomnia,
     Hoppscotch,
     Curl,
+    PowerShell,
 }
 
 /// <summary>Detects an import source from the file extension and content without applying it.</summary>
@@ -36,9 +37,24 @@ public static class ImportFileDetector
             return ImportFileKind.OpenApi;
         }
 
+        if (extension is ".ps1" || extension is ".psm1")
+        {
+            return ImportFileKind.PowerShell;
+        }
+
         if (content.TrimStart().StartsWith("curl ", StringComparison.OrdinalIgnoreCase))
         {
             return ImportFileKind.Curl;
+        }
+
+        if (
+            content.TrimStart().StartsWith("Invoke-RestMethod", StringComparison.OrdinalIgnoreCase)
+            || content
+                .TrimStart()
+                .StartsWith("Invoke-WebRequest", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return ImportFileKind.PowerShell;
         }
 
         JsonObject? root;

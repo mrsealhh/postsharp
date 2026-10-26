@@ -353,11 +353,14 @@ public partial class SettingsViewModel : ObservableObject
     {
         var defaults = new AppSettings();
         Draft.Theme = defaults.Theme;
+        Draft.CornerScale = defaults.CornerScale;
         Draft.UiFont = defaults.UiFont;
         Draft.CodeFont = defaults.CodeFont;
         Draft.CodeFontSize = defaults.CodeFontSize;
         Draft.RequestTimeoutSeconds = defaults.RequestTimeoutSeconds;
         Draft.DefaultBodyMode = defaults.DefaultBodyMode;
+        Draft.SseThinkingPath = defaults.SseThinkingPath;
+        Draft.SseContentPath = defaults.SseContentPath;
         Draft.AutoFormatResponse = defaults.AutoFormatResponse;
         Draft.LargeResponseThresholdKb = defaults.LargeResponseThresholdKb;
         Draft.AuditLimit = defaults.AuditLimit;
@@ -459,11 +462,14 @@ public partial class SettingsViewModel : ObservableObject
     private void CopyToCurrent()
     {
         _current.Theme = Draft.Theme;
+        _current.CornerScale = Math.Clamp(Draft.CornerScale, 0, 2);
         _current.UiFont = Draft.UiFont;
         _current.CodeFont = Draft.CodeFont;
         _current.CodeFontSize = Draft.CodeFontSize;
         _current.RequestTimeoutSeconds = Draft.RequestTimeoutSeconds;
         _current.DefaultBodyMode = Draft.DefaultBodyMode;
+        _current.SseThinkingPath = Draft.SseThinkingPath;
+        _current.SseContentPath = Draft.SseContentPath;
         _current.AutoFormatResponse = Draft.AutoFormatResponse;
         _current.LargeResponseThresholdKb = Draft.LargeResponseThresholdKb;
         _current.AuditLimit = Draft.AuditLimit;
@@ -487,11 +493,14 @@ public partial class SettingsViewModel : ObservableObject
         return new AppSettings
         {
             Theme = source.Theme,
+            CornerScale = source.CornerScale,
             UiFont = source.UiFont,
             CodeFont = source.CodeFont,
             CodeFontSize = source.CodeFontSize,
             RequestTimeoutSeconds = source.RequestTimeoutSeconds,
             DefaultBodyMode = source.DefaultBodyMode,
+            SseThinkingPath = source.SseThinkingPath,
+            SseContentPath = source.SseContentPath,
             AutoFormatResponse = source.AutoFormatResponse,
             LargeResponseThresholdKb = source.LargeResponseThresholdKb,
             AuditLimit = source.AuditLimit,
@@ -499,6 +508,7 @@ public partial class SettingsViewModel : ObservableObject
             LogLevel = source.LogLevel,
             FontDirectories = new List<string>(source.FontDirectories),
             TreePaneWidth = source.TreePaneWidth,
+            RequestPaneRatio = source.RequestPaneRatio,
             HistoryCollapsed = source.HistoryCollapsed,
         };
     }

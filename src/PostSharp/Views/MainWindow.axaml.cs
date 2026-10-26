@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using Avalonia;
@@ -21,6 +22,9 @@ public partial class MainWindow : Window
     private const double DefaultSidebarWidth = 320;
     private const double MinSidebarWidth = 240;
     private const double MaxSidebarWidth = 520;
+    private const double DefaultRequestPaneRatio = 0.5;
+    private const double MinRequestPaneRatio = 0.25;
+    private const double MaxRequestPaneRatio = 0.8;
 
     private MainWindowViewModel? _viewModel;
     private SettingsWindow? _settingsWindow;
@@ -30,6 +34,7 @@ public partial class MainWindow : Window
     private bool _dragging;
     private Border? _dropTargetBorder;
     private TreeDropPosition _dropPosition;
+    private bool _isSideBySide;
 
     public MainWindow()
     {
@@ -60,7 +65,25 @@ public partial class MainWindow : Window
         PropertyChanged += OnWindowPropertyChanged;
         ResponseTabs.SizeChanged += (_, _) =>
         {
-            JsonResponseViewer.MaxTreeHeight = Math.Max(140, ResponseTabs.Bounds.Height - 150);
+            JsonResponseViewer.MaxTreeHeight = Math.Clamp(
+                ResponseTabs.Bounds.Height - 220,
+                140,
+                420
+            );
+        };
+        ResponsePane.SizeChanged += (_, _) =>
+        {
+            // Arc Tabs measures its content without a finite height. Cap the raw viewer so
+            // long responses scroll inside the pane instead of being clipped by its border.
+            var available = Math.Max(120, ResponsePane.Bounds.Height - 220);
+            ResponseRawScroll.MaxHeight = available;
+            ResponseBodyPanel.MaxHeight = available + 80;
+        };
+        RequestTabs.SizeChanged += (_, _) =>
+        {
+            var available = RequestTabs.Bounds.Height;
+            RequestBodyTextarea.FrameHeight = Math.Clamp(available - 170, 80, 560);
+            JsonRequestBodyViewer.MaxTreeHeight = Math.Clamp(available - 190, 80, 520);
         };
         HistoryScrollArea.SizeChanged += (_, _) => UpdateHistoryWidth();
         DataContextChanged += OnDataContextChanged;
@@ -932,6 +955,36 @@ public partial class MainWindow : Window
         );
     }
 
+    private async void OnExportPowerShellClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var document = _viewModel.BuildPowerShellExport();
+        if (document is null)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
+                "当前请求还没有可导出的 PowerShell 命令，请先选择请求并填写有效地址。";
+            return;
+        }
+
+        await SaveExportAsync(
+            document,
+            "保存 PowerShell",
+            new FilePickerFileType("PowerShell 脚本")
+            {
+                Patterns = new[] { "*.ps1" },
+                MimeTypes = new[] { "text/plain" },
+            }
+        );
+    }
+
     private async Task SaveExportAsync(
         ExportDocument document,
         string title,
@@ -1434,13 +1487,17 @@ public partial class MainWindow : Window
         if (_viewModel is not null)
         {
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
+            _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         }
 
         _viewModel = DataContext as MainWindowViewModel;
         if (_viewModel is not null)
         {
             _viewModel.AppearanceChanged += OnAppearanceChanged;
+            _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             ApplyAppearance();
+            ApplyRequestResponseLayout();
+            ApplyWorkspaceLayout(_viewModel.IsWorkspaceSideBySide);
         }
     }
 
@@ -1449,7 +1506,9 @@ public partial class MainWindow : Window
         if (_viewModel is not null)
         {
             SaveSidebarWidth();
+            SaveRequestResponseRatio();
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
+            _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.Shutdown();
             _viewModel = null;
         }
@@ -1548,6 +1607,125 @@ public partial class MainWindow : Window
     private void OnSidebarSplitterDragCompleted(object? sender, VectorEventArgs e)
     {
         SaveSidebarWidth();
+    }
+
+    private void OnRequestResponseSplitterDragCompleted(object? sender, VectorEventArgs e)
+    {
+        SaveRequestResponseRatio();
+    }
+
+    private void OnRequestResponseSplitterDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        _viewModel.Settings.RequestPaneRatio = DefaultRequestPaneRatio;
+        ApplyRequestResponseLayout();
+        e.Handled = true;
+    }
+
+    private void ApplyRequestResponseLayout()
+    {
+        if (_viewModel is null || _isSideBySide)
+        {
+            return;
+        }
+
+        var ratio = Math.Clamp(
+            _viewModel.Settings.RequestPaneRatio,
+            MinRequestPaneRatio,
+            MaxRequestPaneRatio
+        );
+        EditorResponseLayout.RowDefinitions[2].Height = new GridLength(ratio, GridUnitType.Star);
+        EditorResponseLayout.RowDefinitions[4].Height = new GridLength(
+            1 - ratio,
+            GridUnitType.Star
+        );
+    }
+
+    private void ApplyWorkspaceLayout(bool sideBySide)
+    {
+        _isSideBySide = sideBySide;
+        var collapsed = _viewModel?.IsResponseCollapsed == true;
+        var columns = EditorResponseLayout.ColumnDefinitions;
+        var rows = EditorResponseLayout.RowDefinitions;
+
+        columns[0].Width = new GridLength(1, GridUnitType.Star);
+        columns[1].Width = new GridLength(sideBySide && !collapsed ? 8 : 0);
+        columns[2].Width = new GridLength(sideBySide && !collapsed ? 1 : 0, GridUnitType.Star);
+        rows[2].Height = new GridLength(1, GridUnitType.Star);
+        rows[3].Height = new GridLength(!sideBySide && !collapsed ? 8 : 0);
+        rows[4].Height = new GridLength(!sideBySide && !collapsed ? 1 : 0, GridUnitType.Star);
+
+        Grid.SetRow(RequestTabs, 2);
+        Grid.SetColumn(RequestTabs, 0);
+        Grid.SetColumnSpan(RequestTabs, sideBySide && !collapsed ? 1 : 3);
+        Grid.SetRowSpan(RequestTabs, 1);
+
+        Grid.SetRow(ResponsePane, sideBySide ? 2 : 4);
+        Grid.SetColumn(ResponsePane, sideBySide ? 2 : 0);
+        Grid.SetColumnSpan(ResponsePane, sideBySide && !collapsed ? 1 : 3);
+        Grid.SetRowSpan(ResponsePane, 1);
+
+        Grid.SetRow(RequestResponseSplitter, sideBySide ? 2 : 3);
+        Grid.SetColumn(RequestResponseSplitter, sideBySide ? 1 : 0);
+        Grid.SetColumnSpan(RequestResponseSplitter, sideBySide && !collapsed ? 1 : 3);
+        Grid.SetRowSpan(RequestResponseSplitter, 1);
+
+        RequestResponseSplitter.ResizeDirection = sideBySide
+            ? GridResizeDirection.Columns
+            : GridResizeDirection.Rows;
+        RequestResponseSplitter.Width = sideBySide ? 8 : double.NaN;
+        RequestResponseSplitter.Height = sideBySide ? double.NaN : 8;
+        ResponsePane.IsVisible = !collapsed;
+        RequestResponseSplitter.IsVisible = !collapsed;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (e.PropertyName == nameof(MainWindowViewModel.IsWorkspaceSideBySide))
+        {
+            ApplyWorkspaceLayout(_viewModel.IsWorkspaceSideBySide);
+        }
+        else if (e.PropertyName == nameof(MainWindowViewModel.IsResponseCollapsed))
+        {
+            ApplyWorkspaceLayout(_isSideBySide);
+        }
+    }
+
+    private void SaveRequestResponseRatio()
+    {
+        if (_viewModel is null || _isSideBySide)
+        {
+            return;
+        }
+
+        var total =
+            EditorResponseLayout.RowDefinitions[2].ActualHeight
+            + EditorResponseLayout.RowDefinitions[4].ActualHeight;
+        if (total <= 0)
+        {
+            return;
+        }
+
+        var ratio = Math.Clamp(
+            EditorResponseLayout.RowDefinitions[2].ActualHeight / total,
+            MinRequestPaneRatio,
+            MaxRequestPaneRatio
+        );
+        if (Math.Abs(_viewModel.Settings.RequestPaneRatio - ratio) < 0.005)
+        {
+            return;
+        }
+
+        _viewModel.Settings.RequestPaneRatio = ratio;
     }
 
     private void OnSidebarSplitterDoubleTapped(object? sender, TappedEventArgs e)

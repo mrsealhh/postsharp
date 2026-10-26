@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using TKCode.Arc.Themes.Corners;
 
 namespace PostSharp.Services;
 
@@ -27,7 +28,8 @@ public static class ThemeService
     public static async Task ApplyAsync(
         string? preference,
         bool isStartup = false,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        double cornerScale = 1
     )
     {
         _preference = preference is Light or Dark ? preference : FollowSystem;
@@ -58,10 +60,16 @@ public static class ThemeService
             }
 
             var algorithms = BuildAlgorithms(current.Algorithms, variant == ThemeVariant.Dark);
-            var config = new ThemeConfigBuilder()
-                .WithInherit(true)
-                .WithAlgorithms(algorithms)
-                .Build();
+            var builder = new ThemeConfigBuilder().WithInherit(true);
+            if (double.IsFinite(cornerScale) && Math.Abs(cornerScale - 1) > 0.0001)
+            {
+                builder = builder.WithArcCorners(
+                    ArcCornerStyle.Scale(Math.Clamp(cornerScale, 0, 2)),
+                    ArcCornerScope.Controls
+                );
+            }
+
+            var config = builder.WithAlgorithms(algorithms).Build();
             var request = new ThemeRequest(
                 current.ThemeId,
                 config,

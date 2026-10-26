@@ -60,6 +60,8 @@ public sealed class WorkspaceStore
                     Id = suite.Id,
                     Name = suite.Name,
                     StopOnError = suite.StopOnError,
+                    RunInParallel = suite.RunInParallel,
+                    ScheduleMinutes = suite.ScheduleMinutes,
                     LastSummary = suite.LastSummary,
                     Steps = suite
                         .Steps.Select(step => new SuiteStepDto
@@ -72,6 +74,8 @@ public sealed class WorkspaceStore
                             DelayMs = step.DelayMs,
                             RetryCount = step.RetryCount,
                             RetryDelayMs = step.RetryDelayMs,
+                            Condition = step.Condition,
+                            ParallelGroup = step.ParallelGroup,
                             ExpectedStatus = step.ExpectedStatus,
                             BodyContains = step.BodyContains,
                             Assertions = step
@@ -563,6 +567,10 @@ public sealed class SuiteDto
 
     public bool StopOnError { get; set; } = true;
 
+    public bool RunInParallel { get; set; }
+
+    public int ScheduleMinutes { get; set; }
+
     public string LastSummary { get; set; } = "尚未运行";
 
     public List<SuiteStepDto> Steps { get; set; } = new();
@@ -585,6 +593,10 @@ public sealed class SuiteStepDto
     public int RetryCount { get; set; }
 
     public int RetryDelayMs { get; set; } = 500;
+
+    public string Condition { get; set; } = "Always";
+
+    public int ParallelGroup { get; set; }
 
     public int? ExpectedStatus { get; set; }
 

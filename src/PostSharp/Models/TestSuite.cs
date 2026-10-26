@@ -15,6 +15,12 @@ public partial class TestSuite : ObservableObject
     [ObservableProperty]
     private string _lastSummary = "尚未运行";
 
+    [ObservableProperty]
+    private bool _runInParallel;
+
+    [ObservableProperty]
+    private int _scheduleMinutes;
+
     public bool StopOnError { get; set; } = true;
 
     public List<TestStep> Steps { get; } = new();
@@ -41,6 +47,12 @@ public sealed class TestStep
 
     public int RetryDelayMs { get; set; } = 500;
 
+    /// <summary>Always, OnPreviousSuccess or OnPreviousFailure.</summary>
+    public string Condition { get; set; } = "Always";
+
+    /// <summary>Steps with the same non-zero group may run concurrently.</summary>
+    public int ParallelGroup { get; set; }
+
     public List<InputMapping> InputMappings { get; } = new();
 
     public List<TestAssertion> Assertions { get; } = new();
@@ -56,6 +68,8 @@ public sealed class TestStep
         && string.IsNullOrWhiteSpace(BodyContains)
         && Assertions.Count == 0
         && RetryCount == 0
+        && Condition == "Always"
+        && ParallelGroup == 0
             ? "仅检查网络成功"
             : string.Join(
                 " · ",
@@ -65,6 +79,8 @@ public sealed class TestStep
                     string.IsNullOrWhiteSpace(BodyContains) ? null : $"包含 {BodyContains}",
                     Assertions.Count == 0 ? null : $"{Assertions.Count} 条断言",
                     RetryCount == 0 ? null : $"重试 {RetryCount} 次",
+                    Condition == "Always" ? null : $"条件 {Condition}",
+                    ParallelGroup == 0 ? null : $"并行组 {ParallelGroup}",
                 }.Where(value => value is not null)
             );
 }
@@ -121,6 +137,8 @@ public sealed class TestStepResult
 
     public bool Passed { get; set; }
 
+    public bool Skipped { get; set; }
+
     public string? Error { get; set; }
 
     public string ResponsePreview { get; set; } = string.Empty;
@@ -131,13 +149,26 @@ public sealed class TestStepResult
 
     public string AttemptText => Attempts > 1 ? $"尝试 {Attempts} 次" : string.Empty;
 
-    public string ResultLabel => Passed ? "通过" : "失败";
+    public string ResultLabel =>
+        Skipped ? "跳过"
+        : Passed ? "通过"
+        : "失败";
 
-    public BadgeTone ResultTone => Passed ? BadgeTone.Success : BadgeTone.Danger;
+    public BadgeTone ResultTone =>
+        Skipped ? BadgeTone.Neutral
+        : Passed ? BadgeTone.Success
+        : BadgeTone.Danger;
 
     [JsonIgnore]
     public object ResultIcon =>
-        new ArcGlyph { Data = Passed ? ArcIcons.CircleCheck : ArcIcons.CircleX, Size = 12 };
+        new ArcGlyph
+        {
+            Data =
+                Skipped ? ArcIcons.Minus
+                : Passed ? ArcIcons.CircleCheck
+                : ArcIcons.CircleX,
+            Size = 12,
+        };
 }
 
 public sealed class TestAssertionResult
@@ -167,6 +198,8 @@ public sealed class TestRunResult
 
     public int Failed { get; set; }
 
+    public int Skipped { get; set; }
+
     public bool Stopped { get; set; }
 
     /// <summary>The run was cancelled before every step finished.</summary>
@@ -177,9 +210,11 @@ public sealed class TestRunResult
 
     public List<TestStepResult> Steps { get; set; } = new();
 
-    /// <summary>Pass count, plus how many steps never ran.</summary>
+    /// <summary>Pass count, skipped count and how many steps never ran.</summary>
     public string Outcome =>
-        $"{Passed}/{Total} 通过" + (NotRun > 0 ? $" · {NotRun} 步未运行" : string.Empty);
+        $"{Passed}/{Total} 通过"
+        + (Skipped > 0 ? $" · {Skipped} 跳过" : string.Empty)
+        + (NotRun > 0 ? $" · {NotRun} 步未运行" : string.Empty);
 
     public string Summary =>
         (Cancelled ? "已取消 · " : string.Empty)

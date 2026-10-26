@@ -10,12 +10,13 @@ namespace PostSharp;
 
 internal static class Program
 {
+    private const string SingleInstanceMutexName = "PostSharp.SingleInstance";
+
     [STAThread]
     public static void Main(string[] args)
     {
         var settings = new SettingsStore().Load();
         AppLog.Initialize(settings.LogDirectory, settings.LogLevel);
-
         // Settings are read before logging starts, so a problem with them is written down here.
         if (SettingsStore.StartupProblem is { } problem)
         {
@@ -25,6 +26,18 @@ internal static class Program
                 problem.State,
                 problem.SetAsidePath
             );
+        }
+
+        using var singleInstance = new Mutex(
+            initiallyOwned: true,
+            SingleInstanceMutexName,
+            out var createdNew
+        );
+        if (!createdNew)
+        {
+            Log.Information("已有 PostSharp 实例运行，本次启动直接退出");
+            AppLog.Shutdown();
+            return;
         }
         AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
             Log.Fatal(

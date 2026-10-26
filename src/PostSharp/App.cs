@@ -21,7 +21,11 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var viewModel = new MainWindowViewModel();
-            await ThemeService.ApplyAsync(viewModel.Settings.Theme, isStartup: true);
+            await ThemeService.ApplyAsync(
+                viewModel.Settings.Theme,
+                isStartup: true,
+                cornerScale: viewModel.Settings.CornerScale
+            );
 
             var window = new MainWindow { DataContext = viewModel };
 

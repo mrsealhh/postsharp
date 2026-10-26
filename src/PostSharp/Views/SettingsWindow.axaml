@@ -92,6 +92,25 @@
                                     AutomationProperties.Name="代码字号"
                                 />
                             </Grid>
+                            <Grid ColumnDefinitions="1.4*,1*" ColumnSpacing="12">
+                                <arc:Slider
+                                    Label="全局圆角"
+                                    Minimum="0"
+                                    Maximum="2"
+                                    SmallChange="0.1"
+                                    Value="{Binding Draft.CornerScale, Mode=TwoWay}"
+                                    IsValueVisible="True"
+                                    AutomationProperties.Name="全局圆角"
+                                />
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Text="0 = 直角，1 = Arc 默认，2 = 双倍圆角。保存后立即应用到所有 Arc 控件。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                    VerticalAlignment="Center"
+                                />
+                            </Grid>
                         </StackPanel>
                     </Border>
 
@@ -385,6 +404,38 @@
                                 Content="自动格式化 JSON/XML 响应"
                                 IsChecked="{Binding Draft.AutoFormatResponse, Mode=TwoWay}"
                             />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="settingsSection">
+                        <StackPanel Spacing="12">
+                            <TextBlock
+                                Text="SSE 自定义解析"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                FontWeight="Medium"
+                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                            />
+                            <TextBlock
+                                Text="用于非标准 SSE 响应。填写 JSON 路径后，将优先从每个 data 事件中提取对应字段；留空则使用内置的 OpenAI / Anthropic / Gemini / DashScope 自动识别。支持 data.token、items[0].id 这类路径。"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                TextWrapping="Wrap"
+                            />
+                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                <arc:Input
+                                    Label="思考节点路径"
+                                    Text="{Binding Draft.SseThinkingPath, Mode=TwoWay}"
+                                    Placeholder="output.choices[0].message.reasoning_content"
+                                    AutomationProperties.Name="SSE 思考节点路径"
+                                />
+                                <arc:Input
+                                    Grid.Column="1"
+                                    Label="内容节点路径"
+                                    Text="{Binding Draft.SseContentPath, Mode=TwoWay}"
+                                    Placeholder="output.choices[0].message.content"
+                                    AutomationProperties.Name="SSE 内容节点路径"
+                                />
+                            </Grid>
                         </StackPanel>
                     </Border>
 
