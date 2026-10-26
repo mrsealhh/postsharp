@@ -3046,21 +3046,63 @@
                     x:Name="ImportDialog"
                     IsOpen="{Binding IsImportDialogOpen, Mode=TwoWay}"
                     Title="导入 / 导出"
-                    Description="支持 OpenAPI、Postman Collection、bash cURL 和 HAR 1.2；导入成功后可以继续手工调整请求。"
+                    Description="支持 OpenAPI、Postman、cURL、HAR、Insomnia、Hoppscotch；导入成功后可以继续手工调整请求。"
                     Size="Large"
                     Opened="OnImportDialogOpened"
                 >
                     <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="12">
-                        <arc:SegmentedControl
+                        <arc:RadioCards
                             Grid.Row="0"
-                            SelectedValue="{Binding ImportTab, Mode=TwoWay}"
-                            AutomationProperties.Name="导入格式"
+                            SelectedValue="{Binding ImportSource, Mode=TwoWay}"
+                            MinColumnWidth="180"
+                            AutomationProperties.Name="导入来源"
                         >
-                            <arc:SegmentedOption Value="OpenAPI" Label="OpenAPI" />
-                            <arc:SegmentedOption Value="Postman" Label="Postman" />
-                            <arc:SegmentedOption Value="cURL" Label="cURL" />
-                            <arc:SegmentedOption Value="HAR" Label="HAR" />
-                        </arc:SegmentedControl>
+                            <arc:RadioCardOption
+                                Value="OpenApi"
+                                Label="OpenAPI / Swagger"
+                                Description="已支持 · 标准文档 / Knife4j"
+                            />
+                            <arc:RadioCardOption
+                                Value="PostmanCollection"
+                                Label="Postman Collection"
+                                Description="已支持 · 文件夹 / 认证"
+                            />
+                            <arc:RadioCardOption
+                                Value="PostmanEnvironment"
+                                Label="Postman Environment"
+                                Description="已支持 · 环境变量 JSON"
+                            />
+                            <arc:RadioCardOption
+                                Value="Curl"
+                                Label="cURL"
+                                Description="已支持 · bash 命令"
+                            />
+                            <arc:RadioCardOption
+                                Value="Har"
+                                Label="HAR 1.2"
+                                Description="已支持 · 浏览器 / Apifox"
+                            />
+                            <arc:RadioCardOption
+                                Value="Insomnia"
+                                Label="Insomnia V4"
+                                Description="新增 · 请求组 / 环境"
+                            />
+                            <arc:RadioCardOption
+                                Value="Hoppscotch"
+                                Label="Hoppscotch"
+                                Description="新增 · Collection JSON"
+                            />
+                            <arc:RadioCardOption
+                                Value="OtherTools"
+                                Label="YApi / ApiPost / Eolink"
+                                Description="指南 · 先导出 OpenAPI / Postman"
+                            />
+                            <arc:RadioCardOption
+                                Value="Apifox"
+                                Label="Apifox"
+                                Description="指南 · Postman / OpenAPI / HAR"
+                            />
+                        </arc:RadioCards>
 
                         <Panel Grid.Row="1">
                             <StackPanel IsVisible="{Binding IsOpenApiImport}" Spacing="12">
@@ -3133,7 +3175,10 @@
                                 </StackPanel>
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsPostmanImport}" Spacing="10">
+                            <StackPanel
+                                IsVisible="{Binding IsPostmanCollectionImport}"
+                                Spacing="10"
+                            >
                                 <TextBlock
                                     Text="从 Postman 迁移"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3176,22 +3221,6 @@
                                         TextWrapping="Wrap"
                                     />
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <arc:Button
-                                        Content="导入环境文件…"
-                                        Variant="Secondary"
-                                        Click="OnPickPostmanEnvironmentFileClick"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        AutomationProperties.Name="导入 Postman 环境文件"
-                                    />
-                                    <TextBlock
-                                        Text="独立导入 Postman Environment JSON；变量会创建或合并到同名环境。"
-                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                        VerticalAlignment="Center"
-                                        TextWrapping="Wrap"
-                                    />
-                                </StackPanel>
                                 <Border Height="150" ClipToBounds="True">
                                     <arc:Textarea
                                         Label="或者粘贴 Collection JSON"
@@ -3210,6 +3239,33 @@
                                     IsEnabled="{Binding !IsImporting}"
                                     IsLoading="{Binding IsImporting}"
                                     AutomationProperties.Name="导入粘贴的 Postman Collection"
+                                />
+                            </StackPanel>
+
+                            <StackPanel
+                                IsVisible="{Binding IsPostmanEnvironmentImport}"
+                                Spacing="10"
+                            >
+                                <TextBlock
+                                    Text="从 Postman 环境文件导入"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <TextBlock
+                                    Text="选择 Postman Environment JSON。变量会创建或合并到同名环境，并自动激活；重复变量保留第一个值。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <arc:Button
+                                    Content="选择环境 JSON 文件…"
+                                    Variant="Primary"
+                                    HorizontalAlignment="Left"
+                                    Click="OnPickPostmanEnvironmentFileClick"
+                                    IsEnabled="{Binding !IsImporting}"
+                                    IsLoading="{Binding IsImporting}"
+                                    AutomationProperties.Name="导入 Postman 环境文件"
                                 />
                             </StackPanel>
 
@@ -3308,6 +3364,177 @@
                                     IsLoading="{Binding IsImporting}"
                                     AutomationProperties.Name="导入粘贴的 HAR"
                                 />
+                            </StackPanel>
+
+                            <StackPanel IsVisible="{Binding IsInsomniaImport}" Spacing="10">
+                                <TextBlock
+                                    Text="从 Insomnia V4 导入"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <TextBlock
+                                    Text="支持 Insomnia v4 JSON 导出：请求组、请求、环境变量和常见认证。Insomnia v5 YAML 请先导出为 v4 JSON；脚本不会执行。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <arc:Button
+                                        Content="选择 Insomnia JSON 文件…"
+                                        Variant="Primary"
+                                        Click="OnPickInsomniaFileClick"
+                                        IsEnabled="{Binding !IsImporting}"
+                                        IsLoading="{Binding IsImporting}"
+                                        AutomationProperties.Name="选择 Insomnia 导出文件"
+                                    />
+                                    <TextBlock
+                                        Text="Insomnia → Collection → Export → Insomnia v4 JSON"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        VerticalAlignment="Center"
+                                        TextWrapping="Wrap"
+                                    />
+                                </StackPanel>
+                                <Border Height="140" ClipToBounds="True">
+                                    <arc:Textarea
+                                        Label="或者粘贴 Insomnia JSON"
+                                        Text="{Binding InsomniaJson, Mode=TwoWay}"
+                                        Placeholder="粘贴 Insomnia v4 JSON"
+                                        FrameHeight="140"
+                                        IsResizable="False"
+                                        AutomationProperties.Name="Insomnia JSON"
+                                    />
+                                </Border>
+                                <arc:Button
+                                    Content="导入粘贴的 Insomnia"
+                                    Variant="Primary"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding ImportInsomniaTextCommand}"
+                                    IsEnabled="{Binding !IsImporting}"
+                                    IsLoading="{Binding IsImporting}"
+                                    AutomationProperties.Name="导入粘贴的 Insomnia"
+                                />
+                            </StackPanel>
+
+                            <StackPanel IsVisible="{Binding IsHoppscotchImport}" Spacing="10">
+                                <TextBlock
+                                    Text="从 Hoppscotch 导入"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <TextBlock
+                                    Text="支持 Hoppscotch Collection JSON：文件夹、params、headers、body 和基础认证。脚本、测试和 multipart 文件内容不会执行或还原。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <arc:Button
+                                        Content="选择 Hoppscotch JSON 文件…"
+                                        Variant="Primary"
+                                        Click="OnPickHoppscotchFileClick"
+                                        IsEnabled="{Binding !IsImporting}"
+                                        IsLoading="{Binding IsImporting}"
+                                        AutomationProperties.Name="选择 Hoppscotch Collection 文件"
+                                    />
+                                    <TextBlock
+                                        Text="Hoppscotch → Collection → Export → JSON"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        VerticalAlignment="Center"
+                                        TextWrapping="Wrap"
+                                    />
+                                </StackPanel>
+                                <Border Height="140" ClipToBounds="True">
+                                    <arc:Textarea
+                                        Label="或者粘贴 Hoppscotch JSON"
+                                        Text="{Binding HoppscotchJson, Mode=TwoWay}"
+                                        Placeholder="粘贴 Hoppscotch Collection JSON"
+                                        FrameHeight="140"
+                                        IsResizable="False"
+                                        AutomationProperties.Name="Hoppscotch JSON"
+                                    />
+                                </Border>
+                                <arc:Button
+                                    Content="导入粘贴的 Hoppscotch"
+                                    Variant="Primary"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding ImportHoppscotchTextCommand}"
+                                    IsEnabled="{Binding !IsImporting}"
+                                    IsLoading="{Binding IsImporting}"
+                                    AutomationProperties.Name="导入粘贴的 Hoppscotch"
+                                />
+                            </StackPanel>
+
+                            <StackPanel IsVisible="{Binding IsOtherToolsImport}" Spacing="10">
+                                <TextBlock
+                                    Text="YApi / ApiPost / Eolink"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <TextBlock
+                                    Text="这几个工具都支持导出 OpenAPI 或 Postman Collection。建议先在原工具导出，再切换到对应导入器，避免维护脆弱的私有格式解析。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <arc:Button
+                                        Content="用 OpenAPI 导入"
+                                        Variant="Primary"
+                                        Command="{Binding SelectImportSourceCommand}"
+                                        CommandParameter="OpenApi"
+                                        AutomationProperties.Name="切换到 OpenAPI 导入"
+                                    />
+                                    <arc:Button
+                                        Content="用 Postman 导入"
+                                        Variant="Secondary"
+                                        Command="{Binding SelectImportSourceCommand}"
+                                        CommandParameter="PostmanCollection"
+                                        AutomationProperties.Name="切换到 Postman Collection 导入"
+                                    />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <StackPanel IsVisible="{Binding IsApifoxImport}" Spacing="10">
+                                <TextBlock
+                                    Text="从 Apifox 迁移"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <TextBlock
+                                    Text="Apifox 原生格式暂未直接解析。推荐在 Apifox「项目设置 → 导出数据」选择 Postman 或 OpenAPI；浏览器/Apifox 的 HAR 也可以直接导入。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <arc:Button
+                                        Content="用 Postman 导入"
+                                        Variant="Primary"
+                                        Command="{Binding SelectImportSourceCommand}"
+                                        CommandParameter="PostmanCollection"
+                                        AutomationProperties.Name="切换到 Postman Collection 导入"
+                                    />
+                                    <arc:Button
+                                        Content="用 OpenAPI 导入"
+                                        Variant="Secondary"
+                                        Command="{Binding SelectImportSourceCommand}"
+                                        CommandParameter="OpenApi"
+                                        AutomationProperties.Name="切换到 OpenAPI 导入"
+                                    />
+                                    <arc:Button
+                                        Content="用 HAR 导入"
+                                        Variant="Secondary"
+                                        Command="{Binding SelectImportSourceCommand}"
+                                        CommandParameter="Har"
+                                        AutomationProperties.Name="切换到 HAR 导入"
+                                    />
+                                </StackPanel>
                             </StackPanel>
                         </Panel>
 

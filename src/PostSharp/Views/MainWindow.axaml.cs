@@ -539,6 +539,92 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OnPickInsomniaFileClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "导入 Insomnia v4 JSON",
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("Insomnia v4 JSON")
+                        {
+                            Patterns = new[] { "*.json" },
+                            MimeTypes = new[] { "application/json", "text/plain" },
+                        },
+                    },
+                }
+            );
+
+            var path = files.FirstOrDefault()?.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                await _viewModel.ImportInsomniaFileAsync(path);
+            }
+        }
+        catch (Exception exception)
+        {
+            _viewModel.HasImportError = true;
+            _viewModel.ImportStatus =
+                "无法打开 Insomnia 文件选择器，请稍后重试或把 JSON 粘贴到下方。";
+            Log.Error(exception, "打开 Insomnia 文件选择器失败");
+        }
+    }
+
+    private async void OnPickHoppscotchFileClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "导入 Hoppscotch Collection",
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("Hoppscotch Collection")
+                        {
+                            Patterns = new[] { "*.json" },
+                            MimeTypes = new[] { "application/json", "text/plain" },
+                        },
+                    },
+                }
+            );
+
+            var path = files.FirstOrDefault()?.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                await _viewModel.ImportHoppscotchFileAsync(path);
+            }
+        }
+        catch (Exception exception)
+        {
+            _viewModel.HasImportError = true;
+            _viewModel.ImportStatus =
+                "无法打开 Hoppscotch 文件选择器，请稍后重试或把 JSON 粘贴到下方。";
+            Log.Error(exception, "打开 Hoppscotch 文件选择器失败");
+        }
+    }
+
     private async void OnExportPostmanClick(
         object? sender,
         Avalonia.Interactivity.RoutedEventArgs e

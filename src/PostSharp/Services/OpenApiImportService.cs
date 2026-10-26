@@ -116,6 +116,20 @@ public static class OpenApiImportService
 
         var version = GetText(info?["version"]) ?? (isVersion3 ? openApi : swagger) ?? string.Empty;
         var baseUrl = ResolveBaseUrl(document, isVersion3);
+        var warnings = new WarningBag();
+        var serverCount = document["servers"] is JsonArray serverItems ? serverItems.Count : 0;
+        if (serverCount > 1)
+        {
+            warnings.Add($"文档包含 {serverCount} 个服务器，当前使用第一个服务器地址。");
+        }
+
+        var externalRefCount = CountExternalReferences(document);
+        if (externalRefCount > 0)
+        {
+            warnings.Add(
+                $"文档包含 {externalRefCount} 个外部 $ref，当前只解析本地 #/ 引用；相关参数或请求体可能不完整。"
+            );
+        }
 
         if (document["paths"] is not JsonObject paths)
         {
@@ -125,6 +139,8 @@ public static class OpenApiImportService
         var groups = new List<GroupBuilder>();
         var groupIndex = new Dictionary<string, GroupBuilder>(StringComparer.Ordinal);
         var total = 0;
+        var multiTagCount = 0;
+        var securityCount = 0;
 
         foreach (var pathEntry in paths)
         {
@@ -158,8 +174,17 @@ public static class OpenApiImportService
                     break;
                 }
 
-                var tag = FirstTag(operation);
-                var groupName = string.IsNullOrWhiteSpace(tag) ? "未分组" : tag.Trim();
+                var groupName = GetGroupName(operation);
+                if (groupName is null)
+                {
+                    groupName = "未分组";
+                }
+
+                if (HasMultipleTags(operation))
+                {
+                    multiTagCount++;
+                }
+
                 if (!groupIndex.TryGetValue(groupName, out var group))
                 {
                     group = new GroupBuilder(groupName);
@@ -174,9 +199,15 @@ public static class OpenApiImportService
                         method,
                         operation,
                         pathParameters,
-                        baseUrl
+                        baseUrl,
+                        out var usedSecurity
                     )
                 );
+                if (usedSecurity)
+                {
+                    securityCount++;
+                }
+
                 total++;
             }
         }
@@ -184,6 +215,20 @@ public static class OpenApiImportService
         if (total == 0)
         {
             throw new InvalidOperationException("OpenAPI 文档没有可导入的操作（GET、POST 等）。");
+        }
+
+        if (multiTagCount > 0)
+        {
+            warnings.Add(
+                $"{multiTagCount} 个操作包含多个 tag，当前按 x-apifox-folder 或第一个 tag 分组。"
+            );
+        }
+
+        if (securityCount > 0)
+        {
+            warnings.Add(
+                $"{securityCount} 个操作使用了安全方案，已添加占位认证头；请在请求中填写实际令牌。"
+            );
         }
 
         Log.Information(
@@ -206,6 +251,7 @@ public static class OpenApiImportService
                     Requests = group.Requests,
                 })
                 .ToList(),
+            Warnings = warnings.ToList(),
         };
     }
 
@@ -215,7 +261,8 @@ public static class OpenApiImportService
         string method,
         JsonObject operation,
         JsonArray? pathParameters,
-        string baseUrl
+        string baseUrl,
+        out bool usedSecurity
     )
     {
         var query = new List<OpenApiImportField>();
@@ -224,6 +271,7 @@ public static class OpenApiImportService
 
         AddParameters(document, pathParameters, query, headers, seen);
         AddParameters(document, operation["parameters"] as JsonArray, query, headers, seen);
+        usedSecurity = AddSecurity(document, operation, query, headers, seen);
 
         var name = GetText(operation["summary"]) ?? GetText(operation["operationId"]);
         if (string.IsNullOrWhiteSpace(name))
@@ -704,6 +752,145 @@ public static class OpenApiImportService
         return baseUrl.TrimEnd('/') + suffix;
     }
 
+    private static bool AddSecurity(
+        JsonObject document,
+        JsonObject operation,
+        List<OpenApiImportField> query,
+        List<OpenApiImportField> headers,
+        HashSet<string> seen
+    )
+    {
+        var security = operation["security"] as JsonArray ?? document["security"] as JsonArray;
+        if (security is null || security.Count == 0)
+        {
+            return false;
+        }
+
+        if (security[0] is not JsonObject requirement)
+        {
+            return false;
+        }
+
+        var components = document["components"] as JsonObject;
+        var schemes =
+            components?["securitySchemes"] as JsonObject
+            ?? document["securityDefinitions"] as JsonObject;
+        if (schemes is null)
+        {
+            return false;
+        }
+
+        var applied = false;
+        foreach (var entry in requirement)
+        {
+            var scheme = ResolveObject(schemes[entry.Key], document);
+            if (scheme is null)
+            {
+                continue;
+            }
+
+            var type = (GetText(scheme["type"]) ?? string.Empty).Trim().ToLowerInvariant();
+            if (type == "apikey")
+            {
+                var name = (GetText(scheme["name"]) ?? string.Empty).Trim();
+                if (name.Length == 0)
+                {
+                    continue;
+                }
+
+                var location = (GetText(scheme["in"]) ?? string.Empty).Trim().ToLowerInvariant();
+                var value = "{{" + entry.Key + "}}";
+                if (location == "query")
+                {
+                    if (seen.Add($"query:{name}"))
+                    {
+                        query.Add(new OpenApiImportField(name, value));
+                        applied = true;
+                    }
+                }
+                else if (seen.Add($"header:{name}"))
+                {
+                    headers.Add(new OpenApiImportField(name, value));
+                    applied = true;
+                }
+
+                continue;
+            }
+
+            if (type is "http" or "oauth2" or "openidconnect")
+            {
+                if (!seen.Add("header:Authorization"))
+                {
+                    continue;
+                }
+
+                var httpScheme = (GetText(scheme["scheme"]) ?? string.Empty)
+                    .Trim()
+                    .ToLowerInvariant();
+                var value = type switch
+                {
+                    "http" when httpScheme == "basic" => "Basic {{basicAuth}}",
+                    "http" when httpScheme is "" or "bearer" => "Bearer {{accessToken}}",
+                    "http" => "{{accessToken}}",
+                    _ => "Bearer {{accessToken}}",
+                };
+                headers.Add(new OpenApiImportField("Authorization", value));
+                applied = true;
+            }
+        }
+
+        return applied;
+    }
+
+    private static string? GetGroupName(JsonObject operation)
+    {
+        var apifoxFolder = (GetText(operation["x-apifox-folder"]) ?? string.Empty).Trim();
+        if (apifoxFolder.Length > 0)
+        {
+            return apifoxFolder;
+        }
+
+        var tag = FirstTag(operation);
+        return string.IsNullOrWhiteSpace(tag) ? null : tag.Trim();
+    }
+
+    private static bool HasMultipleTags(JsonObject operation)
+    {
+        if (operation["tags"] is not JsonArray tags)
+        {
+            return false;
+        }
+
+        return tags.Count(tag => (GetText(tag) ?? string.Empty).Trim().Length > 0) > 1;
+    }
+
+    private static int CountExternalReferences(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+            {
+                var count = 0;
+                var reference = (GetText(obj["$ref"]) ?? string.Empty).Trim();
+                if (reference.Length > 0 && !reference.StartsWith("#/", StringComparison.Ordinal))
+                {
+                    count++;
+                }
+
+                foreach (var entry in obj)
+                {
+                    count += CountExternalReferences(entry.Value);
+                }
+
+                return count;
+            }
+            case JsonArray array:
+                return array.Sum(CountExternalReferences);
+            default:
+                return 0;
+        }
+    }
+
     private static string? FirstTag(JsonObject operation)
     {
         if (operation["tags"] is JsonArray tags)
@@ -892,6 +1079,22 @@ public static class OpenApiImportService
         }
 
         return node.ToJsonString();
+    }
+
+    private sealed class WarningBag
+    {
+        private readonly List<string> _messages = new();
+        private readonly HashSet<string> _seen = new(StringComparer.Ordinal);
+
+        public void Add(string message)
+        {
+            if (_seen.Add(message))
+            {
+                _messages.Add(message);
+            }
+        }
+
+        public IReadOnlyList<string> ToList() => _messages;
     }
 
     private sealed class GroupBuilder

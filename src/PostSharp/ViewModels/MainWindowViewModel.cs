@@ -326,7 +326,7 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isImportDialogOpen;
 
     [ObservableProperty]
-    private string _importTab = "Postman";
+    private string _importSource = "PostmanCollection";
 
     [ObservableProperty]
     private string _importUrl = string.Empty;
@@ -344,6 +344,12 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _harIncludeStaticResources;
 
     [ObservableProperty]
+    private string _insomniaJson = string.Empty;
+
+    [ObservableProperty]
+    private string _hoppscotchJson = string.Empty;
+
+    [ObservableProperty]
     private string _importStatus =
         "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。";
 
@@ -357,13 +363,23 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool HasImportWarnings => ImportWarnings.Count > 0;
 
-    public bool IsOpenApiImport => ImportTab == "OpenAPI";
+    public bool IsOpenApiImport => ImportSource == "OpenApi";
 
-    public bool IsPostmanImport => ImportTab == "Postman";
+    public bool IsPostmanCollectionImport => ImportSource == "PostmanCollection";
 
-    public bool IsCurlImport => ImportTab == "cURL";
+    public bool IsPostmanEnvironmentImport => ImportSource == "PostmanEnvironment";
 
-    public bool IsHarImport => ImportTab == "HAR";
+    public bool IsCurlImport => ImportSource == "Curl";
+
+    public bool IsHarImport => ImportSource == "Har";
+
+    public bool IsInsomniaImport => ImportSource == "Insomnia";
+
+    public bool IsHoppscotchImport => ImportSource == "Hoppscotch";
+
+    public bool IsOtherToolsImport => ImportSource == "OtherTools";
+
+    public bool IsApifoxImport => ImportSource == "Apifox";
 
     public bool CanExportCurl =>
         IsRequestSelected
@@ -509,39 +525,75 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void OpenImportDialog()
     {
-        ImportTab = "Postman";
+        ImportSource = "PostmanCollection";
         ImportUrl = string.Empty;
         PostmanJson = string.Empty;
         CurlCommand = string.Empty;
         HarJson = string.Empty;
         HarIncludeStaticResources = false;
+        InsomniaJson = string.Empty;
+        HoppscotchJson = string.Empty;
         ImportWarnings.Clear();
-        ImportStatus = ImportStatusForTab(ImportTab);
+        ImportStatus = ImportStatusForSource(ImportSource);
         HasImportError = false;
         IsImportDialogOpen = true;
     }
 
-    partial void OnImportTabChanged(string value)
+    [RelayCommand]
+    private void SelectImportSource(string source)
     {
-        OnPropertyChanged(nameof(IsOpenApiImport));
-        OnPropertyChanged(nameof(IsPostmanImport));
-        OnPropertyChanged(nameof(IsCurlImport));
-        OnPropertyChanged(nameof(IsHarImport));
-        ImportWarnings.Clear();
-        HasImportError = false;
-        ImportStatus = ImportStatusForTab(value);
+        if (
+            source
+            is "OpenApi"
+                or "PostmanCollection"
+                or "PostmanEnvironment"
+                or "Curl"
+                or "Har"
+                or "Insomnia"
+                or "Hoppscotch"
+                or "OtherTools"
+                or "Apifox"
+        )
+        {
+            ImportSource = source;
+        }
     }
 
-    private static string ImportStatusForTab(string tab)
+    partial void OnImportSourceChanged(string value)
     {
-        return tab switch
+        OnPropertyChanged(nameof(IsOpenApiImport));
+        OnPropertyChanged(nameof(IsPostmanCollectionImport));
+        OnPropertyChanged(nameof(IsPostmanEnvironmentImport));
+        OnPropertyChanged(nameof(IsCurlImport));
+        OnPropertyChanged(nameof(IsHarImport));
+        OnPropertyChanged(nameof(IsInsomniaImport));
+        OnPropertyChanged(nameof(IsHoppscotchImport));
+        OnPropertyChanged(nameof(IsOtherToolsImport));
+        OnPropertyChanged(nameof(IsApifoxImport));
+        ImportWarnings.Clear();
+        HasImportError = false;
+        ImportStatus = ImportStatusForSource(value);
+    }
+
+    private static string ImportStatusForSource(string source)
+    {
+        return source switch
         {
-            "Postman" =>
+            "PostmanCollection" =>
                 "选择 Postman Collection v2.1 JSON 文件，或把集合导出内容粘贴到下方。支持嵌套文件夹、认证、查询参数和常见请求体。",
-            "cURL" =>
+            "PostmanEnvironment" => "选择 Postman Environment JSON；变量会创建或合并到同名环境。",
+            "Curl" =>
                 "粘贴以 curl 开头的 bash 命令。支持 -X、-H、-d、--data-raw、-F、-u、--max-time 等常用参数。",
-            "HAR" =>
+            "Har" =>
                 "选择浏览器、Postman 或 Apifox 导出的 .har 文件，或粘贴 HAR JSON。默认只导入 XHR / Fetch，响应内容会被忽略。",
+            "Insomnia" =>
+                "选择 Insomnia v4 JSON 导出文件，或粘贴 JSON。支持请求组、环境变量和常见认证；脚本不会执行。",
+            "Hoppscotch" =>
+                "选择 Hoppscotch Collection JSON 导出文件，或粘贴 JSON。支持文件夹、params/headers/body 和基础认证。",
+            "OtherTools" =>
+                "YApi / ApiPost / Eolink 建议先导出 OpenAPI 或 Postman Collection，再使用对应导入器。",
+            "Apifox" =>
+                "Apifox 建议使用「导出数据 → Postman / OpenAPI」，或导出 HAR；原生格式暂未直接解析。",
             _ => "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。",
         };
     }
@@ -825,6 +877,190 @@ public partial class MainWindowViewModel : ObservableObject
             HasImportError = true;
             ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
             Log.Error(exception, "导入 Postman 环境失败 {FilePath}", path);
+        }
+        finally
+        {
+            IsImporting = false;
+            _importCts?.Dispose();
+            _importCts = null;
+        }
+    }
+
+    public async Task ImportInsomniaFileAsync(
+        string path,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (IsImporting)
+        {
+            return;
+        }
+
+        _importCts?.Dispose();
+        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        IsImporting = true;
+        HasImportError = false;
+        ImportWarnings.Clear();
+        ImportStatus = "正在解析 Insomnia v4 导出文件…";
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
+            var result = await Task.Run(
+                    () => InsomniaImportService.Parse(content, Path.GetFileName(path)),
+                    _importCts.Token
+                )
+                .ConfigureAwait(true);
+            ApplyCollectionImport(result);
+        }
+        catch (OperationCanceledException exception)
+        {
+            Log.Debug(exception, "从文件导入 Insomnia 已取消 {FilePath}", path);
+            ImportStatus = "导入已取消。";
+            HasImportError = true;
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "从文件导入 Insomnia 失败 {FilePath}", path);
+        }
+        finally
+        {
+            IsImporting = false;
+            _importCts?.Dispose();
+            _importCts = null;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportInsomniaTextAsync()
+    {
+        if (IsImporting)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(InsomniaJson))
+        {
+            HasImportError = true;
+            ImportStatus = "请粘贴 Insomnia v4 JSON，或改为选择文件。";
+            return;
+        }
+
+        _importCts?.Dispose();
+        _importCts = new CancellationTokenSource();
+        IsImporting = true;
+        HasImportError = false;
+        ImportWarnings.Clear();
+        ImportStatus = "正在解析粘贴的 Insomnia 导出…";
+
+        try
+        {
+            var result = await Task.Run(
+                    () => InsomniaImportService.Parse(InsomniaJson, "粘贴的 Insomnia 导出"),
+                    _importCts.Token
+                )
+                .ConfigureAwait(true);
+            ApplyCollectionImport(result);
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "导入粘贴的 Insomnia 失败");
+        }
+        finally
+        {
+            IsImporting = false;
+            _importCts?.Dispose();
+            _importCts = null;
+        }
+    }
+
+    public async Task ImportHoppscotchFileAsync(
+        string path,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (IsImporting)
+        {
+            return;
+        }
+
+        _importCts?.Dispose();
+        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        IsImporting = true;
+        HasImportError = false;
+        ImportWarnings.Clear();
+        ImportStatus = "正在解析 Hoppscotch Collection…";
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
+            var result = await Task.Run(
+                    () => HoppscotchImportService.Parse(content, Path.GetFileName(path)),
+                    _importCts.Token
+                )
+                .ConfigureAwait(true);
+            ApplyCollectionImport(result);
+        }
+        catch (OperationCanceledException exception)
+        {
+            Log.Debug(exception, "从文件导入 Hoppscotch 已取消 {FilePath}", path);
+            ImportStatus = "导入已取消。";
+            HasImportError = true;
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "从文件导入 Hoppscotch 失败 {FilePath}", path);
+        }
+        finally
+        {
+            IsImporting = false;
+            _importCts?.Dispose();
+            _importCts = null;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportHoppscotchTextAsync()
+    {
+        if (IsImporting)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(HoppscotchJson))
+        {
+            HasImportError = true;
+            ImportStatus = "请粘贴 Hoppscotch Collection JSON，或改为选择文件。";
+            return;
+        }
+
+        _importCts?.Dispose();
+        _importCts = new CancellationTokenSource();
+        IsImporting = true;
+        HasImportError = false;
+        ImportWarnings.Clear();
+        ImportStatus = "正在解析粘贴的 Hoppscotch Collection…";
+
+        try
+        {
+            var result = await Task.Run(
+                    () => HoppscotchImportService.Parse(HoppscotchJson, "粘贴的 Hoppscotch"),
+                    _importCts.Token
+                )
+                .ConfigureAwait(true);
+            ApplyCollectionImport(result);
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "导入粘贴的 Hoppscotch 失败");
         }
         finally
         {
@@ -1357,12 +1593,23 @@ public partial class MainWindowViewModel : ObservableObject
             SelectedRequest = null;
         }
 
-        IsImportDialogOpen = false;
+        SetImportWarnings(document.Warnings);
         Persist();
         NotifySelectionChanged();
         NotifyTreeChanged();
         RefreshDerivedState();
-        ShowToast($"已导入「{document.Title}」：{requestCount} 个请求，{groupCount} 个分组");
+        if (document.Warnings.Count == 0)
+        {
+            IsImportDialogOpen = false;
+            ShowToast($"已导入「{document.Title}」：{requestCount} 个请求，{groupCount} 个分组");
+        }
+        else
+        {
+            ImportStatus =
+                $"导入完成：{document.Title}，{requestCount} 个请求，{groupCount} 个分组；{document.Warnings.Count} 条提示见下方。";
+            HasImportError = false;
+        }
+
         Log.Information(
             "OpenAPI 导入完成 {Source}：{Title} {Version}，{RequestCount} 个请求，{GroupCount} 个分组",
             document.Source,
