@@ -12,6 +12,28 @@ public sealed record McpRowInfo(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Secret = false
 );
 
+public sealed record McpAuthInfo(
+    string AuthType,
+    string Target,
+    string Username,
+    string ApiKeyName,
+    string ApiKeyLocation,
+    bool HasToken,
+    bool HasPassword,
+    bool HasApiKey
+);
+
+public sealed record McpAuthInput(
+    string? AuthType,
+    string? Target,
+    string? Token,
+    string? Username,
+    string? Password,
+    string? ApiKeyName,
+    string? ApiKeyValue,
+    string? ApiKeyLocation
+);
+
 public sealed record McpRequestInfo(
     Guid Id,
     string Name,
@@ -27,7 +49,9 @@ public sealed record McpRequestInfo(
     bool IsFavorite,
     IReadOnlyList<McpRowInfo> FormFields,
     string UploadFilePath,
-    string UploadFieldName
+    string UploadFieldName,
+    int TimeoutSeconds,
+    McpAuthInfo Auth
 );
 
 public sealed record McpCollectionInfo(
@@ -37,7 +61,8 @@ public sealed record McpCollectionInfo(
     int Depth,
     int Order,
     bool IsFavorite,
-    IReadOnlyList<McpRequestInfo> Requests
+    IReadOnlyList<McpRequestInfo> Requests,
+    McpAuthInfo Auth
 );
 
 public sealed record McpEnvironmentInfo(
@@ -100,12 +125,83 @@ public sealed record McpSendResult(
 
 public sealed record McpCallContext(string Tool, string? Client);
 
+public sealed record McpSettingsInfo(
+    string Theme,
+    double CornerScale,
+    string UiFont,
+    string CodeFont,
+    string CodeFontSize,
+    int RequestTimeoutSeconds,
+    string DefaultBodyMode,
+    bool AutoFormatResponse,
+    int LargeResponseThresholdKb,
+    int AuditLimit,
+    string LogDirectory,
+    string LogLevel,
+    string SseThinkingPath,
+    string SseContentPath
+);
+
+public sealed record McpSettingsDraft(
+    string? Theme,
+    double? CornerScale,
+    string? UiFont,
+    string? CodeFont,
+    string? CodeFontSize,
+    int? RequestTimeoutSeconds,
+    string? DefaultBodyMode,
+    bool? AutoFormatResponse,
+    int? LargeResponseThresholdKb,
+    int? AuditLimit,
+    string? LogDirectory,
+    string? LogLevel,
+    string? SseThinkingPath,
+    string? SseContentPath
+);
+
+public sealed record McpStorageProfileInfo(
+    string Id,
+    string Name,
+    string Provider,
+    bool IsLocal,
+    string MaskedConnectionString
+);
+
+public sealed record McpStorageConfigInfo(
+    string LocalDatabasePath,
+    string ConfigFile,
+    IReadOnlyList<McpStorageProfileInfo> Profiles,
+    IReadOnlyDictionary<string, string> Bindings
+);
+
+public sealed record McpStorageSyncResult(
+    bool Success,
+    string Message,
+    int Categories,
+    int Documents,
+    string? BackupPath
+);
+
+public sealed record McpTrashInfo(
+    Guid Id,
+    string Kind,
+    string Name,
+    string Source,
+    DateTimeOffset DeletedAt,
+    string OriginalLocation
+);
+
 public sealed record McpSuiteStepInput(
     Guid RequestId,
     int? ExpectedStatus,
     string? BodyContains,
     int? DelayMs,
-    IReadOnlyList<McpSuiteMappingInput>? Mappings
+    IReadOnlyList<McpSuiteMappingInput>? Mappings,
+    int? RetryCount = null,
+    int? RetryDelayMs = null,
+    string? Condition = null,
+    int? ParallelGroup = null,
+    IReadOnlyList<McpSuiteAssertionInput>? Assertions = null
 );
 
 public sealed record McpSuiteMappingInput(
@@ -116,6 +212,8 @@ public sealed record McpSuiteMappingInput(
     string TargetPath,
     string Template
 );
+
+public sealed record McpSuiteAssertionInput(string Kind, string Path, string Expected);
 
 public sealed record McpSequenceStep(
     Guid RequestId,
@@ -146,7 +244,9 @@ public sealed record McpRequestDraft(
     string? UploadFilePath,
     string? UploadFieldName,
     bool? IsFavorite,
-    int? Position
+    int? Position,
+    int? TimeoutSeconds,
+    McpAuthInput? Auth
 );
 
 /// <summary>
@@ -182,12 +282,19 @@ public sealed class McpWorkspaceAdapter
         string name,
         Guid? parentId,
         bool favorite,
-        int? position
+        int? position,
+        McpAuthInput? auth = null
     )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
         {
             var collection = _viewModel.CreateCollection(name, parentId, favorite, position);
+            if (auth is not null)
+            {
+                ApplyAuth(collection.Auth, auth);
+                _viewModel.NotifyWorkspaceChanged();
+            }
+
             return ToCollectionInfo(collection);
         });
     }
@@ -198,7 +305,8 @@ public sealed class McpWorkspaceAdapter
         Guid? parentId,
         bool changeParent,
         bool? favorite,
-        int? position
+        int? position,
+        McpAuthInput? auth = null
     )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
@@ -211,6 +319,12 @@ public sealed class McpWorkspaceAdapter
                 favorite,
                 position
             );
+            if (auth is not null)
+            {
+                ApplyAuth(collection.Auth, auth);
+                _viewModel.NotifyWorkspaceChanged();
+            }
+
             return ToCollectionInfo(collection);
         });
     }
@@ -260,8 +374,14 @@ public sealed class McpWorkspaceAdapter
                     ? "file"
                     : draft.UploadFieldName.Trim(),
                 IsFavorite = draft.IsFavorite ?? false,
+                TimeoutSeconds = Math.Clamp(draft.TimeoutSeconds ?? 0, 0, 3600),
                 Owner = collection,
             };
+
+            if (draft.Auth is { } auth)
+            {
+                ApplyAuth(request.Auth, auth);
+            }
 
             ReplaceRows(request.Params, draft.Params);
             ReplaceRows(request.Headers, draft.Headers);
@@ -339,6 +459,16 @@ public sealed class McpWorkspaceAdapter
             if (draft.IsFavorite is { } favorite)
             {
                 request.IsFavorite = favorite;
+            }
+
+            if (draft.TimeoutSeconds is { } timeoutSeconds)
+            {
+                request.TimeoutSeconds = Math.Clamp(timeoutSeconds, 0, 3600);
+            }
+
+            if (draft.Auth is { } auth)
+            {
+                ApplyAuth(request.Auth, auth);
             }
 
             if (draft.CollectionId is not null || draft.Position is not null)
@@ -693,6 +823,8 @@ public sealed class McpWorkspaceAdapter
         Guid id,
         string? name,
         bool? stopOnError,
+        bool? runInParallel,
+        int? scheduleMinutes,
         IReadOnlyList<McpSuiteStepInput>? steps
     )
     {
@@ -710,6 +842,16 @@ public sealed class McpWorkspaceAdapter
             if (stopOnError is { } shouldStop)
             {
                 suite.StopOnError = shouldStop;
+            }
+
+            if (runInParallel is { } parallel)
+            {
+                suite.RunInParallel = parallel;
+            }
+
+            if (scheduleMinutes is { } schedule)
+            {
+                suite.ScheduleMinutes = Math.Clamp(schedule, 0, 1440);
             }
 
             if (steps is not null)
@@ -888,20 +1030,36 @@ public sealed class McpWorkspaceAdapter
                 FindRequest(stepInput.RequestId)
                 ?? throw new KeyNotFoundException($"没有找到 id 为 {stepInput.RequestId} 的请求。");
 
-            built.Add(
-                new TestStep
-                {
-                    RequestId = request.Id,
-                    RequestName = request.Name,
-                    Method = request.Method,
-                    Url = request.Url,
-                    DelayMs = Math.Clamp(stepInput.DelayMs ?? 200, 0, 60_000),
-                    ExpectedStatus = stepInput.ExpectedStatus,
-                    BodyContains = string.IsNullOrWhiteSpace(stepInput.BodyContains)
-                        ? null
-                        : stepInput.BodyContains,
-                }
-            );
+            var step = new TestStep
+            {
+                RequestId = request.Id,
+                RequestName = request.Name,
+                Method = request.Method,
+                Url = request.Url,
+                DelayMs = Math.Clamp(stepInput.DelayMs ?? 200, 0, 60_000),
+                RetryCount = Math.Clamp(stepInput.RetryCount ?? 0, 0, 10),
+                RetryDelayMs = Math.Clamp(stepInput.RetryDelayMs ?? 500, 0, 60_000),
+                Condition = NormalizeCondition(stepInput.Condition),
+                ParallelGroup = Math.Clamp(stepInput.ParallelGroup ?? 0, 0, 1000),
+                ExpectedStatus = stepInput.ExpectedStatus,
+                BodyContains = string.IsNullOrWhiteSpace(stepInput.BodyContains)
+                    ? null
+                    : stepInput.BodyContains,
+            };
+
+            foreach (var assertion in stepInput.Assertions ?? [])
+            {
+                step.Assertions.Add(
+                    new TestAssertion
+                    {
+                        Kind = assertion.Kind,
+                        Path = assertion.Path,
+                        Expected = assertion.Expected,
+                    }
+                );
+            }
+
+            built.Add(step);
         }
 
         for (var stepIndex = 0; stepIndex < steps.Count; stepIndex++)
@@ -990,6 +1148,540 @@ public sealed class McpWorkspaceAdapter
         return built;
     }
 
+    public async Task<McpSettingsInfo> GetSettingsAsync()
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var settings = _viewModel.Settings;
+            return new McpSettingsInfo(
+                settings.Theme,
+                settings.CornerScale,
+                settings.UiFont,
+                settings.CodeFont,
+                settings.CodeFontSize,
+                settings.RequestTimeoutSeconds,
+                settings.DefaultBodyMode,
+                settings.AutoFormatResponse,
+                settings.LargeResponseThresholdKb,
+                settings.AuditLimit,
+                settings.LogDirectory,
+                settings.LogLevel,
+                settings.SseThinkingPath,
+                settings.SseContentPath
+            );
+        });
+    }
+
+    public async Task<McpSettingsInfo> UpdateSettingsAsync(McpSettingsDraft draft)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var settings = _viewModel.Settings;
+            if (!string.IsNullOrWhiteSpace(draft.Theme))
+            {
+                settings.Theme = draft.Theme;
+            }
+
+            if (draft.CornerScale is { } cornerScale)
+            {
+                settings.CornerScale = Math.Clamp(cornerScale, 0, 2);
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.UiFont))
+            {
+                settings.UiFont = draft.UiFont;
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.CodeFont))
+            {
+                settings.CodeFont = draft.CodeFont;
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.CodeFontSize))
+            {
+                settings.CodeFontSize = draft.CodeFontSize;
+            }
+
+            if (draft.RequestTimeoutSeconds is { } timeout)
+            {
+                settings.RequestTimeoutSeconds = Math.Clamp(timeout, 1, 3600);
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.DefaultBodyMode))
+            {
+                settings.DefaultBodyMode = NormalizeBodyMode(draft.DefaultBodyMode);
+            }
+
+            if (draft.AutoFormatResponse is { } autoFormat)
+            {
+                settings.AutoFormatResponse = autoFormat;
+            }
+
+            if (draft.LargeResponseThresholdKb is { } threshold)
+            {
+                settings.LargeResponseThresholdKb = Math.Clamp(threshold, 8, 4096);
+            }
+
+            if (draft.AuditLimit is { } auditLimit)
+            {
+                settings.AuditLimit = Math.Clamp(auditLimit, 20, 5000);
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.LogDirectory))
+            {
+                settings.LogDirectory = Path.GetFullPath(draft.LogDirectory);
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.LogLevel))
+            {
+                settings.LogLevel = draft.LogLevel;
+            }
+
+            settings.SseThinkingPath = draft.SseThinkingPath ?? settings.SseThinkingPath;
+            settings.SseContentPath = draft.SseContentPath ?? settings.SseContentPath;
+
+            if (_viewModel.SaveSettingsForMcp() != SaveResult.Saved)
+            {
+                throw new InvalidOperationException("设置保存失败，请检查项目数据目录是否可写。");
+            }
+
+            return GetSettingsCore(settings);
+        });
+    }
+
+    public async Task<McpStorageConfigInfo> GetStorageConfigAsync()
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            ToStorageInfo(StorageCoordinator.Current.Config)
+        );
+    }
+
+    public async Task<McpStorageProfileInfo> UpsertStorageProfileAsync(
+        string? id,
+        string name,
+        string provider,
+        string? connectionString
+    )
+    {
+        if (!StorageProviders.All.Contains(provider, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException($"不支持的存储类型：{provider}");
+        }
+
+        if (provider == StorageProviders.LocalSqlite)
+        {
+            throw new InvalidOperationException(
+                "本地 SQLite 配置固定为项目数据目录，不能通过 MCP 修改。"
+            );
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new InvalidOperationException("存储配置名称不能为空。");
+        }
+
+        var coordinator = StorageCoordinator.Current;
+        var existing = string.IsNullOrWhiteSpace(id)
+            ? null
+            : coordinator.Config.Profiles.FirstOrDefault(profile => profile.Id == id);
+        var profile = existing?.Clone() ?? new StorageProfile();
+        profile.Name = name.Trim();
+        profile.Provider = provider;
+        if (connectionString is not null)
+        {
+            profile.ConnectionString = connectionString;
+        }
+
+        if (string.IsNullOrWhiteSpace(profile.ConnectionString))
+        {
+            throw new InvalidOperationException("远程存储连接串不能为空。");
+        }
+
+        if (coordinator.RegisterProfile(profile) != SaveResult.Saved)
+        {
+            throw new InvalidOperationException("保存存储配置失败，请检查项目数据目录是否可写。");
+        }
+
+        return ToStorageProfileInfo(
+            coordinator.Config.Profiles.First(candidate => candidate.Id == profile.Id)
+        );
+    }
+
+    public async Task<bool> DeleteStorageProfileAsync(string id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (id == StorageConfig.LocalProfileId)
+            {
+                throw new InvalidOperationException("不能删除本地 SQLite 存储。");
+            }
+
+            var coordinator = StorageCoordinator.Current;
+            var next = coordinator.Config.Clone();
+            var removed = next.Profiles.RemoveAll(profile => profile.Id == id);
+            if (removed == 0)
+            {
+                return false;
+            }
+
+            foreach (var category in StorageCategories.All)
+            {
+                if (next.Bindings.TryGetValue(category, out var bound) && bound == id)
+                {
+                    next.Bindings[category] = StorageConfig.LocalProfileId;
+                }
+            }
+
+            if (coordinator.SaveConfig(next) != SaveResult.Saved)
+            {
+                throw new InvalidOperationException("保存存储配置失败。");
+            }
+
+            return true;
+        });
+    }
+
+    public async Task<McpStorageConfigInfo> SetStorageBindingAsync(
+        string category,
+        string profileId
+    )
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (!StorageCategories.All.Contains(category, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"未知存储分类：{category}");
+            }
+
+            var coordinator = StorageCoordinator.Current;
+            var profile =
+                coordinator.Config.Profiles.FirstOrDefault(candidate => candidate.Id == profileId)
+                ?? throw new KeyNotFoundException($"没有找到存储配置 {profileId}。");
+            if (profile.IsRemote && string.IsNullOrWhiteSpace(profile.ConnectionString))
+            {
+                throw new InvalidOperationException("远程存储配置缺少连接串，不能绑定。");
+            }
+
+            var next = coordinator.Config.Clone();
+            next.SetBinding(
+                StorageCategories.All.First(candidate =>
+                    string.Equals(candidate, category, StringComparison.OrdinalIgnoreCase)
+                ),
+                profileId
+            );
+            if (coordinator.SaveConfig(next) != SaveResult.Saved)
+            {
+                throw new InvalidOperationException("保存存储配置失败。");
+            }
+
+            return ToStorageInfo(coordinator.Config);
+        });
+    }
+
+    public async Task<StorageTestResult> TestStorageAsync(string profileId)
+    {
+        return await StorageCoordinator.Current.TestAsync(profileId);
+    }
+
+    public async Task<McpStorageSyncResult> SyncStorageAsync(
+        string sourceProfileId,
+        string targetProfileId,
+        IReadOnlyList<string> categories,
+        CancellationToken cancellationToken
+    )
+    {
+        var result = await StorageCoordinator.Current.SyncAsync(
+            sourceProfileId,
+            targetProfileId,
+            categories,
+            cancellationToken
+        );
+        return new McpStorageSyncResult(
+            result.Success,
+            result.Message,
+            result.Categories,
+            result.Documents,
+            result.BackupPath
+        );
+    }
+
+    public async Task<McpStorageSyncResult> SwitchStorageAsync(
+        string targetProfileId,
+        IReadOnlyList<string> categories,
+        CancellationToken cancellationToken
+    )
+    {
+        var result = await StorageCoordinator.Current.SwitchAsync(
+            targetProfileId,
+            categories,
+            cancellationToken
+        );
+        return new McpStorageSyncResult(
+            result.Success,
+            result.Message,
+            result.Categories,
+            result.Documents,
+            result.BackupPath
+        );
+    }
+
+    public async Task<McpEnvironmentInfo> CreateEnvironmentAsync(string name)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var environment = _viewModel.CreateEnvironmentForMcp(name);
+            return ToEnvironmentInfo(environment);
+        });
+    }
+
+    public async Task<McpEnvironmentInfo> RenameEnvironmentAsync(Guid id, string name)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            ToEnvironmentInfo(_viewModel.RenameEnvironmentForMcp(id, name))
+        );
+    }
+
+    public async Task<bool> DeleteEnvironmentAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.DeleteEnvironmentForMcp(id));
+    }
+
+    public async Task<McpEnvironmentInfo> ActivateEnvironmentAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (!_viewModel.ActivateEnvironmentForMcp(id))
+            {
+                throw new KeyNotFoundException($"没有找到 id 为 {id} 的环境。");
+            }
+
+            return ToEnvironmentInfo(
+                _viewModel.Environments.First(environment => environment.Id == id)
+            );
+        });
+    }
+
+    public async Task<bool> DeleteVariableAsync(Guid? environmentId, string key)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            _viewModel.DeleteVariableForMcp(environmentId, key)
+        );
+    }
+
+    public async Task<int> ClearHistoryAsync()
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.MoveAllHistoryToTrash());
+    }
+
+    public async Task<bool> RestoreHistoryAsync(DateTimeOffset timestamp)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            _viewModel.RestoreHistoryForMcp(timestamp)
+        );
+    }
+
+    public async Task<bool> PurgeHistoryAsync(DateTimeOffset timestamp)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            _viewModel.PurgeHistoryForMcp(timestamp)
+        );
+    }
+
+    public async Task<int> EmptyHistoryTrashAsync()
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.EmptyHistoryTrashForMcp());
+    }
+
+    public async Task<IReadOnlyList<McpHistoryInfo>> ListHistoryTrashAsync(int limit)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var secrets = SecretMasker.CollectAllSecrets(_viewModel.Environments);
+            return (IReadOnlyList<McpHistoryInfo>)
+                _viewModel
+                    .RecycledHistory.Take(Math.Clamp(limit, 1, 200))
+                    .Select(entry => new McpHistoryInfo(
+                        entry.Timestamp,
+                        entry.Name,
+                        entry.Method,
+                        SecretMasker.MaskSecrets(entry.Url, secrets),
+                        entry.StatusCode,
+                        entry.DurationMs
+                    ))
+                    .ToList();
+        });
+    }
+
+    public async Task<int> ClearAuditAsync()
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.MoveAllAuditToTrash());
+    }
+
+    public async Task<IReadOnlyList<McpAuditSummary>> ListAuditTrashAsync(int limit)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            (IReadOnlyList<McpAuditSummary>)
+                _viewModel
+                    .AuditTrash.Take(Math.Clamp(limit, 1, 500))
+                    .Select(ToAuditSummary)
+                    .ToList()
+        );
+    }
+
+    public async Task<bool> RestoreAuditAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.RestoreAuditForMcp(id));
+    }
+
+    public async Task<bool> PurgeAuditAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.PurgeAuditForMcp(id));
+    }
+
+    public async Task<int> EmptyAuditTrashAsync()
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.EmptyAuditTrashForMcp());
+    }
+
+    public async Task<IReadOnlyList<McpTrashInfo>> ListCollectionTrashAsync()
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            (IReadOnlyList<McpTrashInfo>)
+                _viewModel
+                    .TreeTrash.Items.Select(node => new McpTrashInfo(
+                        node.Id,
+                        node.KindLabel,
+                        node.Name,
+                        node.Source,
+                        node.DeletedAt,
+                        node.OriginalLocation
+                    ))
+                    .ToList()
+        );
+    }
+
+    public async Task<bool> RestoreCollectionTrashAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.TreeTrash.RestoreById(id));
+    }
+
+    public async Task<bool> PurgeCollectionTrashAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.TreeTrash.PurgeById(id));
+    }
+
+    public async Task<int> EmptyCollectionTrashAsync()
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.TreeTrash.Empty());
+    }
+
+    public async Task<string> ExportWorkspaceAsync()
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            PostmanExportService.ExportWorkspace(_viewModel.Collections.ToList())
+        );
+    }
+
+    public async Task<ImportSummary> ImportContentAsync(
+        string? source,
+        string content,
+        string? fileName,
+        bool includeStaticResources,
+        CancellationToken cancellationToken
+    )
+    {
+        var summary = await Dispatcher.UIThread.InvokeAsync(() =>
+            _viewModel.Import.ImportContentAsync(
+                source,
+                content,
+                fileName,
+                includeStaticResources,
+                cancellationToken
+            )
+        );
+        return summary;
+    }
+
+    public async Task<McpRequestInfo> DuplicateRequestAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var request =
+                FindRequest(id) ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的请求。");
+            var owner = request.Owner ?? throw new InvalidOperationException("请求没有所属集合。");
+            var copy = request.Clone(copyAuthorization: true);
+            copy.Name = $"{request.Name}（副本）";
+            copy.Owner = owner;
+            owner.Requests.Insert(owner.Requests.IndexOf(request) + 1, copy);
+            _viewModel.NotifyWorkspaceChanged();
+            return ToInfo(copy);
+        });
+    }
+
+    private static McpSettingsInfo GetSettingsCore(AppSettings settings) =>
+        new(
+            settings.Theme,
+            settings.CornerScale,
+            settings.UiFont,
+            settings.CodeFont,
+            settings.CodeFontSize,
+            settings.RequestTimeoutSeconds,
+            settings.DefaultBodyMode,
+            settings.AutoFormatResponse,
+            settings.LargeResponseThresholdKb,
+            settings.AuditLimit,
+            settings.LogDirectory,
+            settings.LogLevel,
+            settings.SseThinkingPath,
+            settings.SseContentPath
+        );
+
+    private static McpStorageConfigInfo ToStorageInfo(StorageConfig config) =>
+        new(
+            AppPaths.DatabaseFile,
+            AppPaths.StorageConfigFile,
+            config.Profiles.Select(ToStorageProfileInfo).ToList(),
+            config.Bindings.ToDictionary(pair => pair.Key, pair => pair.Value)
+        );
+
+    private static McpStorageProfileInfo ToStorageProfileInfo(StorageProfile profile) =>
+        new(
+            profile.Id,
+            profile.DisplayName,
+            profile.Provider,
+            profile.IsLocal,
+            profile.MaskedConnectionString
+        );
+
+    private McpEnvironmentInfo ToEnvironmentInfo(EnvironmentModel environment) =>
+        new(
+            environment.Id,
+            environment.Name,
+            ReferenceEquals(environment, _viewModel.ActiveEnvironment),
+            environment
+                .Variables.Where(row => !string.IsNullOrWhiteSpace(row.Key))
+                .Select(ToVariableInfo)
+                .ToList()
+        );
+
+    private static McpAuditSummary ToAuditSummary(AuditEntry entry) =>
+        new(
+            entry.Id,
+            entry.Timestamp,
+            entry.Source,
+            entry.Client,
+            entry.Tool,
+            entry.RequestName,
+            entry.Method,
+            entry.Url,
+            entry.StatusCode,
+            entry.StatusText,
+            entry.ElapsedMs,
+            entry.IsSuccess,
+            entry.IsSse,
+            entry.SseEventCount
+        );
+
     private RequestItem? FindRequest(Guid id) =>
         _viewModel
             .Collections.SelectMany(collection => collection.Requests)
@@ -1020,8 +1712,68 @@ public sealed class McpWorkspaceAdapter
                 .Select(ToInfo)
                 .ToList(),
             request.UploadFilePath,
-            request.UploadFieldName
+            request.UploadFieldName,
+            request.TimeoutSeconds,
+            ToAuthInfo(request.Auth)
         );
+
+    private static void ApplyAuth(RequestAuth auth, McpAuthInput input)
+    {
+        if (!string.IsNullOrWhiteSpace(input.AuthType))
+        {
+            if (!AuthKinds.IsKnownType(input.AuthType))
+            {
+                throw new InvalidOperationException($"未知授权类型：{input.AuthType}");
+            }
+
+            auth.AuthType = input.AuthType;
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.Target))
+        {
+            if (!AuthKinds.IsKnownTarget(input.Target))
+            {
+                throw new InvalidOperationException($"未知授权位置：{input.Target}");
+            }
+
+            auth.Target = input.Target;
+        }
+
+        if (input.Username is not null)
+        {
+            auth.Username = input.Username;
+        }
+
+        if (input.Token is not null && input.Token != SecretMasker.Mask)
+        {
+            auth.Token = input.Token;
+        }
+
+        if (input.Password is not null && input.Password != SecretMasker.Mask)
+        {
+            auth.Password = input.Password;
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.ApiKeyName))
+        {
+            auth.ApiKeyName = input.ApiKeyName;
+        }
+
+        if (input.ApiKeyValue is not null && input.ApiKeyValue != SecretMasker.Mask)
+        {
+            auth.ApiKeyValue = input.ApiKeyValue;
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.ApiKeyLocation))
+        {
+            if (!AuthKinds.IsKnownTarget(input.ApiKeyLocation))
+            {
+                throw new InvalidOperationException($"未知 API Key 位置：{input.ApiKeyLocation}");
+            }
+
+            auth.ApiKeyLocation = input.ApiKeyLocation;
+        }
+    }
 
     private McpCollectionInfo ToCollectionInfo(RequestCollection collection) =>
         new(
@@ -1031,7 +1783,20 @@ public sealed class McpWorkspaceAdapter
             collection.Depth,
             CollectionOrder(collection),
             collection.IsFavorite,
-            collection.Requests.Select(ToInfo).ToList()
+            collection.Requests.Select(ToInfo).ToList(),
+            ToAuthInfo(collection.Auth)
+        );
+
+    private static McpAuthInfo ToAuthInfo(RequestAuth auth) =>
+        new(
+            auth.AuthType,
+            auth.Target,
+            auth.Username,
+            auth.ApiKeyName,
+            auth.ApiKeyLocation,
+            !string.IsNullOrEmpty(auth.Token),
+            !string.IsNullOrEmpty(auth.Password),
+            !string.IsNullOrEmpty(auth.ApiKeyValue)
         );
 
     private int CollectionOrder(RequestCollection collection)
@@ -1087,6 +1852,12 @@ public sealed class McpWorkspaceAdapter
         return value is "GET" or "POST" or "PUT" or "PATCH" or "DELETE" or "HEAD" or "OPTIONS"
             ? value
             : "GET";
+    }
+
+    private static string NormalizeCondition(string? condition)
+    {
+        var value = string.IsNullOrWhiteSpace(condition) ? "Always" : condition.Trim();
+        return value is "Always" or "OnPreviousSuccess" or "OnPreviousFailure" ? value : "Always";
     }
 
     private static string NormalizeBodyMode(string? mode)

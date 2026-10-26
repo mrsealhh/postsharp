@@ -13,6 +13,8 @@ public sealed class WorkspaceStore
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    private readonly StorageCoordinator _storage = StorageCoordinator.Current;
+
     public string FilePath { get; }
 
     public WorkspaceStore()
@@ -21,15 +23,50 @@ public sealed class WorkspaceStore
         FilePath = AppPaths.WorkspaceFile;
     }
 
-    public DataFileLoad<WorkspaceDto> Load() =>
-        DataFile.Load(
+    public DataFileLoad<WorkspaceDto> Load()
+    {
+        var document = _storage.LoadDocument(StorageCategories.Workspace);
+        if (document is not null)
+        {
+            try
+            {
+                var workspace = JsonSerializer.Deserialize<WorkspaceDto>(
+                    document.Payload,
+                    JsonOptions
+                );
+                return workspace is null
+                    ? new DataFileLoad<WorkspaceDto>(null, DataFileState.Unreadable, null)
+                    : new DataFileLoad<WorkspaceDto>(workspace, DataFileState.Loaded, null);
+            }
+            catch (Exception exception)
+            {
+                Log.Error(exception, "读取 SQLite 工作区文档失败");
+                return new DataFileLoad<WorkspaceDto>(null, DataFileState.Unreadable, null);
+            }
+        }
+
+        // One-time migration from the old JSON layout.
+        var load = DataFile.Load(
             FilePath,
             text => JsonSerializer.Deserialize<WorkspaceDto>(text, JsonOptions)
         );
+        if (load.Value is { } migrated)
+        {
+            _storage.SaveDocument(
+                StorageCategories.Workspace,
+                JsonSerializer.Serialize(migrated, JsonOptions)
+            );
+        }
+
+        return load;
+    }
 
     /// <summary>Never throws: a failed autosave must not break the request being sent.</summary>
     public SaveResult Save(WorkspaceDto workspace) =>
-        DataFile.Save(FilePath, () => JsonSerializer.Serialize(workspace, JsonOptions));
+        _storage.SaveDocument(
+            StorageCategories.Workspace,
+            JsonSerializer.Serialize(workspace, JsonOptions)
+        );
 
     public static WorkspaceDto Capture(
         IEnumerable<RequestCollection> collections,
@@ -38,7 +75,8 @@ public sealed class WorkspaceStore
         IEnumerable<HistoryEntry> recycledHistory,
         IEnumerable<TestSuite> suites,
         IEnumerable<TrashedNode> trashedNodes,
-        Guid? activeEnvironmentId
+        Guid? activeEnvironmentId,
+        bool includeSuites = true
     )
     {
         return new WorkspaceDto
@@ -54,56 +92,126 @@ public sealed class WorkspaceStore
                 .ToList(),
             History = history.Select(ToHistoryDto).ToList(),
             RecycledHistory = recycledHistory.Select(ToHistoryDto).ToList(),
-            Suites = suites
-                .Select(suite => new SuiteDto
-                {
-                    Id = suite.Id,
-                    Name = suite.Name,
-                    StopOnError = suite.StopOnError,
-                    RunInParallel = suite.RunInParallel,
-                    ScheduleMinutes = suite.ScheduleMinutes,
-                    LastSummary = suite.LastSummary,
-                    Steps = suite
-                        .Steps.Select(step => new SuiteStepDto
-                        {
-                            Id = step.Id,
-                            RequestId = step.RequestId,
-                            RequestName = step.RequestName,
-                            Method = step.Method,
-                            Url = step.Url,
-                            DelayMs = step.DelayMs,
-                            RetryCount = step.RetryCount,
-                            RetryDelayMs = step.RetryDelayMs,
-                            Condition = step.Condition,
-                            ParallelGroup = step.ParallelGroup,
-                            ExpectedStatus = step.ExpectedStatus,
-                            BodyContains = step.BodyContains,
-                            Assertions = step
-                                .Assertions.Select(assertion => new SuiteAssertionDto
-                                {
-                                    Kind = assertion.Kind,
-                                    Path = assertion.Path,
-                                    Expected = assertion.Expected,
-                                })
-                                .ToList(),
-                            InputMappings = step
-                                .InputMappings.Select(mapping => new SuiteMappingDto
-                                {
-                                    SourceStepId = mapping.SourceStepId,
-                                    SourcePath = mapping.SourcePath,
-                                    TargetKind = mapping.TargetKind,
-                                    TargetPath = mapping.TargetPath,
-                                    Template = mapping.Template,
-                                })
-                                .ToList(),
-                        })
-                        .ToList(),
-                })
-                .ToList(),
+            Suites = includeSuites ? CaptureSuites(suites) : new List<SuiteDto>(),
             TrashedNodes = trashedNodes.Select(ToTrashedNodeDto).ToList(),
             ActiveEnvironmentId = activeEnvironmentId,
         };
     }
+
+    public static List<SuiteDto> CaptureSuites(IEnumerable<TestSuite> suites) =>
+        suites.Select(ToSuiteDto).ToList();
+
+    public static TestSuite ToSuiteModel(SuiteDto suiteDto)
+    {
+        var suite = new TestSuite
+        {
+            Id = suiteDto.Id == Guid.Empty ? Guid.NewGuid() : suiteDto.Id,
+            Name = suiteDto.Name,
+            StopOnError = suiteDto.StopOnError,
+            RunInParallel = suiteDto.RunInParallel,
+            ScheduleMinutes = suiteDto.ScheduleMinutes,
+            LastSummary = string.IsNullOrWhiteSpace(suiteDto.LastSummary)
+                ? "尚未运行"
+                : suiteDto.LastSummary,
+        };
+
+        foreach (var stepDto in suiteDto.Steps)
+        {
+            var step = new TestStep
+            {
+                Id = stepDto.Id == Guid.Empty ? Guid.NewGuid() : stepDto.Id,
+                RequestId = stepDto.RequestId,
+                RequestName = stepDto.RequestName,
+                Method = stepDto.Method,
+                Url = stepDto.Url,
+                DelayMs = stepDto.DelayMs,
+                RetryCount = stepDto.RetryCount,
+                RetryDelayMs = stepDto.RetryDelayMs,
+                Condition = string.IsNullOrWhiteSpace(stepDto.Condition)
+                    ? "Always"
+                    : stepDto.Condition,
+                ParallelGroup = stepDto.ParallelGroup,
+                ExpectedStatus = stepDto.ExpectedStatus,
+                BodyContains = stepDto.BodyContains,
+            };
+
+            foreach (var mappingDto in stepDto.InputMappings)
+            {
+                step.InputMappings.Add(
+                    new InputMapping
+                    {
+                        SourceStepId = mappingDto.SourceStepId,
+                        SourcePath = mappingDto.SourcePath,
+                        TargetKind = mappingDto.TargetKind,
+                        TargetPath = mappingDto.TargetPath,
+                        Template = mappingDto.Template,
+                    }
+                );
+            }
+
+            foreach (var assertionDto in stepDto.Assertions)
+            {
+                step.Assertions.Add(
+                    new TestAssertion
+                    {
+                        Kind = assertionDto.Kind,
+                        Path = assertionDto.Path,
+                        Expected = assertionDto.Expected,
+                    }
+                );
+            }
+
+            suite.Steps.Add(step);
+        }
+
+        return suite;
+    }
+
+    private static SuiteDto ToSuiteDto(TestSuite suite) =>
+        new()
+        {
+            Id = suite.Id,
+            Name = suite.Name,
+            StopOnError = suite.StopOnError,
+            RunInParallel = suite.RunInParallel,
+            ScheduleMinutes = suite.ScheduleMinutes,
+            LastSummary = suite.LastSummary,
+            Steps = suite
+                .Steps.Select(step => new SuiteStepDto
+                {
+                    Id = step.Id,
+                    RequestId = step.RequestId,
+                    RequestName = step.RequestName,
+                    Method = step.Method,
+                    Url = step.Url,
+                    DelayMs = step.DelayMs,
+                    RetryCount = step.RetryCount,
+                    RetryDelayMs = step.RetryDelayMs,
+                    Condition = step.Condition,
+                    ParallelGroup = step.ParallelGroup,
+                    ExpectedStatus = step.ExpectedStatus,
+                    BodyContains = step.BodyContains,
+                    Assertions = step
+                        .Assertions.Select(assertion => new SuiteAssertionDto
+                        {
+                            Kind = assertion.Kind,
+                            Path = assertion.Path,
+                            Expected = assertion.Expected,
+                        })
+                        .ToList(),
+                    InputMappings = step
+                        .InputMappings.Select(mapping => new SuiteMappingDto
+                        {
+                            SourceStepId = mapping.SourceStepId,
+                            SourcePath = mapping.SourcePath,
+                            TargetKind = mapping.TargetKind,
+                            TargetPath = mapping.TargetPath,
+                            Template = mapping.Template,
+                        })
+                        .ToList(),
+                })
+                .ToList(),
+        };
 
     /// <summary>Builds a collection and its requests; parent links are set by the caller.</summary>
     public static RequestCollection ToCollectionModel(CollectionDto dto)

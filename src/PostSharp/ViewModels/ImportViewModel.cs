@@ -24,6 +24,102 @@ public partial class ImportViewModel : ObservableObject
         ImportReport.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasImportReport));
     }
 
+    /// <summary>Imports pasted content for MCP without opening the import dialog.</summary>
+    public async Task<ImportSummary> ImportContentAsync(
+        string? source,
+        string content,
+        string? fileName,
+        bool includeStaticResources,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            throw new InvalidOperationException("导入内容不能为空。");
+        }
+
+        var path = string.IsNullOrWhiteSpace(fileName) ? "mcp-import.json" : fileName;
+        var kind = ParseImportKind(source);
+        if (kind == ImportFileKind.Unknown)
+        {
+            kind = ImportFileDetector.Detect(path, content);
+        }
+
+        var provider =
+            _providers.Find(kind)
+            ?? throw new InvalidOperationException(
+                "无法识别导入格式，请指定 OpenApi、PostmanCollection、PostmanEnvironment、Har、Insomnia、Hoppscotch、Curl 或 PowerShell。"
+            );
+        var payload = await Task.Run(
+                () =>
+                    provider.Parse(
+                        path,
+                        content,
+                        new ImportProviderContext(includeStaticResources)
+                    ),
+                cancellationToken
+            )
+            .ConfigureAwait(true);
+
+        var requests = 0;
+        var folders = 0;
+        var environments = 0;
+        var warnings = new List<string>();
+        switch (payload)
+        {
+            case OpenApiImportPayload openApi:
+            {
+                var outcome = _host.ApplyOpenApiImport(openApi.Document);
+                requests = outcome.RequestCount;
+                folders = outcome.FolderCount;
+                warnings.AddRange(openApi.Document.Warnings);
+                break;
+            }
+            case CollectionImportPayload collection:
+            {
+                var outcome = _host.ApplyCollectionImport(collection.Result);
+                requests = outcome.RequestCount;
+                folders = outcome.FolderCount;
+                environments = outcome.EnvironmentName is null ? 0 : 1;
+                warnings.AddRange(collection.Result.Warnings);
+                break;
+            }
+            case EnvironmentImportPayload environment:
+            {
+                _host.ApplyEnvironmentImport(environment.Result);
+                environments = 1;
+                warnings.AddRange(environment.Result.Warnings);
+                break;
+            }
+            case CurlImportPayload curl:
+            {
+                _host.ApplyCurlImport(curl.Result);
+                requests = 1;
+                warnings.AddRange(curl.Result.Warnings);
+                break;
+            }
+            default:
+                throw new InvalidOperationException("导入格式没有可应用的内容。");
+        }
+
+        _host.CompleteImport();
+        return new ImportSummary(provider.FormatName, requests, folders, environments, warnings);
+    }
+
+    private static ImportFileKind ParseImportKind(string? source) =>
+        source?.Trim().ToLowerInvariant() switch
+        {
+            "openapi" or "swagger" => ImportFileKind.OpenApi,
+            "postmancollection" or "postman" => ImportFileKind.PostmanCollection,
+            "postmanenvironment" => ImportFileKind.PostmanEnvironment,
+            "har" => ImportFileKind.Har,
+            "insomnia" => ImportFileKind.Insomnia,
+            "hoppscotch" => ImportFileKind.Hoppscotch,
+            "curl" => ImportFileKind.Curl,
+            "powershell" => ImportFileKind.PowerShell,
+            _ => ImportFileKind.Unknown,
+        };
+
     [ObservableProperty]
     private bool _isImportDialogOpen;
 
@@ -1213,3 +1309,11 @@ public partial class ImportViewModel : ObservableObject
         };
     }
 }
+
+public sealed record ImportSummary(
+    string Format,
+    int Requests,
+    int Folders,
+    int Environments,
+    IReadOnlyList<string> Warnings
+);

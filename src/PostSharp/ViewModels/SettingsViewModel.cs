@@ -15,6 +15,7 @@ public partial class SettingsViewModel : ObservableObject
 {
     private readonly AppSettings _current;
     private readonly SettingsStore _store;
+    private readonly StorageCoordinator _storage = StorageCoordinator.Current;
     private bool _fontDirectoriesPreviewActive;
 
     public SettingsViewModel(AppSettings current, SettingsStore store)
@@ -22,6 +23,20 @@ public partial class SettingsViewModel : ObservableObject
         _current = current;
         _store = store;
         _draft = Clone(current);
+        foreach (var profile in _storage.Config.Profiles)
+        {
+            StorageProfiles.Add(profile.Clone());
+        }
+
+        _storage.StatusChanged += OnStorageStatusChanged;
+        SettingsStorageProfile = FindProfile(
+            _storage.Config.ProfileFor(StorageCategories.Settings)
+        );
+        WorkspaceStorageProfile = FindProfile(
+            _storage.Config.ProfileFor(StorageCategories.Workspace)
+        );
+        SuitesStorageProfile = FindProfile(_storage.Config.ProfileFor(StorageCategories.Suites));
+        SelectedStorageProfile = StorageProfiles.FirstOrDefault();
         RefreshFontState();
     }
 
@@ -43,6 +58,45 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _isFontsBusy;
 
+    [ObservableProperty]
+    private StorageProfile? _selectedStorageProfile;
+
+    [ObservableProperty]
+    private StorageProviderOption? _selectedStorageProvider;
+
+    [ObservableProperty]
+    private StorageProfile? _settingsStorageProfile;
+
+    [ObservableProperty]
+    private StorageProfile? _workspaceStorageProfile;
+
+    [ObservableProperty]
+    private StorageProfile? _suitesStorageProfile;
+
+    [ObservableProperty]
+    private bool _isStorageBusy;
+
+    [ObservableProperty]
+    private string _storageStatusMessage =
+        "选择本地 SQLite 或远程数据库；保存后新数据会写入所选存储。";
+
+    [ObservableProperty]
+    private bool _hasStorageError;
+
+    public ObservableCollection<StorageProfile> StorageProfiles { get; } = new();
+
+    public IReadOnlyList<StorageProviderOption> StorageProviderOptions { get; } =
+        StorageProviders
+            .All.Select(provider => new StorageProviderOption(
+                provider,
+                StorageProviders.Label(provider)
+            ))
+            .ToList();
+
+    public bool IsStorageProfileEditable => SelectedStorageProfile?.IsRemote == true;
+
+    public string LocalDatabasePath => AppPaths.DatabaseFile;
+
     public IReadOnlyList<string> ThemeOptions => ThemeService.Options;
 
     public ObservableCollection<string> FontOptions { get; } = new();
@@ -61,7 +115,7 @@ public partial class SettingsViewModel : ObservableObject
 
     public string DefaultLogDirectory => AppPaths.DefaultLogDirectory;
 
-    public string SettingsFilePath => _store.FilePath;
+    public string SettingsFilePath => AppPaths.DatabaseFile;
 
     public string ManagedFontDirectory => FontService.ManagedFontDirectory;
 
@@ -324,16 +378,17 @@ public partial class SettingsViewModel : ObservableObject
         Draft.LogDirectory = directory;
         CopyToCurrent();
 
-        var saved = _store.Save(_current);
-        if (saved == SaveResult.Saved)
+        var storageSaved = SaveStorageConfig();
+        var saved = storageSaved ? _store.Save(_current) : SaveResult.Failed;
+        if (saved == SaveResult.Saved && storageSaved)
         {
             _fontDirectoriesPreviewActive = false;
             HasError = false;
             StatusMessage =
-                $"已保存到 {_store.FilePath}，日志级别 {Draft.LogLevel}，新日志将写入 {directory}。";
+                $"已保存到 {_store.StorageDescription}，日志级别 {Draft.LogLevel}，新日志将写入 {directory}。";
             Log.Information(
-                "设置已保存 {SettingsFile}，日志目录 {LogDirectory}，日志级别 {LogLevel}",
-                _store.FilePath,
+                "设置已保存 {StorageFile}，日志目录 {LogDirectory}，日志级别 {LogLevel}",
+                AppPaths.DatabaseFile,
                 directory,
                 Draft.LogLevel
             );
@@ -341,11 +396,15 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         HasError = true;
-        StatusMessage =
-            saved == SaveResult.Blocked
-                ? "设置已应用到当前会话，但启动时 settings.json 无法读取，为保护原文件本次不会写入。请关闭占用该文件的程序后重启 PostSharp。"
-                : "设置已应用到当前会话，但写入配置文件失败，请检查数据目录是否可写、settings.json 是否被其他程序占用。";
-        Log.Error("设置文件写入失败 {SettingsFile} {SaveResult}", _store.FilePath, saved);
+        StatusMessage = !storageSaved
+            ? "设置已应用到当前会话，但存储配置写入失败，请检查数据目录是否可写。"
+            : "设置已应用到当前会话，但写入本地数据库失败，请检查数据目录是否可写、数据库是否被其他程序占用。";
+        Log.Error(
+            "设置或存储配置写入失败 {StorageFile} {SettingsResult} {StorageResult}",
+            AppPaths.DatabaseFile,
+            saved,
+            storageSaved
+        );
     }
 
     [RelayCommand]
@@ -399,6 +458,265 @@ public partial class SettingsViewModel : ObservableObject
             StatusMessage = "无法打开日志目录，请确认目录存在且可访问。";
             Log.Error(exception, "打开日志目录失败 {LogDirectory}", directory);
         }
+    }
+
+    public void Dispose() => _storage.StatusChanged -= OnStorageStatusChanged;
+
+    private void OnStorageStatusChanged(object? sender, string message)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            StorageStatusMessage = message;
+            HasStorageError =
+                message.Contains("失败", StringComparison.Ordinal)
+                || message.Contains("错误", StringComparison.Ordinal);
+        });
+    }
+
+    partial void OnSelectedStorageProfileChanged(StorageProfile? value)
+    {
+        if (value is not null)
+        {
+            var option = StorageProviderOptions.FirstOrDefault(candidate =>
+                string.Equals(candidate.Value, value.Provider, StringComparison.Ordinal)
+            );
+            if (option is not null && !ReferenceEquals(SelectedStorageProvider, option))
+            {
+                SelectedStorageProvider = option;
+            }
+        }
+
+        OnPropertyChanged(nameof(IsStorageProfileEditable));
+    }
+
+    partial void OnSelectedStorageProviderChanged(StorageProviderOption? value)
+    {
+        if (value is null || SelectedStorageProfile is not { IsRemote: true } profile)
+        {
+            return;
+        }
+
+        if (value.Value == StorageProviders.LocalSqlite)
+        {
+            SelectedStorageProvider = StorageProviderOptions.FirstOrDefault(option =>
+                string.Equals(option.Value, profile.Provider, StringComparison.Ordinal)
+            );
+            return;
+        }
+
+        if (!string.Equals(profile.Provider, value.Value, StringComparison.Ordinal))
+        {
+            profile.Provider = value.Value;
+        }
+    }
+
+    [RelayCommand]
+    private void AddStorageProfile()
+    {
+        var profile = new StorageProfile
+        {
+            Name = $"远程库 {StorageProfiles.Count}",
+            Provider = StorageProviders.PostgreSql,
+            ConnectionString = string.Empty,
+        };
+        StorageProfiles.Add(profile);
+        SelectedStorageProfile = profile;
+        StorageStatusMessage = "填写连接串后点击「测试连接」，保存设置后生效。";
+        HasStorageError = false;
+    }
+
+    [RelayCommand]
+    private void RemoveStorageProfile()
+    {
+        if (SelectedStorageProfile is not { IsRemote: true } profile)
+        {
+            return;
+        }
+
+        StorageProfiles.Remove(profile);
+        foreach (
+            var binding in new[]
+            {
+                SettingsStorageProfile,
+                WorkspaceStorageProfile,
+                SuitesStorageProfile,
+            }
+        )
+        {
+            if (binding?.Id == profile.Id)
+            {
+                var local = FindProfile(StorageConfig.LocalProfileId);
+                if (ReferenceEquals(binding, SettingsStorageProfile))
+                {
+                    SettingsStorageProfile = local;
+                }
+                else if (ReferenceEquals(binding, WorkspaceStorageProfile))
+                {
+                    WorkspaceStorageProfile = local;
+                }
+                else
+                {
+                    SuitesStorageProfile = local;
+                }
+            }
+        }
+
+        SelectedStorageProfile = StorageProfiles.FirstOrDefault();
+        StorageStatusMessage = "已移除远程库，保存存储配置后生效。";
+        HasStorageError = false;
+    }
+
+    [RelayCommand]
+    private async Task TestStorageAsync()
+    {
+        if (IsStorageBusy || SelectedStorageProfile is not { } profile)
+        {
+            return;
+        }
+
+        IsStorageBusy = true;
+        StorageStatusMessage = "正在测试连接…";
+        try
+        {
+            var result = await _storage.TestAsync(profile);
+            HasStorageError = !result.Success;
+            StorageStatusMessage = $"{result.Message}（{result.ElapsedMs} ms）";
+        }
+        catch (Exception exception)
+        {
+            HasStorageError = true;
+            StorageStatusMessage = $"测试失败：{exception.Message}";
+            Log.Error(exception, "测试存储配置失败 {Profile}", profile.Name);
+        }
+        finally
+        {
+            IsStorageBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SyncStorageAsync()
+    {
+        if (IsStorageBusy || SelectedStorageProfile is not { } target)
+        {
+            return;
+        }
+
+        var source = target.IsLocal
+            ? StorageProfiles.FirstOrDefault(profile => profile.IsRemote)
+            : FindProfile(StorageConfig.LocalProfileId);
+        if (source is null || source.Id == target.Id)
+        {
+            HasStorageError = true;
+            StorageStatusMessage = "请先添加并选择一个远程库，再执行同步。";
+            return;
+        }
+
+        IsStorageBusy = true;
+        StorageStatusMessage = "正在同步数据…";
+        try
+        {
+            if (
+                _storage.RegisterProfile(source) != SaveResult.Saved
+                || _storage.RegisterProfile(target) != SaveResult.Saved
+            )
+            {
+                HasStorageError = true;
+                StorageStatusMessage = "同步失败：无法保存存储连接配置。";
+                return;
+            }
+
+            var result = await _storage.SyncAsync(source.Id, target.Id, StorageCategories.All);
+            HasStorageError = !result.Success;
+            StorageStatusMessage = result.Message;
+        }
+        catch (Exception exception)
+        {
+            HasStorageError = true;
+            StorageStatusMessage = $"同步失败：{exception.Message}";
+            Log.Error(exception, "同步存储失败 {Target}", target.Name);
+        }
+        finally
+        {
+            IsStorageBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SwitchStorageAsync()
+    {
+        if (IsStorageBusy || SelectedStorageProfile is not { } target)
+        {
+            return;
+        }
+
+        IsStorageBusy = true;
+        StorageStatusMessage = "正在切换存储…";
+        try
+        {
+            if (_storage.RegisterProfile(target) != SaveResult.Saved)
+            {
+                HasStorageError = true;
+                StorageStatusMessage = "切换失败：无法保存存储连接配置。";
+                return;
+            }
+
+            var result = await _storage.SwitchAsync(target.Id, StorageCategories.All);
+            HasStorageError = !result.Success;
+            StorageStatusMessage =
+                result.Message
+                + (result.BackupPath is null ? string.Empty : $" 切换前备份：{result.BackupPath}");
+        }
+        catch (Exception exception)
+        {
+            HasStorageError = true;
+            StorageStatusMessage = $"切换失败：{exception.Message}";
+            Log.Error(exception, "切换存储失败 {Target}", target.Name);
+        }
+        finally
+        {
+            IsStorageBusy = false;
+        }
+    }
+
+    private StorageProfile FindProfile(StorageProfile configured) =>
+        StorageProfiles.FirstOrDefault(profile =>
+            string.Equals(profile.Id, configured.Id, StringComparison.Ordinal)
+        ) ?? StorageProfiles.First();
+
+    private StorageProfile FindProfile(string profileId) =>
+        StorageProfiles.FirstOrDefault(profile =>
+            string.Equals(profile.Id, profileId, StringComparison.Ordinal)
+        ) ?? StorageProfiles.First();
+
+    private bool SaveStorageConfig()
+    {
+        var incomplete = StorageProfiles.FirstOrDefault(profile =>
+            profile.IsRemote && string.IsNullOrWhiteSpace(profile.ConnectionString)
+        );
+        if (incomplete is not null)
+        {
+            HasStorageError = true;
+            StorageStatusMessage =
+                $"存储配置「{incomplete.DisplayName}」缺少连接串，请填写或移除后再保存。";
+            return false;
+        }
+
+        var config = new StorageConfig
+        {
+            Profiles = StorageProfiles.Select(profile => profile.Clone()).ToList(),
+            Bindings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [StorageCategories.Settings] =
+                    SettingsStorageProfile?.Id ?? StorageConfig.LocalProfileId,
+                [StorageCategories.Workspace] =
+                    WorkspaceStorageProfile?.Id ?? StorageConfig.LocalProfileId,
+                [StorageCategories.Suites] =
+                    SuitesStorageProfile?.Id ?? StorageConfig.LocalProfileId,
+            },
+        };
+
+        return _storage.SaveConfig(config) == SaveResult.Saved;
     }
 
     private void RefreshFontState()
@@ -528,4 +846,9 @@ public partial class SettingsViewModel : ObservableObject
             }
         }
     }
+}
+
+public sealed record StorageProviderOption(string Value, string Label)
+{
+    public override string ToString() => Label;
 }

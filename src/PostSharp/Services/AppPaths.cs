@@ -3,11 +3,36 @@ namespace PostSharp.Services;
 /// <summary>Single source of truth for the local data directory used by every store.</summary>
 public static class AppPaths
 {
-    public static string Root { get; } =
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "PostSharp"
-        );
+    private static readonly string LegacyRoot = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "PostSharp"
+    );
+
+    private static readonly string[] LegacyFiles =
+    [
+        "settings.json",
+        "settings.json.bak",
+        "workspace.json",
+        "workspace.json.bak",
+        "audit.json",
+        "audit.json.bak",
+        "audit-trash.json",
+        "audit-trash.json.bak",
+        "postsharp.db",
+        "postsharp.db-wal",
+        "postsharp.db-shm",
+        "storage.json",
+    ];
+
+    private static bool _legacyMigrationDone;
+
+    /// <summary>
+    /// Project root when the app is launched from a source tree; the current directory for an installed
+    /// copy. Data lives under <c>.postsharp</c> so it travels with the workspace.
+    /// </summary>
+    public static string ProjectRoot { get; } = FindProjectRoot();
+
+    public static string Root { get; } = ResolveDataRoot();
 
     public static string DefaultLogDirectory => Path.Combine(Root, "logs");
 
@@ -19,10 +44,14 @@ public static class AppPaths
 
     public static string AuditTrashFile => Path.Combine(Root, "audit-trash.json");
 
-    /// <summary>SQLite database for audit records and their recycle bin.</summary>
+    /// <summary>SQLite database for audit records, storage documents and their recycle bin.</summary>
     public static string DatabaseFile => Path.Combine(Root, "postsharp.db");
 
-    /// <summary>内嵌 WebView2 的配置与缓存目录，放在 LocalAppData 以免污染程序目录。</summary>
+    public static string StorageConfigFile => Path.Combine(Root, "storage.json");
+
+    public static string BackupDirectory => Path.Combine(Root, "backups");
+
+    /// <summary>内嵌 WebView2 的配置与缓存目录，放到 LocalAppData 以免污染程序目录。</summary>
     public static string WebViewDataDirectory { get; } =
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -35,6 +64,7 @@ public static class AppPaths
         try
         {
             Directory.CreateDirectory(Root);
+            MigrateLegacyData();
         }
         catch (Exception exception)
         {
@@ -46,7 +76,7 @@ public static class AppPaths
     }
 
     /// <summary>
-    /// 选出可写的 WebView2 用户数据目录：优先 LocalAppData，其次临时目录；都不可写时返回 false，
+    /// 选出可写的 WebView2 用户数据目录：优先 LocalAppData，其次临时目录；都不可写时返回 false。
     /// 由调用方退回 WebView2 的默认位置。
     /// </summary>
     public static bool TryPrepareWebViewDataDirectory(out string directory)
@@ -77,4 +107,121 @@ public static class AppPaths
         directory = string.Empty;
         return false;
     }
+
+    public static string CreateBackupPath(string label)
+    {
+        Directory.CreateDirectory(BackupDirectory);
+        var safeLabel = string.Concat(
+            label.Select(character =>
+                Path.GetInvalidFileNameChars().Contains(character) ? '-' : character
+            )
+        );
+        return Path.Combine(BackupDirectory, $"{safeLabel}-{DateTime.Now:yyyyMMdd-HHmmss}.db");
+    }
+
+    private static string ResolveDataRoot()
+    {
+        var configured = Environment.GetEnvironmentVariable("POSTSHARP_DATA_DIR");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return Path.GetFullPath(configured);
+        }
+
+        var projectData = Path.Combine(ProjectRoot, ".postsharp");
+        if (TryEnsureWritable(projectData))
+        {
+            return projectData;
+        }
+
+        return LegacyRoot;
+    }
+
+    private static bool TryEnsureWritable(string directory)
+    {
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var probe = Path.Combine(directory, ".write-probe");
+            File.WriteAllText(probe, "ok");
+            File.Delete(probe);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "项目数据目录不可写，改用用户数据目录 {Directory}", directory);
+            return false;
+        }
+    }
+
+    private static string FindProjectRoot()
+    {
+        var candidates = new[] { Environment.CurrentDirectory, AppContext.BaseDirectory };
+
+        foreach (var candidate in candidates)
+        {
+            var directory = new DirectoryInfo(candidate);
+            for (var depth = 0; depth < 10 && directory is not null; depth++)
+            {
+                try
+                {
+                    if (
+                        Directory.Exists(Path.Combine(directory.FullName, ".git"))
+                        || Directory.EnumerateFiles(directory.FullName, "*.slnx").Any()
+                    )
+                    {
+                        return directory.FullName;
+                    }
+                }
+                catch (Exception exception)
+                    when (exception is IOException or UnauthorizedAccessException)
+                {
+                    Log.Warning(exception, "无法检查项目根目录 {Directory}", directory.FullName);
+                }
+
+                directory = directory.Parent;
+            }
+        }
+
+        return Environment.CurrentDirectory;
+    }
+
+    private static void MigrateLegacyData()
+    {
+        if (_legacyMigrationDone || PathsEqual(Root, LegacyRoot))
+        {
+            return;
+        }
+
+        _legacyMigrationDone = true;
+        foreach (var name in LegacyFiles)
+        {
+            var source = Path.Combine(LegacyRoot, name);
+            var target = Path.Combine(Root, name);
+            if (!File.Exists(source) || File.Exists(target))
+            {
+                continue;
+            }
+
+            try
+            {
+                File.Copy(source, target);
+                Log.Information(
+                    "已将旧数据复制到项目数据目录 {SourceFile} {TargetFile}",
+                    source,
+                    target
+                );
+            }
+            catch (Exception exception)
+            {
+                Log.Warning(exception, "复制旧数据失败 {SourceFile} {TargetFile}", source, target);
+            }
+        }
+    }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar),
+            Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase
+        );
 }

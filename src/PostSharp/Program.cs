@@ -21,8 +21,8 @@ internal static class Program
         if (SettingsStore.StartupProblem is { } problem)
         {
             Log.Warning(
-                "启动时设置文件读取异常 {SettingsFile} {State} {SetAsideFile}",
-                AppPaths.SettingsFile,
+                "启动时设置读取异常 {StorageFile} {State} {SetAsideFile}",
+                AppPaths.DatabaseFile,
                 problem.State,
                 problem.SetAsidePath
             );

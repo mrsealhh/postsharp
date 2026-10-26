@@ -15,6 +15,8 @@ public sealed class SettingsStore
 
     private static AppSettings? _loaded;
 
+    private readonly StorageCoordinator _storage = StorageCoordinator.Current;
+
     public string FilePath { get; }
 
     public SettingsStore()
@@ -29,6 +31,8 @@ public sealed class SettingsStore
     /// </summary>
     public static DataFileLoad<AppSettings>? StartupProblem { get; private set; }
 
+    public string StorageDescription => $"设置：{AppPaths.DatabaseFile}（SQLite 文档 settings）";
+
     /// <summary>
     /// Settings are read once per process and every later call gets the same instance, so a momentary lock during a
     /// second read cannot swap in defaults or block saving.
@@ -40,10 +44,46 @@ public sealed class SettingsStore
             return _loaded;
         }
 
-        var load = DataFile.Load(
-            FilePath,
-            text => JsonSerializer.Deserialize<AppSettings>(text, JsonOptions)
-        );
+        var document = _storage.LoadDocument(StorageCategories.Settings);
+        DataFileLoad<AppSettings> load;
+        if (document is not null)
+        {
+            try
+            {
+                var documentSettings = JsonSerializer.Deserialize<AppSettings>(
+                    document.Payload,
+                    JsonOptions
+                );
+                load = documentSettings is null
+                    ? new DataFileLoad<AppSettings>(null, DataFileState.Unreadable, null)
+                    : new DataFileLoad<AppSettings>(documentSettings, DataFileState.Loaded, null);
+            }
+            catch (Exception exception)
+            {
+                Log.Error(
+                    exception,
+                    "读取 SQLite 设置文档失败 {Category}",
+                    StorageCategories.Settings
+                );
+                load = new DataFileLoad<AppSettings>(null, DataFileState.Unreadable, null);
+            }
+        }
+        else
+        {
+            // One-time migration from the old JSON layout.
+            load = DataFile.Load(
+                FilePath,
+                text => JsonSerializer.Deserialize<AppSettings>(text, JsonOptions)
+            );
+            if (load.Value is { } migrated)
+            {
+                _storage.SaveDocument(
+                    StorageCategories.Settings,
+                    JsonSerializer.Serialize(migrated, JsonOptions)
+                );
+            }
+        }
+
         if (load.IsProblem)
         {
             StartupProblem = load;
@@ -60,5 +100,8 @@ public sealed class SettingsStore
     }
 
     public SaveResult Save(AppSettings settings) =>
-        DataFile.Save(FilePath, () => JsonSerializer.Serialize(settings, JsonOptions));
+        _storage.SaveDocument(
+            StorageCategories.Settings,
+            JsonSerializer.Serialize(settings, JsonOptions)
+        );
 }
