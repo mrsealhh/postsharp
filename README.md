@@ -153,7 +153,7 @@ dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj
 
 ### Apifox 迁移
 
-Apifox 的原生格式暂未直接解析；当前推荐两条官方导出路径，PostSharp 已经有对应导入器：
+Apifox 的原生格式暂未直接解析；当前推荐三条官方导出路径，PostSharp 已经有对应导入器：
 
 1. **推荐：Apifox → Postman**
    - Apifox 打开「项目设置 → 导出数据」，选择 `Postman`，导出 Collection JSON。
@@ -665,7 +665,18 @@ master                 稳定可发布
 
 ## 已知限制与路线图
 
-当前 MVP 限制：
+### 已完成（导入升级）
+
+- OpenAPI / Swagger、Postman Collection、Postman Environment、cURL、HAR 1.2、Insomnia V4、Hoppscotch 导入。
+- Postman Collection 与 cURL 导出。
+- 导入来源小分类卡片：可收起，避免大分类隐藏入口。
+- 批量导入：多选文件、自动识别格式、逐文件成功/失败结果。
+- 导入反馈：请求/分组/环境统计；结果和兼容性提示默认折叠，可展开。
+- OpenAPI：`x-apifox-folder` 分组、securitySchemes 占位头、多服务器/多 tag/外部 `$ref` 提示。
+- 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
+- 自测：30 个 xUnit 测试。
+
+### 当前 MVP 限制
 
 - SSE 结果为流结束后聚合展示，逐 token 实时渲染未实现。
 - multipart 每个请求支持一个文件；多文件、文件拖拽、取消上传未实现。
@@ -680,7 +691,7 @@ master                 稳定可发布
 - Cookie 管理、代理、客户端证书、OAuth、Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
 - MCP 仅本地回环，无 OAuth；SSE 通知未实现。
 
-计划优先级：
+### 后续路线图
 
 1. 导入框架重构：拆分 `ImportViewModel` / `IImportProvider`，为后续更多来源降低冲突。
 2. OpenAPI 完整增强：多服务器选择、外部 `$ref` 下载、更多安全方案与回调/Webhook 提示。
