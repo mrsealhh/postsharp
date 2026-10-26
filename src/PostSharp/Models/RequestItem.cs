@@ -45,6 +45,17 @@ public partial class RequestCollection : ObservableObject
 
 public partial class RequestItem : ObservableObject
 {
+    private bool _syncingUploadFields;
+
+    public RequestItem()
+    {
+        UploadFiles.CollectionChanged += (_, _) =>
+        {
+            SyncLegacyUploadFields();
+            OnPropertyChanged(nameof(HasUploadFile));
+        };
+    }
+
     [ObservableProperty]
     private string _name = "新建请求";
 
@@ -71,6 +82,10 @@ public partial class RequestItem : ObservableObject
     [ObservableProperty]
     private string _uploadFieldName = "file";
 
+    public ObservableCollection<UploadFileItem> UploadFiles { get; } = new();
+
+    public bool HasUploadFile => UploadFiles.Count > 0;
+
     [ObservableProperty]
     private bool _isSelected;
 
@@ -87,6 +102,50 @@ public partial class RequestItem : ObservableObject
 
     public RequestCollection? Owner { get; set; }
 
+    partial void OnUploadFilePathChanged(string value)
+    {
+        if (_syncingUploadFields || string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (
+            UploadFiles.Any(file =>
+                string.Equals(file.FilePath, value, StringComparison.OrdinalIgnoreCase)
+            )
+        )
+        {
+            return;
+        }
+
+        UploadFiles.Add(
+            new UploadFileItem
+            {
+                FilePath = value,
+                FieldName = string.IsNullOrWhiteSpace(UploadFieldName) ? "file" : UploadFieldName,
+            }
+        );
+    }
+
+    partial void OnUploadFieldNameChanged(string value)
+    {
+        if (_syncingUploadFields || UploadFiles.FirstOrDefault() is not { } first)
+        {
+            return;
+        }
+
+        first.FieldName = string.IsNullOrWhiteSpace(value) ? "file" : value;
+    }
+
+    private void SyncLegacyUploadFields()
+    {
+        var first = UploadFiles.FirstOrDefault();
+        _syncingUploadFields = true;
+        UploadFilePath = first?.FilePath ?? string.Empty;
+        UploadFieldName = string.IsNullOrWhiteSpace(first?.FieldName) ? "file" : first.FieldName;
+        _syncingUploadFields = false;
+    }
+
     public RequestItem Clone()
     {
         var clone = new RequestItem
@@ -97,9 +156,19 @@ public partial class RequestItem : ObservableObject
             TimeoutSeconds = TimeoutSeconds,
             BodyMode = BodyMode,
             Body = Body,
-            UploadFilePath = UploadFilePath,
-            UploadFieldName = UploadFieldName,
         };
+
+        foreach (var file in UploadFiles)
+        {
+            clone.UploadFiles.Add(
+                new UploadFileItem
+                {
+                    FilePath = file.FilePath,
+                    FieldName = file.FieldName,
+                    SizeBytes = file.SizeBytes,
+                }
+            );
+        }
 
         foreach (
             var row in Params.Where(r =>

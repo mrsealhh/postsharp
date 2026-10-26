@@ -293,8 +293,32 @@ public static partial class SecretMasker
             UploadFilePath = request.UploadFilePath is null
                 ? null
                 : MaskSecrets(request.UploadFilePath, secrets),
+            UploadFiles = request
+                .UploadFiles?.Select(file =>
+                    file with
+                    {
+                        FilePath = MaskSecrets(file.FilePath, secrets),
+                    }
+                )
+                .ToList(),
         };
     }
+
+    /// <summary>
+    /// A copy of a response with credential headers and secret values masked, for checks whose outcome or reported
+    /// values reach AI clients.
+    /// </summary>
+    public static HttpResult MaskResult(HttpResult result, IReadOnlyList<string> secrets) =>
+        result with
+        {
+            Body = MaskSecrets(result.Body, secrets),
+            Headers = result
+                .Headers.Select(header => new ResponseHeaderView(
+                    header.Key,
+                    MaskHeaderValue(header.Key, header.Value, secrets)
+                ))
+                .ToList(),
+        };
 
     /// <summary>Scrubs an audit record in place; returns whether anything changed.</summary>
     public static bool MaskAuditEntry(AuditEntry entry, IReadOnlyList<string> secrets)

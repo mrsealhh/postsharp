@@ -79,3 +79,11 @@ public sealed class EnvironmentImportResult
 
     public required IReadOnlyList<string> Warnings { get; init; }
 }
+
+/// <summary>Counts and the activated environment after an import is applied to the workspace.</summary>
+public sealed record CollectionImportOutcome(
+    string RootName,
+    int RequestCount,
+    int FolderCount,
+    string? EnvironmentName
+);

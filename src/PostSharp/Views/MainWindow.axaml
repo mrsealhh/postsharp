@@ -430,7 +430,7 @@
                                         Variant="Ghost"
                                         Size="Small"
                                         Padding="8,0"
-                                        Command="{Binding OpenImportDialogCommand}"
+                                        Command="{Binding Import.OpenImportDialogCommand}"
                                         ToolTip.Tip="导入或导出 OpenAPI、Postman Collection、cURL"
                                         AutomationProperties.Name="导入或导出"
                                     >
@@ -1265,70 +1265,113 @@
                                                 RowSpacing="8"
                                             >
                                                 <Grid
-                                                    ColumnDefinitions="Auto,170,Auto,Auto"
+                                                    ColumnDefinitions="*,Auto,Auto"
                                                     ColumnSpacing="8"
                                                 >
                                                     <TextBlock
-                                                        Text="文件字段"
+                                                        Text="上传文件"
                                                         VerticalAlignment="Center"
                                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                                     />
-                                                    <arc:Input
-                                                        Grid.Column="1"
-                                                        Text="{Binding Editing.UploadFieldName, Mode=TwoWay}"
-                                                        IsLabelVisible="False"
-                                                        Size="Small"
-                                                        Placeholder="file"
-                                                        AutomationProperties.Name="上传文件字段名"
-                                                    />
                                                     <arc:Button
-                                                        Grid.Column="2"
+                                                        Grid.Column="1"
                                                         Variant="Secondary"
                                                         Size="Small"
-                                                        Click="OnPickUploadFileClick"
+                                                        Click="OnPickUploadFilesClick"
                                                     >
                                                         <controls:IconLabel
                                                             Icon="{x:Static arc:ArcIcons.Upload}"
-                                                            Text="选择文件"
+                                                            Text="选择文件…"
                                                             IconSize="13"
                                                         />
                                                     </arc:Button>
                                                     <arc:Button
-                                                        Grid.Column="3"
+                                                        Grid.Column="2"
                                                         Variant="Ghost"
                                                         Size="Small"
-                                                        Click="OnClearUploadFileClick"
+                                                        Click="OnClearUploadFilesClick"
+                                                        IsEnabled="{Binding HasUploadFile}"
                                                     >
                                                         <controls:IconLabel
                                                             Icon="{x:Static arc:ArcIcons.X}"
-                                                            Text="清除"
+                                                            Text="清空"
                                                             IconSize="13"
                                                         />
                                                     </arc:Button>
                                                 </Grid>
-                                                <Grid
+                                                <Border
                                                     Grid.Row="1"
-                                                    ColumnDefinitions="*,Auto"
-                                                    ColumnSpacing="8"
+                                                    Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                                                    BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                                                    Padding="8"
+                                                    MinHeight="64"
+                                                    DragDrop.AllowDrop="True"
+                                                    DragDrop.DragOver="OnUploadDragOver"
+                                                    DragDrop.Drop="OnUploadDrop"
                                                 >
-                                                    <arc:Input
-                                                        Text="{Binding Editing.UploadFilePath, Mode=TwoWay}"
-                                                        IsLabelVisible="False"
-                                                        Size="Small"
-                                                        Placeholder="选择文件或粘贴本地路径"
-                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
-                                                        AutomationProperties.Name="上传文件路径"
-                                                    />
-                                                    <TextBlock
-                                                        Grid.Column="1"
-                                                        Text="multipart/form-data"
-                                                        VerticalAlignment="Center"
-                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                    />
-                                                </Grid>
+                                                    <Grid>
+                                                        <TextBlock
+                                                            IsVisible="{Binding !HasUploadFile}"
+                                                            Text="拖拽文件到这里，或点击「选择文件…」"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                        />
+                                                        <arc:ScrollArea
+                                                            MaxHeight="140"
+                                                            IsVisible="{Binding HasUploadFile}"
+                                                        >
+                                                            <ItemsControl ItemsSource="{Binding Editing.UploadFiles}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate x:DataType="models:UploadFileItem">
+                                                                        <Grid
+                                                                            ColumnDefinitions="150,*,Auto"
+                                                                            ColumnSpacing="8"
+                                                                            Margin="0,0,0,4"
+                                                                        >
+                                                                            <arc:Input
+                                                                                Text="{Binding FieldName, Mode=TwoWay}"
+                                                                                IsLabelVisible="False"
+                                                                                Size="Small"
+                                                                                Placeholder="file"
+                                                                                AutomationProperties.Name="文件字段名"
+                                                                            />
+                                                                            <TextBlock
+                                                                                Grid.Column="1"
+                                                                                Text="{Binding DisplayLabel}"
+                                                                                VerticalAlignment="Center"
+                                                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                                TextTrimming="CharacterEllipsis"
+                                                                                ToolTip.Tip="{Binding FilePath}"
+                                                                            />
+                                                                            <arc:Button
+                                                                                Grid.Column="2"
+                                                                                Variant="Ghost"
+                                                                                Size="Small"
+                                                                                Click="OnRemoveUploadFileClick"
+                                                                                CommandParameter="{Binding}"
+                                                                                AutomationProperties.Name="移除上传文件"
+                                                                            >
+                                                                                <controls:IconLabel
+                                                                                    Icon="{x:Static arc:ArcIcons.Trash2}"
+                                                                                    Text="移除"
+                                                                                    IconSize="13"
+                                                                                    TextForeground="{arc:ArcDesignTokenResource Danger}"
+                                                                                    IconForeground="{arc:ArcDesignTokenResource Danger}"
+                                                                                />
+                                                                            </arc:Button>
+                                                                        </Grid>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </arc:ScrollArea>
+                                                    </Grid>
+                                                </Border>
                                                 <Grid
                                                     Grid.Row="2"
                                                     RowDefinitions="Auto,*"
@@ -2557,7 +2600,7 @@
                                                                             >
                                                                                 <Grid
                                                                                     ColumnDefinitions="Auto,*,Auto"
-                                                                                    RowDefinitions="Auto,Auto"
+                                                                                    RowDefinitions="Auto,Auto,Auto"
                                                                                     ColumnSpacing="8"
                                                                                     RowSpacing="2"
                                                                                 >
@@ -2574,12 +2617,23 @@
                                                                                         TextTrimming="CharacterEllipsis"
                                                                                         ToolTip.Tip="{Binding Name}"
                                                                                     />
-                                                                                    <TextBlock
+                                                                                    <StackPanel
                                                                                         Grid.Column="2"
-                                                                                        Text="{Binding StatusCode}"
-                                                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                                                                    />
+                                                                                        Orientation="Horizontal"
+                                                                                        Spacing="4"
+                                                                                        VerticalAlignment="Center"
+                                                                                    >
+                                                                                        <TextBlock
+                                                                                            Text="{Binding StatusCode}"
+                                                                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                                        />
+                                                                                        <TextBlock
+                                                                                            Text="{Binding AttemptText}"
+                                                                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                                        />
+                                                                                    </StackPanel>
                                                                                     <TextBlock
                                                                                         Grid.Row="1"
                                                                                         Grid.Column="1"
@@ -2589,6 +2643,45 @@
                                                                                         Foreground="{arc:ArcDesignTokenResource Danger}"
                                                                                         TextWrapping="Wrap"
                                                                                     />
+                                                                                    <ItemsControl
+                                                                                        Grid.Row="2"
+                                                                                        Grid.Column="1"
+                                                                                        Grid.ColumnSpan="2"
+                                                                                        ItemsSource="{Binding Assertions}"
+                                                                                        IsVisible="{Binding HasAssertions}"
+                                                                                    >
+                                                                                        <ItemsControl.ItemTemplate>
+                                                                                            <DataTemplate x:DataType="models:TestAssertionResult">
+                                                                                                <Grid
+                                                                                                    ColumnDefinitions="Auto,*"
+                                                                                                    RowDefinitions="Auto,Auto"
+                                                                                                    ColumnSpacing="6"
+                                                                                                    Margin="0,2,0,0"
+                                                                                                >
+                                                                                                    <arc:Badge
+                                                                                                        Content="{Binding ResultLabel}"
+                                                                                                        Tone="{Binding ResultTone}"
+                                                                                                        Size="Small"
+                                                                                                    />
+                                                                                                    <TextBlock
+                                                                                                        Grid.Column="1"
+                                                                                                        Text="{Binding Label}"
+                                                                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                                                        TextWrapping="Wrap"
+                                                                                                    />
+                                                                                                    <TextBlock
+                                                                                                        Grid.Row="1"
+                                                                                                        Grid.Column="1"
+                                                                                                        Text="{Binding Detail}"
+                                                                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                                                        TextWrapping="Wrap"
+                                                                                                    />
+                                                                                                </Grid>
+                                                                                            </DataTemplate>
+                                                                                        </ItemsControl.ItemTemplate>
+                                                                                    </ItemsControl>
                                                                                 </Grid>
                                                                             </Border>
                                                                         </DataTemplate>
@@ -3083,7 +3176,7 @@
 
                 <arc:Dialog
                     x:Name="ImportDialog"
-                    IsOpen="{Binding IsImportDialogOpen, Mode=TwoWay}"
+                    IsOpen="{Binding Import.IsImportDialogOpen, Mode=TwoWay}"
                     Title="导入 / 导出"
                     Description="支持 OpenAPI、Postman、cURL、HAR、Insomnia、Hoppscotch；导入成功后可以继续手工调整请求。"
                     Size="Large"
@@ -3101,17 +3194,17 @@
                                 />
                                 <arc:Button
                                     Grid.Column="1"
-                                    Content="{Binding ImportSourceToggleLabel}"
+                                    Content="{Binding Import.ImportSourceToggleLabel}"
                                     Variant="Ghost"
                                     Size="Small"
-                                    Command="{Binding ToggleImportSourceCommand}"
+                                    Command="{Binding Import.ToggleImportSourceCommand}"
                                     AutomationProperties.Name="展开或收起导入来源"
                                 />
                             </Grid>
                             <arc:RadioCards
-                                SelectedValue="{Binding ImportSource, Mode=TwoWay}"
+                                SelectedValue="{Binding Import.ImportSource, Mode=TwoWay}"
                                 MinColumnWidth="150"
-                                IsVisible="{Binding IsImportSourceExpanded}"
+                                IsVisible="{Binding Import.IsImportSourceExpanded}"
                                 AutomationProperties.Name="导入来源"
                             >
                                 <arc:RadioCardOption
@@ -3163,7 +3256,7 @@
                         </StackPanel>
 
                         <Panel Grid.Row="1">
-                            <StackPanel IsVisible="{Binding IsOpenApiImport}" Spacing="12">
+                            <StackPanel IsVisible="{Binding Import.IsOpenApiImport}" Spacing="12">
                                 <TextBlock
                                     Text="从 URL 导入"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3173,7 +3266,7 @@
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                     <arc:Input
                                         Label="文档 URL"
-                                        Text="{Binding ImportUrl, Mode=TwoWay}"
+                                        Text="{Binding Import.ImportUrl, Mode=TwoWay}"
                                         Placeholder="https://petstore3.swagger.io/api/v3/openapi.json"
                                         AutomationProperties.Name="OpenAPI 文档地址"
                                     />
@@ -3182,9 +3275,9 @@
                                         Content="下载并导入"
                                         Variant="Primary"
                                         VerticalAlignment="Bottom"
-                                        Command="{Binding ImportFromUrlCommand}"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        Command="{Binding Import.ImportFromUrlCommand}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="下载并导入 OpenAPI 文档"
                                     />
                                 </Grid>
@@ -3193,7 +3286,7 @@
                                         Content="填入 springdoc / Knife4j 地址"
                                         Variant="Ghost"
                                         Size="Small"
-                                        Command="{Binding FillSpringDocUrlCommand}"
+                                        Command="{Binding Import.FillSpringDocUrlCommand}"
                                         AutomationProperties.Name="填入 springdoc 或 Knife4j 地址"
                                     />
                                     <TextBlock
@@ -3202,6 +3295,26 @@
                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                         VerticalAlignment="Center"
                                         TextWrapping="Wrap"
+                                    />
+                                </StackPanel>
+
+                                <StackPanel
+                                    IsVisible="{Binding Import.HasPendingOpenApiImport}"
+                                    Spacing="8"
+                                >
+                                    <arc:Select
+                                        Label="服务器"
+                                        ItemsSource="{Binding Import.OpenApiServers}"
+                                        SelectedItem="{Binding Import.SelectedOpenApiServer, Mode=TwoWay}"
+                                        AutomationProperties.Name="OpenAPI 服务器"
+                                    />
+                                    <arc:Button
+                                        Content="导入所选服务器"
+                                        Variant="Primary"
+                                        HorizontalAlignment="Left"
+                                        Command="{Binding Import.ConfirmOpenApiImportCommand}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        AutomationProperties.Name="导入所选服务器的 OpenAPI 请求"
                                     />
                                 </StackPanel>
 
@@ -3221,7 +3334,7 @@
                                         Content="选择 JSON / YAML 文件…"
                                         Variant="Secondary"
                                         Click="OnPickOpenApiFileClick"
-                                        IsEnabled="{Binding !IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
                                         AutomationProperties.Name="选择 OpenAPI 文件"
                                     />
                                     <TextBlock
@@ -3234,7 +3347,7 @@
                             </StackPanel>
 
                             <StackPanel
-                                IsVisible="{Binding IsPostmanCollectionImport}"
+                                IsVisible="{Binding Import.IsPostmanCollectionImport}"
                                 Spacing="10"
                             >
                                 <TextBlock
@@ -3260,15 +3373,15 @@
                                         Content="选择 Collection 文件…"
                                         Variant="Primary"
                                         Click="OnPickPostmanFileClick"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="选择 Postman Collection 文件"
                                     />
                                     <arc:Button
                                         Content="导出当前集合…"
                                         Variant="Secondary"
                                         Click="OnExportPostmanClick"
-                                        IsEnabled="{Binding !IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
                                         AutomationProperties.Name="导出 Postman Collection"
                                     />
                                     <TextBlock
@@ -3283,7 +3396,7 @@
                                     Height="124"
                                     Margin="0,0,0,8"
                                     Label="或者粘贴 Collection JSON"
-                                    Text="{Binding PostmanJson, Mode=TwoWay}"
+                                    Text="{Binding Import.PostmanJson, Mode=TwoWay}"
                                     Placeholder="粘贴 Postman Collection v2.1 JSON"
                                     FrameHeight="100"
                                     IsResizable="False"
@@ -3293,15 +3406,15 @@
                                     Content="导入粘贴内容"
                                     Variant="Primary"
                                     HorizontalAlignment="Left"
-                                    Command="{Binding ImportPostmanTextCommand}"
-                                    IsEnabled="{Binding !IsImporting}"
-                                    IsLoading="{Binding IsImporting}"
+                                    Command="{Binding Import.ImportPostmanTextCommand}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
+                                    IsLoading="{Binding Import.IsImporting}"
                                     AutomationProperties.Name="导入粘贴的 Postman Collection"
                                 />
                             </StackPanel>
 
                             <StackPanel
-                                IsVisible="{Binding IsPostmanEnvironmentImport}"
+                                IsVisible="{Binding Import.IsPostmanEnvironmentImport}"
                                 Spacing="10"
                             >
                                 <TextBlock
@@ -3321,13 +3434,13 @@
                                     Variant="Primary"
                                     HorizontalAlignment="Left"
                                     Click="OnPickPostmanEnvironmentFileClick"
-                                    IsEnabled="{Binding !IsImporting}"
-                                    IsLoading="{Binding IsImporting}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
+                                    IsLoading="{Binding Import.IsImporting}"
                                     AutomationProperties.Name="导入 Postman 环境文件"
                                 />
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsCurlImport}" Spacing="10">
+                            <StackPanel IsVisible="{Binding Import.IsCurlImport}" Spacing="10">
                                 <TextBlock
                                     Text="从 cURL 导入"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3344,7 +3457,7 @@
                                     Height="124"
                                     Margin="0,0,0,8"
                                     Label="cURL 命令"
-                                    Text="{Binding CurlCommand, Mode=TwoWay}"
+                                    Text="{Binding Import.CurlCommand, Mode=TwoWay}"
                                     Placeholder="curl -X POST 'https://api.example.com/health' -H 'Accept: application/json'"
                                     FrameHeight="100"
                                     IsResizable="False"
@@ -3354,9 +3467,9 @@
                                     <arc:Button
                                         Content="导入 cURL"
                                         Variant="Primary"
-                                        Command="{Binding ImportCurlCommand}"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        Command="{Binding Import.ImportCurlCommand}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="导入 cURL 命令"
                                     />
                                     <arc:Button
@@ -3369,7 +3482,7 @@
                                 </StackPanel>
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsHarImport}" Spacing="10">
+                            <StackPanel IsVisible="{Binding Import.IsHarImport}" Spacing="10">
                                 <TextBlock
                                     Text="从 HAR 导入"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3387,12 +3500,12 @@
                                         Content="选择 HAR 文件…"
                                         Variant="Primary"
                                         Click="OnPickHarFileClick"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="选择 HAR 文件"
                                     />
                                     <arc:Checkbox
-                                        IsChecked="{Binding HarIncludeStaticResources, Mode=TwoWay}"
+                                        IsChecked="{Binding Import.HarIncludeStaticResources, Mode=TwoWay}"
                                         VerticalAlignment="Center"
                                         AutomationProperties.Name="包含静态资源"
                                     />
@@ -3407,7 +3520,7 @@
                                     Height="124"
                                     Margin="0,0,0,8"
                                     Label="或者粘贴 HAR JSON"
-                                    Text="{Binding HarJson, Mode=TwoWay}"
+                                    Text="{Binding Import.HarJson, Mode=TwoWay}"
                                     Placeholder="粘贴 HAR 1.2 JSON"
                                     FrameHeight="100"
                                     IsResizable="False"
@@ -3417,14 +3530,14 @@
                                     Content="导入粘贴的 HAR"
                                     Variant="Primary"
                                     HorizontalAlignment="Left"
-                                    Command="{Binding ImportHarTextCommand}"
-                                    IsEnabled="{Binding !IsImporting}"
-                                    IsLoading="{Binding IsImporting}"
+                                    Command="{Binding Import.ImportHarTextCommand}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
+                                    IsLoading="{Binding Import.IsImporting}"
                                     AutomationProperties.Name="导入粘贴的 HAR"
                                 />
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsInsomniaImport}" Spacing="10">
+                            <StackPanel IsVisible="{Binding Import.IsInsomniaImport}" Spacing="10">
                                 <TextBlock
                                     Text="从 Insomnia V4 导入"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3442,8 +3555,8 @@
                                         Content="选择 Insomnia JSON 文件…"
                                         Variant="Primary"
                                         Click="OnPickInsomniaFileClick"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="选择 Insomnia 导出文件"
                                     />
                                     <TextBlock
@@ -3458,7 +3571,7 @@
                                     Height="124"
                                     Margin="0,0,0,8"
                                     Label="或者粘贴 Insomnia JSON"
-                                    Text="{Binding InsomniaJson, Mode=TwoWay}"
+                                    Text="{Binding Import.InsomniaJson, Mode=TwoWay}"
                                     Placeholder="粘贴 Insomnia v4 JSON"
                                     FrameHeight="100"
                                     IsResizable="False"
@@ -3468,14 +3581,17 @@
                                     Content="导入粘贴的 Insomnia"
                                     Variant="Primary"
                                     HorizontalAlignment="Left"
-                                    Command="{Binding ImportInsomniaTextCommand}"
-                                    IsEnabled="{Binding !IsImporting}"
-                                    IsLoading="{Binding IsImporting}"
+                                    Command="{Binding Import.ImportInsomniaTextCommand}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
+                                    IsLoading="{Binding Import.IsImporting}"
                                     AutomationProperties.Name="导入粘贴的 Insomnia"
                                 />
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsHoppscotchImport}" Spacing="10">
+                            <StackPanel
+                                IsVisible="{Binding Import.IsHoppscotchImport}"
+                                Spacing="10"
+                            >
                                 <TextBlock
                                     Text="从 Hoppscotch 导入"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3493,8 +3609,8 @@
                                         Content="选择 Hoppscotch JSON 文件…"
                                         Variant="Primary"
                                         Click="OnPickHoppscotchFileClick"
-                                        IsEnabled="{Binding !IsImporting}"
-                                        IsLoading="{Binding IsImporting}"
+                                        IsEnabled="{Binding Import.IsNotImporting}"
+                                        IsLoading="{Binding Import.IsImporting}"
                                         AutomationProperties.Name="选择 Hoppscotch Collection 文件"
                                     />
                                     <TextBlock
@@ -3509,7 +3625,7 @@
                                     Height="124"
                                     Margin="0,0,0,8"
                                     Label="或者粘贴 Hoppscotch JSON"
-                                    Text="{Binding HoppscotchJson, Mode=TwoWay}"
+                                    Text="{Binding Import.HoppscotchJson, Mode=TwoWay}"
                                     Placeholder="粘贴 Hoppscotch Collection JSON"
                                     FrameHeight="100"
                                     IsResizable="False"
@@ -3519,14 +3635,17 @@
                                     Content="导入粘贴的 Hoppscotch"
                                     Variant="Primary"
                                     HorizontalAlignment="Left"
-                                    Command="{Binding ImportHoppscotchTextCommand}"
-                                    IsEnabled="{Binding !IsImporting}"
-                                    IsLoading="{Binding IsImporting}"
+                                    Command="{Binding Import.ImportHoppscotchTextCommand}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
+                                    IsLoading="{Binding Import.IsImporting}"
                                     AutomationProperties.Name="导入粘贴的 Hoppscotch"
                                 />
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsOtherToolsImport}" Spacing="10">
+                            <StackPanel
+                                IsVisible="{Binding Import.IsOtherToolsImport}"
+                                Spacing="10"
+                            >
                                 <TextBlock
                                     Text="YApi / ApiPost / Eolink"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3543,21 +3662,21 @@
                                     <arc:Button
                                         Content="用 OpenAPI 导入"
                                         Variant="Primary"
-                                        Command="{Binding SelectImportSourceCommand}"
+                                        Command="{Binding Import.SelectImportSourceCommand}"
                                         CommandParameter="OpenApi"
                                         AutomationProperties.Name="切换到 OpenAPI 导入"
                                     />
                                     <arc:Button
                                         Content="用 Postman 导入"
                                         Variant="Secondary"
-                                        Command="{Binding SelectImportSourceCommand}"
+                                        Command="{Binding Import.SelectImportSourceCommand}"
                                         CommandParameter="PostmanCollection"
                                         AutomationProperties.Name="切换到 Postman Collection 导入"
                                     />
                                 </StackPanel>
                             </StackPanel>
 
-                            <StackPanel IsVisible="{Binding IsApifoxImport}" Spacing="10">
+                            <StackPanel IsVisible="{Binding Import.IsApifoxImport}" Spacing="10">
                                 <TextBlock
                                     Text="从 Apifox 迁移"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -3574,21 +3693,21 @@
                                     <arc:Button
                                         Content="用 Postman 导入"
                                         Variant="Primary"
-                                        Command="{Binding SelectImportSourceCommand}"
+                                        Command="{Binding Import.SelectImportSourceCommand}"
                                         CommandParameter="PostmanCollection"
                                         AutomationProperties.Name="切换到 Postman Collection 导入"
                                     />
                                     <arc:Button
                                         Content="用 OpenAPI 导入"
                                         Variant="Secondary"
-                                        Command="{Binding SelectImportSourceCommand}"
+                                        Command="{Binding Import.SelectImportSourceCommand}"
                                         CommandParameter="OpenApi"
                                         AutomationProperties.Name="切换到 OpenAPI 导入"
                                     />
                                     <arc:Button
                                         Content="用 HAR 导入"
                                         Variant="Secondary"
-                                        Command="{Binding SelectImportSourceCommand}"
+                                        Command="{Binding Import.SelectImportSourceCommand}"
                                         CommandParameter="Har"
                                         AutomationProperties.Name="切换到 HAR 导入"
                                     />
@@ -3598,15 +3717,15 @@
 
                         <Grid Grid.Row="2" MinHeight="40">
                             <TextBlock
-                                IsVisible="{Binding !HasImportError}"
-                                Text="{Binding ImportStatus}"
+                                IsVisible="{Binding Import.HasNoImportError}"
+                                Text="{Binding Import.ImportStatus}"
                                 FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                 Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                 TextWrapping="Wrap"
                             />
                             <TextBlock
-                                IsVisible="{Binding HasImportError}"
-                                Text="{Binding ImportStatus}"
+                                IsVisible="{Binding Import.HasImportError}"
+                                Text="{Binding Import.ImportStatus}"
                                 FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                 Foreground="{arc:ArcDesignTokenResource Danger}"
                                 TextWrapping="Wrap"
@@ -3615,7 +3734,7 @@
 
                         <Border
                             Grid.Row="3"
-                            IsVisible="{Binding HasImportReport}"
+                            IsVisible="{Binding Import.HasImportReport}"
                             BorderBrush="{arc:ArcDesignTokenResource Success}"
                             BorderThickness="1"
                             CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
@@ -3632,18 +3751,18 @@
                                     />
                                     <arc:Button
                                         Grid.Column="1"
-                                        Content="{Binding ImportReportToggleLabel}"
+                                        Content="{Binding Import.ImportReportToggleLabel}"
                                         Variant="Ghost"
                                         Size="Small"
-                                        Command="{Binding ToggleImportReportCommand}"
+                                        Command="{Binding Import.ToggleImportReportCommand}"
                                         AutomationProperties.Name="展开或收起导入结果"
                                     />
                                 </Grid>
                                 <arc:ScrollArea
                                     Height="80"
-                                    IsVisible="{Binding IsImportReportExpanded}"
+                                    IsVisible="{Binding Import.IsImportReportExpanded}"
                                 >
-                                    <ItemsControl ItemsSource="{Binding ImportReport}">
+                                    <ItemsControl ItemsSource="{Binding Import.ImportReport}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <TextBlock
@@ -3662,7 +3781,7 @@
 
                         <Border
                             Grid.Row="4"
-                            IsVisible="{Binding HasImportWarnings}"
+                            IsVisible="{Binding Import.HasImportWarnings}"
                             BorderBrush="{arc:ArcDesignTokenResource Warning}"
                             BorderThickness="1"
                             CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
@@ -3679,18 +3798,18 @@
                                     />
                                     <arc:Button
                                         Grid.Column="1"
-                                        Content="{Binding ImportWarningsToggleLabel}"
+                                        Content="{Binding Import.ImportWarningsToggleLabel}"
                                         Variant="Ghost"
                                         Size="Small"
-                                        Command="{Binding ToggleImportWarningsCommand}"
+                                        Command="{Binding Import.ToggleImportWarningsCommand}"
                                         AutomationProperties.Name="展开或收起兼容性提示"
                                     />
                                 </Grid>
                                 <arc:ScrollArea
                                     Height="80"
-                                    IsVisible="{Binding IsImportWarningsExpanded}"
+                                    IsVisible="{Binding Import.IsImportWarningsExpanded}"
                                 >
-                                    <ItemsControl ItemsSource="{Binding ImportWarnings}">
+                                    <ItemsControl ItemsSource="{Binding Import.ImportWarnings}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <TextBlock
@@ -3719,7 +3838,7 @@
                                     Content="批量导入文件…"
                                     Variant="Secondary"
                                     Click="OnPickBatchImportFilesClick"
-                                    IsEnabled="{Binding !IsImporting}"
+                                    IsEnabled="{Binding Import.IsNotImporting}"
                                     AutomationProperties.Name="批量导入文件"
                                 />
                                 <TextBlock
@@ -3733,7 +3852,7 @@
                                 Grid.Column="1"
                                 Content="关闭"
                                 Variant="Secondary"
-                                Command="{Binding CloseImportDialogCommand}"
+                                Command="{Binding Import.CloseImportDialogCommand}"
                                 HorizontalAlignment="Right"
                             />
                         </Grid>
@@ -4476,20 +4595,68 @@
                                                                     Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                                                     VerticalAlignment="Center"
                                                                 />
+                                                                <TextBlock
+                                                                    Text="重试"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                    VerticalAlignment="Center"
+                                                                    Margin="6,0,0,0"
+                                                                />
+                                                                <arc:Input
+                                                                    Text="{Binding RetryCountText, Mode=TwoWay}"
+                                                                    IsLabelVisible="False"
+                                                                    Size="Small"
+                                                                    Width="48"
+                                                                    AutomationProperties.Name="失败重试次数"
+                                                                />
+                                                                <TextBlock
+                                                                    Text="次 · 间隔"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                    VerticalAlignment="Center"
+                                                                />
+                                                                <arc:Input
+                                                                    Text="{Binding RetryDelayText, Mode=TwoWay}"
+                                                                    IsLabelVisible="False"
+                                                                    Size="Small"
+                                                                    Width="64"
+                                                                    AutomationProperties.Name="重试间隔（毫秒）"
+                                                                />
+                                                                <TextBlock
+                                                                    Text="ms"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                    VerticalAlignment="Center"
+                                                                />
                                                             </StackPanel>
-                                                            <arc:Button
+                                                            <StackPanel
                                                                 Grid.RowSpan="2"
                                                                 Grid.Column="2"
-                                                                Variant="Ghost"
-                                                                Size="Small"
-                                                                Command="{Binding EditMappingsCommand}"
+                                                                Spacing="3"
                                                             >
-                                                                <controls:IconLabel
-                                                                    Icon="{x:Static arc:ArcIcons.Link2}"
-                                                                    Text="{Binding MappingLabel}"
-                                                                    IconSize="13"
-                                                                />
-                                                            </arc:Button>
+                                                                <arc:Button
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Command="{Binding EditMappingsCommand}"
+                                                                >
+                                                                    <controls:IconLabel
+                                                                        Icon="{x:Static arc:ArcIcons.Link2}"
+                                                                        Text="{Binding MappingLabel}"
+                                                                        IconSize="13"
+                                                                    />
+                                                                </arc:Button>
+                                                                <arc:Button
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Command="{Binding EditAssertionsCommand}"
+                                                                >
+                                                                    <controls:IconLabel
+                                                                        Icon="{x:Static arc:ArcIcons.Check}"
+                                                                        Text="{Binding AssertionLabel}"
+                                                                        IconSize="13"
+                                                                    />
+                                                                </arc:Button>
+                                                            </StackPanel>
                                                         </Grid>
                                                     </Border>
                                                 </DataTemplate>
@@ -4676,6 +4843,133 @@
                                 <controls:IconLabel
                                     Icon="{x:Static arc:ArcIcons.Check}"
                                     Text="保存映射"
+                                />
+                            </arc:Button>
+                        </StackPanel>
+                    </arc:Dialog.Actions>
+                </arc:Dialog>
+
+                <arc:Dialog
+                    x:Name="AssertionDialog"
+                    IsOpen="{Binding IsAssertionEditorOpen, Mode=TwoWay}"
+                    Title="{Binding AssertionTitle}"
+                    Description="对当前步骤的响应增加 JSONPath 或响应头断言；任一断言失败则该步骤失败。"
+                    Size="Large"
+                    Opened="OnAssertionDialogOpened"
+                >
+                    <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+                        <arc:Button
+                            Variant="Secondary"
+                            Size="Small"
+                            HorizontalAlignment="Left"
+                            Command="{Binding AddAssertionRuleCommand}"
+                        >
+                            <controls:IconLabel
+                                Icon="{x:Static arc:ArcIcons.Plus}"
+                                Text="添加断言"
+                                IconSize="13"
+                            />
+                        </arc:Button>
+                        <arc:ScrollArea Grid.Row="1" MaxHeight="520">
+                            <ItemsControl ItemsSource="{Binding AssertionEditors}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:AssertionEditor">
+                                        <Border
+                                            Background="{arc:ArcDesignTokenResource Surface}"
+                                            CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
+                                            Padding="10,8"
+                                            Margin="0,0,0,6"
+                                        >
+                                            <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
+                                                <Grid
+                                                    ColumnDefinitions="0.8*,1.4*,1.4*,Auto"
+                                                    ColumnSpacing="8"
+                                                >
+                                                    <arc:Select
+                                                        Label="类型"
+                                                        SelectedValue="{Binding Kind, Mode=TwoWay}"
+                                                        AutomationProperties.Name="断言类型"
+                                                    >
+                                                        <arc:SelectItem
+                                                            Content="JSONPath"
+                                                            Value="JSONPath"
+                                                        />
+                                                        <arc:SelectItem
+                                                            Content="响应头"
+                                                            Value="Header"
+                                                        />
+                                                    </arc:Select>
+                                                    <arc:Input
+                                                        Grid.Column="1"
+                                                        Label="字段 / 路径"
+                                                        Text="{Binding Path, Mode=TwoWay}"
+                                                        Placeholder="$.data.token / Authorization"
+                                                        AutomationProperties.Name="断言字段或路径"
+                                                    />
+                                                    <arc:Input
+                                                        Grid.Column="2"
+                                                        Label="期望值"
+                                                        Text="{Binding Expected, Mode=TwoWay}"
+                                                        Placeholder="200 / Bearer xxx / 成功"
+                                                        AutomationProperties.Name="断言期望值"
+                                                    />
+                                                    <arc:Button
+                                                        Grid.Column="3"
+                                                        Variant="Ghost"
+                                                        Size="Small"
+                                                        Margin="0,0,0,2"
+                                                        VerticalAlignment="Bottom"
+                                                        Command="{Binding RemoveCommand}"
+                                                    >
+                                                        <controls:IconLabel
+                                                            Icon="{x:Static arc:ArcIcons.Trash2}"
+                                                            Text="删除"
+                                                            IconSize="13"
+                                                            TextForeground="{arc:ArcDesignTokenResource Danger}"
+                                                            IconForeground="{arc:ArcDesignTokenResource Danger}"
+                                                        />
+                                                    </arc:Button>
+                                                </Grid>
+                                                <TextBlock
+                                                    Grid.Row="1"
+                                                    Text="{Binding Error}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource Danger}"
+                                                    TextWrapping="Wrap"
+                                                />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </arc:ScrollArea>
+                        <TextBlock
+                            Grid.Row="2"
+                            Text="JSONPath 支持 $.data.token、items[0].id；响应头按名称匹配，值不区分大小写。"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                            TextWrapping="Wrap"
+                        />
+                    </Grid>
+
+                    <arc:Dialog.Actions>
+                        <StackPanel
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            HorizontalAlignment="Right"
+                        >
+                            <arc:Button
+                                Content="取消"
+                                Variant="Secondary"
+                                Command="{Binding CancelAssertionEditorCommand}"
+                            />
+                            <arc:Button
+                                Variant="Primary"
+                                Command="{Binding SaveAssertionEditorCommand}"
+                            >
+                                <controls:IconLabel
+                                    Icon="{x:Static arc:ArcIcons.Check}"
+                                    Text="保存断言"
                                 />
                             </arc:Button>
                         </StackPanel>

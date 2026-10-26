@@ -37,7 +37,13 @@ public sealed class TestStep
     /// <summary>Delay before the following step, in milliseconds.</summary>
     public int DelayMs { get; set; } = 200;
 
+    public int RetryCount { get; set; }
+
+    public int RetryDelayMs { get; set; } = 500;
+
     public List<InputMapping> InputMappings { get; } = new();
+
+    public List<TestAssertion> Assertions { get; } = new();
 
     public int? ExpectedStatus { get; set; }
 
@@ -46,7 +52,10 @@ public sealed class TestStep
     public BadgeTone MethodTone => MethodTones.Of(Method);
 
     public string ExpectationText =>
-        ExpectedStatus is null && string.IsNullOrWhiteSpace(BodyContains)
+        ExpectedStatus is null
+        && string.IsNullOrWhiteSpace(BodyContains)
+        && Assertions.Count == 0
+        && RetryCount == 0
             ? "仅检查网络成功"
             : string.Join(
                 " · ",
@@ -54,8 +63,22 @@ public sealed class TestStep
                 {
                     ExpectedStatus is null ? null : $"状态 {ExpectedStatus}",
                     string.IsNullOrWhiteSpace(BodyContains) ? null : $"包含 {BodyContains}",
+                    Assertions.Count == 0 ? null : $"{Assertions.Count} 条断言",
+                    RetryCount == 0 ? null : $"重试 {RetryCount} 次",
                 }.Where(value => value is not null)
             );
+}
+
+/// <summary>A JSONPath or response-header assertion on a suite step.</summary>
+public sealed class TestAssertion
+{
+    public string Kind { get; set; } = "JSONPath";
+
+    public string Path { get; set; } = string.Empty;
+
+    public string Expected { get; set; } = string.Empty;
+
+    public string Label => $"{(Kind == "Header" ? "响应头" : "JSONPath")} {Path} = {Expected}";
 }
 
 /// <summary>A custom mapping from a previous step's response into this request's input.</summary>
@@ -94,11 +117,19 @@ public sealed class TestStepResult
 
     public long ElapsedMs { get; set; }
 
+    public int Attempts { get; set; } = 1;
+
     public bool Passed { get; set; }
 
     public string? Error { get; set; }
 
     public string ResponsePreview { get; set; } = string.Empty;
+
+    public List<TestAssertionResult> Assertions { get; } = new();
+
+    public bool HasAssertions => Assertions.Count > 0;
+
+    public string AttemptText => Attempts > 1 ? $"尝试 {Attempts} 次" : string.Empty;
 
     public string ResultLabel => Passed ? "通过" : "失败";
 
@@ -107,6 +138,19 @@ public sealed class TestStepResult
     [JsonIgnore]
     public object ResultIcon =>
         new ArcGlyph { Data = Passed ? ArcIcons.CircleCheck : ArcIcons.CircleX, Size = 12 };
+}
+
+public sealed class TestAssertionResult
+{
+    public string Label { get; set; } = string.Empty;
+
+    public bool Passed { get; set; }
+
+    public string Detail { get; set; } = string.Empty;
+
+    public string ResultLabel => Passed ? "通过" : "失败";
+
+    public BadgeTone ResultTone => Passed ? BadgeTone.Success : BadgeTone.Danger;
 }
 
 public sealed class TestRunResult

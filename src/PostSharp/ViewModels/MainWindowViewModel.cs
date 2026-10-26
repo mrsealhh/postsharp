@@ -22,7 +22,7 @@ public enum TreeDropPosition
     Inside,
 }
 
-public partial class MainWindowViewModel : ObservableObject
+public partial class MainWindowViewModel : ObservableObject, IImportHost
 {
     private readonly WorkspaceStore _store = new();
     private readonly AuditStore _auditStore = new();
@@ -54,7 +54,6 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
     private CancellationTokenSource? _suiteCts;
-    private CancellationTokenSource? _importCts;
     private bool _initializing = true;
     private IReadOnlyList<SuiteStepOption> _mappingSourceOptions = Array.Empty<SuiteStepOption>();
 
@@ -140,8 +139,6 @@ public partial class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(AuditCount));
             RefreshAuditView();
         };
-        ImportWarnings.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasImportWarnings));
-        ImportReport.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasImportReport));
         AuditTrash.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(HasAuditTrash));
@@ -174,6 +171,7 @@ public partial class MainWindowViewModel : ObservableObject
         // Records written before secrets were masked still hold credentials.
         ScrubAuditSecrets();
 
+        Import = new ImportViewModel(this);
         RefreshAuditView();
         BindEditingTracking();
         RefreshDerivedState();
@@ -211,7 +209,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<InputMappingEditor> MappingEditors { get; } = new();
 
+    public ObservableCollection<AssertionEditor> AssertionEditors { get; } = new();
+
     public ObservableCollection<ResponseHeaderView> ResponseHeaders { get; } = new();
+
+    public ImportViewModel Import { get; }
 
     public IReadOnlyList<string> Methods { get; } =
         new[] { "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS" };
@@ -284,6 +286,15 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string _mappingTitle = string.Empty;
+
+    [ObservableProperty]
+    private bool _isAssertionEditorOpen;
+
+    [ObservableProperty]
+    private SuiteBuilderStep? _assertionStep;
+
+    [ObservableProperty]
+    private string _assertionTitle = string.Empty;
 
     [ObservableProperty]
     private bool _isBodySingleLine;
@@ -360,87 +371,6 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string _auditPurgeDescription = string.Empty;
-
-    [ObservableProperty]
-    private bool _isImportDialogOpen;
-
-    [ObservableProperty]
-    private string _importSource = "PostmanCollection";
-
-    [ObservableProperty]
-    private string _importUrl = string.Empty;
-
-    [ObservableProperty]
-    private string _postmanJson = string.Empty;
-
-    [ObservableProperty]
-    private string _curlCommand = string.Empty;
-
-    [ObservableProperty]
-    private string _harJson = string.Empty;
-
-    [ObservableProperty]
-    private bool _harIncludeStaticResources;
-
-    [ObservableProperty]
-    private string _insomniaJson = string.Empty;
-
-    [ObservableProperty]
-    private string _hoppscotchJson = string.Empty;
-
-    [ObservableProperty]
-    private string _importStatus =
-        "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。";
-
-    [ObservableProperty]
-    private bool _hasImportError;
-
-    [ObservableProperty]
-    private bool _isImporting;
-
-    public ObservableCollection<string> ImportWarnings { get; } = new();
-
-    public ObservableCollection<string> ImportReport { get; } = new();
-
-    public bool HasImportWarnings => ImportWarnings.Count > 0;
-
-    public bool HasImportReport => ImportReport.Count > 0;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ImportSourceToggleLabel))]
-    private bool _isImportSourceExpanded = true;
-
-    public string ImportSourceToggleLabel => IsImportSourceExpanded ? "收起来源" : "展开来源";
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ImportReportToggleLabel))]
-    private bool _isImportReportExpanded;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ImportWarningsToggleLabel))]
-    private bool _isImportWarningsExpanded;
-
-    public string ImportReportToggleLabel => IsImportReportExpanded ? "收起" : "展开";
-
-    public string ImportWarningsToggleLabel => IsImportWarningsExpanded ? "收起" : "展开";
-
-    public bool IsOpenApiImport => ImportSource == "OpenApi";
-
-    public bool IsPostmanCollectionImport => ImportSource == "PostmanCollection";
-
-    public bool IsPostmanEnvironmentImport => ImportSource == "PostmanEnvironment";
-
-    public bool IsCurlImport => ImportSource == "Curl";
-
-    public bool IsHarImport => ImportSource == "Har";
-
-    public bool IsInsomniaImport => ImportSource == "Insomnia";
-
-    public bool IsHoppscotchImport => ImportSource == "Hoppscotch";
-
-    public bool IsOtherToolsImport => ImportSource == "OtherTools";
-
-    public bool IsApifoxImport => ImportSource == "Apifox";
 
     public bool CanExportCurl =>
         IsRequestSelected
@@ -583,990 +513,22 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private void OpenImportDialog()
-    {
-        ImportSource = "PostmanCollection";
-        ImportUrl = string.Empty;
-        PostmanJson = string.Empty;
-        CurlCommand = string.Empty;
-        HarJson = string.Empty;
-        HarIncludeStaticResources = false;
-        InsomniaJson = string.Empty;
-        HoppscotchJson = string.Empty;
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        IsImportSourceExpanded = true;
-        IsImportReportExpanded = false;
-        IsImportWarningsExpanded = false;
-        ImportStatus = ImportStatusForSource(ImportSource);
-        HasImportError = false;
-        IsImportDialogOpen = true;
-    }
-
-    [RelayCommand]
-    private void SelectImportSource(string source)
-    {
-        if (
-            source
-            is "OpenApi"
-                or "PostmanCollection"
-                or "PostmanEnvironment"
-                or "Curl"
-                or "Har"
-                or "Insomnia"
-                or "Hoppscotch"
-                or "OtherTools"
-                or "Apifox"
-        )
-        {
-            ImportSource = source;
-        }
-    }
-
-    [RelayCommand]
-    private void ToggleImportSource() => IsImportSourceExpanded = !IsImportSourceExpanded;
-
-    [RelayCommand]
-    private void ToggleImportReport() => IsImportReportExpanded = !IsImportReportExpanded;
-
-    [RelayCommand]
-    private void ToggleImportWarnings() => IsImportWarningsExpanded = !IsImportWarningsExpanded;
-
-    partial void OnImportSourceChanged(string value)
-    {
-        OnPropertyChanged(nameof(IsOpenApiImport));
-        OnPropertyChanged(nameof(IsPostmanCollectionImport));
-        OnPropertyChanged(nameof(IsPostmanEnvironmentImport));
-        OnPropertyChanged(nameof(IsCurlImport));
-        OnPropertyChanged(nameof(IsHarImport));
-        OnPropertyChanged(nameof(IsInsomniaImport));
-        OnPropertyChanged(nameof(IsHoppscotchImport));
-        OnPropertyChanged(nameof(IsOtherToolsImport));
-        OnPropertyChanged(nameof(IsApifoxImport));
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        IsImportReportExpanded = false;
-        IsImportWarningsExpanded = false;
-        HasImportError = false;
-        ImportStatus = ImportStatusForSource(value);
-    }
-
-    private static string ImportStatusForSource(string source)
-    {
-        return source switch
-        {
-            "PostmanCollection" =>
-                "选择 Postman Collection v2.1 JSON 文件，或把集合导出内容粘贴到下方。支持嵌套文件夹、认证、查询参数和常见请求体。",
-            "PostmanEnvironment" => "选择 Postman Environment JSON；变量会创建或合并到同名环境。",
-            "Curl" =>
-                "粘贴以 curl 开头的 bash 命令。支持 -X、-H、-d、--data-raw、-F、-u、--max-time 等常用参数。",
-            "Har" =>
-                "选择浏览器、Postman 或 Apifox 导出的 .har 文件，或粘贴 HAR JSON。默认只导入 XHR / Fetch，响应内容会被忽略。",
-            "Insomnia" =>
-                "选择 Insomnia v4 JSON 导出文件，或粘贴 JSON。支持请求组、环境变量和常见认证；脚本不会执行。",
-            "Hoppscotch" =>
-                "选择 Hoppscotch Collection JSON 导出文件，或粘贴 JSON。支持文件夹、params/headers/body 和基础认证。",
-            "OtherTools" =>
-                "YApi / ApiPost / Eolink 建议先导出 OpenAPI 或 Postman Collection，再使用对应导入器。",
-            "Apifox" =>
-                "Apifox 建议使用「导出数据 → Postman / OpenAPI」，或导出 HAR；原生格式暂未直接解析。",
-            _ => "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。",
-        };
-    }
-
-    [RelayCommand]
-    private void CloseImportDialog()
-    {
-        if (IsImporting)
-        {
-            _importCts?.Cancel();
-        }
-
-        IsImportDialogOpen = false;
-    }
-
-    [RelayCommand]
-    private async Task ImportFromUrlAsync()
-    {
-        if (IsImporting)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(ImportUrl))
-        {
-            HasImportError = true;
-            ImportStatus = "请填写 OpenAPI 文档地址，或改为从本地文件导入。";
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = new CancellationTokenSource();
-        IsImporting = true;
-        HasImportError = false;
-        ImportStatus = "正在下载并解析 OpenAPI 文档…";
-
-        try
-        {
-            var document = await OpenApiImportService
-                .LoadFromUrlAsync(ImportUrl, _importCts.Token)
-                .ConfigureAwait(true);
-            ApplyOpenApiImport(document);
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "从 URL 导入 OpenAPI 已取消 {Url}", ImportUrl);
-            ImportStatus = "导入已取消。";
-            HasImportError = true;
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "从 URL 导入 OpenAPI 失败 {Url}", ImportUrl);
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    [RelayCommand]
-    private void FillSpringDocUrl()
-    {
-        var current = ImportUrl.Trim();
-        if (current.Length == 0)
-        {
-            ImportUrl = "http://localhost:8080/v3/api-docs";
-            ImportStatus = "已填入 springdoc 默认地址；请把主机和端口改成你的服务地址。";
-            HasImportError = false;
-            return;
-        }
-
-        if (current.Contains("/v3/api-docs", StringComparison.OrdinalIgnoreCase))
-        {
-            ImportStatus = "当前地址已经是 springdoc / Knife4j 的 /v3/api-docs 地址。";
-            HasImportError = false;
-            return;
-        }
-
-        ImportUrl = current.TrimEnd('/') + "/v3/api-docs";
-        ImportStatus = "已补全 springdoc / Knife4j 地址，点击「下载并导入」继续。";
-        HasImportError = false;
-    }
-
-    public async Task ImportFromFileAsync(
-        string path,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (IsImporting)
-        {
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        IsImporting = true;
-        HasImportError = false;
-        ImportStatus = "正在读取并解析 OpenAPI 文件…";
-
-        try
-        {
-            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
-            var document = await Task.Run(
-                    () => OpenApiImportService.Parse(content, Path.GetFileName(path)),
-                    _importCts.Token
-                )
-                .ConfigureAwait(true);
-            ApplyOpenApiImport(document);
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "从文件导入 OpenAPI 已取消 {FilePath}", path);
-            ImportStatus = "导入已取消。";
-            HasImportError = true;
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "从文件导入 OpenAPI 失败 {FilePath}", path);
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    public async Task ImportPostmanFileAsync(
-        string path,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (IsImporting)
-        {
-            return;
-        }
-
-        if (!File.Exists(path))
-        {
-            HasImportError = true;
-            ImportStatus = "Postman Collection 文件不存在，请重新选择。";
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        IsImporting = true;
-        HasImportError = false;
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        ImportStatus = "正在读取并解析 Postman Collection 文件…";
-
-        try
-        {
-            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
-            var result = await Task.Run(
-                    () => PostmanImportService.Parse(content, Path.GetFileName(path)),
-                    _importCts.Token
-                )
-                .ConfigureAwait(true);
-            ApplyCollectionImport(result);
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "从文件导入 Postman 已取消 {FilePath}", path);
-            ImportStatus = "导入已取消。";
-            HasImportError = true;
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "从文件导入 Postman 失败 {FilePath}", path);
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    [RelayCommand]
-    private async Task ImportPostmanTextAsync()
-    {
-        if (IsImporting)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(PostmanJson))
-        {
-            HasImportError = true;
-            ImportStatus = "请粘贴 Postman Collection JSON，或改为选择文件。";
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = new CancellationTokenSource();
-        IsImporting = true;
-        HasImportError = false;
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        ImportStatus = "正在解析粘贴的 Postman Collection…";
-
-        try
-        {
-            var result = await Task.Run(
-                    () => PostmanImportService.Parse(PostmanJson, "粘贴的 Postman Collection"),
-                    _importCts.Token
-                )
-                .ConfigureAwait(true);
-            ApplyCollectionImport(result);
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "导入粘贴的 Postman 已取消");
-            ImportStatus = "导入已取消。";
-            HasImportError = true;
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "导入粘贴的 Postman 失败");
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    public async Task ImportPostmanEnvironmentFileAsync(
-        string path,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (IsImporting)
-        {
-            return;
-        }
-
-        if (!File.Exists(path))
-        {
-            HasImportError = true;
-            ImportStatus = "Postman 环境文件不存在，请重新选择。";
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        IsImporting = true;
-        HasImportError = false;
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        ImportStatus = "正在解析 Postman 环境文件…";
-
-        try
-        {
-            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
-            var result = await Task.Run(
-                    () => PostmanEnvironmentImportService.Parse(content, Path.GetFileName(path)),
-                    _importCts.Token
-                )
-                .ConfigureAwait(true);
-            ApplyEnvironmentImport(result);
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "导入 Postman 环境已取消 {FilePath}", path);
-            ImportStatus = "导入已取消。";
-            HasImportError = true;
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "导入 Postman 环境失败 {FilePath}", path);
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    public async Task ImportInsomniaFileAsync(
-        string path,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (IsImporting)
-        {
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        IsImporting = true;
-        HasImportError = false;
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        ImportStatus = "正在解析 Insomnia v4 导出文件…";
-
-        try
-        {
-            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
-            var result = await Task.Run(
-                    () => InsomniaImportService.Parse(content, Path.GetFileName(path)),
-                    _importCts.Token
-                )
-                .ConfigureAwait(true);
-            ApplyCollectionImport(result);
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "从文件导入 Insomnia 已取消 {FilePath}", path);
-            ImportStatus = "导入已取消。";
-            HasImportError = true;
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "从文件导入 Insomnia 失败 {FilePath}", path);
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    [RelayCommand]
-    private async Task ImportInsomniaTextAsync()
-    {
-        if (IsImporting)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(InsomniaJson))
-        {
-            HasImportError = true;
-            ImportStatus = "请粘贴 Insomnia v4 JSON，或改为选择文件。";
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = new CancellationTokenSource();
-        IsImporting = true;
-        HasImportError = false;
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        ImportStatus = "正在解析粘贴的 Insomnia 导出…";
-
-        try
-        {
-            var result = await Task.Run(
-                    () => InsomniaImportService.Parse(InsomniaJson, "粘贴的 Insomnia 导出"),
-                    _importCts.Token
-                )
-                .ConfigureAwait(true);
-            ApplyCollectionImport(result);
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "导入粘贴的 Insomnia 失败");
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    public async Task ImportHoppscotchFileAsync(
-        string path,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (IsImporting)
-        {
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        IsImporting = true;
-        HasImportError = false;
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        ImportStatus = "正在解析 Hoppscotch Collection…";
-
-        try
-        {
-            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
-            var result = await Task.Run(
-                    () => HoppscotchImportService.Parse(content, Path.GetFileName(path)),
-                    _importCts.Token
-                )
-                .ConfigureAwait(true);
-            ApplyCollectionImport(result);
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "从文件导入 Hoppscotch 已取消 {FilePath}", path);
-            ImportStatus = "导入已取消。";
-            HasImportError = true;
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "从文件导入 Hoppscotch 失败 {FilePath}", path);
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    [RelayCommand]
-    private async Task ImportHoppscotchTextAsync()
-    {
-        if (IsImporting)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(HoppscotchJson))
-        {
-            HasImportError = true;
-            ImportStatus = "请粘贴 Hoppscotch Collection JSON，或改为选择文件。";
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = new CancellationTokenSource();
-        IsImporting = true;
-        HasImportError = false;
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        ImportStatus = "正在解析粘贴的 Hoppscotch Collection…";
-
-        try
-        {
-            var result = await Task.Run(
-                    () => HoppscotchImportService.Parse(HoppscotchJson, "粘贴的 Hoppscotch"),
-                    _importCts.Token
-                )
-                .ConfigureAwait(true);
-            ApplyCollectionImport(result);
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "导入粘贴的 Hoppscotch 失败");
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    public async Task ImportBatchFilesAsync(
-        IReadOnlyList<string> paths,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (IsImporting || paths.Count == 0)
-        {
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        IsImporting = true;
-        HasImportError = false;
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        ImportStatus = $"正在批量导入 {paths.Count} 个文件…";
-        var warnings = new List<string>();
-        var requests = 0;
-        var folders = 0;
-        var environments = 0;
-        var succeeded = 0;
-        var failed = 0;
-
-        try
-        {
-            foreach (var path in paths)
-            {
-                _importCts.Token.ThrowIfCancellationRequested();
-                var fileName = Path.GetFileName(path);
-                try
-                {
-                    var content = await File.ReadAllTextAsync(path, _importCts.Token)
-                        .ConfigureAwait(true);
-                    var kind = ImportFileDetector.Detect(path, content);
-                    switch (kind)
-                    {
-                        case ImportFileKind.OpenApi:
-                        {
-                            var document = await Task.Run(
-                                    () => OpenApiImportService.Parse(content, fileName),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var outcome = AddOpenApiImport(document);
-                            requests += outcome.RequestCount;
-                            folders += outcome.FolderCount;
-                            AddImportReport(
-                                $"成功：{fileName} · OpenAPI · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
-                            );
-                            warnings.AddRange(
-                                document.Warnings.Select(warning => $"{fileName}：{warning}")
-                            );
-                            succeeded++;
-                            break;
-                        }
-                        case ImportFileKind.PostmanCollection:
-                        {
-                            var result = await Task.Run(
-                                    () => PostmanImportService.Parse(content, fileName),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var outcome = AddCollectionImport(result);
-                            requests += outcome.RequestCount;
-                            folders += outcome.FolderCount;
-                            if (outcome.EnvironmentName is not null)
-                            {
-                                environments++;
-                            }
-
-                            AddImportReport(
-                                $"成功：{fileName} · Postman Collection · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
-                            );
-                            warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
-                            );
-                            succeeded++;
-                            break;
-                        }
-                        case ImportFileKind.PostmanEnvironment:
-                        {
-                            var result = await Task.Run(
-                                    () => PostmanEnvironmentImportService.Parse(content, fileName),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var environmentName =
-                                ApplyImportedEnvironment(result.Environment)
-                                ?? result.Environment.Name;
-                            environments++;
-                            AddImportReport(
-                                $"成功：{fileName} · Postman Environment · 环境「{environmentName}」"
-                            );
-                            warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
-                            );
-                            succeeded++;
-                            break;
-                        }
-                        case ImportFileKind.Har:
-                        {
-                            var result = await Task.Run(
-                                    () =>
-                                        HarImportService.Parse(
-                                            content,
-                                            fileName,
-                                            HarIncludeStaticResources
-                                        ),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var outcome = AddCollectionImport(result);
-                            requests += outcome.RequestCount;
-                            folders += outcome.FolderCount;
-                            AddImportReport(
-                                $"成功：{fileName} · HAR · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
-                            );
-                            warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
-                            );
-                            succeeded++;
-                            break;
-                        }
-                        case ImportFileKind.Insomnia:
-                        {
-                            var result = await Task.Run(
-                                    () => InsomniaImportService.Parse(content, fileName),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var outcome = AddCollectionImport(result);
-                            requests += outcome.RequestCount;
-                            folders += outcome.FolderCount;
-                            if (outcome.EnvironmentName is not null)
-                            {
-                                environments++;
-                            }
-
-                            AddImportReport(
-                                $"成功：{fileName} · Insomnia · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
-                            );
-                            warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
-                            );
-                            succeeded++;
-                            break;
-                        }
-                        case ImportFileKind.Hoppscotch:
-                        {
-                            var result = await Task.Run(
-                                    () => HoppscotchImportService.Parse(content, fileName),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var outcome = AddCollectionImport(result);
-                            requests += outcome.RequestCount;
-                            folders += outcome.FolderCount;
-                            AddImportReport(
-                                $"成功：{fileName} · Hoppscotch · {outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
-                            );
-                            warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
-                            );
-                            succeeded++;
-                            break;
-                        }
-                        case ImportFileKind.Curl:
-                        {
-                            var result = await Task.Run(
-                                    () => CurlImportService.Parse(content),
-                                    _importCts.Token
-                                )
-                                .ConfigureAwait(true);
-                            var request = AddCurlImport(result);
-                            requests++;
-                            AddImportReport(
-                                $"成功：{fileName} · cURL · {request.Method} {request.Url}"
-                            );
-                            warnings.AddRange(
-                                result.Warnings.Select(warning => $"{fileName}：{warning}")
-                            );
-                            succeeded++;
-                            break;
-                        }
-                        default:
-                            throw new InvalidOperationException(
-                                "无法识别导入格式，请使用 Postman / OpenAPI / HAR / Insomnia / Hoppscotch 文件。"
-                            );
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception exception)
-                {
-                    failed++;
-                    var message = DescribeImportFailure(exception);
-                    AddImportReport($"失败：{fileName} · {message}");
-                    warnings.Add($"{fileName}：{message}");
-                    Log.Warning(exception, "批量导入文件失败 {FilePath}", path);
-                }
-            }
-
-            SetImportWarnings(warnings);
-            Persist();
-            NotifySelectionChanged();
-            NotifyTreeChanged();
-            RefreshDerivedState();
-
-            IsImportDialogOpen = true;
-            HasImportError = succeeded == 0;
-            ImportStatus =
-                $"批量导入完成：{succeeded} 个文件，{requests} 个请求，{folders} 个分组，{environments} 个环境"
-                + (failed > 0 ? $"，{failed} 个失败。" : "。");
-            if (succeeded > 0)
-            {
-                ShowToast(
-                    failed > 0
-                        ? $"批量导入完成：{succeeded} 个成功，{failed} 个失败"
-                        : $"批量导入完成：{succeeded} 个文件，{requests} 个请求"
-                );
-            }
-
-            Log.Information(
-                "批量导入完成：成功 {Succeeded} 个，失败 {Failed} 个，请求 {RequestCount}，分组 {FolderCount}，环境 {EnvironmentCount}",
-                succeeded,
-                failed,
-                requests,
-                folders,
-                environments
-            );
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "批量导入已取消");
-            ImportStatus = "批量导入已取消。";
-            HasImportError = true;
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    public async Task ImportHarFileAsync(string path, CancellationToken cancellationToken = default)
-    {
-        if (IsImporting)
-        {
-            return;
-        }
-
-        if (!File.Exists(path))
-        {
-            HasImportError = true;
-            ImportStatus = "HAR 文件不存在，请重新选择。";
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        IsImporting = true;
-        HasImportError = false;
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        ImportStatus = "正在读取并解析 HAR 文件…";
-
-        try
-        {
-            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
-            var result = await Task.Run(
-                    () =>
-                        HarImportService.Parse(
-                            content,
-                            Path.GetFileName(path),
-                            HarIncludeStaticResources
-                        ),
-                    _importCts.Token
-                )
-                .ConfigureAwait(true);
-            ApplyCollectionImport(result);
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "从文件导入 HAR 已取消 {FilePath}", path);
-            ImportStatus = "导入已取消。";
-            HasImportError = true;
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "从文件导入 HAR 失败 {FilePath}", path);
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    [RelayCommand]
-    private async Task ImportHarTextAsync()
-    {
-        if (IsImporting)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(HarJson))
-        {
-            HasImportError = true;
-            ImportStatus = "请粘贴 HAR JSON，或改为选择 .har 文件。";
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = new CancellationTokenSource();
-        IsImporting = true;
-        HasImportError = false;
-        ImportWarnings.Clear();
-        ImportReport.Clear();
-        ImportStatus = "正在解析粘贴的 HAR…";
-
-        try
-        {
-            var result = await Task.Run(
-                    () => HarImportService.Parse(HarJson, "粘贴的 HAR", HarIncludeStaticResources),
-                    _importCts.Token
-                )
-                .ConfigureAwait(true);
-            ApplyCollectionImport(result);
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "导入粘贴的 HAR 已取消");
-            ImportStatus = "导入已取消。";
-            HasImportError = true;
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "导入粘贴的 HAR 失败");
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
-    }
-
-    private void ApplyEnvironmentImport(EnvironmentImportResult result)
+    public CollectionImportOutcome ApplyEnvironmentImport(EnvironmentImportResult result)
     {
         var environmentName =
             ApplyImportedEnvironment(result.Environment) ?? result.Environment.Name;
-        SetImportWarnings(result.Warnings);
-        AddImportReport(
-            $"已导入环境「{environmentName}」：{result.Environment.Variables.Count} 个变量"
-        );
+        return new CollectionImportOutcome(environmentName, 0, 0, environmentName);
+    }
+
+    public void CompleteImport()
+    {
         Persist();
         NotifySelectionChanged();
+        NotifyTreeChanged();
         RefreshDerivedState();
-
-        ImportStatus =
-            $"环境导入完成：{environmentName}，{result.Environment.Variables.Count} 个变量。";
-        HasImportError = false;
-        if (result.Warnings.Count == 0)
-        {
-            IsImportDialogOpen = false;
-            ShowToast($"已导入环境「{environmentName}」");
-        }
-
-        Log.Information(
-            "环境导入完成 {Source}：{EnvironmentName}，{VariableCount} 个变量，{WarningCount} 条提示",
-            result.Source,
-            environmentName,
-            result.Environment.Variables.Count,
-            result.Warnings.Count
-        );
     }
 
-    [RelayCommand]
-    private void ImportCurl()
-    {
-        if (string.IsNullOrWhiteSpace(CurlCommand))
-        {
-            HasImportError = true;
-            ImportStatus = "请粘贴以 curl 开头的命令。";
-            return;
-        }
-
-        try
-        {
-            ImportWarnings.Clear();
-            ImportReport.Clear();
-            var result = CurlImportService.Parse(CurlCommand);
-            ApplyCurlImport(result);
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "导入 cURL 失败");
-        }
-    }
-
-    private CollectionImportOutcome AddCollectionImport(ImportResult result)
+    public CollectionImportOutcome ApplyCollectionImport(ImportResult result)
     {
         var root = new RequestCollection
         {
@@ -1608,48 +570,7 @@ public partial class MainWindowViewModel : ObservableObject
         );
     }
 
-    private void ApplyCollectionImport(ImportResult result)
-    {
-        var outcome = AddCollectionImport(result);
-        SetImportWarnings(result.Warnings);
-        AddImportReport(
-            $"已导入 {result.Format}「{outcome.RootName}」：{outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
-        );
-
-        Persist();
-        NotifySelectionChanged();
-        NotifyTreeChanged();
-        RefreshDerivedState();
-
-        var environmentText = outcome.EnvironmentName is null
-            ? string.Empty
-            : $"，并激活环境「{outcome.EnvironmentName}」";
-        var warningText =
-            result.Warnings.Count > 0
-                ? $"；{result.Warnings.Count} 条兼容性提示见下方"
-                : string.Empty;
-        ImportStatus =
-            $"导入完成：{outcome.RootName}，{outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组{environmentText}{warningText}。";
-        HasImportError = false;
-
-        if (result.Warnings.Count == 0)
-        {
-            IsImportDialogOpen = false;
-            ShowToast($"已导入「{outcome.RootName}」：{outcome.RequestCount} 个请求");
-        }
-
-        Log.Information(
-            "集合导入完成 {Format} {Source}：{Title}，{RequestCount} 个请求，{FolderCount} 个分组，{WarningCount} 条提示",
-            result.Format,
-            result.Source,
-            outcome.RootName,
-            outcome.RequestCount,
-            outcome.FolderCount,
-            result.Warnings.Count
-        );
-    }
-
-    private RequestItem AddCurlImport(CurlImportResult result)
+    public RequestItem ApplyCurlImport(CurlImportResult result)
     {
         var target =
             SelectedCollection
@@ -1666,35 +587,6 @@ public partial class MainWindowViewModel : ObservableObject
         SyncRootCollections();
         OpenRequest(request);
         return request;
-    }
-
-    private void ApplyCurlImport(CurlImportResult result)
-    {
-        var request = AddCurlImport(result);
-        Persist();
-        NotifySelectionChanged();
-        NotifyTreeChanged();
-        RefreshDerivedState();
-
-        foreach (var warning in result.Warnings)
-        {
-            Log.Warning("cURL 导入提示：{Warning}", warning);
-        }
-
-        SetImportWarnings(result.Warnings);
-        AddImportReport($"已导入 cURL「{request.Name}」：{request.Method} {request.Url}");
-        IsImportDialogOpen = false;
-        var warningText =
-            result.Warnings.Count > 0
-                ? $"；{result.Warnings.Count} 条提示已写入日志"
-                : string.Empty;
-        ShowToast($"已导入 cURL「{request.Name}」{warningText}");
-        Log.Information(
-            "cURL 导入完成 {Method} {Url}，{WarningCount} 条提示",
-            request.Method,
-            request.Url,
-            result.Warnings.Count
-        );
     }
 
     private void AddImportedCollectionContent(
@@ -1794,7 +686,7 @@ public partial class MainWindowViewModel : ObservableObject
         return request;
     }
 
-    private string? ApplyImportedEnvironment(ImportedEnvironment? imported)
+    public string? ApplyImportedEnvironment(ImportedEnvironment? imported)
     {
         if (imported is null || imported.Variables.Count == 0)
         {
@@ -1827,22 +719,6 @@ public partial class MainWindowViewModel : ObservableObject
         environment.Variables.EnsureTrailingRow();
         ActiveEnvironment = environment;
         return environment.Name;
-    }
-
-    private void SetImportWarnings(IReadOnlyList<string> warnings)
-    {
-        ImportWarnings.Clear();
-        IsImportWarningsExpanded = false;
-        foreach (var warning in warnings)
-        {
-            ImportWarnings.Add(warning);
-        }
-    }
-
-    private void AddImportReport(string line)
-    {
-        IsImportReportExpanded = false;
-        ImportReport.Add(line);
     }
 
     public ExportDocument? BuildPostmanExport()
@@ -1890,7 +766,7 @@ public partial class MainWindowViewModel : ObservableObject
         return new ExportDocument(CurlPreview, $"{safeName}.sh");
     }
 
-    private CollectionImportOutcome AddOpenApiImport(OpenApiImportDocument document)
+    public CollectionImportOutcome ApplyOpenApiImport(OpenApiImportDocument document)
     {
         var root = new RequestCollection { Name = document.Title, IsExpanded = true };
         Collections.Insert(0, root);
@@ -1958,54 +834,6 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         return new CollectionImportOutcome(document.Title, requestCount, groupCount, null);
-    }
-
-    private void ApplyOpenApiImport(OpenApiImportDocument document)
-    {
-        var outcome = AddOpenApiImport(document);
-        SetImportWarnings(document.Warnings);
-        AddImportReport(
-            $"已导入 OpenAPI「{outcome.RootName}」：{outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
-        );
-        Persist();
-        NotifySelectionChanged();
-        NotifyTreeChanged();
-        RefreshDerivedState();
-        if (document.Warnings.Count == 0)
-        {
-            IsImportDialogOpen = false;
-            ShowToast(
-                $"已导入「{outcome.RootName}」：{outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
-            );
-        }
-        else
-        {
-            ImportStatus =
-                $"导入完成：{outcome.RootName}，{outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组；{document.Warnings.Count} 条提示见下方。";
-            HasImportError = false;
-        }
-
-        Log.Information(
-            "OpenAPI 导入完成 {Source}：{Title} {Version}，{RequestCount} 个请求，{GroupCount} 个分组",
-            document.Source,
-            document.Title,
-            document.Version,
-            outcome.RequestCount,
-            outcome.FolderCount
-        );
-    }
-
-    private static string DescribeImportFailure(Exception exception)
-    {
-        return exception switch
-        {
-            HttpRequestException => "无法连接文档地址，请检查网络和 URL 是否可直接访问。",
-            TaskCanceledException => "下载超时，请检查网络后重试。",
-            UnauthorizedAccessException => "没有读取该文件的权限，请换一个位置。",
-            FileNotFoundException => "文件不存在，请重新选择。",
-            InvalidOperationException => exception.Message,
-            _ => "内容格式无法识别，请确认文件或命令格式。",
-        };
     }
 
     [RelayCommand]
@@ -2103,6 +931,7 @@ public partial class MainWindowViewModel : ObservableObject
         || IsMcpDialogOpen
         || IsSuiteBuilderOpen
         || IsMappingEditorOpen
+        || IsAssertionEditorOpen
         || IsRenameDialogOpen
         || IsDeleteDialogOpen
         || IsHistoryTrashConfirmOpen
@@ -2111,7 +940,7 @@ public partial class MainWindowViewModel : ObservableObject
         || IsAuditTrashConfirmOpen
         || IsAuditTrashOpen
         || IsAuditPurgeConfirmOpen
-        || IsImportDialogOpen
+        || Import.IsImportDialogOpen
         || TreeTrash.IsOpen
         || TreeTrash.IsPurgeConfirmOpen;
 
@@ -2166,15 +995,21 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>Esc closes the top-most overlay and applies its cancel semantics.</summary>
     public bool TryCancelActiveDialog()
     {
-        if (IsImportDialogOpen)
+        if (Import.IsImportDialogOpen)
         {
-            CloseImportDialogCommand.Execute(null);
+            Import.CloseImportDialogCommand.Execute(null);
             return true;
         }
 
         if (IsMappingEditorOpen)
         {
             CancelMappingEditorCommand.Execute(null);
+            return true;
+        }
+
+        if (IsAssertionEditorOpen)
+        {
+            CancelAssertionEditorCommand.Execute(null);
             return true;
         }
 
@@ -2310,7 +1145,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool IsTextBody => !IsMultipartBody;
 
-    public bool HasUploadFile => !string.IsNullOrWhiteSpace(Editing.UploadFilePath);
+    public bool HasUploadFile => Editing.UploadFiles.Count > 0;
 
     public string SseSummary =>
         IsSseResponse
@@ -2441,11 +1276,13 @@ public partial class MainWindowViewModel : ObservableObject
 
                 // Masked before the await: the request and environment can be edited while it is on its way.
                 stored = SecretMasker.MaskComposed(request, ActiveEnvironment, composed, secrets);
+                var sseProgress = new Progress<SseProgress>(ApplySseProgress);
                 result = await _http.SendAsync(
                     composed,
                     stored.Url,
                     _sendCts.Token,
-                    request.TimeoutSeconds
+                    request.TimeoutSeconds,
+                    sseProgress
                 );
             }
             catch (Exception exception)
@@ -3779,7 +2616,15 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         var lines = request.FormFields.ActiveRows.Select(row => $"{row.Key}: {row.Value}").ToList();
-        if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
+        if (request.UploadFiles.Count > 0)
+        {
+            lines.AddRange(
+                request.UploadFiles.Select(file =>
+                    $"[file] {file.FieldName}: {file.FilePath} ({file.SizeText})"
+                )
+            );
+        }
+        else if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
         {
             lines.Add($"[file] {request.UploadFieldName}: {request.UploadFilePath}");
         }
@@ -4152,6 +2997,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             wrapper.EditMappingsCommand = new RelayCommand(() => OpenMappingEditor(wrapper));
+            wrapper.EditAssertionsCommand = new RelayCommand(() => OpenAssertionEditor(wrapper));
             next.Add(wrapper);
         }
 
@@ -4167,6 +3013,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         IsSuiteBuilderOpen = false;
         IsMappingEditorOpen = false;
+        IsAssertionEditorOpen = false;
     }
 
     [RelayCommand]
@@ -4267,6 +3114,85 @@ public partial class MainWindowViewModel : ObservableObject
         IsMappingEditorOpen = false;
     }
 
+    private AssertionEditor CreateAssertionEditor(TestAssertion source)
+    {
+        var editor = new AssertionEditor
+        {
+            Kind = string.IsNullOrWhiteSpace(source.Kind) ? "JSONPath" : source.Kind,
+            Path = source.Path,
+            Expected = source.Expected,
+        };
+        editor.RemoveCommand = new RelayCommand(() => AssertionEditors.Remove(editor));
+        return editor;
+    }
+
+    private void OpenAssertionEditor(SuiteBuilderStep step)
+    {
+        AssertionEditors.Clear();
+        foreach (var assertion in step.Step.Assertions)
+        {
+            AssertionEditors.Add(CreateAssertionEditor(assertion));
+        }
+
+        if (AssertionEditors.Count == 0)
+        {
+            AssertionEditors.Add(CreateAssertionEditor(new TestAssertion()));
+        }
+
+        AssertionStep = step;
+        AssertionTitle = $"断言 · {step.RequestName}";
+        IsAssertionEditorOpen = true;
+    }
+
+    [RelayCommand]
+    private void AddAssertionRule()
+    {
+        AssertionEditors.Add(CreateAssertionEditor(new TestAssertion()));
+    }
+
+    [RelayCommand]
+    private void CancelAssertionEditor() => IsAssertionEditorOpen = false;
+
+    [RelayCommand]
+    private void SaveAssertionEditor()
+    {
+        if (AssertionStep is not { } step)
+        {
+            return;
+        }
+
+        foreach (var editor in AssertionEditors)
+        {
+            if (string.IsNullOrWhiteSpace(editor.Path))
+            {
+                editor.Error = editor.Kind == "Header" ? "请填写响应头名称" : "请填写 JSONPath";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(editor.Expected))
+            {
+                editor.Error = "请填写期望值";
+                return;
+            }
+        }
+
+        step.Step.Assertions.Clear();
+        foreach (var editor in AssertionEditors)
+        {
+            step.Step.Assertions.Add(
+                new TestAssertion
+                {
+                    Kind = editor.Kind == "Header" ? "Header" : "JSONPath",
+                    Path = editor.Path.Trim(),
+                    Expected = editor.Expected.Trim(),
+                }
+            );
+        }
+
+        step.RefreshAssertionLabel();
+        IsAssertionEditorOpen = false;
+    }
+
     [RelayCommand]
     private void CreateSuiteFromSources()
     {
@@ -4279,6 +3205,16 @@ public partial class MainWindowViewModel : ObservableObject
                 delay = 200;
             }
 
+            if (!int.TryParse(wrapper.RetryCountText, out var retryCount))
+            {
+                retryCount = 0;
+            }
+
+            if (!int.TryParse(wrapper.RetryDelayText, out var retryDelay))
+            {
+                retryDelay = 500;
+            }
+
             foreach (var mapping in wrapper.Step.InputMappings)
             {
                 if (!previousStepIds.Contains(mapping.SourceStepId))
@@ -4289,6 +3225,8 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             wrapper.Step.DelayMs = Math.Clamp(delay, 0, 60_000);
+            wrapper.Step.RetryCount = Math.Clamp(retryCount, 0, SuiteRetryPolicy.MaxRetries);
+            wrapper.Step.RetryDelayMs = Math.Clamp(retryDelay, 0, 60_000);
             previousStepIds.Add(wrapper.Step.Id);
             steps.Add(wrapper.Step);
         }
@@ -4530,32 +3468,105 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             ComposedRequest? stored = null;
-            HttpResult result;
-            try
+            HttpResult result = HttpRequestService.Failure("步骤未执行。");
+            var assertionResults = new List<TestAssertionResult>();
+            var attempts = 0;
+            var passed = false;
+            string? error = null;
+            var maxAttempts = SuiteRetryPolicy.MaxAttempts(step.RetryCount);
+
+            while (true)
             {
-                var composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment);
-                stored = SecretMasker.MaskComposed(
-                    effectiveRequest,
-                    ActiveEnvironment,
-                    composed,
-                    secrets
-                );
-                result = await _http.SendAsync(
-                    composed,
-                    stored.Url,
-                    cancellationToken,
-                    effectiveRequest.TimeoutSeconds
-                );
-            }
-            catch (Exception exception)
-            {
-                Log.Error(
-                    exception,
-                    "套件步骤发送失败 {SuiteName} {StepName}",
+                attempts++;
+                try
+                {
+                    var composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment);
+                    stored = SecretMasker.MaskComposed(
+                        effectiveRequest,
+                        ActiveEnvironment,
+                        composed,
+                        secrets
+                    );
+                    result = await _http.SendAsync(
+                        composed,
+                        stored.Url,
+                        cancellationToken,
+                        effectiveRequest.TimeoutSeconds
+                    );
+                }
+                catch (Exception exception)
+                {
+                    Log.Error(
+                        exception,
+                        "套件步骤发送失败 {SuiteName} {StepName}",
+                        suite.Name,
+                        step.RequestName
+                    );
+                    result = HttpRequestService.Failure(exception.Message);
+                }
+
+                if (!result.HasResponse && cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                // Checks see the masked response, so neither their outcome nor the 「实际」 values they report
+                // can be used to read a secret.
+                var checkedResult =
+                    step.Assertions.Count > 0 || !string.IsNullOrWhiteSpace(step.BodyContains)
+                        ? SecretMasker.MaskResult(result, secrets)
+                        : result;
+                var statusMatches = step.ExpectedStatus is null
+                    ? result.StatusCode is >= 200 and < 400
+                    : result.StatusCode == step.ExpectedStatus;
+                var bodyMatches =
+                    string.IsNullOrWhiteSpace(step.BodyContains)
+                    || checkedResult.Body.Contains(
+                        step.BodyContains,
+                        StringComparison.OrdinalIgnoreCase
+                    );
+                assertionResults = SuiteAssertionEvaluator
+                    .Evaluate(step.Assertions, checkedResult)
+                    .ToList();
+                var assertionsMatch = assertionResults.All(assertion => assertion.Passed);
+                passed = result.HasResponse && statusMatches && bodyMatches && assertionsMatch;
+                error = result.Error;
+                if (passed is false && error is null)
+                {
+                    error =
+                        !statusMatches
+                            ? $"期望状态 {step.ExpectedStatus?.ToString() ?? "2xx/3xx"}，实际 {result.StatusCode}"
+                        : !bodyMatches ? $"响应不包含 \"{step.BodyContains}\""
+                        : assertionResults.FirstOrDefault(assertion => !assertion.Passed)?.Detail;
+                }
+
+                if (!SuiteRetryPolicy.ShouldRetry(passed, attempts, step.RetryCount))
+                {
+                    break;
+                }
+
+                Log.Information(
+                    "套件步骤失败准备重试 {SuiteName} {StepName} {Attempt}/{MaxAttempts}",
                     suite.Name,
-                    step.RequestName
+                    step.RequestName,
+                    attempts,
+                    maxAttempts
                 );
-                result = HttpRequestService.Failure(exception.Message);
+                try
+                {
+                    await Task.Delay(SuiteRetryPolicy.Delay(step.RetryDelayMs), cancellationToken);
+                }
+                catch (OperationCanceledException exception)
+                {
+                    Log.Debug(
+                        exception,
+                        "套件重试等待被取消 {SuiteName} {StepName}",
+                        suite.Name,
+                        step.RequestName
+                    );
+                    stopped = true;
+                    break;
+                }
             }
 
             if (!result.HasResponse && cancellationToken.IsCancellationRequested)
@@ -4580,44 +3591,23 @@ public partial class MainWindowViewModel : ObservableObject
                 secrets
             );
 
-            var statusMatches = step.ExpectedStatus is null
-                ? result.StatusCode is >= 200 and < 400
-                : result.StatusCode == step.ExpectedStatus;
-            // Checked on the masked body, so an assertion cannot be used to guess a secret one piece at a time;
-            // the body is masked only when the raw text matches at all.
-            var bodyMatches =
-                string.IsNullOrWhiteSpace(step.BodyContains)
-                || (
-                    result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase)
-                    && SecretMasker
-                        .MaskSecrets(result.Body, secrets)
-                        .Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase)
-                );
-            var passed = result.HasResponse && statusMatches && bodyMatches;
-            var error = result.Error;
-            if (passed is false && error is null)
+            var stepResult = new TestStepResult
             {
-                error = !statusMatches
-                    ? $"期望状态 {step.ExpectedStatus?.ToString() ?? "2xx/3xx"}，实际 {result.StatusCode}"
-                    : $"响应不包含 \"{step.BodyContains}\"";
-            }
-
-            steps.Add(
-                new TestStepResult
-                {
-                    StepId = step.Id,
-                    RequestId = request.Id,
-                    Name = request.Name,
-                    Method = request.Method,
-                    Url = audited.Url,
-                    StatusCode = result.StatusCode,
-                    StatusText = result.ReasonPhrase,
-                    ElapsedMs = result.ElapsedMs,
-                    Passed = passed,
-                    Error = error is null ? null : SecretMasker.MaskSecrets(error, secrets),
-                    ResponsePreview = SecretMasker.MaskPreview(result.Body, 500, secrets),
-                }
-            );
+                StepId = step.Id,
+                RequestId = request.Id,
+                Name = request.Name,
+                Method = request.Method,
+                Url = audited.Url,
+                StatusCode = result.StatusCode,
+                StatusText = result.ReasonPhrase,
+                ElapsedMs = result.ElapsedMs,
+                Attempts = attempts,
+                Passed = passed,
+                Error = error is null ? null : SecretMasker.MaskSecrets(error, secrets),
+                ResponsePreview = SecretMasker.MaskPreview(result.Body, 500, secrets),
+            };
+            stepResult.Assertions.AddRange(assertionResults);
+            steps.Add(stepResult);
 
             if (!passed && suite.StopOnError)
             {
@@ -5232,6 +4222,35 @@ public partial class MainWindowViewModel : ObservableObject
         _mockServer.Dispose();
     }
 
+    private void ApplySseProgress(SseProgress progress)
+    {
+        if (!IsSseResponse)
+        {
+            HasResponse = true;
+            HasResponseError = false;
+            ResponseError = null;
+            ResponseBody = string.Empty;
+            FullResponseBody = string.Empty;
+            ResponseClipboardText = string.Empty;
+            LargeResponseNotice = string.Empty;
+            IsJsonResponse = false;
+            IsLargeResponse = false;
+            IsSseResponse = true;
+            SseViewMode = "内容";
+            ResponseTabIndex = 2;
+            ResponseStatusText = "流式接收中…";
+            ResponseTimeText = string.Empty;
+            ResponseSizeText = string.Empty;
+            ResponseContentType = "text/event-stream";
+            ResponseTone = BadgeTone.Info;
+        }
+
+        SseThinking = progress.Thinking;
+        SseContent = progress.Content;
+        SseRaw = progress.Raw;
+        SseEventCount = progress.EventCount;
+    }
+
     private void ApplyResponse(HttpResult result)
     {
         ResponseHeaders.Clear();
@@ -5283,21 +4302,29 @@ public partial class MainWindowViewModel : ObservableObject
         LargeResponseNotice = isLarge
             ? $"响应体 {FormatSize(result.SizeBytes)}，已折叠显示前 {ResponsePreviewLimit / 1024} KB。完整内容可在详情页分页查看或复制。"
             : string.Empty;
-        ResponseStatusText = string.IsNullOrWhiteSpace(result.ReasonPhrase)
-            ? result.StatusCode.ToString()
+        ResponseStatusText =
+            result.SseCancelled
+                ? (
+                    result.ReasonPhrase == "超时"
+                        ? "超时 · 保留已接收内容"
+                        : "已取消 · 保留已接收内容"
+                )
+            : string.IsNullOrWhiteSpace(result.ReasonPhrase) ? result.StatusCode.ToString()
             : $"{result.StatusCode} {result.ReasonPhrase}";
         ResponseTimeText = $"耗时 {result.ElapsedMs} ms";
         ResponseSizeText = $"大小 {FormatSize(result.SizeBytes)}";
         ResponseContentType = string.IsNullOrWhiteSpace(result.MediaType)
             ? "未知内容类型"
             : result.MediaType;
-        ResponseTone = result.StatusCode switch
-        {
-            >= 200 and < 300 => BadgeTone.Success,
-            >= 300 and < 400 => BadgeTone.Info,
-            >= 400 and < 500 => BadgeTone.Warning,
-            _ => BadgeTone.Danger,
-        };
+        ResponseTone = result.SseCancelled
+            ? BadgeTone.Warning
+            : result.StatusCode switch
+            {
+                >= 200 and < 300 => BadgeTone.Success,
+                >= 300 and < 400 => BadgeTone.Info,
+                >= 400 and < 500 => BadgeTone.Warning,
+                _ => BadgeTone.Danger,
+            };
 
         foreach (var header in result.Headers)
         {
@@ -5615,7 +4642,7 @@ public partial class MainWindowViewModel : ObservableObject
         filter.Length == 0
         || (value?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
 
-    private void ShowToast(string title)
+    public void ShowToast(string title)
     {
         ToastTitle = title;
         IsToastOpen = true;
@@ -5724,6 +4751,8 @@ public partial class MainWindowViewModel : ObservableObject
                     Method = stepDto.Method,
                     Url = stepDto.Url,
                     DelayMs = stepDto.DelayMs,
+                    RetryCount = stepDto.RetryCount,
+                    RetryDelayMs = stepDto.RetryDelayMs,
                     ExpectedStatus = stepDto.ExpectedStatus,
                     BodyContains = stepDto.BodyContains,
                 };
@@ -5738,6 +4767,18 @@ public partial class MainWindowViewModel : ObservableObject
                             TargetKind = mappingDto.TargetKind,
                             TargetPath = mappingDto.TargetPath,
                             Template = mappingDto.Template,
+                        }
+                    );
+                }
+
+                foreach (var assertionDto in stepDto.Assertions)
+                {
+                    step.Assertions.Add(
+                        new TestAssertion
+                        {
+                            Kind = assertionDto.Kind,
+                            Path = assertionDto.Path,
+                            Expected = assertionDto.Expected,
                         }
                     );
                 }
@@ -5947,11 +4988,4 @@ public partial class MainWindowViewModel : ObservableObject
             _ => $"{bytes / (1024d * 1024d):0.##} MB",
         };
     }
-
-    private sealed record CollectionImportOutcome(
-        string RootName,
-        int RequestCount,
-        int FolderCount,
-        string? EnvironmentName
-    );
 }
