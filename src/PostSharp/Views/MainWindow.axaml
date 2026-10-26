@@ -1668,21 +1668,22 @@
                                                     SearchPlaceholder="搜索键和值"
                                                     AutomationProperties.Name="JSON 响应"
                                                 />
-                                                <ScrollViewer
+                                                <TextBox
                                                     IsVisible="{Binding ShowRawResponse}"
-                                                    HorizontalScrollBarVisibility="Visible"
-                                                    VerticalScrollBarVisibility="Visible"
-                                                    HorizontalContentAlignment="Left"
-                                                    VerticalContentAlignment="Top"
-                                                >
-                                                    <SelectableTextBlock
-                                                        Text="{Binding ResponseBody}"
-                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
-                                                        FontSize="{DynamicResource PostSharpCodeFontSize}"
-                                                        Foreground="{arc:ArcDesignTokenResource Foreground}"
-                                                        TextWrapping="NoWrap"
-                                                    />
-                                                </ScrollViewer>
+                                                    Text="{Binding ResponseBody}"
+                                                    IsReadOnly="True"
+                                                    AcceptsReturn="True"
+                                                    TextWrapping="NoWrap"
+                                                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Padding="0"
+                                                    FontFamily="{DynamicResource PostSharpCodeFont}"
+                                                    FontSize="{DynamicResource PostSharpCodeFontSize}"
+                                                    Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                    AutomationProperties.Name="响应原始文本"
+                                                />
                                             </Grid>
                                         </Grid>
                                     </arc:TabItem>
