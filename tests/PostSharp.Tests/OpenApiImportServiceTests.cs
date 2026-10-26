@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using PostSharp.Services;
 
 namespace PostSharp.Tests;
@@ -121,5 +123,112 @@ public sealed class OpenApiImportServiceTests
             "https://api.example.com/v1/health",
             Assert.Single(Assert.Single(document.Groups).Requests).Url
         );
+    }
+
+    [Fact]
+    public async Task ResolvesExternalRefRelativeToDocumentUrl()
+    {
+        const string document = """
+            {
+              "openapi": "3.0.3",
+              "info": { "title": "External", "version": "1.0" },
+              "servers": [ { "url": "https://api.example.com" } ],
+              "paths": {
+                "/items": {
+                  "post": {
+                    "requestBody": { "$ref": "schemas.json#/CreateRequest" },
+                    "responses": { "200": { "description": "ok" } }
+                  }
+                }
+              }
+            }
+            """;
+        const string external = """
+            {
+              "CreateRequest": {
+                "required": true,
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "name": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """;
+        var requested = new List<string>();
+        using var client = new HttpClient(
+            new StubHttpHandler(request =>
+            {
+                requested.Add(request.RequestUri?.ToString() ?? string.Empty);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(external, Encoding.UTF8, "application/json"),
+                };
+            })
+        );
+
+        var result = await OpenApiImportService.ParseWithExternalReferencesAsync(
+            document,
+            "https://api.example.com/openapi.json",
+            new Uri("https://api.example.com/openapi.json"),
+            client: client
+        );
+
+        var request = Assert.Single(Assert.Single(result.Groups).Requests);
+        Assert.Contains("\"name\"", request.Body);
+        Assert.Equal("https://api.example.com/schemas.json", Assert.Single(requested));
+    }
+
+    [Fact]
+    public async Task ExternalRefFailureKeepsDocumentImportable()
+    {
+        const string document = """
+            {
+              "openapi": "3.0.3",
+              "info": { "title": "External", "version": "1.0" },
+              "servers": [ { "url": "https://api.example.com" } ],
+              "paths": {
+                "/items": {
+                  "post": {
+                    "requestBody": { "$ref": "missing.json#/CreateRequest" },
+                    "responses": { "200": { "description": "ok" } }
+                  }
+                }
+              }
+            }
+            """;
+        using var client = new HttpClient(
+            new StubHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound))
+        );
+
+        var result = await OpenApiImportService.ParseWithExternalReferencesAsync(
+            document,
+            "https://api.example.com/openapi.json",
+            new Uri("https://api.example.com/openapi.json"),
+            client: client
+        );
+
+        Assert.Single(Assert.Single(result.Groups).Requests);
+        Assert.Contains(
+            result.Warnings,
+            warning => warning.Contains("外部引用下载失败", StringComparison.Ordinal)
+        );
+    }
+
+    private sealed class StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            return Task.FromResult(handler(request));
+        }
     }
 }

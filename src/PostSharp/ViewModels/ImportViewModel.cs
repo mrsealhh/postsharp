@@ -305,8 +305,11 @@ public partial class ImportViewModel : ObservableObject
         try
         {
             var content = await File.ReadAllTextAsync(path, _importCts!.Token).ConfigureAwait(true);
-            var document = await Task.Run(
-                    () => OpenApiImportService.Parse(content, Path.GetFileName(path)),
+            var document = await OpenApiImportService
+                .ParseWithExternalReferencesAsync(
+                    content,
+                    Path.GetFileName(path),
+                    new Uri(Path.GetFullPath(path)),
                     _importCts.Token
                 )
                 .ConfigureAwait(true);

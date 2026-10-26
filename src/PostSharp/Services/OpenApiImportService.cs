@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -16,6 +17,8 @@ public static class OpenApiImportService
 {
     private const int MaxRequests = 500;
     private const int MaxSchemaDepth = 8;
+    private const int MaxExternalReferences = 20;
+    private const int MaxExternalReferenceBytes = 2 * 1024 * 1024;
 
     private static readonly string[] Methods =
     {
@@ -43,7 +46,8 @@ public static class OpenApiImportService
 
     public static async Task<OpenApiImportDocument> LoadFromUrlAsync(
         string url,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        HttpClient? client = null
     )
     {
         if (
@@ -62,7 +66,7 @@ public static class OpenApiImportService
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/yaml"));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*", 0.5));
 
-        using var response = await Client
+        using var response = await (client ?? Client)
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
@@ -81,10 +85,49 @@ public static class OpenApiImportService
         }
 
         Log.Information("已下载 OpenAPI 文档 {Url}，大小 {Length} 字符", uri, content.Length);
-        return Parse(content, uri.ToString());
+        return await ParseWithExternalReferencesAsync(
+                content,
+                uri.ToString(),
+                uri,
+                cancellationToken,
+                client
+            )
+            .ConfigureAwait(false);
     }
 
-    public static OpenApiImportDocument Parse(string content, string source)
+    public static async Task<OpenApiImportDocument> ParseWithExternalReferencesAsync(
+        string content,
+        string source,
+        Uri? baseUri,
+        CancellationToken cancellationToken = default,
+        HttpClient? client = null
+    )
+    {
+        var root =
+            ParseDocument(content) as JsonObject
+            ?? throw new InvalidOperationException("OpenAPI 文档的根节点必须是对象。");
+        if (CountExternalReferences(root) == 0)
+        {
+            return Parse(content, source);
+        }
+
+        var warnings = new List<string>();
+        var state = new ExternalReferenceState(client ?? Client, baseUri, warnings);
+        await ResolveExternalReferencesAsync(root, state, baseUri, cancellationToken)
+            .ConfigureAwait(false);
+        if (state.BundleRoot["x-postsharp-external"] is JsonObject bundle)
+        {
+            root["x-postsharp-external"] = bundle.DeepClone();
+        }
+
+        return Parse(root.ToJsonString(), source, warnings);
+    }
+
+    public static OpenApiImportDocument Parse(
+        string content,
+        string source,
+        IReadOnlyList<string>? extraWarnings = null
+    )
     {
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -253,7 +296,7 @@ public static class OpenApiImportService
                     Requests = group.Requests,
                 })
                 .ToList(),
-            Warnings = warnings.ToList(),
+            Warnings = warnings.ToList().Concat(extraWarnings ?? Array.Empty<string>()).ToList(),
         };
     }
 
@@ -892,6 +935,202 @@ public static class OpenApiImportService
         }
 
         return tags.Count(tag => (GetText(tag) ?? string.Empty).Trim().Length > 0) > 1;
+    }
+
+    private static async Task ResolveExternalReferencesAsync(
+        JsonNode? node,
+        ExternalReferenceState state,
+        Uri? baseUri,
+        CancellationToken cancellationToken
+    )
+    {
+        if (node is JsonObject obj)
+        {
+            if (
+                obj["$ref"] is JsonValue referenceValue
+                && referenceValue.TryGetValue<string>(out var reference)
+            )
+            {
+                var resolved = await ResolveExternalReferenceAsync(
+                        reference,
+                        state,
+                        baseUri,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                if (resolved is not null)
+                {
+                    obj["$ref"] = resolved;
+                }
+            }
+
+            foreach (var entry in obj.ToList())
+            {
+                if (entry.Key == "$ref")
+                {
+                    continue;
+                }
+
+                await ResolveExternalReferencesAsync(entry.Value, state, baseUri, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        if (node is JsonArray array)
+        {
+            foreach (var item in array)
+            {
+                await ResolveExternalReferencesAsync(item, state, baseUri, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static async Task<string?> ResolveExternalReferenceAsync(
+        string reference,
+        ExternalReferenceState state,
+        Uri? baseUri,
+        CancellationToken cancellationToken
+    )
+    {
+        if (reference.StartsWith('#') || reference.Trim().Length == 0)
+        {
+            return null;
+        }
+
+        var hashIndex = reference.IndexOf('#');
+        var location = hashIndex < 0 ? reference : reference[..hashIndex];
+        var fragment = hashIndex < 0 ? string.Empty : reference[hashIndex..];
+        if (location.Length == 0)
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(location, UriKind.Absolute, out var uri))
+        {
+            if (baseUri is null || !Uri.TryCreate(baseUri, location, out uri))
+            {
+                state.Warnings.Add($"已跳过无法解析的外部引用：{reference}");
+                return null;
+            }
+        }
+
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+        {
+            state.Warnings.Add($"已跳过非 HTTP 外部引用：{uri}");
+            return null;
+        }
+
+        var uriKey = uri.ToString();
+        if (state.Keys.TryGetValue(uriKey, out var existingKey))
+        {
+            return BuildExternalReference(existingKey, fragment);
+        }
+
+        if (state.ReferenceCount >= MaxExternalReferences)
+        {
+            if (!state.LimitWarningAdded)
+            {
+                state.Warnings.Add($"外部 $ref 超过 {MaxExternalReferences} 个，剩余引用未下载。");
+                state.LimitWarningAdded = true;
+            }
+
+            return null;
+        }
+
+        if (!state.Visited.Add(uriKey))
+        {
+            state.Warnings.Add($"检测到循环外部引用，已跳过：{uri}");
+            return null;
+        }
+
+        state.ReferenceCount++;
+        var key = $"external{state.ReferenceCount}";
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.Accept.ParseAdd("application/json");
+            request.Headers.Accept.ParseAdd("application/yaml");
+            request.Headers.Accept.ParseAdd("text/yaml");
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            using var response = await state
+                .Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException($"HTTP {(int)response.StatusCode}");
+            }
+
+            var bytes = await response
+                .Content.ReadAsByteArrayAsync(timeout.Token)
+                .ConfigureAwait(false);
+            if (bytes.Length > MaxExternalReferenceBytes)
+            {
+                state.Warnings.Add($"外部引用超过 2 MB，已跳过：{uri}");
+                return null;
+            }
+
+            var externalRoot =
+                ParseDocument(Encoding.UTF8.GetString(bytes)) as JsonObject
+                ?? throw new InvalidOperationException("外部引用不是对象。");
+            await ResolveExternalReferencesAsync(externalRoot, state, uri, cancellationToken)
+                .ConfigureAwait(false);
+            var bundle = (JsonObject)state.BundleRoot["x-postsharp-external"]!;
+            bundle[key] = externalRoot;
+            state.Keys[uriKey] = key;
+            Log.Information("已下载 OpenAPI 外部引用 {Url}", uri);
+            return BuildExternalReference(key, fragment);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException exception)
+        {
+            state.Warnings.Add($"外部引用下载超时，已跳过：{uri}");
+            Log.Warning(exception, "下载 OpenAPI 外部引用超时 {Url}", uri);
+            return null;
+        }
+        catch (Exception exception)
+        {
+            state.Warnings.Add($"外部引用下载失败，已跳过：{uri}");
+            Log.Warning(exception, "下载 OpenAPI 外部引用失败 {Url}", uri);
+            return null;
+        }
+    }
+
+    private static string BuildExternalReference(string key, string fragment)
+    {
+        var suffix = fragment.StartsWith('#') ? fragment[1..] : fragment;
+        return $"#/x-postsharp-external/{key}{suffix}";
+    }
+
+    private sealed class ExternalReferenceState(
+        HttpClient client,
+        Uri? baseUri,
+        List<string> warnings
+    )
+    {
+        public HttpClient Client { get; } = client;
+
+        public Uri? BaseUri { get; } = baseUri;
+
+        public List<string> Warnings { get; } = warnings;
+
+        public JsonObject BundleRoot { get; } =
+            new() { ["x-postsharp-external"] = new JsonObject() };
+
+        public Dictionary<string, string> Keys { get; } = new(StringComparer.Ordinal);
+
+        public HashSet<string> Visited { get; } = new(StringComparer.Ordinal);
+
+        public int ReferenceCount { get; set; }
+
+        public bool LimitWarningAdded { get; set; }
     }
 
     private static int CountExternalReferences(JsonNode? node)

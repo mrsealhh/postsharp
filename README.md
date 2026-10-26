@@ -74,7 +74,7 @@ PostSharp 的定位是：
   - SSE 响应自动选中「AI 聚合」标签，内容 / 思考过程 / 原始事件三视图。
 - **集合、历史、环境变量、自动保存**。
 - **历史记录管理**：单条删除与清空都会先弹出确认，删除项进入回收站；回收站支持恢复、永久删除，永久删除前再次确认。
-- **OpenAPI 导入**：从本地 JSON / YAML 文件或 URL 读取 OpenAPI 3.x / Swagger 2.0；按 `x-apifox-folder` 或第一个 tag 创建分组，支持安全方案占位头、多服务器选择、多 tag/外部 `$ref` 提示，并带出服务器地址、查询参数和请求体示例。
+- **OpenAPI 导入**：从本地 JSON / YAML 文件或 URL 读取 OpenAPI 3.x / Swagger 2.0；按 `x-apifox-folder` 或第一个 tag 创建分组，支持安全方案占位头、多服务器选择、外部 `$ref` 自动下载（限 20 个、每个 2 MB、10 秒超时），并带出服务器地址、查询参数和请求体示例。
 
 ### 界面
 
@@ -573,14 +573,15 @@ docs/
 | cURL 保存 | 当前请求可保存为 `.sh`；与「复制 cURL」共享同一份已解析环境变量结果 |
 | Insomnia 导入 | v4 JSON：workspace、request_group、request、environment、bearer 认证和 JSON body 解析通过 |
 | Hoppscotch 导入 | Collection JSON：文件夹、params、headers、JSON body、bearer 认证解析通过 |
-| OpenAPI 增强 | `x-apifox-folder` 分组、securitySchemes 占位 Authorization、多服务器选择与请求 URL 重基、多 tag/外部 `$ref` 提示通过 |
+| OpenAPI 增强 | `x-apifox-folder` 分组、securitySchemes 占位 Authorization、多服务器选择与请求 URL 重基、外部 `$ref` 自动下载与失败提示通过 |
+| OpenAPI 外部引用 | 相对文档 URL 引用、下载失败降级、20 个/2 MB/10 秒限制通过 |
 | 导入来源卡片 | OpenAPI、Postman Collection、Postman Environment、cURL、HAR、Insomnia、Hoppscotch、YApi/ApiPost/Eolink、Apifox 九张卡片同屏展示，选中态清晰 |
 | 批量导入 | 文件选择器允许多选；自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL，逐文件成功/失败互不影响 |
 | 导入反馈 | 单文件成功 Toast；批量或有提示时显示「导入结果」绿色结果区和「兼容性提示」橙色提示区，含请求/分组/环境数量，默认折叠可展开 |
 | 粘贴区 | 长 JSON 在固定高度内自适应滚动；底部边框完整，不再被外层裁切 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：43 个测试全部通过 |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：45 个测试全部通过 |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
@@ -673,9 +674,9 @@ master                 稳定可发布
 - 导入来源小分类卡片：可收起，避免大分类隐藏入口。
 - 批量导入：多选文件、自动识别格式、逐文件成功/失败结果。
 - 导入反馈：请求/分组/环境统计；结果和兼容性提示默认折叠，可展开。
-- OpenAPI：`x-apifox-folder` 分组、securitySchemes 占位头、多服务器选择、多 tag/外部 `$ref` 提示。
+- OpenAPI：`x-apifox-folder` 分组、securitySchemes 占位头、多服务器选择、外部 `$ref` 自动下载。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：43 个 xUnit 测试。
+- 自测：45 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
@@ -688,14 +689,14 @@ master                 稳定可发布
 - Insomnia 目前支持 v4 JSON；Insomnia v5 YAML 需要先从 Insomnia 导出为 v4 JSON。
 - Hoppscotch 支持 Collection JSON；环境文件、multipart 文件内容和脚本不会导入。
 - 字体设置主要覆盖窗口正文和代码视图；Arc 组件的内部令牌字体不保证全部跟随。
-- OpenAPI 导入会优先使用 `x-apifox-folder`，支持 securitySchemes 占位认证头和服务器选择；外部 `$ref` 自动下载、回调/Webhook 仍未实现。
+- OpenAPI 导入会优先使用 `x-apifox-folder`，支持 securitySchemes 占位认证头、服务器选择和外部 `$ref` 自动下载；回调/Webhook 仍未实现。
 - Cookie 管理、代理、客户端证书、OAuth、Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
 - MCP 仅本地回环，无 OAuth；SSE 通知未实现。
 
 ### 后续路线图
 
-1. 导入框架重构：拆分 `ImportViewModel` / `IImportProvider`，为后续更多来源降低冲突。
-2. OpenAPI 完整增强：外部 `$ref` 下载、更多安全方案与回调/Webhook 提示。
+1. 导入对话框 XAML 独立拆分，继续降低 `MainWindow.axaml` 体积。
+2. OpenAPI 更多安全方案与回调/Webhook 提示。
 3. Apifox 原生格式评估：先收集官方导出样本和 schema，不做无样本逆向。
 4. SSE 逐 token 实时渲染 + 中断/继续。
 5. 套件工作流增强：JSONPath/响应头断言、条件分支、重试/轮询、并行、定时触发、CLI 运行。
