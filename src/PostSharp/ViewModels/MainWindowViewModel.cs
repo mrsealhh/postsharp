@@ -229,6 +229,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         _suiteScheduleTimer.Start();
 
         HasPendingUpdate = UpdateService.PendingVersion is not null;
+        UpdateService.PendingChanged += OnPendingUpdateChanged;
         _updateCts = new CancellationTokenSource();
         _ = RunUpdateLoopAsync(_updateCts.Token);
 
@@ -5352,10 +5353,19 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         _suiteScheduleTimer.Stop();
         _suiteScheduleTimer.Tick -= OnSuiteScheduleTick;
+        UpdateService.PendingChanged -= OnPendingUpdateChanged;
         _updateCts?.Cancel();
         _updateCts?.Dispose();
         Persist();
         _mockServer.Dispose();
+    }
+
+    private void OnPendingUpdateChanged(object? sender, EventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            HasPendingUpdate = UpdateService.PendingVersion is not null;
+        });
     }
 
     private async Task RunUpdateLoopAsync(CancellationToken cancellationToken)

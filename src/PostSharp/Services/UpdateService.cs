@@ -58,6 +58,8 @@ public static class UpdateService
         WriteIndented = true,
     };
 
+    public static event EventHandler? PendingChanged;
+
     public static Version CurrentVersion =>
         NormalizeVersion(Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 0, 0));
 
@@ -376,6 +378,7 @@ public static class UpdateService
             };
             var json = JsonSerializer.Serialize(pending, JsonOptions);
             File.WriteAllText(PendingFilePath, json, new UTF8Encoding(false));
+            PendingChanged?.Invoke(null, EventArgs.Empty);
         }
         finally
         {
@@ -546,6 +549,7 @@ public static class UpdateService
         try
         {
             File.Delete(PendingFilePath);
+            PendingChanged?.Invoke(null, EventArgs.Empty);
         }
         catch (Exception exception)
         {
