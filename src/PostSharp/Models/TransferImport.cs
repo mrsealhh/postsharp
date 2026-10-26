@@ -70,3 +70,12 @@ public sealed class CurlImportResult
 }
 
 public sealed record ExportDocument(string Content, string FileName);
+
+public sealed class EnvironmentImportResult
+{
+    public required ImportedEnvironment Environment { get; init; }
+
+    public required string Source { get; init; }
+
+    public required IReadOnlyList<string> Warnings { get; init; }
+}

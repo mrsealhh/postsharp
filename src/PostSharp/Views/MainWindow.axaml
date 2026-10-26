@@ -3046,7 +3046,7 @@
                     x:Name="ImportDialog"
                     IsOpen="{Binding IsImportDialogOpen, Mode=TwoWay}"
                     Title="导入 / 导出"
-                    Description="支持 OpenAPI 文档、Postman Collection v2.1 和 bash cURL；导入成功后可以继续手工调整请求。"
+                    Description="支持 OpenAPI、Postman Collection、bash cURL 和 HAR 1.2；导入成功后可以继续手工调整请求。"
                     Size="Large"
                     Opened="OnImportDialogOpened"
                 >
@@ -3059,6 +3059,7 @@
                             <arc:SegmentedOption Value="OpenAPI" Label="OpenAPI" />
                             <arc:SegmentedOption Value="Postman" Label="Postman" />
                             <arc:SegmentedOption Value="cURL" Label="cURL" />
+                            <arc:SegmentedOption Value="HAR" Label="HAR" />
                         </arc:SegmentedControl>
 
                         <Panel Grid.Row="1">
@@ -3087,6 +3088,22 @@
                                         AutomationProperties.Name="下载并导入 OpenAPI 文档"
                                     />
                                 </Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <arc:Button
+                                        Content="填入 springdoc / Knife4j 地址"
+                                        Variant="Ghost"
+                                        Size="Small"
+                                        Command="{Binding FillSpringDocUrlCommand}"
+                                        AutomationProperties.Name="填入 springdoc 或 Knife4j 地址"
+                                    />
+                                    <TextBlock
+                                        Text="常见地址为 http://服务地址:端口/v3/api-docs"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        VerticalAlignment="Center"
+                                        TextWrapping="Wrap"
+                                    />
+                                </StackPanel>
 
                                 <Border
                                     Height="1"
@@ -3159,6 +3176,22 @@
                                         TextWrapping="Wrap"
                                     />
                                 </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <arc:Button
+                                        Content="导入环境文件…"
+                                        Variant="Secondary"
+                                        Click="OnPickPostmanEnvironmentFileClick"
+                                        IsEnabled="{Binding !IsImporting}"
+                                        AutomationProperties.Name="导入 Postman 环境文件"
+                                    />
+                                    <TextBlock
+                                        Text="独立导入 Postman Environment JSON；变量会创建或合并到同名环境。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        VerticalAlignment="Center"
+                                        TextWrapping="Wrap"
+                                    />
+                                </StackPanel>
                                 <Border Height="150" ClipToBounds="True">
                                     <arc:Textarea
                                         Label="或者粘贴 Collection JSON"
@@ -3220,6 +3253,61 @@
                                         AutomationProperties.Name="保存当前请求 cURL"
                                     />
                                 </StackPanel>
+                            </StackPanel>
+
+                            <StackPanel IsVisible="{Binding IsHarImport}" Spacing="10">
+                                <TextBlock
+                                    Text="从 HAR 导入"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <TextBlock
+                                    Text="支持浏览器、Postman、Apifox 导出的 HAR 1.2。默认只导入 XHR / Fetch；响应内容、脚本和二进制文件内容不会导入。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <arc:Button
+                                        Content="选择 HAR 文件…"
+                                        Variant="Primary"
+                                        Click="OnPickHarFileClick"
+                                        IsEnabled="{Binding !IsImporting}"
+                                        IsLoading="{Binding IsImporting}"
+                                        AutomationProperties.Name="选择 HAR 文件"
+                                    />
+                                    <arc:Checkbox
+                                        IsChecked="{Binding HarIncludeStaticResources, Mode=TwoWay}"
+                                        VerticalAlignment="Center"
+                                        AutomationProperties.Name="包含静态资源"
+                                    />
+                                    <TextBlock
+                                        Text="包含静态资源"
+                                        FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                        VerticalAlignment="Center"
+                                    />
+                                </StackPanel>
+                                <Border Height="150" ClipToBounds="True">
+                                    <arc:Textarea
+                                        Label="或者粘贴 HAR JSON"
+                                        Text="{Binding HarJson, Mode=TwoWay}"
+                                        Placeholder="粘贴 HAR 1.2 JSON"
+                                        FrameHeight="150"
+                                        IsResizable="False"
+                                        AutomationProperties.Name="HAR JSON"
+                                    />
+                                </Border>
+                                <arc:Button
+                                    Content="导入粘贴的 HAR"
+                                    Variant="Primary"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding ImportHarTextCommand}"
+                                    IsEnabled="{Binding !IsImporting}"
+                                    IsLoading="{Binding IsImporting}"
+                                    AutomationProperties.Name="导入粘贴的 HAR"
+                                />
                             </StackPanel>
                         </Panel>
 

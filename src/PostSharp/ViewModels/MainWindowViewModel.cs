@@ -338,6 +338,12 @@ public partial class MainWindowViewModel : ObservableObject
     private string _curlCommand = string.Empty;
 
     [ObservableProperty]
+    private string _harJson = string.Empty;
+
+    [ObservableProperty]
+    private bool _harIncludeStaticResources;
+
+    [ObservableProperty]
     private string _importStatus =
         "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。";
 
@@ -356,6 +362,8 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsPostmanImport => ImportTab == "Postman";
 
     public bool IsCurlImport => ImportTab == "cURL";
+
+    public bool IsHarImport => ImportTab == "HAR";
 
     public bool CanExportCurl =>
         IsRequestSelected
@@ -505,6 +513,8 @@ public partial class MainWindowViewModel : ObservableObject
         ImportUrl = string.Empty;
         PostmanJson = string.Empty;
         CurlCommand = string.Empty;
+        HarJson = string.Empty;
+        HarIncludeStaticResources = false;
         ImportWarnings.Clear();
         ImportStatus = ImportStatusForTab(ImportTab);
         HasImportError = false;
@@ -516,6 +526,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsOpenApiImport));
         OnPropertyChanged(nameof(IsPostmanImport));
         OnPropertyChanged(nameof(IsCurlImport));
+        OnPropertyChanged(nameof(IsHarImport));
         ImportWarnings.Clear();
         HasImportError = false;
         ImportStatus = ImportStatusForTab(value);
@@ -529,6 +540,8 @@ public partial class MainWindowViewModel : ObservableObject
                 "选择 Postman Collection v2.1 JSON 文件，或把集合导出内容粘贴到下方。支持嵌套文件夹、认证、查询参数和常见请求体。",
             "cURL" =>
                 "粘贴以 curl 开头的 bash 命令。支持 -X、-H、-d、--data-raw、-F、-u、--max-time 等常用参数。",
+            "HAR" =>
+                "选择浏览器、Postman 或 Apifox 导出的 .har 文件，或粘贴 HAR JSON。默认只导入 XHR / Fetch，响应内容会被忽略。",
             _ => "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。",
         };
     }
@@ -590,6 +603,30 @@ public partial class MainWindowViewModel : ObservableObject
             _importCts?.Dispose();
             _importCts = null;
         }
+    }
+
+    [RelayCommand]
+    private void FillSpringDocUrl()
+    {
+        var current = ImportUrl.Trim();
+        if (current.Length == 0)
+        {
+            ImportUrl = "http://localhost:8080/v3/api-docs";
+            ImportStatus = "已填入 springdoc 默认地址；请把主机和端口改成你的服务地址。";
+            HasImportError = false;
+            return;
+        }
+
+        if (current.Contains("/v3/api-docs", StringComparison.OrdinalIgnoreCase))
+        {
+            ImportStatus = "当前地址已经是 springdoc / Knife4j 的 /v3/api-docs 地址。";
+            HasImportError = false;
+            return;
+        }
+
+        ImportUrl = current.TrimEnd('/') + "/v3/api-docs";
+        ImportStatus = "已补全 springdoc / Knife4j 地址，点击「下载并导入」继续。";
+        HasImportError = false;
     }
 
     public async Task ImportFromFileAsync(
@@ -670,7 +707,7 @@ public partial class MainWindowViewModel : ObservableObject
                     _importCts.Token
                 )
                 .ConfigureAwait(true);
-            ApplyPostmanImport(result);
+            ApplyCollectionImport(result);
         }
         catch (OperationCanceledException exception)
         {
@@ -721,7 +758,7 @@ public partial class MainWindowViewModel : ObservableObject
                     _importCts.Token
                 )
                 .ConfigureAwait(true);
-            ApplyPostmanImport(result);
+            ApplyCollectionImport(result);
         }
         catch (OperationCanceledException exception)
         {
@@ -741,6 +778,194 @@ public partial class MainWindowViewModel : ObservableObject
             _importCts?.Dispose();
             _importCts = null;
         }
+    }
+
+    public async Task ImportPostmanEnvironmentFileAsync(
+        string path,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (IsImporting)
+        {
+            return;
+        }
+
+        if (!File.Exists(path))
+        {
+            HasImportError = true;
+            ImportStatus = "Postman 环境文件不存在，请重新选择。";
+            return;
+        }
+
+        _importCts?.Dispose();
+        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        IsImporting = true;
+        HasImportError = false;
+        ImportWarnings.Clear();
+        ImportStatus = "正在解析 Postman 环境文件…";
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
+            var result = await Task.Run(
+                    () => PostmanEnvironmentImportService.Parse(content, Path.GetFileName(path)),
+                    _importCts.Token
+                )
+                .ConfigureAwait(true);
+            ApplyEnvironmentImport(result);
+        }
+        catch (OperationCanceledException exception)
+        {
+            Log.Debug(exception, "导入 Postman 环境已取消 {FilePath}", path);
+            ImportStatus = "导入已取消。";
+            HasImportError = true;
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "导入 Postman 环境失败 {FilePath}", path);
+        }
+        finally
+        {
+            IsImporting = false;
+            _importCts?.Dispose();
+            _importCts = null;
+        }
+    }
+
+    public async Task ImportHarFileAsync(string path, CancellationToken cancellationToken = default)
+    {
+        if (IsImporting)
+        {
+            return;
+        }
+
+        if (!File.Exists(path))
+        {
+            HasImportError = true;
+            ImportStatus = "HAR 文件不存在，请重新选择。";
+            return;
+        }
+
+        _importCts?.Dispose();
+        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        IsImporting = true;
+        HasImportError = false;
+        ImportWarnings.Clear();
+        ImportStatus = "正在读取并解析 HAR 文件…";
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
+            var result = await Task.Run(
+                    () =>
+                        HarImportService.Parse(
+                            content,
+                            Path.GetFileName(path),
+                            HarIncludeStaticResources
+                        ),
+                    _importCts.Token
+                )
+                .ConfigureAwait(true);
+            ApplyCollectionImport(result);
+        }
+        catch (OperationCanceledException exception)
+        {
+            Log.Debug(exception, "从文件导入 HAR 已取消 {FilePath}", path);
+            ImportStatus = "导入已取消。";
+            HasImportError = true;
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "从文件导入 HAR 失败 {FilePath}", path);
+        }
+        finally
+        {
+            IsImporting = false;
+            _importCts?.Dispose();
+            _importCts = null;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportHarTextAsync()
+    {
+        if (IsImporting)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(HarJson))
+        {
+            HasImportError = true;
+            ImportStatus = "请粘贴 HAR JSON，或改为选择 .har 文件。";
+            return;
+        }
+
+        _importCts?.Dispose();
+        _importCts = new CancellationTokenSource();
+        IsImporting = true;
+        HasImportError = false;
+        ImportWarnings.Clear();
+        ImportStatus = "正在解析粘贴的 HAR…";
+
+        try
+        {
+            var result = await Task.Run(
+                    () => HarImportService.Parse(HarJson, "粘贴的 HAR", HarIncludeStaticResources),
+                    _importCts.Token
+                )
+                .ConfigureAwait(true);
+            ApplyCollectionImport(result);
+        }
+        catch (OperationCanceledException exception)
+        {
+            Log.Debug(exception, "导入粘贴的 HAR 已取消");
+            ImportStatus = "导入已取消。";
+            HasImportError = true;
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "导入粘贴的 HAR 失败");
+        }
+        finally
+        {
+            IsImporting = false;
+            _importCts?.Dispose();
+            _importCts = null;
+        }
+    }
+
+    private void ApplyEnvironmentImport(EnvironmentImportResult result)
+    {
+        var environmentName =
+            ApplyImportedEnvironment(result.Environment) ?? result.Environment.Name;
+        SetImportWarnings(result.Warnings);
+        Persist();
+        NotifySelectionChanged();
+        RefreshDerivedState();
+
+        ImportStatus =
+            $"环境导入完成：{environmentName}，{result.Environment.Variables.Count} 个变量。";
+        HasImportError = false;
+        if (result.Warnings.Count == 0)
+        {
+            IsImportDialogOpen = false;
+            ShowToast($"已导入环境「{environmentName}」");
+        }
+
+        Log.Information(
+            "环境导入完成 {Source}：{EnvironmentName}，{VariableCount} 个变量，{WarningCount} 条提示",
+            result.Source,
+            environmentName,
+            result.Environment.Variables.Count,
+            result.Warnings.Count
+        );
     }
 
     [RelayCommand]
@@ -766,11 +991,11 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private void ApplyPostmanImport(ImportResult result)
+    private void ApplyCollectionImport(ImportResult result)
     {
         var root = new RequestCollection
         {
-            Name = string.IsNullOrWhiteSpace(result.Root.Name) ? "Postman 集合" : result.Root.Name,
+            Name = string.IsNullOrWhiteSpace(result.Root.Name) ? "导入的集合" : result.Root.Name,
             IsExpanded = true,
         };
         Collections.Insert(0, root);
@@ -825,7 +1050,8 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         Log.Information(
-            "Postman 导入完成 {Source}：{Title}，{RequestCount} 个请求，{FolderCount} 个分组，{WarningCount} 条提示",
+            "集合导入完成 {Format} {Source}：{Title}，{RequestCount} 个请求，{FolderCount} 个分组，{WarningCount} 条提示",
+            result.Format,
             result.Source,
             result.Root.Name,
             requestCount,
