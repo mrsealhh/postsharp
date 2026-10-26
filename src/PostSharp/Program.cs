@@ -2,6 +2,7 @@ using System.Text;
 using AtomUI;
 using AtomUI.Desktop.Controls;
 using Avalonia;
+using PostSharp.Models;
 using PostSharp.Services;
 using TKCode.Arc;
 using TKCode.Arc.Fonts;
@@ -11,11 +12,13 @@ namespace PostSharp;
 internal static class Program
 {
     private const string SingleInstanceMutexName = "PostSharp.SingleInstance";
+    private static string _renderingMode = RenderingModes.Software;
 
     [STAThread]
     public static void Main(string[] args)
     {
         var settings = new SettingsStore().Load();
+        _renderingMode = settings.RenderingMode;
         AppLog.Initialize(settings.LogDirectory, settings.LogLevel);
         // Settings are read before logging starts, so a problem with them is written down here.
         if (SettingsStore.StartupProblem is { } problem)
@@ -68,10 +71,17 @@ internal static class Program
         }
     }
 
-    public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder
-            .Configure<App>()
-            .UsePlatformDetect()
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        var builder = AppBuilder.Configure<App>().UsePlatformDetect();
+        if (!string.Equals(_renderingMode, RenderingModes.Auto, StringComparison.Ordinal))
+        {
+            builder = builder.With(
+                new Win32PlatformOptions { RenderingMode = [Win32RenderingMode.Software] }
+            );
+        }
+
+        return builder
             .WithInterFont()
             .WithArcFonts()
             .UseAtomUI(builder =>
@@ -79,4 +89,5 @@ internal static class Program
                 builder.UseDesktopControls();
                 builder.UseArc();
             });
+    }
 }

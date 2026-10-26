@@ -4,10 +4,27 @@ using PostSharp.Services;
 namespace PostSharp.Models;
 
 /// <summary>User-level preferences, stored next to the workspace and applied immediately.</summary>
+public static class RenderingModes
+{
+    public const string Software = "Software";
+    public const string Auto = "Auto";
+
+    public static IReadOnlyList<string> All { get; } = [Software, Auto];
+
+    public static string Label(string mode) => mode == Auto ? "自动（GPU）" : "软件（低内存）";
+}
+
 public partial class AppSettings : ObservableObject
 {
     [ObservableProperty]
     private string _theme = "跟随系统";
+
+    /// <summary>
+    /// Software rendering keeps the native GPU/ANGLE memory low; Auto restores the platform default.
+    /// The value is read before the Avalonia app builder is created, so a change needs a restart.
+    /// </summary>
+    [ObservableProperty]
+    private string _renderingMode = RenderingModes.Software;
 
     /// <summary>Global corner multiplier: 0 is square, 1 keeps Arc defaults, 2 doubles the radii.</summary>
     [ObservableProperty]

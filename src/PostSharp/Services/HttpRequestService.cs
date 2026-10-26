@@ -43,6 +43,7 @@ public sealed class HttpRequestService
 {
     private const int MaxFormatLength = 256 * 1024;
     private const int SseProgressIntervalMs = 150;
+    private const int SseTextLimit = 2 * 1024 * 1024;
 
     private static readonly HttpClient SharedClient = CreateClient();
 
@@ -527,7 +528,8 @@ public sealed class HttpRequestService
                     break;
                 }
 
-                raw.Append(line).Append('\n');
+                AppendLimited(raw, line);
+                AppendLimited(raw, "\n");
 
                 if (line.Length == 0)
                 {
@@ -632,7 +634,7 @@ public sealed class HttpRequestService
                 && JsonValuePath.TryEvaluate(data, thinkingPath, out var customThinking)
             )
             {
-                thinking.Append(customThinking);
+                AppendLimited(thinking, customThinking);
                 matched = true;
             }
 
@@ -641,7 +643,7 @@ public sealed class HttpRequestService
                 && JsonValuePath.TryEvaluate(data, contentPath, out var customContent)
             )
             {
-                content.Append(customContent);
+                AppendLimited(content, customContent);
                 matched = true;
             }
 
@@ -900,7 +902,7 @@ public sealed class HttpRequestService
         switch (value.ValueKind)
         {
             case JsonValueKind.String:
-                target.Append(value.GetString());
+                AppendLimited(target, value.GetString());
                 break;
             case JsonValueKind.Array:
                 foreach (var item in value.EnumerateArray())
@@ -933,8 +935,19 @@ public sealed class HttpRequestService
             return false;
         }
 
-        target.Append(text);
+        AppendLimited(target, text);
         return true;
+    }
+
+    private static void AppendLimited(StringBuilder target, string? text)
+    {
+        if (string.IsNullOrEmpty(text) || target.Length >= SseTextLimit)
+        {
+            return;
+        }
+
+        var remaining = SseTextLimit - target.Length;
+        target.Append(text.Length <= remaining ? text : text[..remaining]);
     }
 
     private static bool TryGetObject(JsonElement element, string property, out JsonElement value)

@@ -76,6 +76,24 @@
                                     AutomationProperties.Name="界面字体"
                                 />
                             </Grid>
+                            <Grid ColumnDefinitions="1*,2*" ColumnSpacing="12">
+                                <arc:Select
+                                    Label="渲染模式"
+                                    SelectedValue="{Binding Draft.RenderingMode, Mode=TwoWay}"
+                                    AutomationProperties.Name="渲染模式"
+                                >
+                                    <arc:SelectItem Content="软件（低内存）" Value="Software" />
+                                    <arc:SelectItem Content="自动（GPU）" Value="Auto" />
+                                </arc:Select>
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Text="软件渲染使用 CPU 绘制，显著降低 GPU/原生内存；自动模式使用平台默认 GPU 渲染。修改后重启 PostSharp 生效。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                    VerticalAlignment="Center"
+                                />
+                            </Grid>
                             <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
                                 <arc:Select
                                     Label="代码字体"

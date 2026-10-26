@@ -7,6 +7,22 @@ namespace PostSharp.Models;
 /// <summary>One request that was executed, whether from the UI or from an AI agent through MCP.</summary>
 public sealed class AuditEntry
 {
+    /// <summary>
+    /// AI transcript is a preview in the audit list; storing the full stream in every retained entry makes a
+    /// long-running session grow into hundreds of megabytes. The full response remains available in the send result.
+    /// </summary>
+    public const int AiPreviewLimit = 32 * 1024;
+
+    public const int CurlPreviewLimit = 16 * 1024;
+
+    public static string LimitAiText(string text) =>
+        text.Length <= AiPreviewLimit ? text : text[..AiPreviewLimit] + "\n…（内容已截断）";
+
+    public static string? LimitCurl(string? curl) =>
+        curl is null || curl.Length <= CurlPreviewLimit
+            ? curl
+            : curl[..CurlPreviewLimit] + "\n…（内容已截断）";
+
     public Guid Id { get; set; } = Guid.NewGuid();
 
     public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.Now;

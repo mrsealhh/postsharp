@@ -3224,7 +3224,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             SizeBytes = result.SizeBytes,
             IsSuccess = result.HasResponse && result.StatusCode < 400,
             Error = result.Error is null ? null : SecretMasker.MaskSecrets(result.Error, secrets),
-            Curl = stored is null ? null : RequestComposer.BuildCurl(stored),
+            Curl = stored is null ? null : AuditEntry.LimitCurl(RequestComposer.BuildCurl(stored)),
             RequestHeaders = Truncate(requestHeaders, AuditPreviewLimit),
             RequestBodyPreview = Truncate(
                 stored?.Body ?? SecretMasker.MaskSecrets(BuildMultipartPreview(request), secrets),
@@ -3244,8 +3244,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             ResponseContentType = result.MediaType,
             IsSse = result.IsSse,
             SseEventCount = result.SseEventCount,
-            AiThinking = SecretMasker.MaskSecrets(result.SseThinking, secrets),
-            AiContent = SecretMasker.MaskSecrets(result.SseContent, secrets),
+            AiThinking = AuditEntry.LimitAiText(
+                SecretMasker.MaskSecrets(result.SseThinking, secrets)
+            ),
+            AiContent = AuditEntry.LimitAiText(
+                SecretMasker.MaskSecrets(result.SseContent, secrets)
+            ),
         };
 
         Audit.Insert(0, entry);
@@ -5484,7 +5488,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Url = SecretMasker.MaskSecrets(request.Url, secrets),
             TimeoutSeconds = request.TimeoutSeconds,
             BodyMode = request.BodyMode,
-            Body = SecretMasker.MaskSecrets(request.Body, secrets),
+            Body = HistoryEntry.LimitBody(SecretMasker.MaskSecrets(request.Body, secrets)),
             StatusCode = result.StatusCode,
             DurationMs = result.ElapsedMs,
             Params = request
