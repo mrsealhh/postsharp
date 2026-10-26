@@ -100,6 +100,49 @@ public sealed class ImportViewModelTests
         Assert.NotNull(host.Toast);
     }
 
+    [Fact]
+    public async Task BatchImportUsesProviderRegistry()
+    {
+        var viewModel = Create(out var host);
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.har");
+        const string har = """
+            {
+              "log": {
+                "version": "1.2",
+                "entries": [
+                  {
+                    "_resourceType": "xhr",
+                    "request": {
+                      "method": "GET",
+                      "url": "https://api.example.com/health",
+                      "header": []
+                    },
+                    "response": { "content": { "mimeType": "application/json" } }
+                  }
+                ]
+              }
+            }
+            """;
+        await File.WriteAllTextAsync(path, har);
+
+        try
+        {
+            await viewModel.ImportBatchFilesAsync(new[] { path });
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        Assert.NotNull(host.CollectionResult);
+        Assert.True(host.Completed);
+        Assert.Contains(
+            viewModel.ImportReport,
+            line => line.Contains("HAR", StringComparison.Ordinal)
+        );
+        Assert.False(viewModel.HasImportError);
+    }
+
     private static ImportViewModel Create(out FakeImportHost host)
     {
         host = new FakeImportHost();
@@ -110,12 +153,15 @@ public sealed class ImportViewModelTests
     {
         public CurlImportResult? CurlResult { get; private set; }
 
+        public ImportResult? CollectionResult { get; private set; }
+
         public bool Completed { get; private set; }
 
         public string? Toast { get; private set; }
 
         public CollectionImportOutcome ApplyCollectionImport(ImportResult result)
         {
+            CollectionResult = result;
             return new CollectionImportOutcome(result.Root.Name, result.RequestCount, 0, null);
         }
 
