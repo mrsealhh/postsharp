@@ -36,6 +36,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private const int ResponsePreviewLimit = 8 * 1024;
     private const int DetailPageSize = 16 * 1024;
     private const int MaxCollectionDepth = 5;
+    private const string SideBySideLayout = "SideBySide";
+    private const string StackedLayout = "Stacked";
 
     private static readonly JsonSerializerOptions MappingJsonOptions = new()
     {
@@ -82,6 +84,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Settings.LogLevel
         );
         Settings.PropertyChanged += OnSettingsChanged;
+        IsWorkspaceSideBySide = Settings.WorkspaceLayout == SideBySideLayout;
         _http.TimeoutSeconds = Settings.RequestTimeoutSeconds;
         _http.AutoFormatResponse = Settings.AutoFormatResponse;
         _http.SseThinkingPath = Settings.SseThinkingPath;
@@ -457,6 +460,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [ObservableProperty]
     private bool _isWorkspaceSideBySide;
+
+    public string WorkspaceLayoutMode
+    {
+        get => IsWorkspaceSideBySide ? SideBySideLayout : StackedLayout;
+        set
+        {
+            var layout = value == SideBySideLayout ? SideBySideLayout : StackedLayout;
+            IsWorkspaceSideBySide = layout == SideBySideLayout;
+            Settings.WorkspaceLayout = layout;
+        }
+    }
 
     public bool CanResumeSse => SseCanResume && !string.IsNullOrWhiteSpace(SseLastEventId);
 
@@ -1292,6 +1306,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         OnPropertyChanged(nameof(ShowSseRaw));
     }
 
+    partial void OnIsWorkspaceSideBySideChanged(bool value) =>
+        OnPropertyChanged(nameof(WorkspaceLayoutMode));
+
     partial void OnIsManagementOpenChanged(bool value)
     {
         if (value)
@@ -1347,7 +1364,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             if (result.HasResponse)
             {
                 IsResponseCollapsed = false;
-                IsWorkspaceSideBySide = true;
+                if (Settings.WorkspaceLayout is null)
+                {
+                    IsWorkspaceSideBySide = true;
+                }
+
                 AddHistory(Editing, result);
             }
 
@@ -1399,7 +1420,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             if (result.HasResponse)
             {
                 IsResponseCollapsed = false;
-                IsWorkspaceSideBySide = true;
+                if (Settings.WorkspaceLayout is null)
+                {
+                    IsWorkspaceSideBySide = true;
+                }
+
                 AddHistory(Editing, result);
             }
 

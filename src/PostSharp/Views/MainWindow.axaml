@@ -931,6 +931,7 @@
                                 <RowDefinition Height="*" MinHeight="0" />
                                 <RowDefinition Height="8" />
                                 <RowDefinition Height="*" MinHeight="0" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
                             <Grid
                                 Grid.Row="0"
@@ -1833,6 +1834,30 @@
                                     Description="按 Ctrl+Enter 或点击发送。默认示例请求已指向内置 Mock 服务，不需要联网。"
                                     VerticalAlignment="Center"
                                 />
+                            </Grid>
+
+                            <Grid Grid.Row="5" Grid.ColumnSpan="3" Margin="0,8,0,0">
+                                <StackPanel
+                                    Orientation="Horizontal"
+                                    Spacing="6"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                >
+                                    <TextBlock
+                                        Text="布局"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        VerticalAlignment="Center"
+                                    />
+                                    <arc:SegmentedControl
+                                        SelectedValue="{Binding WorkspaceLayoutMode, Mode=TwoWay}"
+                                        AutomationProperties.Name="请求与响应布局"
+                                        ToolTip.Tip="切换请求与响应的左右或上下布局"
+                                    >
+                                        <arc:SegmentedOption Value="SideBySide" Label="左右" />
+                                        <arc:SegmentedOption Value="Stacked" Label="上下" />
+                                    </arc:SegmentedControl>
+                                </StackPanel>
                             </Grid>
                         </Grid>
                     </Grid>
