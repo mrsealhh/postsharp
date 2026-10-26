@@ -108,8 +108,18 @@ public sealed class WorkspaceStore
                             Method = step.Method,
                             Url = step.Url,
                             DelayMs = step.DelayMs,
+                            RetryCount = step.RetryCount,
+                            RetryDelayMs = step.RetryDelayMs,
                             ExpectedStatus = step.ExpectedStatus,
                             BodyContains = step.BodyContains,
+                            Assertions = step
+                                .Assertions.Select(assertion => new SuiteAssertionDto
+                                {
+                                    Kind = assertion.Kind,
+                                    Path = assertion.Path,
+                                    Expected = assertion.Expected,
+                                })
+                                .ToList(),
                             InputMappings = step
                                 .InputMappings.Select(mapping => new SuiteMappingDto
                                 {
@@ -139,13 +149,25 @@ public sealed class WorkspaceStore
             TimeoutSeconds = dto.TimeoutSeconds,
             BodyMode = dto.BodyMode,
             Body = dto.Body,
-            UploadFilePath = dto.UploadFilePath,
+            UploadFilePath = dto.UploadFiles.Count == 0 ? dto.UploadFilePath : string.Empty,
             UploadFieldName = string.IsNullOrWhiteSpace(dto.UploadFieldName)
                 ? "file"
                 : dto.UploadFieldName,
             IsFavorite = dto.IsFavorite,
             Auth = ToAuth(dto.Auth),
         };
+
+        foreach (var file in dto.UploadFiles)
+        {
+            request.UploadFiles.Add(
+                new UploadFileItem
+                {
+                    FilePath = file.FilePath,
+                    FieldName = string.IsNullOrWhiteSpace(file.FieldName) ? "file" : file.FieldName,
+                    SizeBytes = file.SizeBytes,
+                }
+            );
+        }
 
         FillRows(request.Params, dto.Params);
         FillRows(request.Headers, dto.Headers);
@@ -231,6 +253,14 @@ public sealed class WorkspaceStore
             Body = request.Body,
             UploadFilePath = request.UploadFilePath,
             UploadFieldName = request.UploadFieldName,
+            UploadFiles = request
+                .UploadFiles.Select(file => new UploadFileDto
+                {
+                    FilePath = file.FilePath,
+                    FieldName = file.FieldName,
+                    SizeBytes = file.SizeBytes,
+                })
+                .ToList(),
             IsFavorite = request.IsFavorite,
             Params = ToRows(request.Params),
             Headers = ToRows(request.Headers),
@@ -335,6 +365,8 @@ public sealed class RequestDto
 
     public string UploadFieldName { get; set; } = "file";
 
+    public List<UploadFileDto> UploadFiles { get; set; } = new();
+
     public bool IsFavorite { get; set; }
 
     public List<RowDto> Params { get; set; } = new();
@@ -366,6 +398,15 @@ public sealed class RequestAuthDto
     public string ApiKeyLocation { get; set; } = AuthKinds.InHeader;
 
     public AuthorizationProfile? OAuth2 { get; set; }
+}
+
+public sealed class UploadFileDto
+{
+    public string FilePath { get; set; } = string.Empty;
+
+    public string FieldName { get; set; } = "file";
+
+    public long SizeBytes { get; set; }
 }
 
 public sealed class EnvironmentDto
@@ -438,11 +479,26 @@ public sealed class SuiteStepDto
 
     public int DelayMs { get; set; } = 200;
 
+    public int RetryCount { get; set; }
+
+    public int RetryDelayMs { get; set; } = 500;
+
     public int? ExpectedStatus { get; set; }
 
     public string? BodyContains { get; set; }
 
+    public List<SuiteAssertionDto> Assertions { get; set; } = new();
+
     public List<SuiteMappingDto> InputMappings { get; set; } = new();
+}
+
+public sealed class SuiteAssertionDto
+{
+    public string Kind { get; set; } = "JSONPath";
+
+    public string Path { get; set; } = string.Empty;
+
+    public string Expected { get; set; } = string.Empty;
 }
 
 public sealed class SuiteMappingDto

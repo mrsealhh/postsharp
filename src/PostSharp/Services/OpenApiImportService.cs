@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -16,6 +17,8 @@ public static class OpenApiImportService
 {
     private const int MaxRequests = 500;
     private const int MaxSchemaDepth = 8;
+    private const int MaxExternalReferences = 20;
+    private const int MaxExternalReferenceBytes = 2 * 1024 * 1024;
 
     private static readonly string[] Methods =
     {
@@ -43,7 +46,8 @@ public static class OpenApiImportService
 
     public static async Task<OpenApiImportDocument> LoadFromUrlAsync(
         string url,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        HttpClient? client = null
     )
     {
         if (
@@ -62,7 +66,7 @@ public static class OpenApiImportService
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/yaml"));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*", 0.5));
 
-        using var response = await Client
+        using var response = await (client ?? Client)
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
@@ -81,10 +85,49 @@ public static class OpenApiImportService
         }
 
         Log.Information("已下载 OpenAPI 文档 {Url}，大小 {Length} 字符", uri, content.Length);
-        return Parse(content, uri.ToString());
+        return await ParseWithExternalReferencesAsync(
+                content,
+                uri.ToString(),
+                uri,
+                cancellationToken,
+                client
+            )
+            .ConfigureAwait(false);
     }
 
-    public static OpenApiImportDocument Parse(string content, string source)
+    public static async Task<OpenApiImportDocument> ParseWithExternalReferencesAsync(
+        string content,
+        string source,
+        Uri? baseUri,
+        CancellationToken cancellationToken = default,
+        HttpClient? client = null
+    )
+    {
+        var root =
+            ParseDocument(content) as JsonObject
+            ?? throw new InvalidOperationException("OpenAPI 文档的根节点必须是对象。");
+        if (CountExternalReferences(root) == 0)
+        {
+            return Parse(content, source);
+        }
+
+        var warnings = new List<string>();
+        var state = new ExternalReferenceState(client ?? Client, baseUri, warnings);
+        await ResolveExternalReferencesAsync(root, state, baseUri, cancellationToken)
+            .ConfigureAwait(false);
+        if (state.BundleRoot["x-postsharp-external"] is JsonObject bundle)
+        {
+            root["x-postsharp-external"] = bundle.DeepClone();
+        }
+
+        return Parse(root.ToJsonString(), source, warnings);
+    }
+
+    public static OpenApiImportDocument Parse(
+        string content,
+        string source,
+        IReadOnlyList<string>? extraWarnings = null
+    )
     {
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -115,7 +158,21 @@ public static class OpenApiImportService
         }
 
         var version = GetText(info?["version"]) ?? (isVersion3 ? openApi : swagger) ?? string.Empty;
-        var baseUrl = ResolveBaseUrl(document, isVersion3);
+        var servers = ResolveServers(document, isVersion3);
+        var baseUrl = servers.Count > 0 ? servers[0].Url : "{{baseUrl}}";
+        var warnings = new WarningBag();
+        if (servers.Count > 1)
+        {
+            warnings.Add($"文档包含 {servers.Count} 个服务器，当前使用第一个服务器地址。");
+        }
+
+        var externalRefCount = CountExternalReferences(document);
+        if (externalRefCount > 0)
+        {
+            warnings.Add(
+                $"文档包含 {externalRefCount} 个外部 $ref，当前只解析本地 #/ 引用；相关参数或请求体可能不完整。"
+            );
+        }
 
         if (document["paths"] is not JsonObject paths)
         {
@@ -125,6 +182,8 @@ public static class OpenApiImportService
         var groups = new List<GroupBuilder>();
         var groupIndex = new Dictionary<string, GroupBuilder>(StringComparer.Ordinal);
         var total = 0;
+        var multiTagCount = 0;
+        var securityCount = 0;
 
         foreach (var pathEntry in paths)
         {
@@ -158,8 +217,17 @@ public static class OpenApiImportService
                     break;
                 }
 
-                var tag = FirstTag(operation);
-                var groupName = string.IsNullOrWhiteSpace(tag) ? "未分组" : tag.Trim();
+                var groupName = GetGroupName(operation);
+                if (groupName is null)
+                {
+                    groupName = "未分组";
+                }
+
+                if (HasMultipleTags(operation))
+                {
+                    multiTagCount++;
+                }
+
                 if (!groupIndex.TryGetValue(groupName, out var group))
                 {
                     group = new GroupBuilder(groupName);
@@ -174,9 +242,15 @@ public static class OpenApiImportService
                         method,
                         operation,
                         pathParameters,
-                        baseUrl
+                        baseUrl,
+                        out var usedSecurity
                     )
                 );
+                if (usedSecurity)
+                {
+                    securityCount++;
+                }
+
                 total++;
             }
         }
@@ -184,6 +258,20 @@ public static class OpenApiImportService
         if (total == 0)
         {
             throw new InvalidOperationException("OpenAPI 文档没有可导入的操作（GET、POST 等）。");
+        }
+
+        if (multiTagCount > 0)
+        {
+            warnings.Add(
+                $"{multiTagCount} 个操作包含多个 tag，当前按 x-apifox-folder 或第一个 tag 分组。"
+            );
+        }
+
+        if (securityCount > 0)
+        {
+            warnings.Add(
+                $"{securityCount} 个操作使用了安全方案，已添加占位认证头；请在请求中填写实际令牌。"
+            );
         }
 
         Log.Information(
@@ -199,6 +287,8 @@ public static class OpenApiImportService
             Title = title.Trim(),
             Version = version,
             Source = source,
+            Servers = servers,
+            BaseUrl = baseUrl,
             Groups = groups
                 .Select(group => new OpenApiImportGroup
                 {
@@ -206,6 +296,7 @@ public static class OpenApiImportService
                     Requests = group.Requests,
                 })
                 .ToList(),
+            Warnings = warnings.ToList().Concat(extraWarnings ?? Array.Empty<string>()).ToList(),
         };
     }
 
@@ -215,7 +306,8 @@ public static class OpenApiImportService
         string method,
         JsonObject operation,
         JsonArray? pathParameters,
-        string baseUrl
+        string baseUrl,
+        out bool usedSecurity
     )
     {
         var query = new List<OpenApiImportField>();
@@ -224,6 +316,7 @@ public static class OpenApiImportService
 
         AddParameters(document, pathParameters, query, headers, seen);
         AddParameters(document, operation["parameters"] as JsonArray, query, headers, seen);
+        usedSecurity = AddSecurity(document, operation, query, headers, seen);
 
         var name = GetText(operation["summary"]) ?? GetText(operation["operationId"]);
         if (string.IsNullOrWhiteSpace(name))
@@ -626,38 +719,34 @@ public static class OpenApiImportService
         };
     }
 
-    private static string ResolveBaseUrl(JsonObject document, bool isVersion3)
+    private static IReadOnlyList<OpenApiImportServer> ResolveServers(
+        JsonObject document,
+        bool isVersion3
+    )
     {
-        if (
-            isVersion3
-            && document["servers"] is JsonArray servers
-            && servers.Count > 0
-            && servers[0] is JsonObject server
-        )
+        var servers = new List<OpenApiImportServer>();
+        if (isVersion3 && document["servers"] is JsonArray items)
         {
-            var url = GetText(server["url"]);
-            if (!string.IsNullOrWhiteSpace(url))
+            foreach (var item in items)
             {
-                if (server["variables"] is JsonObject variables)
+                if (item is not JsonObject server)
                 {
-                    foreach (var variable in variables)
-                    {
-                        if (variable.Value is JsonObject definition)
-                        {
-                            var value = GetText(definition["default"]);
-                            if (!string.IsNullOrWhiteSpace(value))
-                            {
-                                url = url.Replace(
-                                    $"{{{variable.Key}}}",
-                                    value,
-                                    StringComparison.Ordinal
-                                );
-                            }
-                        }
-                    }
+                    continue;
                 }
 
-                return NormalizeBaseUrl(url);
+                var url = ResolveServerUrl(server);
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    continue;
+                }
+
+                servers.Add(
+                    new OpenApiImportServer(
+                        servers.Count,
+                        url,
+                        (GetText(server["description"]) ?? string.Empty).Trim()
+                    )
+                );
             }
         }
 
@@ -670,13 +759,45 @@ public static class OpenApiImportService
                 var scheme = schemes is { Count: > 0 } ? GetText(schemes[0]) : null;
                 var basePath = GetText(document["basePath"]) ?? string.Empty;
                 var prefix = string.IsNullOrWhiteSpace(scheme) ? "https" : scheme;
-                return NormalizeBaseUrl(
-                    $"{prefix}://{host.TrimEnd('/')}/{basePath.TrimStart('/')}"
+                servers.Add(
+                    new OpenApiImportServer(
+                        0,
+                        NormalizeBaseUrl(
+                            $"{prefix}://{host.TrimEnd('/')}/{basePath.TrimStart('/')}"
+                        ),
+                        "Swagger host"
+                    )
                 );
             }
         }
 
-        return "{{baseUrl}}";
+        return servers;
+    }
+
+    private static string ResolveServerUrl(JsonObject server)
+    {
+        var url = GetText(server["url"]);
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        if (server["variables"] is JsonObject variables)
+        {
+            foreach (var variable in variables)
+            {
+                if (variable.Value is JsonObject definition)
+                {
+                    var value = GetText(definition["default"]);
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        url = url.Replace($"{{{variable.Key}}}", value, StringComparison.Ordinal);
+                    }
+                }
+            }
+        }
+
+        return NormalizeBaseUrl(url);
     }
 
     private static string NormalizeBaseUrl(string url)
@@ -702,6 +823,341 @@ public static class OpenApiImportService
     {
         var suffix = path.StartsWith('/') ? path : "/" + path;
         return baseUrl.TrimEnd('/') + suffix;
+    }
+
+    private static bool AddSecurity(
+        JsonObject document,
+        JsonObject operation,
+        List<OpenApiImportField> query,
+        List<OpenApiImportField> headers,
+        HashSet<string> seen
+    )
+    {
+        var security = operation["security"] as JsonArray ?? document["security"] as JsonArray;
+        if (security is null || security.Count == 0)
+        {
+            return false;
+        }
+
+        if (security[0] is not JsonObject requirement)
+        {
+            return false;
+        }
+
+        var components = document["components"] as JsonObject;
+        var schemes =
+            components?["securitySchemes"] as JsonObject
+            ?? document["securityDefinitions"] as JsonObject;
+        if (schemes is null)
+        {
+            return false;
+        }
+
+        var applied = false;
+        foreach (var entry in requirement)
+        {
+            var scheme = ResolveObject(schemes[entry.Key], document);
+            if (scheme is null)
+            {
+                continue;
+            }
+
+            var type = (GetText(scheme["type"]) ?? string.Empty).Trim().ToLowerInvariant();
+            if (type == "apikey")
+            {
+                var name = (GetText(scheme["name"]) ?? string.Empty).Trim();
+                if (name.Length == 0)
+                {
+                    continue;
+                }
+
+                var location = (GetText(scheme["in"]) ?? string.Empty).Trim().ToLowerInvariant();
+                var value = "{{" + entry.Key + "}}";
+                if (location == "query")
+                {
+                    if (seen.Add($"query:{name}"))
+                    {
+                        query.Add(new OpenApiImportField(name, value));
+                        applied = true;
+                    }
+                }
+                else if (seen.Add($"header:{name}"))
+                {
+                    headers.Add(new OpenApiImportField(name, value));
+                    applied = true;
+                }
+
+                continue;
+            }
+
+            if (type is "http" or "oauth2" or "openidconnect")
+            {
+                if (!seen.Add("header:Authorization"))
+                {
+                    continue;
+                }
+
+                var httpScheme = (GetText(scheme["scheme"]) ?? string.Empty)
+                    .Trim()
+                    .ToLowerInvariant();
+                var value = type switch
+                {
+                    "http" when httpScheme == "basic" => "Basic {{basicAuth}}",
+                    "http" when httpScheme is "" or "bearer" => "Bearer {{accessToken}}",
+                    "http" => "{{accessToken}}",
+                    _ => "Bearer {{accessToken}}",
+                };
+                headers.Add(new OpenApiImportField("Authorization", value));
+                applied = true;
+            }
+        }
+
+        return applied;
+    }
+
+    private static string? GetGroupName(JsonObject operation)
+    {
+        var apifoxFolder = (GetText(operation["x-apifox-folder"]) ?? string.Empty).Trim();
+        if (apifoxFolder.Length > 0)
+        {
+            return apifoxFolder;
+        }
+
+        var tag = FirstTag(operation);
+        return string.IsNullOrWhiteSpace(tag) ? null : tag.Trim();
+    }
+
+    private static bool HasMultipleTags(JsonObject operation)
+    {
+        if (operation["tags"] is not JsonArray tags)
+        {
+            return false;
+        }
+
+        return tags.Count(tag => (GetText(tag) ?? string.Empty).Trim().Length > 0) > 1;
+    }
+
+    private static async Task ResolveExternalReferencesAsync(
+        JsonNode? node,
+        ExternalReferenceState state,
+        Uri? baseUri,
+        CancellationToken cancellationToken
+    )
+    {
+        if (node is JsonObject obj)
+        {
+            if (
+                obj["$ref"] is JsonValue referenceValue
+                && referenceValue.TryGetValue<string>(out var reference)
+            )
+            {
+                var resolved = await ResolveExternalReferenceAsync(
+                        reference,
+                        state,
+                        baseUri,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                if (resolved is not null)
+                {
+                    obj["$ref"] = resolved;
+                }
+            }
+
+            foreach (var entry in obj.ToList())
+            {
+                if (entry.Key == "$ref")
+                {
+                    continue;
+                }
+
+                await ResolveExternalReferencesAsync(entry.Value, state, baseUri, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        if (node is JsonArray array)
+        {
+            foreach (var item in array)
+            {
+                await ResolveExternalReferencesAsync(item, state, baseUri, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static async Task<string?> ResolveExternalReferenceAsync(
+        string reference,
+        ExternalReferenceState state,
+        Uri? baseUri,
+        CancellationToken cancellationToken
+    )
+    {
+        if (reference.StartsWith('#') || reference.Trim().Length == 0)
+        {
+            return null;
+        }
+
+        var hashIndex = reference.IndexOf('#');
+        var location = hashIndex < 0 ? reference : reference[..hashIndex];
+        var fragment = hashIndex < 0 ? string.Empty : reference[hashIndex..];
+        if (location.Length == 0)
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(location, UriKind.Absolute, out var uri))
+        {
+            if (baseUri is null || !Uri.TryCreate(baseUri, location, out uri))
+            {
+                state.Warnings.Add($"已跳过无法解析的外部引用：{reference}");
+                return null;
+            }
+        }
+
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+        {
+            state.Warnings.Add($"已跳过非 HTTP 外部引用：{uri}");
+            return null;
+        }
+
+        var uriKey = uri.ToString();
+        if (state.Keys.TryGetValue(uriKey, out var existingKey))
+        {
+            return BuildExternalReference(existingKey, fragment);
+        }
+
+        if (state.ReferenceCount >= MaxExternalReferences)
+        {
+            if (!state.LimitWarningAdded)
+            {
+                state.Warnings.Add($"外部 $ref 超过 {MaxExternalReferences} 个，剩余引用未下载。");
+                state.LimitWarningAdded = true;
+            }
+
+            return null;
+        }
+
+        if (!state.Visited.Add(uriKey))
+        {
+            state.Warnings.Add($"检测到循环外部引用，已跳过：{uri}");
+            return null;
+        }
+
+        state.ReferenceCount++;
+        var key = $"external{state.ReferenceCount}";
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.Accept.ParseAdd("application/json");
+            request.Headers.Accept.ParseAdd("application/yaml");
+            request.Headers.Accept.ParseAdd("text/yaml");
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            using var response = await state
+                .Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException($"HTTP {(int)response.StatusCode}");
+            }
+
+            var bytes = await response
+                .Content.ReadAsByteArrayAsync(timeout.Token)
+                .ConfigureAwait(false);
+            if (bytes.Length > MaxExternalReferenceBytes)
+            {
+                state.Warnings.Add($"外部引用超过 2 MB，已跳过：{uri}");
+                return null;
+            }
+
+            var externalRoot =
+                ParseDocument(Encoding.UTF8.GetString(bytes)) as JsonObject
+                ?? throw new InvalidOperationException("外部引用不是对象。");
+            await ResolveExternalReferencesAsync(externalRoot, state, uri, cancellationToken)
+                .ConfigureAwait(false);
+            var bundle = (JsonObject)state.BundleRoot["x-postsharp-external"]!;
+            bundle[key] = externalRoot;
+            state.Keys[uriKey] = key;
+            Log.Information("已下载 OpenAPI 外部引用 {Url}", uri);
+            return BuildExternalReference(key, fragment);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException exception)
+        {
+            state.Warnings.Add($"外部引用下载超时，已跳过：{uri}");
+            Log.Warning(exception, "下载 OpenAPI 外部引用超时 {Url}", uri);
+            return null;
+        }
+        catch (Exception exception)
+        {
+            state.Warnings.Add($"外部引用下载失败，已跳过：{uri}");
+            Log.Warning(exception, "下载 OpenAPI 外部引用失败 {Url}", uri);
+            return null;
+        }
+    }
+
+    private static string BuildExternalReference(string key, string fragment)
+    {
+        var suffix = fragment.StartsWith('#') ? fragment[1..] : fragment;
+        return $"#/x-postsharp-external/{key}{suffix}";
+    }
+
+    private sealed class ExternalReferenceState(
+        HttpClient client,
+        Uri? baseUri,
+        List<string> warnings
+    )
+    {
+        public HttpClient Client { get; } = client;
+
+        public Uri? BaseUri { get; } = baseUri;
+
+        public List<string> Warnings { get; } = warnings;
+
+        public JsonObject BundleRoot { get; } =
+            new() { ["x-postsharp-external"] = new JsonObject() };
+
+        public Dictionary<string, string> Keys { get; } = new(StringComparer.Ordinal);
+
+        public HashSet<string> Visited { get; } = new(StringComparer.Ordinal);
+
+        public int ReferenceCount { get; set; }
+
+        public bool LimitWarningAdded { get; set; }
+    }
+
+    private static int CountExternalReferences(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+            {
+                var count = 0;
+                var reference = (GetText(obj["$ref"]) ?? string.Empty).Trim();
+                if (reference.Length > 0 && !reference.StartsWith("#/", StringComparison.Ordinal))
+                {
+                    count++;
+                }
+
+                foreach (var entry in obj)
+                {
+                    count += CountExternalReferences(entry.Value);
+                }
+
+                return count;
+            }
+            case JsonArray array:
+                return array.Sum(CountExternalReferences);
+            default:
+                return 0;
+        }
     }
 
     private static string? FirstTag(JsonObject operation)
@@ -892,6 +1348,22 @@ public static class OpenApiImportService
         }
 
         return node.ToJsonString();
+    }
+
+    private sealed class WarningBag
+    {
+        private readonly List<string> _messages = new();
+        private readonly HashSet<string> _seen = new(StringComparer.Ordinal);
+
+        public void Add(string message)
+        {
+            if (_seen.Add(message))
+            {
+                _messages.Add(message);
+            }
+        }
+
+        public IReadOnlyList<string> ToList() => _messages;
     }
 
     private sealed class GroupBuilder

@@ -9,6 +9,8 @@ using PostSharp.Models;
 
 namespace PostSharp.Services;
 
+public sealed record SseProgress(string Raw, string Thinking, string Content, int EventCount);
+
 public sealed record HttpResult(
     bool HasResponse,
     int StatusCode,
@@ -24,14 +26,26 @@ public sealed record HttpResult(
     string SseThinking = "",
     string SseContent = "",
     int SseEventCount = 0,
-    string SseRaw = ""
+    string SseRaw = "",
+    bool SseCancelled = false
 );
 
 public sealed class HttpRequestService
 {
     private const int MaxFormatLength = 256 * 1024;
+    private const int SseProgressIntervalMs = 150;
 
-    private static readonly HttpClient Client = CreateClient();
+    private static readonly HttpClient SharedClient = CreateClient();
+
+    private readonly HttpClient _client;
+
+    public HttpRequestService()
+        : this(null) { }
+
+    public HttpRequestService(HttpClient? client)
+    {
+        _client = client ?? SharedClient;
+    }
 
     private static readonly JsonSerializerOptions PrettyJson = new()
     {
@@ -46,7 +60,8 @@ public sealed class HttpRequestService
     public async Task<HttpResult> SendAsync(
         ComposedRequest composed,
         CancellationToken cancellationToken,
-        int timeoutSeconds = 0
+        int timeoutSeconds = 0,
+        IProgress<SseProgress>? sseProgress = null
     )
     {
         var stopwatch = Stopwatch.StartNew();
@@ -73,18 +88,36 @@ public sealed class HttpRequestService
                     multipart.Add(new StringContent(field.Value, Encoding.UTF8), field.Key);
                 }
 
-                if (!string.IsNullOrWhiteSpace(composed.UploadFilePath))
+                if (
+                    composed.UploadFiles is { Count: > 0 }
+                    || !string.IsNullOrWhiteSpace(composed.UploadFilePath)
+                )
                 {
-                    var fileStream = File.OpenRead(composed.UploadFilePath);
-                    var fileContent = new StreamContent(fileStream);
-                    fileContent.Headers.ContentType = new MediaTypeHeaderValue(
-                        GuessContentType(composed.UploadFilePath)
-                    );
-                    multipart.Add(
-                        fileContent,
-                        composed.UploadFieldName ?? "file",
-                        Path.GetFileName(composed.UploadFilePath)
-                    );
+                    var uploadFiles = composed.UploadFiles;
+                    if (uploadFiles is null || uploadFiles.Count == 0)
+                    {
+                        uploadFiles = new[]
+                        {
+                            new ComposedUploadFile(
+                                composed.UploadFieldName ?? "file",
+                                composed.UploadFilePath ?? string.Empty
+                            ),
+                        };
+                    }
+
+                    foreach (var file in uploadFiles)
+                    {
+                        var fileStream = File.OpenRead(file.FilePath);
+                        var fileContent = new StreamContent(fileStream);
+                        fileContent.Headers.ContentType = new MediaTypeHeaderValue(
+                            GuessContentType(file.FilePath)
+                        );
+                        multipart.Add(
+                            fileContent,
+                            string.IsNullOrWhiteSpace(file.FieldName) ? "file" : file.FieldName,
+                            Path.GetFileName(file.FilePath)
+                        );
+                    }
                 }
 
                 content = multipart;
@@ -149,7 +182,7 @@ public sealed class HttpRequestService
                 timeout.Token
             );
 
-            using var response = await Client
+            using var response = await _client
                 .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, linked.Token)
                 .ConfigureAwait(false);
 
@@ -164,12 +197,17 @@ public sealed class HttpRequestService
 
             if (mediaType.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase))
             {
-                var sse = await ReadSseAsync(response, linked.Token).ConfigureAwait(false);
+                var sse = await ReadSseAsync(response, linked.Token, sseProgress)
+                    .ConfigureAwait(false);
                 stopwatch.Stop();
+                var cancelled = sse.Cancelled;
+                var reason = cancelled
+                    ? (cancellationToken.IsCancellationRequested ? "已取消" : "超时")
+                    : response.ReasonPhrase ?? string.Empty;
                 return new HttpResult(
                     HasResponse: true,
                     StatusCode: (int)response.StatusCode,
-                    ReasonPhrase: response.ReasonPhrase ?? string.Empty,
+                    ReasonPhrase: reason,
                     Body: sse.Raw,
                     IsJson: false,
                     MediaType: mediaType,
@@ -181,7 +219,8 @@ public sealed class HttpRequestService
                     SseThinking: sse.Thinking,
                     SseContent: sse.Content,
                     SseEventCount: sse.Count,
-                    SseRaw: sse.Raw
+                    SseRaw: sse.Raw,
+                    SseCancelled: cancelled
                 );
             }
 
@@ -371,7 +410,8 @@ public sealed class HttpRequestService
 
     private static async Task<SseReadResult> ReadSseAsync(
         HttpResponseMessage response,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        IProgress<SseProgress>? progress = null
     )
     {
         var raw = new StringBuilder();
@@ -379,60 +419,82 @@ public sealed class HttpRequestService
         var content = new StringBuilder();
         var dataLines = new List<string>();
         var eventCount = 0;
+        var cancelled = false;
+        var lastReport = Stopwatch.StartNew();
 
-        await using var stream = await response
-            .Content.ReadAsStreamAsync(cancellationToken)
-            .ConfigureAwait(false);
-        using var reader = new StreamReader(
-            stream,
-            Encoding.UTF8,
-            detectEncodingFromByteOrderMarks: true
-        );
-
-        while (true)
+        void Report()
         {
-            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-            if (line is null)
-            {
-                break;
-            }
+            progress?.Report(
+                new SseProgress(raw.ToString(), thinking.ToString(), content.ToString(), eventCount)
+            );
+            lastReport.Restart();
+        }
 
-            raw.Append(line).Append('\n');
+        try
+        {
+            await using var stream = await response
+                .Content.ReadAsStreamAsync(cancellationToken)
+                .ConfigureAwait(false);
+            using var reader = new StreamReader(
+                stream,
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true
+            );
 
-            if (line.Length == 0)
+            while (true)
             {
-                if (dataLines.Count > 0)
+                var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                if (line is null)
                 {
-                    var payload = string.Join("\n", dataLines);
-                    eventCount++;
-                    AppendSsePayload(payload, thinking, content);
-                    dataLines.Clear();
-                    if (payload.Trim() == "[DONE]")
-                    {
-                        break;
-                    }
+                    break;
                 }
 
-                continue;
-            }
+                raw.Append(line).Append('\n');
 
-            if (line[0] == ':')
-            {
-                continue;
-            }
+                if (line.Length == 0)
+                {
+                    if (dataLines.Count > 0)
+                    {
+                        var payload = string.Join("\n", dataLines);
+                        eventCount++;
+                        AppendSsePayload(payload, thinking, content);
+                        dataLines.Clear();
+                        if (lastReport.ElapsedMilliseconds >= SseProgressIntervalMs)
+                        {
+                            Report();
+                        }
 
-            var separator = line.IndexOf(':');
-            var field = separator < 0 ? line : line[..separator];
-            var value = separator < 0 ? string.Empty : line[(separator + 1)..];
-            if (value.StartsWith(' '))
-            {
-                value = value[1..];
-            }
+                        if (payload.Trim() == "[DONE]")
+                        {
+                            break;
+                        }
+                    }
 
-            if (field == "data")
-            {
-                dataLines.Add(value);
+                    continue;
+                }
+
+                if (line[0] == ':')
+                {
+                    continue;
+                }
+
+                var separator = line.IndexOf(':');
+                var field = separator < 0 ? line : line[..separator];
+                var value = separator < 0 ? string.Empty : line[(separator + 1)..];
+                if (value.StartsWith(' '))
+                {
+                    value = value[1..];
+                }
+
+                if (field == "data")
+                {
+                    dataLines.Add(value);
+                }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            cancelled = true;
         }
 
         if (dataLines.Count > 0)
@@ -440,11 +502,14 @@ public sealed class HttpRequestService
             eventCount++;
             AppendSsePayload(string.Join("\n", dataLines), thinking, content);
         }
+
+        Report();
         return new SseReadResult(
             raw.ToString(),
             thinking.ToString(),
             content.ToString(),
-            eventCount
+            eventCount,
+            cancelled
         );
     }
 
@@ -703,5 +768,11 @@ public sealed class HttpRequestService
             : null;
     }
 
-    private sealed record SseReadResult(string Raw, string Thinking, string Content, int Count);
+    private sealed record SseReadResult(
+        string Raw,
+        string Thinking,
+        string Content,
+        int Count,
+        bool Cancelled
+    );
 }

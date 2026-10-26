@@ -263,7 +263,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnPickUploadFileClick(
+    private async void OnPickUploadFilesClick(
         object? sender,
         Avalonia.Interactivity.RoutedEventArgs e
     )
@@ -274,28 +274,108 @@ public partial class MainWindow : Window
         }
 
         var files = await StorageProvider.OpenFilePickerAsync(
-            new FilePickerOpenOptions { Title = "选择上传文件", AllowMultiple = false }
+            new FilePickerOpenOptions { Title = "选择上传文件", AllowMultiple = true }
         );
 
-        var path = files.FirstOrDefault()?.TryGetLocalPath();
-        if (string.IsNullOrWhiteSpace(path))
+        AddUploadFiles(
+            files
+                .Select(file => file.TryGetLocalPath())
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path!)
+        );
+    }
+
+    private void OnClearUploadFilesClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null || _viewModel.Editing.UploadFiles.Count == 0)
         {
             return;
         }
 
-        _viewModel.Editing.UploadFilePath = path;
+        _viewModel.Editing.UploadFiles.Clear();
         _viewModel.NotifyUploadChanged();
     }
 
-    private void OnClearUploadFileClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void OnRemoveUploadFileClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (_viewModel is null || string.IsNullOrWhiteSpace(_viewModel.Editing.UploadFilePath))
+        if (_viewModel is null || sender is not Button { CommandParameter: UploadFileItem file })
         {
             return;
         }
 
-        _viewModel.Editing.UploadFilePath = string.Empty;
+        _viewModel.Editing.UploadFiles.Remove(file);
         _viewModel.NotifyUploadChanged();
+    }
+
+    private void OnUploadDragOver(object? sender, DragEventArgs e)
+    {
+        e.DragEffects = e.DataTransfer.Contains(DataFormat.File)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnUploadDrop(object? sender, DragEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var paths = e
+            .DataTransfer.TryGetFiles()
+            ?.Select(file => file.TryGetLocalPath())
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!);
+        if (paths is not null)
+        {
+            AddUploadFiles(paths);
+        }
+
+        e.Handled = true;
+    }
+
+    private void AddUploadFiles(IEnumerable<string> paths)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var added = false;
+        foreach (var path in paths)
+        {
+            if (
+                _viewModel.Editing.UploadFiles.Any(file =>
+                    string.Equals(file.FilePath, path, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            {
+                continue;
+            }
+
+            var item = new UploadFileItem { FilePath = path, FieldName = "file" };
+            try
+            {
+                item.SizeBytes = new FileInfo(path).Length;
+            }
+            catch (IOException)
+            {
+                item.SizeBytes = 0;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                item.SizeBytes = 0;
+            }
+
+            _viewModel.Editing.UploadFiles.Add(item);
+            added = true;
+        }
+
+        if (added)
+        {
+            _viewModel.NotifyUploadChanged();
+        }
     }
 
     private void OnSuiteBuilderDialogOpened(object? sender, EventArgs e) =>
@@ -303,6 +383,12 @@ public partial class MainWindow : Window
 
     private void OnMappingDialogOpened(object? sender, EventArgs e) =>
         ApplyWideDialog(MappingDialog);
+
+    private void OnAssertionDialogOpened(object? sender, EventArgs e) =>
+        ApplyWideDialog(AssertionDialog);
+
+    private void OnImportDialogOpened(object? sender, EventArgs e) =>
+        ApplyImportDialog(ImportDialog);
 
     private void ApplyWideDialog(TKCode.Arc.Dialog dialog)
     {
@@ -312,6 +398,18 @@ public partial class MainWindow : Window
         }
 
         var width = Math.Clamp(Bounds.Width - 64, 680, 1180);
+        surface.Width = width;
+        surface.MaxWidth = width;
+    }
+
+    private void ApplyImportDialog(TKCode.Arc.Dialog dialog)
+    {
+        if (dialog.Surface is not { } surface)
+        {
+            return;
+        }
+
+        var width = Math.Clamp(Bounds.Width - 160, 720, 900);
         surface.Width = width;
         surface.MaxWidth = width;
     }
@@ -503,7 +601,383 @@ public partial class MainWindow : Window
         var path = files.FirstOrDefault()?.TryGetLocalPath();
         if (!string.IsNullOrWhiteSpace(path))
         {
-            await _viewModel.ImportFromFileAsync(path);
+            await _viewModel.Import.ImportFromFileAsync(path);
+        }
+    }
+
+    private async void OnPickPostmanFileClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "导入 Postman Collection",
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("Postman Collection")
+                        {
+                            Patterns = new[] { "*.json" },
+                            MimeTypes = new[] { "application/json", "text/plain" },
+                        },
+                    },
+                }
+            );
+
+            var path = files.FirstOrDefault()?.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                await _viewModel.Import.ImportPostmanFileAsync(path);
+            }
+        }
+        catch (Exception exception)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
+                "无法打开文件选择器，请稍后重试或把 Collection JSON 粘贴到下方。";
+            Log.Error(exception, "打开 Postman Collection 文件选择器失败");
+        }
+    }
+
+    private async void OnPickPostmanEnvironmentFileClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "导入 Postman 环境文件",
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("Postman 环境文件")
+                        {
+                            Patterns = new[] { "*.json" },
+                            MimeTypes = new[] { "application/json", "text/plain" },
+                        },
+                    },
+                }
+            );
+
+            var path = files.FirstOrDefault()?.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                await _viewModel.Import.ImportPostmanEnvironmentFileAsync(path);
+            }
+        }
+        catch (Exception exception)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus = "无法打开环境文件选择器，请稍后重试。";
+            Log.Error(exception, "打开 Postman 环境文件选择器失败");
+        }
+    }
+
+    private async void OnPickHarFileClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "导入 HAR 文件",
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("HTTP Archive")
+                        {
+                            Patterns = new[] { "*.har", "*.json" },
+                            MimeTypes = new[] { "application/json", "text/plain" },
+                        },
+                    },
+                }
+            );
+
+            var path = files.FirstOrDefault()?.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                await _viewModel.Import.ImportHarFileAsync(path);
+            }
+        }
+        catch (Exception exception)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
+                "无法打开 HAR 文件选择器，请稍后重试或把 HAR JSON 粘贴到下方。";
+            Log.Error(exception, "打开 HAR 文件选择器失败");
+        }
+    }
+
+    private async void OnPickInsomniaFileClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "导入 Insomnia v4 JSON",
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("Insomnia v4 JSON")
+                        {
+                            Patterns = new[] { "*.json" },
+                            MimeTypes = new[] { "application/json", "text/plain" },
+                        },
+                    },
+                }
+            );
+
+            var path = files.FirstOrDefault()?.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                await _viewModel.Import.ImportInsomniaFileAsync(path);
+            }
+        }
+        catch (Exception exception)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
+                "无法打开 Insomnia 文件选择器，请稍后重试或把 JSON 粘贴到下方。";
+            Log.Error(exception, "打开 Insomnia 文件选择器失败");
+        }
+    }
+
+    private async void OnPickHoppscotchFileClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "导入 Hoppscotch Collection",
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("Hoppscotch Collection")
+                        {
+                            Patterns = new[] { "*.json" },
+                            MimeTypes = new[] { "application/json", "text/plain" },
+                        },
+                    },
+                }
+            );
+
+            var path = files.FirstOrDefault()?.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                await _viewModel.Import.ImportHoppscotchFileAsync(path);
+            }
+        }
+        catch (Exception exception)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
+                "无法打开 Hoppscotch 文件选择器，请稍后重试或把 JSON 粘贴到下方。";
+            Log.Error(exception, "打开 Hoppscotch 文件选择器失败");
+        }
+    }
+
+    private async void OnPickBatchImportFilesClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "批量导入文件",
+                    AllowMultiple = true,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("支持的导入文件")
+                        {
+                            Patterns = new[]
+                            {
+                                "*.json",
+                                "*.har",
+                                "*.yaml",
+                                "*.yml",
+                                "*.sh",
+                                "*.txt",
+                            },
+                            MimeTypes = new[]
+                            {
+                                "application/json",
+                                "application/yaml",
+                                "text/yaml",
+                                "text/plain",
+                            },
+                        },
+                    },
+                }
+            );
+
+            var paths = files
+                .Select(file => file.TryGetLocalPath())
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path!)
+                .ToList();
+            if (paths.Count > 0)
+            {
+                await _viewModel.Import.ImportBatchFilesAsync(paths);
+            }
+        }
+        catch (Exception exception)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus = "无法打开批量文件选择器，请稍后重试。";
+            Log.Error(exception, "打开批量导入文件选择器失败");
+        }
+    }
+
+    private async void OnExportPostmanClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var document = _viewModel.BuildPostmanExport();
+        if (document is null)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus = "当前工作区没有可导出的集合。请先创建或导入集合。";
+            return;
+        }
+
+        await SaveExportAsync(
+            document,
+            "导出 Postman Collection",
+            new FilePickerFileType("Postman Collection")
+            {
+                Patterns = new[] { "*.json" },
+                MimeTypes = new[] { "application/json" },
+            }
+        );
+    }
+
+    private async void OnExportCurlClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var document = _viewModel.BuildCurlExport();
+        if (document is null)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
+                "当前请求还没有可导出的 cURL，请先选择请求并填写有效地址。";
+            return;
+        }
+
+        await SaveExportAsync(
+            document,
+            "保存 cURL",
+            new FilePickerFileType("Shell 脚本")
+            {
+                Patterns = new[] { "*.sh" },
+                MimeTypes = new[] { "text/x-shellscript", "text/plain" },
+            }
+        );
+    }
+
+    private async Task SaveExportAsync(
+        ExportDocument document,
+        string title,
+        FilePickerFileType fileType
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var file = await StorageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions
+                {
+                    Title = title,
+                    SuggestedFileName = document.FileName,
+                    DefaultExtension = Path.GetExtension(document.FileName).TrimStart('.'),
+                    ShowOverwritePrompt = true,
+                    FileTypeChoices = new[] { fileType },
+                }
+            );
+            if (file is null)
+            {
+                return;
+            }
+
+            var path = file.TryGetLocalPath();
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                _viewModel.Import.HasImportError = true;
+                _viewModel.Import.ImportStatus = "无法写入所选位置，请换一个本地文件夹。";
+                return;
+            }
+
+            await File.WriteAllTextAsync(path, document.Content);
+            _viewModel.Import.HasImportError = false;
+            _viewModel.Import.ImportStatus = $"已导出：{Path.GetFileName(path)}";
+            Log.Information("导出文件完成 {FilePath}", path);
+        }
+        catch (Exception exception)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus = "导出失败，请检查目标文件夹是否可写后重试。";
+            Log.Error(exception, "导出文件失败 {Title}", title);
         }
     }
 

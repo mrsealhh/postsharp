@@ -23,7 +23,7 @@ public enum TreeDropPosition
     Inside,
 }
 
-public partial class MainWindowViewModel : ObservableObject
+public partial class MainWindowViewModel : ObservableObject, IImportHost
 {
     private readonly WorkspaceStore _store = new();
     private readonly AuditStore _auditStore = new();
@@ -55,7 +55,6 @@ public partial class MainWindowViewModel : ObservableObject
     private AuditEntry? _pendingAuditPurge;
     private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
-    private CancellationTokenSource? _importCts;
     private bool _initializing = true;
     private IReadOnlyList<SuiteStepOption> _mappingSourceOptions = Array.Empty<SuiteStepOption>();
 
@@ -140,6 +139,7 @@ public partial class MainWindowViewModel : ObservableObject
             AuditTrash.Add(entry);
         }
 
+        Import = new ImportViewModel(this);
         RefreshAuditView();
         BindEditingTracking();
         RefreshAuthState();
@@ -173,7 +173,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<InputMappingEditor> MappingEditors { get; } = new();
 
+    public ObservableCollection<AssertionEditor> AssertionEditors { get; } = new();
+
     public ObservableCollection<ResponseHeaderView> ResponseHeaders { get; } = new();
+
+    public ImportViewModel Import { get; }
 
     public IReadOnlyList<string> Methods { get; } =
         new[] { "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS" };
@@ -248,12 +252,22 @@ public partial class MainWindowViewModel : ObservableObject
     private string _mappingTitle = string.Empty;
 
     [ObservableProperty]
+    private bool _isAssertionEditorOpen;
+
+    [ObservableProperty]
+    private SuiteBuilderStep? _assertionStep;
+
+    [ObservableProperty]
+    private string _assertionTitle = string.Empty;
+
+    [ObservableProperty]
     private bool _isBodySingleLine;
 
     [ObservableProperty]
     private string _bodyPreview = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanExportCurl))]
     private string _curlPreview = string.Empty;
 
     [ObservableProperty]
@@ -322,21 +336,10 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string _auditPurgeDescription = string.Empty;
 
-    [ObservableProperty]
-    private bool _isImportDialogOpen;
-
-    [ObservableProperty]
-    private string _importUrl = string.Empty;
-
-    [ObservableProperty]
-    private string _importStatus =
-        "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。";
-
-    [ObservableProperty]
-    private bool _hasImportError;
-
-    [ObservableProperty]
-    private bool _isImporting;
+    public bool CanExportCurl =>
+        IsRequestSelected
+        && !string.IsNullOrWhiteSpace(Editing.Url)
+        && !CurlPreview.StartsWith('#');
 
     [ObservableProperty]
     private bool _isToastOpen;
@@ -474,129 +477,266 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private void OpenImportDialog()
+    public CollectionImportOutcome ApplyEnvironmentImport(EnvironmentImportResult result)
     {
-        ImportUrl = string.Empty;
-        ImportStatus =
-            "支持 OpenAPI 3.x / Swagger 2.0，JSON 或 YAML；也可以填写可直接访问的文档 URL。";
-        HasImportError = false;
-        IsImportDialogOpen = true;
+        var environmentName =
+            ApplyImportedEnvironment(result.Environment) ?? result.Environment.Name;
+        return new CollectionImportOutcome(environmentName, 0, 0, environmentName);
     }
 
-    [RelayCommand]
-    private void CloseImportDialog()
+    public void CompleteImport()
     {
-        if (IsImporting)
-        {
-            _importCts?.Cancel();
-        }
-
-        IsImportDialogOpen = false;
+        Persist();
+        NotifySelectionChanged();
+        NotifyTreeChanged();
+        RefreshDerivedState();
     }
 
-    [RelayCommand]
-    private async Task ImportFromUrlAsync()
+    public CollectionImportOutcome ApplyCollectionImport(ImportResult result)
     {
-        if (IsImporting)
+        var root = new RequestCollection
         {
-            return;
+            Name = string.IsNullOrWhiteSpace(result.Root.Name) ? "导入的集合" : result.Root.Name,
+            IsExpanded = true,
+        };
+        Collections.Insert(0, root);
+
+        RequestItem? firstRequest = null;
+        var requestCount = 0;
+        var folderCount = 0;
+        AddImportedCollectionContent(
+            root,
+            result.Root,
+            1,
+            string.Empty,
+            ref firstRequest,
+            ref requestCount,
+            ref folderCount
+        );
+
+        var environmentName = ApplyImportedEnvironment(result.Environment);
+        SyncRootCollections();
+        if (firstRequest is not null)
+        {
+            OpenRequest(firstRequest);
+        }
+        else
+        {
+            SelectedCollection = root;
+            SelectedRequest = null;
         }
 
-        if (string.IsNullOrWhiteSpace(ImportUrl))
-        {
-            HasImportError = true;
-            ImportStatus = "请填写 OpenAPI 文档地址，或改为从本地文件导入。";
-            return;
-        }
-
-        _importCts?.Dispose();
-        _importCts = new CancellationTokenSource();
-        IsImporting = true;
-        HasImportError = false;
-        ImportStatus = "正在下载并解析 OpenAPI 文档…";
-
-        try
-        {
-            var document = await OpenApiImportService
-                .LoadFromUrlAsync(ImportUrl, _importCts.Token)
-                .ConfigureAwait(true);
-            ApplyOpenApiImport(document);
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "从 URL 导入 OpenAPI 已取消 {Url}", ImportUrl);
-            ImportStatus = "导入已取消。";
-            HasImportError = true;
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "从 URL 导入 OpenAPI 失败 {Url}", ImportUrl);
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
-        }
+        return new CollectionImportOutcome(
+            result.Root.Name,
+            requestCount,
+            folderCount,
+            environmentName
+        );
     }
 
-    public async Task ImportFromFileAsync(
-        string path,
-        CancellationToken cancellationToken = default
+    public RequestItem ApplyCurlImport(CurlImportResult result)
+    {
+        var target =
+            SelectedCollection
+            ?? Editing.Owner
+            ?? Collections.FirstOrDefault(collection => collection.Parent is null)
+            ?? Collections.FirstOrDefault();
+        if (target is null)
+        {
+            target = new RequestCollection { Name = "导入的 cURL 请求" };
+            Collections.Add(target);
+        }
+
+        var request = AddImportedRequest(target, result.Request, string.Empty);
+        SyncRootCollections();
+        OpenRequest(request);
+        return request;
+    }
+
+    private void AddImportedCollectionContent(
+        RequestCollection target,
+        ImportedCollection source,
+        int depth,
+        string namePrefix,
+        ref RequestItem? firstRequest,
+        ref int requestCount,
+        ref int folderCount
     )
     {
-        if (IsImporting)
+        foreach (var imported in source.Requests)
         {
-            return;
+            var request = AddImportedRequest(target, imported, namePrefix);
+            firstRequest ??= request;
+            requestCount++;
         }
 
-        _importCts?.Dispose();
-        _importCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        IsImporting = true;
-        HasImportError = false;
-        ImportStatus = "正在读取并解析 OpenAPI 文件…";
+        foreach (var child in source.Children)
+        {
+            if (depth >= MaxCollectionDepth)
+            {
+                AddImportedCollectionContent(
+                    target,
+                    child,
+                    depth,
+                    namePrefix + child.Name + " / ",
+                    ref firstRequest,
+                    ref requestCount,
+                    ref folderCount
+                );
+                continue;
+            }
 
-        try
-        {
-            var content = await File.ReadAllTextAsync(path, _importCts.Token).ConfigureAwait(true);
-            var document = await Task.Run(
-                    () => OpenApiImportService.Parse(content, Path.GetFileName(path)),
-                    _importCts.Token
-                )
-                .ConfigureAwait(true);
-            ApplyOpenApiImport(document);
-        }
-        catch (OperationCanceledException exception)
-        {
-            Log.Debug(exception, "从文件导入 OpenAPI 已取消 {FilePath}", path);
-            ImportStatus = "导入已取消。";
-            HasImportError = true;
-        }
-        catch (Exception exception)
-        {
-            HasImportError = true;
-            ImportStatus = $"导入失败：{DescribeImportFailure(exception)}";
-            Log.Error(exception, "从文件导入 OpenAPI 失败 {FilePath}", path);
-        }
-        finally
-        {
-            IsImporting = false;
-            _importCts?.Dispose();
-            _importCts = null;
+            var collection = new RequestCollection
+            {
+                Name = child.Name,
+                Parent = target,
+                IsExpanded = true,
+            };
+            target.Children.Add(collection);
+            Collections.Add(collection);
+            folderCount++;
+            AddImportedCollectionContent(
+                collection,
+                child,
+                depth + 1,
+                string.Empty,
+                ref firstRequest,
+                ref requestCount,
+                ref folderCount
+            );
         }
     }
 
-    private void ApplyOpenApiImport(OpenApiImportDocument document)
+    private static RequestItem AddImportedRequest(
+        RequestCollection target,
+        ImportedRequest imported,
+        string namePrefix
+    )
+    {
+        var request = new RequestItem
+        {
+            Name = namePrefix + imported.Name,
+            Method = imported.Method,
+            Url = imported.Url,
+            TimeoutSeconds = imported.TimeoutSeconds,
+            BodyMode = imported.BodyMode,
+            Body = imported.Body,
+            UploadFilePath = imported.UploadFilePath,
+            UploadFieldName = string.IsNullOrWhiteSpace(imported.UploadFieldName)
+                ? "file"
+                : imported.UploadFieldName,
+            Owner = target,
+        };
+
+        foreach (var field in imported.Params)
+        {
+            request.Params.AddRow(field.Key, field.Value, field.IsEnabled);
+        }
+
+        foreach (var field in imported.Headers)
+        {
+            request.Headers.AddRow(field.Key, field.Value, field.IsEnabled);
+        }
+
+        foreach (var field in imported.FormFields)
+        {
+            request.FormFields.AddRow(field.Key, field.Value, field.IsEnabled);
+        }
+
+        request.Params.EnsureTrailingRow();
+        request.Headers.EnsureTrailingRow();
+        request.FormFields.EnsureTrailingRow();
+        target.Requests.Add(request);
+        return request;
+    }
+
+    public string? ApplyImportedEnvironment(ImportedEnvironment? imported)
+    {
+        if (imported is null || imported.Variables.Count == 0)
+        {
+            return null;
+        }
+
+        var environment =
+            Environments.FirstOrDefault(candidate =>
+                candidate.Name.Equals(imported.Name, StringComparison.OrdinalIgnoreCase)
+            ) ?? new EnvironmentModel { Name = imported.Name };
+        if (!Environments.Contains(environment))
+        {
+            Environments.Add(environment);
+        }
+
+        foreach (var variable in imported.Variables)
+        {
+            if (
+                environment.Variables.Any(row =>
+                    row.Key.Equals(variable.Key, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            {
+                continue;
+            }
+
+            environment.Variables.AddRow(variable.Key, variable.Value, variable.IsEnabled);
+        }
+
+        environment.Variables.EnsureTrailingRow();
+        ActiveEnvironment = environment;
+        return environment.Name;
+    }
+
+    public ExportDocument? BuildPostmanExport()
+    {
+        var collection = SelectedCollection ?? SelectedRequest?.Owner;
+        if (collection is not null)
+        {
+            return new ExportDocument(
+                PostmanExportService.ExportCollection(collection),
+                PostmanExportService.SuggestFileName(collection.Name)
+            );
+        }
+
+        var roots = Collections.Where(candidate => candidate.Parent is null).ToList();
+        if (roots.Count == 0)
+        {
+            return null;
+        }
+
+        return new ExportDocument(
+            PostmanExportService.ExportWorkspace(roots),
+            PostmanExportService.SuggestFileName("PostSharp 工作区")
+        );
+    }
+
+    public ExportDocument? BuildCurlExport()
+    {
+        if (!CanExportCurl)
+        {
+            return null;
+        }
+
+        var name = string.IsNullOrWhiteSpace(Editing.Name) ? "request" : Editing.Name.Trim();
+        var invalid = Path.GetInvalidFileNameChars();
+        var safeName = new string(
+            name.Select(character => invalid.Contains(character) ? '-' : character).ToArray()
+        )
+            .Trim()
+            .TrimEnd('.');
+        if (string.IsNullOrEmpty(safeName))
+        {
+            safeName = "request";
+        }
+
+        return new ExportDocument(CurlPreview, $"{safeName}.sh");
+    }
+
+    public CollectionImportOutcome ApplyOpenApiImport(OpenApiImportDocument document)
     {
         var root = new RequestCollection { Name = document.Title, IsExpanded = true };
-        Collections.Add(root);
+        Collections.Insert(0, root);
 
         var groupCount = 0;
         var requestCount = 0;
-        RequestCollection? firstGroup = null;
         RequestItem? firstRequest = null;
 
         foreach (var group in document.Groups)
@@ -614,8 +754,6 @@ public partial class MainWindowViewModel : ObservableObject
                 Collections.Add(target);
                 groupCount++;
             }
-
-            firstGroup ??= target;
 
             foreach (var imported in group.Requests)
             {
@@ -659,33 +797,7 @@ public partial class MainWindowViewModel : ObservableObject
             SelectedRequest = null;
         }
 
-        IsImportDialogOpen = false;
-        Persist();
-        NotifySelectionChanged();
-        NotifyTreeChanged();
-        RefreshDerivedState();
-        ShowToast($"已导入「{document.Title}」：{requestCount} 个请求，{groupCount} 个分组");
-        Log.Information(
-            "OpenAPI 导入完成 {Source}：{Title} {Version}，{RequestCount} 个请求，{GroupCount} 个分组",
-            document.Source,
-            document.Title,
-            document.Version,
-            requestCount,
-            groupCount
-        );
-    }
-
-    private static string DescribeImportFailure(Exception exception)
-    {
-        return exception switch
-        {
-            HttpRequestException => "无法连接文档地址，请检查网络和 URL 是否可直接访问。",
-            TaskCanceledException => "下载超时，请检查网络后重试。",
-            UnauthorizedAccessException => "没有读取该文件的权限，请换一个位置。",
-            FileNotFoundException => "文件不存在，请重新选择。",
-            InvalidOperationException => exception.Message,
-            _ => "文档格式无法识别，请确认是合法的 OpenAPI JSON 或 YAML。",
-        };
+        return new CollectionImportOutcome(document.Title, requestCount, groupCount, null);
     }
 
     [RelayCommand]
@@ -978,6 +1090,7 @@ public partial class MainWindowViewModel : ObservableObject
         || IsMcpDialogOpen
         || IsSuiteBuilderOpen
         || IsMappingEditorOpen
+        || IsAssertionEditorOpen
         || IsRenameDialogOpen
         || IsDeleteDialogOpen
         || IsHistoryTrashConfirmOpen
@@ -986,7 +1099,7 @@ public partial class MainWindowViewModel : ObservableObject
         || IsAuditTrashConfirmOpen
         || IsAuditTrashOpen
         || IsAuditPurgeConfirmOpen
-        || IsImportDialogOpen;
+        || Import.IsImportDialogOpen;
 
     /// <summary>Enter in a confirmation or rename dialog; buttons keep their own activation.</summary>
     public bool TryConfirmActiveDialog()
@@ -1033,15 +1146,21 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>Esc closes the top-most overlay and applies its cancel semantics.</summary>
     public bool TryCancelActiveDialog()
     {
-        if (IsImportDialogOpen)
+        if (Import.IsImportDialogOpen)
         {
-            CloseImportDialogCommand.Execute(null);
+            Import.CloseImportDialogCommand.Execute(null);
             return true;
         }
 
         if (IsMappingEditorOpen)
         {
             CancelMappingEditorCommand.Execute(null);
+            return true;
+        }
+
+        if (IsAssertionEditorOpen)
+        {
+            CancelAssertionEditorCommand.Execute(null);
             return true;
         }
 
@@ -1165,7 +1284,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool IsTextBody => !IsMultipartBody;
 
-    public bool HasUploadFile => !string.IsNullOrWhiteSpace(Editing.UploadFilePath);
+    public bool HasUploadFile => Editing.UploadFiles.Count > 0;
 
     public string SseSummary =>
         IsSseResponse
@@ -1307,7 +1426,13 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 var auth = await ResolveAuthAsync(Editing, _sendCts.Token);
                 composed = RequestComposer.Compose(Editing, ActiveEnvironment, auth);
-                result = await _http.SendAsync(composed, _sendCts.Token, Editing.TimeoutSeconds);
+                var sseProgress = new Progress<SseProgress>(ApplySseProgress);
+                result = await _http.SendAsync(
+                    composed,
+                    _sendCts.Token,
+                    Editing.TimeoutSeconds,
+                    sseProgress
+                );
             }
             catch (Exception exception)
             {
@@ -2674,7 +2799,15 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         var lines = request.FormFields.ActiveRows.Select(row => $"{row.Key}: {row.Value}").ToList();
-        if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
+        if (request.UploadFiles.Count > 0)
+        {
+            lines.AddRange(
+                request.UploadFiles.Select(file =>
+                    $"[file] {file.FieldName}: {file.FilePath} ({file.SizeText})"
+                )
+            );
+        }
+        else if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
         {
             lines.Add($"[file] {request.UploadFieldName}: {request.UploadFilePath}");
         }
@@ -3015,6 +3148,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             wrapper.EditMappingsCommand = new RelayCommand(() => OpenMappingEditor(wrapper));
+            wrapper.EditAssertionsCommand = new RelayCommand(() => OpenAssertionEditor(wrapper));
             next.Add(wrapper);
         }
 
@@ -3030,6 +3164,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         IsSuiteBuilderOpen = false;
         IsMappingEditorOpen = false;
+        IsAssertionEditorOpen = false;
     }
 
     [RelayCommand]
@@ -3130,6 +3265,85 @@ public partial class MainWindowViewModel : ObservableObject
         IsMappingEditorOpen = false;
     }
 
+    private AssertionEditor CreateAssertionEditor(TestAssertion source)
+    {
+        var editor = new AssertionEditor
+        {
+            Kind = string.IsNullOrWhiteSpace(source.Kind) ? "JSONPath" : source.Kind,
+            Path = source.Path,
+            Expected = source.Expected,
+        };
+        editor.RemoveCommand = new RelayCommand(() => AssertionEditors.Remove(editor));
+        return editor;
+    }
+
+    private void OpenAssertionEditor(SuiteBuilderStep step)
+    {
+        AssertionEditors.Clear();
+        foreach (var assertion in step.Step.Assertions)
+        {
+            AssertionEditors.Add(CreateAssertionEditor(assertion));
+        }
+
+        if (AssertionEditors.Count == 0)
+        {
+            AssertionEditors.Add(CreateAssertionEditor(new TestAssertion()));
+        }
+
+        AssertionStep = step;
+        AssertionTitle = $"断言 · {step.RequestName}";
+        IsAssertionEditorOpen = true;
+    }
+
+    [RelayCommand]
+    private void AddAssertionRule()
+    {
+        AssertionEditors.Add(CreateAssertionEditor(new TestAssertion()));
+    }
+
+    [RelayCommand]
+    private void CancelAssertionEditor() => IsAssertionEditorOpen = false;
+
+    [RelayCommand]
+    private void SaveAssertionEditor()
+    {
+        if (AssertionStep is not { } step)
+        {
+            return;
+        }
+
+        foreach (var editor in AssertionEditors)
+        {
+            if (string.IsNullOrWhiteSpace(editor.Path))
+            {
+                editor.Error = editor.Kind == "Header" ? "请填写响应头名称" : "请填写 JSONPath";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(editor.Expected))
+            {
+                editor.Error = "请填写期望值";
+                return;
+            }
+        }
+
+        step.Step.Assertions.Clear();
+        foreach (var editor in AssertionEditors)
+        {
+            step.Step.Assertions.Add(
+                new TestAssertion
+                {
+                    Kind = editor.Kind == "Header" ? "Header" : "JSONPath",
+                    Path = editor.Path.Trim(),
+                    Expected = editor.Expected.Trim(),
+                }
+            );
+        }
+
+        step.RefreshAssertionLabel();
+        IsAssertionEditorOpen = false;
+    }
+
     [RelayCommand]
     private void CreateSuiteFromSources()
     {
@@ -3142,6 +3356,16 @@ public partial class MainWindowViewModel : ObservableObject
                 delay = 200;
             }
 
+            if (!int.TryParse(wrapper.RetryCountText, out var retryCount))
+            {
+                retryCount = 0;
+            }
+
+            if (!int.TryParse(wrapper.RetryDelayText, out var retryDelay))
+            {
+                retryDelay = 500;
+            }
+
             foreach (var mapping in wrapper.Step.InputMappings)
             {
                 if (!previousStepIds.Contains(mapping.SourceStepId))
@@ -3152,6 +3376,8 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             wrapper.Step.DelayMs = Math.Clamp(delay, 0, 60_000);
+            wrapper.Step.RetryCount = Math.Clamp(retryCount, 0, SuiteRetryPolicy.MaxRetries);
+            wrapper.Step.RetryDelayMs = Math.Clamp(retryDelay, 0, 60_000);
             previousStepIds.Add(wrapper.Step.Id);
             steps.Add(wrapper.Step);
         }
@@ -3376,63 +3602,108 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             ComposedRequest? composed = null;
-            HttpResult result;
-            try
+            HttpResult result = HttpRequestService.Failure("步骤未执行。");
+            var assertionResults = new List<TestAssertionResult>();
+            var attempts = 0;
+            var passed = false;
+            string? error = null;
+            var maxAttempts = SuiteRetryPolicy.MaxAttempts(step.RetryCount);
+
+            while (true)
             {
-                var auth = await ResolveAuthAsync(effectiveRequest, cancellationToken);
-                composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment, auth);
-                result = await _http.SendAsync(
-                    composed,
-                    cancellationToken,
-                    effectiveRequest.TimeoutSeconds
-                );
-            }
-            catch (Exception exception)
-            {
-                Log.Error(
-                    exception,
-                    "套件步骤发送失败 {SuiteName} {StepName}",
+                attempts++;
+                try
+                {
+                    var auth = await ResolveAuthAsync(effectiveRequest, cancellationToken);
+                    composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment, auth);
+                    result = await _http.SendAsync(
+                        composed,
+                        cancellationToken,
+                        effectiveRequest.TimeoutSeconds
+                    );
+                }
+                catch (Exception exception)
+                {
+                    Log.Error(
+                        exception,
+                        "套件步骤发送失败 {SuiteName} {StepName}",
+                        suite.Name,
+                        step.RequestName
+                    );
+                    result = HttpRequestService.Failure(exception.Message);
+                }
+
+                var statusMatches = step.ExpectedStatus is null
+                    ? result.StatusCode is >= 200 and < 400
+                    : result.StatusCode == step.ExpectedStatus;
+                var bodyMatches =
+                    string.IsNullOrWhiteSpace(step.BodyContains)
+                    || result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
+                assertionResults = SuiteAssertionEvaluator
+                    .Evaluate(step.Assertions, result)
+                    .ToList();
+                var assertionsMatch = assertionResults.All(assertion => assertion.Passed);
+                passed = result.HasResponse && statusMatches && bodyMatches && assertionsMatch;
+                error = result.Error;
+                if (passed is false && error is null)
+                {
+                    error =
+                        !statusMatches
+                            ? $"期望状态 {step.ExpectedStatus?.ToString() ?? "2xx/3xx"}，实际 {result.StatusCode}"
+                        : !bodyMatches ? $"响应不包含 \"{step.BodyContains}\""
+                        : assertionResults.FirstOrDefault(assertion => !assertion.Passed)?.Detail;
+                }
+
+                if (!SuiteRetryPolicy.ShouldRetry(passed, attempts, step.RetryCount))
+                {
+                    break;
+                }
+
+                Log.Information(
+                    "套件步骤失败准备重试 {SuiteName} {StepName} {Attempt}/{MaxAttempts}",
                     suite.Name,
-                    step.RequestName
+                    step.RequestName,
+                    attempts,
+                    maxAttempts
                 );
-                result = HttpRequestService.Failure(exception.Message);
+                try
+                {
+                    await Task.Delay(SuiteRetryPolicy.Delay(step.RetryDelayMs), cancellationToken);
+                }
+                catch (OperationCanceledException exception)
+                {
+                    Log.Debug(
+                        exception,
+                        "套件重试等待被取消 {SuiteName} {StepName}",
+                        suite.Name,
+                        step.RequestName
+                    );
+                    stopped = true;
+                    break;
+                }
             }
 
             stepResults[step.Id] = result;
             AddHistory(effectiveRequest, result);
             RecordAudit(effectiveRequest, composed, result, source, tool, client);
 
-            var statusMatches = step.ExpectedStatus is null
-                ? result.StatusCode is >= 200 and < 400
-                : result.StatusCode == step.ExpectedStatus;
-            var bodyMatches =
-                string.IsNullOrWhiteSpace(step.BodyContains)
-                || result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
-            var passed = result.HasResponse && statusMatches && bodyMatches;
-            var error = result.Error;
-            if (passed is false && error is null)
+            var stepResult = new TestStepResult
             {
-                error = !statusMatches
-                    ? $"期望状态 {step.ExpectedStatus?.ToString() ?? "2xx/3xx"}，实际 {result.StatusCode}"
-                    : $"响应不包含 \"{step.BodyContains}\"";
-            }
-
-            steps.Add(
-                new TestStepResult
-                {
-                    StepId = step.Id,
-                    RequestId = request.Id,
-                    Name = request.Name,
-                    Method = request.Method,
-                    Url = composed?.Url ?? request.Url,
-                    StatusCode = result.StatusCode,
-                    StatusText = result.ReasonPhrase,
-                    ElapsedMs = result.ElapsedMs,
-                    Passed = passed,
-                    Error = error,
-                    ResponsePreview = Truncate(result.Body, 500),
-                }
-            );
+                StepId = step.Id,
+                RequestId = request.Id,
+                Name = request.Name,
+                Method = request.Method,
+                Url = composed?.Url ?? request.Url,
+                StatusCode = result.StatusCode,
+                StatusText = result.ReasonPhrase,
+                ElapsedMs = result.ElapsedMs,
+                Attempts = attempts,
+                Passed = passed,
+                Error = error,
+                ResponsePreview = Truncate(result.Body, 500),
+            };
+            stepResult.Assertions.AddRange(assertionResults);
+            steps.Add(stepResult);
 
             if (!passed && suite.StopOnError)
             {
@@ -4085,6 +4356,35 @@ public partial class MainWindowViewModel : ObservableObject
         _mockServer.Dispose();
     }
 
+    private void ApplySseProgress(SseProgress progress)
+    {
+        if (!IsSseResponse)
+        {
+            HasResponse = true;
+            HasResponseError = false;
+            ResponseError = null;
+            ResponseBody = string.Empty;
+            FullResponseBody = string.Empty;
+            ResponseClipboardText = string.Empty;
+            LargeResponseNotice = string.Empty;
+            IsJsonResponse = false;
+            IsLargeResponse = false;
+            IsSseResponse = true;
+            SseViewMode = "内容";
+            ResponseTabIndex = 2;
+            ResponseStatusText = "流式接收中…";
+            ResponseTimeText = string.Empty;
+            ResponseSizeText = string.Empty;
+            ResponseContentType = "text/event-stream";
+            ResponseTone = BadgeTone.Info;
+        }
+
+        SseThinking = progress.Thinking;
+        SseContent = progress.Content;
+        SseRaw = progress.Raw;
+        SseEventCount = progress.EventCount;
+    }
+
     private void ApplyResponse(HttpResult result)
     {
         ResponseHeaders.Clear();
@@ -4136,21 +4436,29 @@ public partial class MainWindowViewModel : ObservableObject
         LargeResponseNotice = isLarge
             ? $"响应体 {FormatSize(result.SizeBytes)}，已折叠显示前 {ResponsePreviewLimit / 1024} KB。完整内容可在详情页分页查看或复制。"
             : string.Empty;
-        ResponseStatusText = string.IsNullOrWhiteSpace(result.ReasonPhrase)
-            ? result.StatusCode.ToString()
+        ResponseStatusText =
+            result.SseCancelled
+                ? (
+                    result.ReasonPhrase == "超时"
+                        ? "超时 · 保留已接收内容"
+                        : "已取消 · 保留已接收内容"
+                )
+            : string.IsNullOrWhiteSpace(result.ReasonPhrase) ? result.StatusCode.ToString()
             : $"{result.StatusCode} {result.ReasonPhrase}";
         ResponseTimeText = $"耗时 {result.ElapsedMs} ms";
         ResponseSizeText = $"大小 {FormatSize(result.SizeBytes)}";
         ResponseContentType = string.IsNullOrWhiteSpace(result.MediaType)
             ? "未知内容类型"
             : result.MediaType;
-        ResponseTone = result.StatusCode switch
-        {
-            >= 200 and < 300 => BadgeTone.Success,
-            >= 300 and < 400 => BadgeTone.Info,
-            >= 400 and < 500 => BadgeTone.Warning,
-            _ => BadgeTone.Danger,
-        };
+        ResponseTone = result.SseCancelled
+            ? BadgeTone.Warning
+            : result.StatusCode switch
+            {
+                >= 200 and < 300 => BadgeTone.Success,
+                >= 300 and < 400 => BadgeTone.Info,
+                >= 400 and < 500 => BadgeTone.Warning,
+                _ => BadgeTone.Danger,
+            };
 
         foreach (var header in result.Headers)
         {
@@ -4250,6 +4558,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsRequestSelected));
         OnPropertyChanged(nameof(IsDraft));
         OnPropertyChanged(nameof(EditorHint));
+        OnPropertyChanged(nameof(CanExportCurl));
     }
 
     private void UpdateSelectionFlags()
@@ -4467,7 +4776,7 @@ public partial class MainWindowViewModel : ObservableObject
         filter.Length == 0
         || (value?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
 
-    private void ShowToast(string title)
+    public void ShowToast(string title)
     {
         ToastTitle = title;
         IsToastOpen = true;
@@ -4590,6 +4899,8 @@ public partial class MainWindowViewModel : ObservableObject
                     Method = stepDto.Method,
                     Url = stepDto.Url,
                     DelayMs = stepDto.DelayMs,
+                    RetryCount = stepDto.RetryCount,
+                    RetryDelayMs = stepDto.RetryDelayMs,
                     ExpectedStatus = stepDto.ExpectedStatus,
                     BodyContains = stepDto.BodyContains,
                 };
@@ -4604,6 +4915,18 @@ public partial class MainWindowViewModel : ObservableObject
                             TargetKind = mappingDto.TargetKind,
                             TargetPath = mappingDto.TargetPath,
                             Template = mappingDto.Template,
+                        }
+                    );
+                }
+
+                foreach (var assertionDto in stepDto.Assertions)
+                {
+                    step.Assertions.Add(
+                        new TestAssertion
+                        {
+                            Kind = assertionDto.Kind,
+                            Path = assertionDto.Path,
+                            Expected = assertionDto.Expected,
                         }
                     );
                 }

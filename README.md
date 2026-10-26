@@ -36,7 +36,7 @@ PostSharp 的定位是：
 
 1. **AI 的本地执行器**：AI 通过 MCP 查询接口、发送请求、获取 cURL、运行套件。
 2. **审计中心**：每一次 UI 或 MCP 发送都记录来源、客户端、工具、状态、耗时、cURL、请求/响应预览和 AI 聚合输出。
-3. **自动化管理层**：保存回归套件、设置状态码/响应体断言、查看每个步骤的结果。
+3. **自动化管理层**：保存回归套件、设置状态码/响应体/JSONPath/响应头断言、查看每个步骤的结果。
 4. **人工兜底工作台**：需要手动调试时，完整的参数、请求头、请求体、cURL、响应查看仍然在。
 
 ## 功能
@@ -45,8 +45,8 @@ PostSharp 的定位是：
 
 - **MCP 工具**：接口 CRUD、发送请求、获取 cURL、审计查询、自动化套件创建/运行/删除。
 - **完整审计**：来源 `UI` / `MCP`、MCP 客户端名称、工具名、时间、状态、耗时、大小、cURL、请求头和请求/响应预览。
-- **SSE / AI 输出聚合**：自动解析 `text/event-stream`，聚合常见 AI 协议的 thinking 与 content，不再只保留最后一条推送。
-- **自动化套件**：步骤支持 `expectedStatus` 与 `bodyContains` 断言，支持失败停止；运行结果进入审计。
+- **SSE / AI 输出聚合**：自动解析 `text/event-stream`，聚合常见 AI 协议的 thinking 与 content，接收中增量刷新，取消后保留已接收内容。
+- **自动化套件**：步骤支持 `expectedStatus` / `bodyContains`，以及 JSONPath、响应头断言；支持失败重试与失败停止；运行结果进入审计。
 - **管理层**：一个窗口内切换审计、自动化、指南。
 
 ### 调试能力
@@ -56,8 +56,17 @@ PostSharp 的定位是：
 - **请求体**：无 / JSON / 文本 / 表单上传。
   - JSON/XML 一键格式化，JSON 一键压缩。
   - 单行切换与单行预览，长文本不再占满编辑区。
-  - multipart/form-data：表单字段 + 文件选择（支持直接粘贴本地路径）。
-- **cURL**：按当前环境解析变量，生成可直接执行的 bash cURL，支持 multipart `-F`。
+  - multipart/form-data：表单字段 + 多文件选择 / 拖拽，每个文件可编辑字段名。
+- **cURL 导入 / 导出**：按当前环境解析变量，生成可直接执行的 bash cURL；支持从 Postman、浏览器或 PostSharp 生成的 `-X` / `-H` / `-d` / `--data-raw` / `-F` / `-u` 命令导入请求，并可把当前 cURL 保存为 `.sh`。
+- **Postman Collection 导入 / 导出**：读取 Postman Collection v2.0 / v2.1 的嵌套文件夹、请求、查询参数、请求头、Bearer / Basic / API Key 认证、raw / urlencoded / formdata 请求体和集合变量；导出选中集合或整个工作区为标准 v2.1 文件。
+- **Postman 环境文件**：独立导入 `values` 或 `variable` 数组，创建或合并同名环境并激活。
+- **HAR 1.2 导入**：读取浏览器、Postman、Apifox 导出的 HTTP Archive；默认只保留 XHR / Fetch，支持 query、headers、cookies、JSON / text / form-data 请求体，可切换包含静态资源。
+- **Insomnia V4 导入**：读取 `resources` 数组中的 workspace、request_group、request 和 environment；脚本/测试不执行。
+- **Hoppscotch 导入**：读取 Collection JSON 的 folders、requests、params、headers、body 和基础认证。
+- **springdoc / Knife4j**：OpenAPI 来源可一键补全 `/v3/api-docs` 地址。
+- **来源选择**：导入对话框直接展示 OpenAPI、Postman、Environment、cURL、HAR、Insomnia、Hoppscotch、其他工具、Apifox 等小分类卡片，可收起。
+- **批量导入**：一次选择多个文件，自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL；逐文件显示成功或失败结果，单个失败不会中断其他文件。
+- **导入反馈**：导入完成后显示请求数、分组数、环境数和逐文件结果；结果与兼容性提示可展开/收起，全部成功时使用 Toast。
 - **响应**：
   - 状态、耗时、大小、内容类型、响应头。
   - JSON 使用 Arc JsonViewer（搜索、展开、复制值/路径）。
@@ -66,7 +75,7 @@ PostSharp 的定位是：
   - SSE 响应自动选中「AI 聚合」标签，内容 / 思考过程 / 原始事件三视图。
 - **集合、历史、环境变量、自动保存**。
 - **历史记录管理**：单条删除与清空都会先弹出确认，删除项进入回收站；回收站支持恢复、永久删除，永久删除前再次确认。
-- **OpenAPI 导入**：从本地 JSON / YAML 文件或可直接访问的 URL 读取 OpenAPI 3.x 与 Swagger 2.0；按 `info.title` 创建集合、按第一个 tag 创建子分组，并带出服务器地址、查询参数、请求头和 JSON 请求体示例。
+- **OpenAPI 导入**：从本地 JSON / YAML 文件或 URL 读取 OpenAPI 3.x / Swagger 2.0；按 `x-apifox-folder` 或第一个 tag 创建分组，支持安全方案占位头、多服务器选择、外部 `$ref` 自动下载（限 20 个、每个 2 MB、10 秒超时），并带出服务器地址、查询参数和请求体示例。
 
 ### 授权（OIDC / OAuth 2.0）
 
@@ -107,7 +116,7 @@ PostSharp 的定位是：
 - 主窗口采用无头自绘标题栏：顶部栏空白区域可拖拽移动，双击切换最大化；最小化、最大化/还原、关闭固定在顶栏最右侧，窗口仍保留边缘缩放。
 - 管理层内的下拉选项固定显示在管理层之上，不会跑到主窗体或关闭后才出现。
 - 1000×660 窗口下工具栏、审计列表、指南卡片仍保持对齐并可滚动。
-- 集合顶部快捷操作：「新建集合」（文件夹图标，左侧）、「导入」（OpenAPI，中间）和「新建请求」（加号图标，右侧）。
+- 集合顶部快捷操作：「新建集合」（文件夹图标，左侧）、「导入」（打开 OpenAPI / Postman / cURL / HAR / Insomnia / Hoppscotch 的导入导出对话框，中间）和「新建请求」（加号图标，右侧）。
 - 支持最多五级集合：选择集合后可通过三点菜单「新建二级集合」；请求可拖拽进任意集合文件夹，集合也可拖入其他集合（自动阻止循环嵌套与超过五级）。
 - 拖拽排序：拖到同级节点上/下边缘可上移/下移，拖到集合中间可移入该集合；根级集合、子集合和请求都支持。
 - 树节点图标与文字垂直居中；悬浮三点菜单使用横向省略号，点击热区加宽；悬浮时还会显示上移/下移箭头，可直接点击排序。
@@ -123,6 +132,10 @@ PostSharp 的定位是：
 
 ![节点悬浮操作](docs/tree-actions.png)
 
+![导入来源](docs/postman-import.png)
+
+![HAR 导入](docs/har-import.png)
+
 ## 技术栈
 
 | 项目 | 版本 / 说明 |
@@ -137,6 +150,8 @@ PostSharp 的定位是：
 | 令牌存储 | Windows DPAPI：`System.Security.Cryptography.ProtectedData` `10.0.13` |
 | 日志 | Serilog `4.3.0` + Serilog.Sinks.File `7.0.0`，按天滚动 |
 | OpenAPI | YAML：YamlDotNet `16.3.0`；JSON：`System.Text.Json` |
+| Postman / cURL / HAR / Insomnia / Hoppscotch | `System.Text.Json` 与内置解析器，无新增运行时依赖 |
+| 自测 | xUnit `2.9.3` + Microsoft.NET.Test.Sdk `17.14.1` |
 | Mock / MCP | 原生 `TcpListener` + 最小 HTTP/SSE 解析，无额外 Web 框架 |
 
 ## 快速开始
@@ -159,6 +174,31 @@ dotnet run --project src/PostSharp/PostSharp.csproj
 dotnet build PostSharp.slnx
 ```
 
+自测：
+
+```bash
+dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj
+```
+
+### Apifox 迁移
+
+Apifox 的原生格式暂未直接解析；当前推荐三条官方导出路径，PostSharp 已经有对应导入器：
+
+1. **推荐：Apifox → Postman**
+   - Apifox 打开「项目设置 → 导出数据」，选择 `Postman`，导出 Collection JSON。
+   - 在 PostSharp「导入 → Postman」中选择文件，或直接粘贴 JSON。
+   - 适合保留文件夹、请求顺序、认证和请求体；Apifox 的脚本/测试不会执行。
+2. **OpenAPI / Swagger**
+   - Apifox 可导出 OpenAPI 3.1 / 3.0 / Swagger 2.0 的 JSON 或 YAML。
+   - 在 PostSharp「导入 → OpenAPI」中导入文件或 URL。
+   - 适合标准接口文档；同名 method + path、脚本、部分安全方案可能被合并或省略。
+3. **浏览器 / Apifox → HAR**
+   - 在 Apifox 或浏览器开发者工具中导出 `.har`。
+   - 在 PostSharp「导入 → HAR」中导入；默认只保留 XHR / Fetch，可勾选包含静态资源。
+   - 适合快速抓取真实请求；响应、脚本和二进制文件内容不会导入。
+
+后续会增加 Apifox 原生格式适配评估，在此之前优先使用上述三条路径。导入对话框的来源卡片会直接显示这些路径和当前状态，避免只能靠大分类猜测。
+
 ### 第一次使用
 
 1. 启动后会生成示例工作区和本地环境：
@@ -171,7 +211,7 @@ dotnet build PostSharp.slnx
    - **自动化**：运行「内置 Mock 冒烟测试」。
    - **指南**：一分钟了解全部核心功能。
 4. 顶栏「设置」打开独立设置窗口：主题、日志目录、字体、超时、默认请求体等。
-5. 集合树顶部的「导入」可以从 OpenAPI JSON / YAML 或 URL 创建集合分组。
+5. 集合树顶部的「导入」打开导入/导出对话框，先选择来源卡片，再选择文件或粘贴内容；底部「批量导入文件…」可以一次选择多个文件并自动识别格式。
 6. 选中请求并打开「授权」标签页：默认「继承上级集合」，标题会写明继承自哪个集合；要单独配置就先选类型（Bearer / Basic / API Key / OAuth 2.0），再点「打开授权配置…」。选中集合时同一标签页改为编辑该集合的授权，同集合下未单独配置的请求共用这份授权；切到另一个集合会显示它自己的配置，不会沿用上一份。
 
 ![一分钟指南](docs/guide.png)
@@ -295,7 +335,7 @@ http://127.0.0.1:5199/mcp
 
 - **组装套件**：在自动化页勾选任意集合（含二级集合），把各集合中的请求组装成一个套件；步骤顺序沿用集合/请求排序，也可通过 MCP `create_suite` / `create_suite_from_collections` 创建。
 - **AI 自主编排**：MCP 可完整创建/更新/重排/删除套件；`get_suite` 返回稳定步骤 id，`update_suite` 可整体替换步骤，运行结果带 `stepId` 和解析后的 URL，便于 AI 对照规则迭代。
-- **工作流定位**：套件目前是线性请求工作流（顺序、延迟、断言、出参映射、失败停止）；条件分支、循环/轮询、并行和 DAG 依赖属于下一步增强。
+- **工作流定位**：套件目前是线性请求工作流（顺序、延迟、状态码/响应体/JSONPath/响应头断言、出参映射、失败重试、失败停止）；条件分支、并行和 DAG 依赖属于下一步增强。
 - **下一步延迟**：每个步骤可设置当前步骤结束到下一请求的延迟，默认 200ms；用于维护接口依赖的调用间隔。
 - **前序出参映射**：每个步骤可配置多条映射规则，从前序某个步骤的响应中提取字段，写入当前请求的：
   - 请求体（支持 `data.token` 这类嵌套路径）
@@ -329,7 +369,8 @@ http://127.0.0.1:5199/mcp
    - 常见通用字段 `thinking` / `reasoning` / `content` / `text` / `response`。
 3. 将 thinking 和 content 分别追加聚合，保留原始事件流。
 4. 自动切到「AI 聚合」标签，提供内容 / 思考过程 / 原始事件三视图和复制按钮。
-5. 审计和 MCP `send_request` 都返回聚合后的完整输出。
+5. 流式接收时每 150ms 增量刷新内容，取消后保留已接收部分并标记「已取消」。
+6. 审计和 MCP `send_request` 都返回聚合后的完整输出。
 
 > 当前版本在流结束后展示最终聚合结果；逐 token 实时渲染在路线图中。
 
@@ -342,7 +383,7 @@ http://127.0.0.1:5199/mcp
 - **请求体**
   - JSON/XML 格式化与 JSON 压缩。
   - 单行开关与单行预览。
-  - 表单上传：文件字段名、文件选择/路径、表单字段；自动构造 multipart。
+  - 表单上传：多文件列表、每个文件的字段名、拖拽添加、表单字段；自动构造 multipart。
 - **请求超时**：每个请求可单独设置超时秒数（0–3600，0 表示跟随设置中的全局超时）；请求级超时优先于全局值。
 - **cURL**：按当前环境解析变量，支持 `-H`、`--data-raw`、`-F`。
 - **响应**
@@ -431,12 +472,21 @@ src/PostSharp/
     HistoryEntry.cs       历史快照
     EditableRow.cs        自动补行的键值编辑集合
     OpenApiImport.cs      OpenAPI 导入后的分组/请求模型
+    TransferImport.cs     Postman / cURL / HAR 导入的分离式请求与导出文档模型
   Services/
     AppPaths.cs           本地数据与日志目录
     AppLog.cs             Serilog 文件日志与目录切换
     ThemeService.cs       主题偏好解析与 AtomUI 应用
     FontService.cs        字体导入、字体目录扫描与 Avalonia 私有字体集合
     OpenApiImportService.cs OpenAPI/Swagger JSON、YAML、URL 解析
+    PostmanImportService.cs Postman Collection v2.0/v2.1 解析、认证/请求体转换与提示
+    PostmanEnvironmentImportService.cs Postman Environment JSON 解析
+    PostmanExportService.cs 集合/工作区导出为 Postman Collection v2.1
+    HarImportService.cs   HAR 1.2 请求提取、静态资源过滤、请求体转换与提示
+    InsomniaImportService.cs Insomnia v4 workspace/request_group/request/environment 解析
+    HoppscotchImportService.cs Hoppscotch Collection JSON 解析
+    ImportFileDetector.cs 批量导入文件格式自动识别
+    CurlImportService.cs   bash 风格 cURL 参数解析与请求还原
     RequestComposer.cs    环境变量、URL、认证注入、cURL、multipart 组合
     AuthResolver.cs       请求 → 集合的授权继承解析与摘要
     AuthInjection.cs      一次请求解析出的认证材料
@@ -450,7 +500,7 @@ src/PostSharp/
     AuditStore.cs         审计持久化
     SettingsStore.cs      设置持久化
   ViewModels/
-    MainWindowViewModel.cs 状态、命令、审计、套件运行、OpenAPI 导入
+    MainWindowViewModel.cs 状态、命令、审计、套件运行、导入导出
     SettingsViewModel.cs  设置草稿、校验与保存
     AuthorizationViewModel.cs 授权窗口状态机（登录、回调、刷新、注销）
   Views/
@@ -464,8 +514,21 @@ src/PostSharp/
     ToolTipStyles.axaml   全局 Tooltip 浮层卡片样式
   App.cs                  全局样式与主窗口启动
   Program.cs               Arc / AtomUI 启动注册
+tests/
+  PostSharp.Tests/
+    PostmanImportServiceTests.cs
+    PostmanExportServiceTests.cs
+    PostmanEnvironmentImportServiceTests.cs
+    HarImportServiceTests.cs
+    InsomniaImportServiceTests.cs
+    HoppscotchImportServiceTests.cs
+    OpenApiImportServiceTests.cs
+    ImportFileDetectorTests.cs
+    CurlImportServiceTests.cs
 docs/
   screenshot.png
+  postman-import.png
+  har-import.png
   management-audit.png
   management-automation.png
   guide.png
@@ -507,8 +570,10 @@ docs/
 | 模拟错误 | `500` |
 | 用户详情 | `200 OK` |
 | 大响应 200KB | 主视图折叠，详情分页可读 |
-| SSE | 10 个事件，聚合 content 98 字、thinking 27 字；AI 标签自动打开 |
+| SSE | 10 个事件，聚合 content 98 字、thinking 27 字；AI 标签自动打开；接收中每 150ms 增量刷新，取消保留已收内容 |
+| SSE 取消 | 取消后状态显示「已取消 · 保留已接收内容」，已收 thinking/content 不清空 |
 | multipart 上传 | `200 OK`，receivedBytes 107111，fileName `screenshot.png` |
+| multipart 多文件 | 两个文件分别配置字段名并写入 multipart；cURL/Postman 导出均保留全部文件；拖拽添加与单文件移除验证通过 |
 | MCP `send_request` SSE | 返回 `isSse=true`、`sseEventCount=10`、完整 content/thinking |
 | MCP 审计 | `list_audit` 来源/客户端/工具正确；`get_audit` 含 AI 输出 |
 | MCP 套件 | create/run/delete 通过；断言 3/3 |
@@ -521,6 +586,8 @@ docs/
 | 同级排序 | 集合/请求上移、下移；顺序持久化并影响套件步骤优先级 |
 | 套件延迟 | 步骤延迟默认 200ms；300ms 测试中请求间隔符合预期 |
 | 出参映射 | 健康检查 `status` 映射到回显请求体 `fromHealth`，运行结果 2/2，回显体包含 `fromHealth: ok` |
+| 套件断言 | JSONPath `$.data.token`、`items[0].id` 与响应头 `X-Trace` 断言通过；失败路径显示实际值 |
+| 套件重试 | 失败步骤按配置重试，结果区显示尝试次数；重试次数上限 10 次 |
 | 二级集合 | 3 点菜单创建二级集合、父子缩进、ParentId 持久化验证 |
 | 拖拽 | 请求上下拖动调整同级顺序；集合拖入集合/拖到上边缘排序；自动阻止自身/后代循环 |
 | 收藏筛选 | 收藏请求/集合显示星标；「收藏」筛选独立展示；重启后保留 |
@@ -540,6 +607,29 @@ docs/
 | OpenAPI JSON | Petstore 样例：3 个请求 / 2 个分组；服务器地址、query/header、`$ref` schema 示例生成正确 |
 | OpenAPI YAML | Swagger 2 风格路径样例：2 个请求 / 1 个分组；路径级参数与 DELETE 正确解析 |
 | OpenAPI URL | 从本地 HTTP 服务下载 OpenAPI JSON 后导入，集合、分组、请求 URL 正确 |
+| Postman 导入 | 参考目录 9 个 Postman Collection v2.1 样例全部解析成功；飞友版收辅 Saas 53 个请求、38 个请求的吉祥航数据接口等数量与原文件一致，缺失 URL 与脚本/认证差异以提示列出 |
+| Apifox 迁移 | 导入对话框提示 Apifox「项目设置 → 导出数据 → Postman / OpenAPI」路径，并新增 HAR 迁移入口；Apifox 原生格式适配列入后续计划 |
+| Postman 嵌套/表单 | 嵌套文件夹、query/header、Bearer 认证、raw JSON、urlencoded、formdata 单文件、集合变量导入为环境均验证通过 |
+| Postman 导出 | 选中集合导出后再导入，集合名、子集合、请求、查询参数、禁用请求头、multipart 字段与文件路径保持 |
+| Postman 提示 | 导入完成后保留兼容性提示区；集合变量自动创建并激活独立环境，脚本/测试不会执行 |
+| Postman 环境 | Environment JSON 导入 `baseUrl`、`token` 和禁用变量；重复变量保留第一个并显示提示 |
+| HAR 导入 | Chrome/Postman/Apifox 风格 HAR：XHR/Fetch 过滤、query/header/cookie、JSON body、form-data 和重复请求去重验证通过 |
+| HAR 静态资源 | 默认跳过 image/script/stylesheet/font/document；勾选「包含静态资源」后全部导入 |
+| HAR 提示 | 静态资源、重复请求、Cookie、multipart 文件内容均进入兼容性提示，不静默丢弃 |
+| springdoc | OpenAPI 标签页「填入 springdoc / Knife4j 地址」可把服务地址补全为 `/v3/api-docs` |
+| cURL 导入 | Postman 风格多行 cURL、JSON 请求体、multipart、Basic Auth、`--max-time`、`-G` 查询参数解析通过 |
+| cURL 保存 | 当前请求可保存为 `.sh`；与「复制 cURL」共享同一份已解析环境变量结果 |
+| Insomnia 导入 | v4 JSON：workspace、request_group、request、environment、bearer 认证和 JSON body 解析通过 |
+| Hoppscotch 导入 | Collection JSON：文件夹、params、headers、JSON body、bearer 认证解析通过 |
+| OpenAPI 增强 | `x-apifox-folder` 分组、securitySchemes 占位 Authorization、多服务器选择与请求 URL 重基、外部 `$ref` 自动下载与失败提示通过 |
+| OpenAPI 外部引用 | 相对文档 URL 引用、下载失败降级、20 个/2 MB/10 秒限制通过 |
+| 导入来源卡片 | OpenAPI、Postman Collection、Postman Environment、cURL、HAR、Insomnia、Hoppscotch、YApi/ApiPost/Eolink、Apifox 九张卡片同屏展示，选中态清晰 |
+| 批量导入 | 文件选择器允许多选；自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL，逐文件成功/失败互不影响 |
+| 导入反馈 | 单文件成功 Toast；批量或有提示时显示「导入结果」绿色结果区和「兼容性提示」橙色提示区，含请求/分组/环境数量，默认折叠可展开 |
+| 粘贴区 | 长 JSON 在固定高度内自适应滚动；底部边框完整，不再被外层裁切 |
+| 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
+| 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：60 个测试全部通过 |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
@@ -591,12 +681,14 @@ master                 稳定可发布
         ├── feature/tree-polish
         ├── feature/audit-trash
         ├── feature/suite-priority
-        └── feat/settings-logging-openapi
+        ├── feat/settings-logging-openapi
+        └── feat/postman-curl-transfer
 ```
 
 - 功能从 `dev` 拉出 `feature/<short-name>`（本次需求使用 `feat/<short-name>`），合并回 `dev` 自测，再合并 `master`。
 - 当前 `master` / `dev` 已包含 AI 工作台、历史回收站、UI 图标/层级修复与集合树操作；对应 feature 分支保留提交。
 - `feat/settings-logging-openapi`：独立设置窗口、Serilog 日志、系统主题、树节点 Delete、确认弹窗快捷键、OpenAPI 导入。
+- `feat/postman-curl-transfer`：Postman Collection 导入/导出、cURL 导入/保存、HAR 1.2、Postman 环境文件、Insomnia V4、Hoppscotch、springdoc/Knife4j 预设、来源卡片、OpenAPI 增强与 xUnit 自测。
 
 ### 提交与代码
 
@@ -638,26 +730,44 @@ master                 稳定可发布
 
 ## 已知限制与路线图
 
-当前 MVP 限制：
+### 已完成（导入升级）
 
-- SSE 结果为流结束后聚合展示，逐 token 实时渲染未实现。
-- multipart 每个请求支持一个文件；多文件、文件拖拽、取消上传未实现。
-- 套件断言目前是状态码 + 响应体包含；字段提取已支持直接映射到下一步请求，JSONPath 断言、条件分支、重试、并行、定时任务在路线图。
+- OpenAPI / Swagger、Postman Collection、Postman Environment、cURL、HAR 1.2、Insomnia V4、Hoppscotch 导入。
+- Postman Collection 与 cURL 导出。
+- 导入来源小分类卡片：可收起，避免大分类隐藏入口。
+- 批量导入：多选文件、自动识别格式、逐文件成功/失败结果。
+- 导入反馈：请求/分组/环境统计；结果和兼容性提示默认折叠，可展开。
+- OpenAPI：`x-apifox-folder` 分组、securitySchemes 占位头、多服务器选择、外部 `$ref` 自动下载。
+- SSE：接收中 150ms 增量刷新，取消保留已接收内容。
+- 套件：JSONPath / 响应头断言、失败重试与尝试次数。
+- multipart：多文件、拖拽添加、单文件移除，导出保留全部文件。
+- 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
+- 自测：60 个 xUnit 测试。
+
+### 当前 MVP 限制
+
+- SSE 支持接收中增量刷新和取消保留内容；断线重连/从上次事件继续未实现。
+- multipart 支持多文件与拖拽；上传进度、取消上传和大文件分片未实现。
+- 套件断言目前支持状态码、响应体包含、JSONPath 和响应头；字段提取已支持直接映射到下一步请求，失败重试支持次数/间隔，条件分支、并行、定时任务在路线图。
 - cURL 为 bash 风格；PowerShell 专用格式未提供。
+- Postman 导入支持 Collection v2.0 / v2.1 与环境文件；脚本/测试、OAuth2/Digest/NTLM 认证、多文件字段不会完整转换，导入后会以提示列出。
+- HAR 导入不保存响应、脚本和二进制文件内容；静态资源默认过滤，multipart 文件字段需要重新选择文件。
+- Insomnia 目前支持 v4 JSON；Insomnia v5 YAML 需要先从 Insomnia 导出为 v4 JSON。
+- Hoppscotch 支持 Collection JSON；环境文件、multipart 文件内容和脚本不会导入。
 - 字体设置主要覆盖窗口正文和代码视图；Arc 组件的内部令牌字体不保证全部跟随。
-- OpenAPI 导入只取第一个 tag、第一个服务器和常见参数/请求体；外部 `$ref`、OAuth/安全方案、回调、Webhook、多服务器切换未解析。
-- Cookie 管理、代理、客户端证书、OAuth 2.0 之外的授权类型（隐式、客户端凭据、设备码）、Postman Collection/cURL 导入未实现。
+- OpenAPI 导入会优先使用 `x-apifox-folder`，支持 securitySchemes 占位认证头、服务器选择和外部 `$ref` 自动下载；回调/Webhook 仍未实现。
+- Cookie 管理、代理、客户端证书、OAuth 2.0 之外的授权类型（隐式、客户端凭据、设备码）、Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
 - 授权只支持请求与集合两级（含多级集合继承），没有工作区级或环境级默认授权；同一集合的授权由该集合对象持有，未单独覆盖的下级请求共用同一个令牌，刷新后同步生效。
 - 单点登录依赖系统 WebView2 运行时；复制请求会复制一份独立的授权与令牌，副本重新登录或刷新不会影响原请求；删除集合/请求时其授权配置一起移除。
 - MCP 仅本地回环，无 OAuth；SSE 通知未实现。
 
-计划优先级：
+### 后续路线图
 
-1. SSE 逐 token 实时渲染 + 中断/继续。
-2. 套件工作流增强：JSONPath/响应头断言、条件分支、重试/轮询、并行、定时触发、CLI 运行。
-3. 多文件上传、拖拽上传、进度与取消。
-4. OpenAPI 导入增强（多 tag、安全方案、外部 `$ref`、多服务器），Postman Collection/cURL 导入导出。
-5. MCP 事件通知与鉴权。
+1. 导入对话框 XAML 独立拆分，继续降低 `MainWindow.axaml` 体积。
+2. OpenAPI 更多安全方案与回调/Webhook 提示。
+3. Apifox 原生格式评估：先收集官方导出样本和 schema，不做无样本逆向。
+4. 套件工作流增强：条件分支、并行、定时触发、CLI 运行。
+5. 上传进度、取消上传与大文件分片；JMeter / WSDL / SOAP 等重格式按需求立项。
 
 ## 许可证
 
