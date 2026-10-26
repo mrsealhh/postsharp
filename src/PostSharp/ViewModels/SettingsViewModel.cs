@@ -324,7 +324,8 @@ public partial class SettingsViewModel : ObservableObject
         Draft.LogDirectory = directory;
         CopyToCurrent();
 
-        if (_store.Save(_current))
+        var saved = _store.Save(_current);
+        if (saved == SaveResult.Saved)
         {
             _fontDirectoriesPreviewActive = false;
             HasError = false;
@@ -340,8 +341,11 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         HasError = true;
-        StatusMessage = "设置已应用到当前会话，但写入配置文件失败，请检查目录权限。";
-        Log.Error("设置文件写入失败 {SettingsFile}", _store.FilePath);
+        StatusMessage =
+            saved == SaveResult.Blocked
+                ? "设置已应用到当前会话，但启动时 settings.json 无法读取，为保护原文件本次不会写入。请关闭占用该文件的程序后重启 PostSharp。"
+                : "设置已应用到当前会话，但写入配置文件失败，请检查数据目录是否可写、settings.json 是否被其他程序占用。";
+        Log.Error("设置文件写入失败 {SettingsFile} {SaveResult}", _store.FilePath, saved);
     }
 
     [RelayCommand]

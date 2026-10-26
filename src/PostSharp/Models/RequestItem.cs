@@ -39,6 +39,9 @@ public partial class RequestCollection : ObservableObject
 
     public ObservableCollection<RequestItem> Requests { get; } = new();
 
+    /// <summary>Requests in this collection and all of its sub-collections.</summary>
+    public int TotalRequestCount => Requests.Count + Children.Sum(child => child.TotalRequestCount);
+
     /// <summary>集合级授权；子集合与请求默认继承它。</summary>
     public RequestAuth Auth { get; } = new();
 }

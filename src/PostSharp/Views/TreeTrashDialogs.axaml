@@ -1,0 +1,162 @@
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+    xmlns:controls="using:PostSharp.Controls"
+    xmlns:models="using:PostSharp.Models"
+    xmlns:vm="using:PostSharp.ViewModels"
+    x:Class="PostSharp.Views.TreeTrashDialogs"
+    x:DataType="vm:TreeTrashViewModel"
+>
+    <Panel>
+        <arc:Dialog
+            IsOpen="{Binding IsOpen, Mode=TwoWay}"
+            Title="集合回收站"
+            Description="删除的集合和请求会先进入这里，包括 AI 通过 MCP 删除的；恢复后回到原位置，永久删除后无法恢复。最多保留最近 200 项，更早的会自动永久删除。"
+            Size="Large"
+        >
+            <Grid MinHeight="260">
+                <arc:ScrollArea MaxHeight="360">
+                    <ItemsControl ItemsSource="{Binding Items}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:TrashedNode">
+                                <Border
+                                    Background="{arc:ArcDesignTokenResource Surface}"
+                                    CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
+                                    Padding="8"
+                                    Margin="0,0,0,4"
+                                >
+                                    <Grid
+                                        ColumnDefinitions="56,*,84,170"
+                                        RowDefinitions="Auto,Auto"
+                                        ColumnSpacing="6"
+                                        RowSpacing="2"
+                                    >
+                                        <arc:Badge
+                                            Grid.RowSpan="2"
+                                            Content="{Binding BadgeLabel}"
+                                            Tone="{Binding BadgeTone}"
+                                            Size="Small"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Center"
+                                        />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Text="{Binding Name}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                            TextTrimming="CharacterEllipsis"
+                                            ToolTip.Tip="{Binding Name}"
+                                        />
+                                        <TextBlock
+                                            Grid.Column="2"
+                                            Text="{Binding DeletedText}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            ToolTip.Tip="{Binding DeletedTooltip}"
+                                        />
+                                        <TextBlock
+                                            Grid.Row="1"
+                                            Grid.Column="1"
+                                            Grid.ColumnSpan="2"
+                                            Text="{Binding Detail}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            TextTrimming="CharacterEllipsis"
+                                            ToolTip.Tip="{Binding Detail}"
+                                            Margin="0,0,8,0"
+                                        />
+                                        <StackPanel
+                                            Grid.RowSpan="2"
+                                            Grid.Column="3"
+                                            Orientation="Horizontal"
+                                            Spacing="4"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                        >
+                                            <arc:Button
+                                                Variant="Secondary"
+                                                Size="Small"
+                                                Command="{Binding RestoreCommand}"
+                                            >
+                                                <controls:IconLabel
+                                                    Icon="{x:Static arc:ArcIcons.RotateCcw}"
+                                                    Text="恢复"
+                                                    IconSize="13"
+                                                />
+                                            </arc:Button>
+                                            <arc:Button
+                                                Variant="Danger"
+                                                Size="Small"
+                                                Command="{Binding PurgeCommand}"
+                                            >
+                                                <controls:IconLabel
+                                                    Icon="{x:Static arc:ArcIcons.Trash2}"
+                                                    Text="永久删除"
+                                                    IconSize="13"
+                                                />
+                                            </arc:Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </arc:ScrollArea>
+                <arc:EmptyState
+                    IsVisible="{Binding !HasItems}"
+                    Title="集合回收站为空"
+                    Description="在集合树中删除集合或请求后，会先出现在这里。"
+                    Label="集合回收站"
+                />
+            </Grid>
+
+            <arc:Dialog.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <arc:Button
+                        Variant="Danger"
+                        IsEnabled="{Binding HasItems}"
+                        Command="{Binding RequestEmptyCommand}"
+                        ToolTip.Tip="回收站有内容时可清空；清空前会再次确认"
+                        ToolTip.ShowOnDisabled="True"
+                    >
+                        <controls:IconLabel
+                            Icon="{x:Static arc:ArcIcons.Trash2}"
+                            Text="清空回收站"
+                        />
+                    </arc:Button>
+                    <arc:Button Variant="Primary" Command="{Binding CloseCommand}">
+                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.X}" Text="关闭" />
+                    </arc:Button>
+                </StackPanel>
+            </arc:Dialog.Actions>
+        </arc:Dialog>
+
+        <arc:Dialog
+            IsOpen="{Binding IsPurgeConfirmOpen, Mode=TwoWay}"
+            Title="{Binding PurgeTitle}"
+            Description="{Binding PurgeDescription}"
+            Size="Small"
+        >
+            <TextBlock
+                Text="Ctrl+Enter 确认，Esc 取消"
+                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+            />
+            <arc:Dialog.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <arc:Button
+                        Content="取消"
+                        Variant="Secondary"
+                        Command="{Binding CancelPurgeCommand}"
+                    />
+                    <arc:Button Variant="Danger" Command="{Binding ConfirmPurgeCommand}">
+                        <controls:IconLabel Icon="{x:Static arc:ArcIcons.Trash2}" Text="永久删除" />
+                    </arc:Button>
+                </StackPanel>
+            </arc:Dialog.Actions>
+        </arc:Dialog>
+    </Panel>
+</UserControl>

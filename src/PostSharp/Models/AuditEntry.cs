@@ -135,15 +135,7 @@ public sealed class AuditEntry
         };
 
     [JsonIgnore]
-    public BadgeTone MethodTone =>
-        Method.ToUpperInvariant() switch
-        {
-            "GET" => BadgeTone.Info,
-            "POST" => BadgeTone.Success,
-            "PUT" or "PATCH" => BadgeTone.Warning,
-            "DELETE" => BadgeTone.Danger,
-            _ => BadgeTone.Neutral,
-        };
+    public BadgeTone MethodTone => MethodTones.Of(Method);
 
     [JsonIgnore]
     public BadgeTone StatusTone =>

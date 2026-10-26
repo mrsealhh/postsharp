@@ -13,6 +13,12 @@ public static class AppPaths
 
     public static string SettingsFile => Path.Combine(Root, "settings.json");
 
+    public static string WorkspaceFile => Path.Combine(Root, "workspace.json");
+
+    public static string AuditFile => Path.Combine(Root, "audit.json");
+
+    public static string AuditTrashFile => Path.Combine(Root, "audit-trash.json");
+
     /// <summary>内嵌 WebView2 的配置与缓存目录，放在 LocalAppData 以免污染程序目录。</summary>
     public static string WebViewDataDirectory { get; } =
         Path.Combine(

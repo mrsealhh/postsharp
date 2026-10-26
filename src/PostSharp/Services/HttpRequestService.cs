@@ -57,15 +57,19 @@ public sealed class HttpRequestService
 
     public bool AutoFormatResponse { get; set; } = true;
 
+    /// <param name="composed">The request to send.</param>
+    /// <param name="logUrl">The URL as it may appear in the log, with secret values masked.</param>
+    /// <param name="cancellationToken">Cancels the send.</param>
+    /// <param name="timeoutSeconds">Overrides the global timeout when above zero.</param>
     public async Task<HttpResult> SendAsync(
         ComposedRequest composed,
+        string logUrl,
         CancellationToken cancellationToken,
         int timeoutSeconds = 0,
         IProgress<SseProgress>? sseProgress = null
     )
     {
         var stopwatch = Stopwatch.StartNew();
-        var logUrl = RequestComposer.MaskAuthorization(composed).Url;
         var effectiveTimeoutSeconds =
             timeoutSeconds > 0
                 ? Math.Clamp(timeoutSeconds, 1, 3600)

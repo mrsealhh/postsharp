@@ -17,6 +17,19 @@ public partial class KeyValueRow : ObservableObject
     [ObservableProperty]
     private string _value = string.Empty;
 
+    /// <summary>
+    /// Environment variables only: the value is hidden in the editor and masked in audit records and in what MCP
+    /// returns (in server responses only values of 8 or more characters).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SecretTip))]
+    private bool _isSecret;
+
+    public string SecretTip =>
+        IsSecret
+            ? "机密变量：值已隐藏，审计和 MCP 中显示为 ******（服务器返回的内容里只替换 8 个字符以上的值）。点击取消机密"
+            : "设为机密：隐藏值，审计和 MCP 中显示为 ******（服务器返回的内容里只替换 8 个字符以上的值）";
+
     /// <summary>Set by the owning collection so a row can remove itself from a data template.</summary>
     public IRelayCommand? RemoveCommand { get; set; }
 }
@@ -37,7 +50,7 @@ public sealed class EditableRowCollection : ObservableCollection<KeyValueRow>
     public IEnumerable<KeyValueRow> ActiveRows =>
         this.Where(row => row.IsEnabled && !string.IsNullOrWhiteSpace(row.Key));
 
-    public void AddRow(string key, string value, bool isEnabled = true)
+    public void AddRow(string key, string value, bool isEnabled = true, bool isSecret = false)
     {
         _suspend = true;
         var row = new KeyValueRow
@@ -45,6 +58,7 @@ public sealed class EditableRowCollection : ObservableCollection<KeyValueRow>
             Key = key,
             Value = value,
             IsEnabled = isEnabled,
+            IsSecret = isSecret,
         };
         if (Count > 0 && IsBlank(this[^1]))
         {
