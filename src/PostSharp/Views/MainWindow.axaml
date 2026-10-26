@@ -1598,11 +1598,6 @@
                                         >
                                             <WrapPanel ItemSpacing="10" LineSpacing="6">
                                                 <arc:Switch
-                                                    Content="单行"
-                                                    IsChecked="{Binding IsResponseSingleLine, Mode=TwoWay}"
-                                                    AutomationProperties.Name="响应单行"
-                                                />
-                                                <arc:Switch
                                                     Content="JSON 视图"
                                                     IsChecked="{Binding IsResponseJsonView, Mode=TwoWay}"
                                                     IsVisible="{Binding IsJsonResponse}"
@@ -1673,11 +1668,12 @@
                                                     SearchPlaceholder="搜索键和值"
                                                     AutomationProperties.Name="JSON 响应"
                                                 />
-                                                <arc:ScrollArea
+                                                <ScrollViewer
                                                     IsVisible="{Binding ShowRawResponse}"
-                                                    OverlayScrollbarMode="Always"
-                                                    HorizontalScrollBarVisibility="Auto"
-                                                    VerticalScrollBarVisibility="Auto"
+                                                    HorizontalScrollBarVisibility="Visible"
+                                                    VerticalScrollBarVisibility="Visible"
+                                                    HorizontalContentAlignment="Left"
+                                                    VerticalContentAlignment="Top"
                                                 >
                                                     <SelectableTextBlock
                                                         Text="{Binding ResponseBody}"
@@ -1686,21 +1682,7 @@
                                                         Foreground="{arc:ArcDesignTokenResource Foreground}"
                                                         TextWrapping="NoWrap"
                                                     />
-                                                </arc:ScrollArea>
-                                                <arc:ScrollArea
-                                                    IsVisible="{Binding ShowResponseSingleLine}"
-                                                    OverlayScrollbarMode="Always"
-                                                    HorizontalScrollBarVisibility="Auto"
-                                                    VerticalScrollBarVisibility="Auto"
-                                                >
-                                                    <SelectableTextBlock
-                                                        Text="{Binding ResponseSingleLineText}"
-                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
-                                                        FontSize="{DynamicResource PostSharpCodeFontSize}"
-                                                        Foreground="{arc:ArcDesignTokenResource Foreground}"
-                                                        TextWrapping="NoWrap"
-                                                    />
-                                                </arc:ScrollArea>
+                                                </ScrollViewer>
                                             </Grid>
                                         </Grid>
                                     </arc:TabItem>
