@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -40,9 +41,32 @@ public sealed class McpServer
             return null;
         }
 
+        headers.TryGetValue("Origin", out var origin);
+        headers.TryGetValue("Host", out var host);
+        if (!IsLoopbackHost(host) || !IsAllowedOrigin(origin))
+        {
+            // A web page in the person's browser can reach 127.0.0.1 too (directly or through DNS rebinding);
+            // only local tools and local pages may drive the workspace.
+            Log.Warning("拒绝非本机来源的 MCP 请求 {Origin} {Host}", origin, host);
+            return new RawHttpResponse(
+                403,
+                "Forbidden",
+                "application/json",
+                JsonSerializer.Serialize(
+                    Error(
+                        null,
+                        -32001,
+                        "拒绝访问：MCP 只接受本机客户端，网页不能调用。请在 Cursor、Claude Code 等客户端中配置该地址。"
+                    ),
+                    JsonOptions
+                )
+            );
+        }
+
+        var cors = CorsHeaders(origin);
         if (method == "OPTIONS")
         {
-            return new RawHttpResponse(204, "No Content", "application/json", string.Empty);
+            return new RawHttpResponse(204, "No Content", "application/json", string.Empty, cors);
         }
 
         if (method != "POST")
@@ -63,7 +87,10 @@ public sealed class McpServer
                     },
                     JsonOptions
                 ),
-                new Dictionary<string, string> { ["Allow"] = "POST, OPTIONS" }
+                new Dictionary<string, string>(cors, StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Allow"] = "POST, OPTIONS",
+                }
             );
         }
 
@@ -79,7 +106,8 @@ public sealed class McpServer
                 200,
                 "OK",
                 "application/json",
-                JsonSerializer.Serialize(Error(null, -32700, "JSON 解析失败。"), JsonOptions)
+                JsonSerializer.Serialize(Error(null, -32700, "JSON 解析失败。"), JsonOptions),
+                cors
             );
         }
 
@@ -106,7 +134,7 @@ public sealed class McpServer
 
         if (response is null)
         {
-            return new RawHttpResponse(202, "Accepted", "application/json", string.Empty);
+            return new RawHttpResponse(202, "Accepted", "application/json", string.Empty, cors);
         }
 
         return new RawHttpResponse(
@@ -114,12 +142,62 @@ public sealed class McpServer
             "OK",
             "application/json",
             response.ToJsonString(JsonOptions),
-            new Dictionary<string, string>
+            new Dictionary<string, string>(cors, StringComparer.OrdinalIgnoreCase)
             {
                 ["Mcp-Session-Id"] = "postsharp-local",
                 ["Cache-Control"] = "no-store",
             }
         );
+    }
+
+    /// <summary>HTTP/1.0 tools may omit Host; browsers always send it, and DNS rebinding shows up as a foreign name.</summary>
+    private static bool IsLoopbackHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return true;
+        }
+
+        return Uri.TryCreate("http://" + host.Trim(), UriKind.Absolute, out var uri)
+            && IsLoopbackName(uri.Host);
+    }
+
+    /// <summary>Desktop MCP clients send no Origin; a browser always does, and only local pages are allowed.</summary>
+    private static bool IsAllowedOrigin(string? origin)
+    {
+        if (string.IsNullOrEmpty(origin))
+        {
+            return true;
+        }
+
+        return Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && IsLoopbackName(uri.Host);
+    }
+
+    private static bool IsLoopbackName(string host) =>
+        host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+        || (
+            IPAddress.TryParse(host.Trim('[', ']'), out var address)
+            && IPAddress.IsLoopback(address)
+        );
+
+    /// <summary>CORS answers only the local page that asked; there is no wildcard.</summary>
+    private static Dictionary<string, string> CorsHeaders(string? origin)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(origin))
+        {
+            return headers;
+        }
+
+        headers["Access-Control-Allow-Origin"] = origin;
+        headers["Access-Control-Allow-Methods"] = "POST, OPTIONS";
+        headers["Access-Control-Allow-Headers"] =
+            "Content-Type, Accept, Authorization, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID";
+        headers["Access-Control-Expose-Headers"] = "Mcp-Session-Id";
+        headers["Vary"] = "Origin";
+        return headers;
     }
 
     private async Task<JsonNode?> HandleMessageAsync(
@@ -349,8 +427,9 @@ public sealed class McpServer
                     .SetVariableAsync(
                         OptionalGuid(arguments, "environmentId"),
                         RequireString(arguments, "key"),
-                        OptionalString(arguments, "value") ?? string.Empty,
-                        OptionalBool(arguments, "enabled")
+                        OptionalString(arguments, "value"),
+                        OptionalBool(arguments, "enabled"),
+                        OptionalBool(arguments, "secret")
                     )
                     .ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"未知工具：{name}"),
@@ -401,8 +480,8 @@ public sealed class McpServer
             result.SseEventCount,
             sseThinking = result.SseThinking,
             sseContent = result.SseContent,
-            body = Truncate(result.Body, 30000),
-            bodyTruncated = result.Body.Length > 30000,
+            body = Truncate(result.Body, McpSendResult.BodyLimit),
+            bodyTruncated = result.BodyTruncated,
             headers = result.Headers,
         };
     }
@@ -577,7 +656,7 @@ public sealed class McpServer
             ),
             Tool(
                 "delete_collection",
-                "删除集合及其所有子集合和请求，不可恢复",
+                "删除集合及其所有子集合和请求；内容移入集合回收站，用户可在界面中恢复",
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("集合 id") }, "id")
             ),
             Tool(
@@ -673,7 +752,7 @@ public sealed class McpServer
             ),
             Tool(
                 "delete_request",
-                "删除请求",
+                "删除请求；请求移入集合回收站，用户可在界面中恢复",
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("请求 id") }, "id")
             ),
             Tool(
@@ -725,7 +804,11 @@ public sealed class McpServer
                     }
                 )
             ),
-            Tool("list_environments", "列出环境与变量", ObjectSchema(new JsonObject())),
+            Tool(
+                "list_environments",
+                "列出环境与变量；机密变量（secret=true）的值显示为 ******",
+                ObjectSchema(new JsonObject())
+            ),
             Tool(
                 "set_variable",
                 "新增或更新环境变量",
@@ -734,19 +817,22 @@ public sealed class McpServer
                     {
                         ["environmentId"] = StringSchema("环境 id，省略时使用当前环境"),
                         ["key"] = StringSchema("变量名"),
-                        ["value"] = StringSchema("变量值"),
+                        ["value"] = StringSchema("变量值；更新已有变量时省略则保持原值"),
                         ["enabled"] = new JsonObject
                         {
                             ["type"] = "boolean",
                             ["description"] = "是否启用，默认 true",
                         },
+                        ["secret"] = BooleanSchema(
+                            "设为 true 把变量标记为机密，值在 list_environments、get_curl、send_request 和审计中显示为 ******；省略则不改。机密只能在界面中取消"
+                        ),
                     },
                     "key"
                 )
             ),
             Tool(
                 "get_curl",
-                "生成当前请求可直接执行的 cURL（环境变量已解析）",
+                "生成当前请求可直接执行的 cURL（环境变量已解析；机密变量的值以 ****** 代替）",
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("请求 id") }, "id")
             ),
             Tool(

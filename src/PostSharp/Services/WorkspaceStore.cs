@@ -17,48 +17,19 @@ public sealed class WorkspaceStore
 
     public WorkspaceStore()
     {
-        var root = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "PostSharp"
+        AppPaths.EnsureRoot();
+        FilePath = AppPaths.WorkspaceFile;
+    }
+
+    public DataFileLoad<WorkspaceDto> Load() =>
+        DataFile.Load(
+            FilePath,
+            text => JsonSerializer.Deserialize<WorkspaceDto>(text, JsonOptions)
         );
-        Directory.CreateDirectory(root);
-        FilePath = Path.Combine(root, "workspace.json");
-    }
 
-    public WorkspaceDto? Load()
-    {
-        try
-        {
-            if (!File.Exists(FilePath))
-            {
-                return null;
-            }
-
-            return JsonSerializer.Deserialize<WorkspaceDto>(
-                File.ReadAllText(FilePath),
-                JsonOptions
-            );
-        }
-        catch (Exception exception)
-        {
-            Log.Warning(exception, "读取工作区失败 {WorkspaceFile}", FilePath);
-            return null;
-        }
-    }
-
-    public void Save(WorkspaceDto workspace)
-    {
-        try
-        {
-            var json = JsonSerializer.Serialize(workspace, JsonOptions);
-            File.WriteAllText(FilePath, json);
-        }
-        catch (Exception exception)
-        {
-            // A failed autosave must never break the request the person is sending.
-            Log.Error(exception, "保存工作区失败 {WorkspaceFile}", FilePath);
-        }
-    }
+    /// <summary>Never throws: a failed autosave must not break the request being sent.</summary>
+    public SaveResult Save(WorkspaceDto workspace) =>
+        DataFile.Save(FilePath, () => JsonSerializer.Serialize(workspace, JsonOptions));
 
     public static WorkspaceDto Capture(
         IEnumerable<RequestCollection> collections,
@@ -66,21 +37,13 @@ public sealed class WorkspaceStore
         IEnumerable<HistoryEntry> history,
         IEnumerable<HistoryEntry> recycledHistory,
         IEnumerable<TestSuite> suites,
+        IEnumerable<TrashedNode> trashedNodes,
         Guid? activeEnvironmentId
     )
     {
         return new WorkspaceDto
         {
-            Collections = collections
-                .Select(collection => new CollectionDto
-                {
-                    Id = collection.Id,
-                    Name = collection.Name,
-                    IsFavorite = collection.IsFavorite,
-                    ParentId = collection.Parent?.Id,
-                    Requests = collection.Requests.Select(ToDto).ToList(),
-                })
-                .ToList(),
+            Collections = collections.Select(ToCollectionDto).ToList(),
             Environments = environments
                 .Select(environment => new EnvironmentDto
                 {
@@ -133,8 +96,122 @@ public sealed class WorkspaceStore
                         .ToList(),
                 })
                 .ToList(),
+            TrashedNodes = trashedNodes.Select(ToTrashedNodeDto).ToList(),
             ActiveEnvironmentId = activeEnvironmentId,
         };
+    }
+
+    /// <summary>Builds a collection and its requests; parent links are set by the caller.</summary>
+    public static RequestCollection ToCollectionModel(CollectionDto dto)
+    {
+        var collection = new RequestCollection
+        {
+            Id = dto.Id == Guid.Empty ? Guid.NewGuid() : dto.Id,
+            Name = dto.Name,
+            IsFavorite = dto.IsFavorite,
+        };
+
+        foreach (var requestDto in dto.Requests)
+        {
+            var request = ToModel(requestDto);
+            request.Owner = collection;
+            collection.Requests.Add(request);
+        }
+
+        return collection;
+    }
+
+    /// <summary>Rebuilds a recycle bin entry; returns null when the stored entry holds nothing to restore.</summary>
+    public static TrashedNode? ToTrashedNode(TrashedNodeDto dto)
+    {
+        RequestCollection? root = null;
+        if (dto.Collections.Count > 0)
+        {
+            var built = new List<RequestCollection>(dto.Collections.Count);
+            var byId = new Dictionary<Guid, RequestCollection>();
+            foreach (var collectionDto in dto.Collections)
+            {
+                var collection = ToCollectionModel(collectionDto);
+
+                // Collections are stored root first in tree order, so a parent is always built before its children.
+                if (
+                    built.Count > 0
+                    && collectionDto.ParentId is { } parentId
+                    && byId.TryGetValue(parentId, out var parent)
+                )
+                {
+                    collection.Parent = parent;
+                    parent.Children.Add(collection);
+                }
+
+                byId.TryAdd(collection.Id, collection);
+                built.Add(collection);
+            }
+
+            root = built[0];
+        }
+
+        var request = dto.Request is null ? null : ToModel(dto.Request);
+        if (root is null && request is null)
+        {
+            return null;
+        }
+
+        return new TrashedNode
+        {
+            Id = dto.Id == Guid.Empty ? Guid.NewGuid() : dto.Id,
+            DeletedAt = dto.DeletedAt,
+            Source = string.IsNullOrWhiteSpace(dto.Source) ? "UI" : dto.Source,
+            Collection = root,
+            Request = root is null ? request : null,
+            OriginalParentId = dto.OriginalParentId,
+            OriginalLocation = string.IsNullOrWhiteSpace(dto.OriginalLocation)
+                ? "根目录"
+                : dto.OriginalLocation,
+            OriginalPosition = dto.OriginalPosition,
+        };
+    }
+
+    private static CollectionDto ToCollectionDto(RequestCollection collection)
+    {
+        return new CollectionDto
+        {
+            Id = collection.Id,
+            Name = collection.Name,
+            IsFavorite = collection.IsFavorite,
+            ParentId = collection.Parent?.Id,
+            Requests = collection.Requests.Select(ToDto).ToList(),
+        };
+    }
+
+    private static TrashedNodeDto ToTrashedNodeDto(TrashedNode node)
+    {
+        var collections = new List<CollectionDto>();
+        if (node.Collection is { } root)
+        {
+            AddSubtree(root, collections);
+        }
+
+        return new TrashedNodeDto
+        {
+            Id = node.Id,
+            DeletedAt = node.DeletedAt,
+            Source = node.Source,
+            OriginalParentId = node.OriginalParentId,
+            OriginalLocation = node.OriginalLocation,
+            OriginalPosition = node.OriginalPosition,
+            Collections = collections,
+            Request = node.Request is null ? null : ToDto(node.Request),
+        };
+    }
+
+    private static void AddSubtree(RequestCollection collection, List<CollectionDto> target)
+    {
+        target.Add(ToCollectionDto(collection));
+        foreach (var child in collection.Children)
+        {
+            AddSubtree(child, target);
+        }
     }
 
     public static RequestItem ToModel(RequestDto dto)
@@ -247,6 +324,7 @@ public sealed class WorkspaceStore
                 Key = row.Key,
                 Value = row.Value,
                 IsEnabled = row.IsEnabled,
+                IsSecret = row.IsSecret,
             })
             .ToList();
     }
@@ -255,7 +333,7 @@ public sealed class WorkspaceStore
     {
         foreach (var row in rows)
         {
-            target.AddRow(row.Key, row.Value, row.IsEnabled);
+            target.AddRow(row.Key, row.Value, row.IsEnabled, row.IsSecret);
         }
 
         target.EnsureTrailingRow();
@@ -274,6 +352,8 @@ public sealed class WorkspaceDto
 
     public List<SuiteDto> Suites { get; set; } = new();
 
+    public List<TrashedNodeDto> TrashedNodes { get; set; } = new();
+
     public Guid? ActiveEnvironmentId { get; set; }
 }
 
@@ -288,6 +368,26 @@ public sealed class CollectionDto
     public Guid? ParentId { get; set; }
 
     public List<RequestDto> Requests { get; set; } = new();
+}
+
+public sealed class TrashedNodeDto
+{
+    public Guid Id { get; set; }
+
+    public DateTimeOffset DeletedAt { get; set; }
+
+    public string Source { get; set; } = "UI";
+
+    public Guid? OriginalParentId { get; set; }
+
+    public string OriginalLocation { get; set; } = "根目录";
+
+    public int OriginalPosition { get; set; }
+
+    /// <summary>A deleted collection first, then its sub-collections in tree order; empty for a request.</summary>
+    public List<CollectionDto> Collections { get; set; } = new();
+
+    public RequestDto? Request { get; set; }
 }
 
 public sealed class RequestDto
@@ -371,6 +471,8 @@ public sealed class RowDto
     public string Value { get; set; } = string.Empty;
 
     public bool IsEnabled { get; set; } = true;
+
+    public bool IsSecret { get; set; }
 }
 
 public sealed class SuiteDto

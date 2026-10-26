@@ -38,6 +38,9 @@ public partial class RequestCollection : ObservableObject
     public ObservableCollection<RequestCollection> Children { get; } = new();
 
     public ObservableCollection<RequestItem> Requests { get; } = new();
+
+    /// <summary>Requests in this collection and all of its sub-collections.</summary>
+    public int TotalRequestCount => Requests.Count + Children.Sum(child => child.TotalRequestCount);
 }
 
 public partial class RequestItem : ObservableObject

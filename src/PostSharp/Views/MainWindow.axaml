@@ -5,6 +5,7 @@
     xmlns:controls="using:PostSharp.Controls"
     xmlns:models="using:PostSharp.Models"
     xmlns:vm="using:PostSharp.ViewModels"
+    xmlns:views="using:PostSharp.Views"
     x:Class="PostSharp.Views.MainWindow"
     x:DataType="vm:MainWindowViewModel"
     Title="PostSharp · 轻量接口调试"
@@ -226,7 +227,7 @@
     <Panel x:Name="RootPanel">
         <VisualLayerManager EnableOverlayLayer="True">
             <Panel>
-                <Grid RowDefinitions="Auto,*">
+                <Grid RowDefinitions="Auto,Auto,*">
                     <!-- Product bar -->
                     <Border
                         x:Name="TitleBar"
@@ -388,7 +389,9 @@
                         </Grid>
                     </Border>
 
-                    <Grid Grid.Row="1" x:Name="WorkspaceLayout">
+                    <views:DataNoticeBar Grid.Row="1" DataContext="{Binding DataNotice}" />
+
+                    <Grid Grid.Row="2" x:Name="WorkspaceLayout">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="320" MinWidth="240" MaxWidth="520" />
                             <ColumnDefinition Width="8" />
@@ -457,7 +460,7 @@
 
                                 <Grid
                                     Grid.Row="1"
-                                    ColumnDefinitions="*,Auto"
+                                    ColumnDefinitions="*,Auto,Auto"
                                     ColumnSpacing="6"
                                     Margin="0,8,0,0"
                                 >
@@ -476,6 +479,23 @@
                                         <arc:SegmentedOption Value="全部" Label="全部" />
                                         <arc:SegmentedOption Value="收藏" Label="收藏" />
                                     </arc:SegmentedControl>
+                                    <arc:Button
+                                        Grid.Column="2"
+                                        Variant="Ghost"
+                                        Size="Small"
+                                        Width="30"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        Command="{Binding TreeTrash.OpenCommand}"
+                                        ToolTip.Tip="{Binding TreeTrash.ButtonTip}"
+                                        AutomationProperties.Name="集合回收站"
+                                    >
+                                        <arc:ArcGlyph
+                                            Data="{x:Static arc:ArcIcons.Archive}"
+                                            Size="14"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        />
+                                    </arc:Button>
                                 </Grid>
 
                                 <Grid Grid.Row="2" Margin="0,8,0,8">
@@ -2679,18 +2699,37 @@
                                                 </Border>
                                             </Grid>
 
-                                            <arc:Button
+                                            <StackPanel
                                                 Grid.Row="3"
-                                                Variant="Primary"
+                                                Orientation="Horizontal"
+                                                Spacing="8"
                                                 HorizontalAlignment="Right"
-                                                IsLoading="{Binding IsRunningSuite}"
-                                                Command="{Binding RunSelectedSuiteCommand}"
                                             >
-                                                <controls:IconLabel
-                                                    Icon="{x:Static arc:ArcIcons.Play}"
-                                                    Text="运行套件"
-                                                />
-                                            </arc:Button>
+                                                <arc:Button
+                                                    Variant="Secondary"
+                                                    IsEnabled="{Binding IsRunningSuite}"
+                                                    Command="{Binding CancelSuiteRunCommand}"
+                                                    ToolTip.Tip="套件运行中可取消：正在发送的请求会被中止，后续步骤不再执行"
+                                                    ToolTip.ShowOnDisabled="True"
+                                                    AutomationProperties.Name="取消运行套件"
+                                                >
+                                                    <controls:IconLabel
+                                                        Icon="{x:Static arc:ArcIcons.Square}"
+                                                        Text="取消运行"
+                                                    />
+                                                </arc:Button>
+                                                <arc:Button
+                                                    Variant="Primary"
+                                                    MinWidth="112"
+                                                    IsLoading="{Binding IsRunningSuite}"
+                                                    Command="{Binding RunSelectedSuiteCommand}"
+                                                >
+                                                    <controls:IconLabel
+                                                        Icon="{x:Static arc:ArcIcons.Play}"
+                                                        Text="{Binding RunSuiteButtonText}"
+                                                    />
+                                                </arc:Button>
+                                            </StackPanel>
                                         </Grid>
                                     </Grid>
 
@@ -3871,15 +3910,19 @@
                         />
 
                         <arc:ScrollArea Grid.Row="3" Height="220">
-                            <ItemsControl
-                                ItemsSource="{Binding ActiveEnvironment.Variables}"
-                                ItemTemplate="{StaticResource KeyValueRowTemplate}"
-                            />
+                            <ItemsControl ItemsSource="{Binding ActiveEnvironment.Variables}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:KeyValueRow">
+                                        <views:EnvironmentVariableRow />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </arc:ScrollArea>
 
                         <TextBlock
                             Grid.Row="4"
-                            Text="填写最后一行会自动新增一行；未启用的变量不会参与替换。"
+                            Text="填写最后一行会自动新增一行；未启用的变量不会参与替换。点锁形图标设为机密变量：值会隐藏，审计和 MCP 中显示为 ******；服务器返回的内容里只替换 8 个字符以上的值。"
+                            TextWrapping="Wrap"
                             FontSize="{arc:ArcDesignTokenResource TypeXS}"
                             Foreground="{arc:ArcDesignTokenResource TextMuted}"
                         />
@@ -3957,11 +4000,12 @@
                                 Variant="Secondary"
                                 Command="{Binding CancelDeleteCommand}"
                             />
-                            <arc:Button
-                                Content="删除"
-                                Variant="Danger"
-                                Command="{Binding ConfirmDeleteCommand}"
-                            />
+                            <arc:Button Variant="Danger" Command="{Binding ConfirmDeleteCommand}">
+                                <controls:IconLabel
+                                    Icon="{x:Static arc:ArcIcons.Archive}"
+                                    Text="移入回收站"
+                                />
+                            </arc:Button>
                         </StackPanel>
                     </arc:Dialog.Actions>
                 </arc:Dialog>
@@ -4139,6 +4183,8 @@
                         </StackPanel>
                     </arc:Dialog.Actions>
                 </arc:Dialog>
+
+                <views:TreeTrashDialogs DataContext="{Binding TreeTrash}" />
 
                 <arc:Dialog
                     IsOpen="{Binding IsHistoryPurgeConfirmOpen, Mode=TwoWay}"

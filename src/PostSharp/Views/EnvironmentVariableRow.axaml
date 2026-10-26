@@ -1,0 +1,74 @@
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+    xmlns:models="using:PostSharp.Models"
+    x:Class="PostSharp.Views.EnvironmentVariableRow"
+    x:DataType="models:KeyValueRow"
+>
+    <Grid ColumnDefinitions="44,*,*,34,34" Margin="0,0,0,6">
+        <arc:Checkbox
+            Grid.Column="0"
+            IsChecked="{Binding IsEnabled}"
+            VerticalAlignment="Center"
+            HorizontalAlignment="Left"
+            Margin="0,-2,0,2"
+            AutomationProperties.Name="启用该行"
+        />
+        <arc:Input
+            Grid.Column="1"
+            Text="{Binding Key}"
+            Placeholder="userId"
+            IsLabelVisible="False"
+            Size="Small"
+            Margin="0,0,8,0"
+            AutomationProperties.Name="变量名"
+        />
+        <arc:Input
+            Grid.Column="2"
+            Text="{Binding Value}"
+            Placeholder="10086"
+            PasswordChar="•"
+            RevealPassword="{Binding !IsSecret}"
+            IsLabelVisible="False"
+            Size="Small"
+            Margin="0,0,8,0"
+            AutomationProperties.Name="变量值"
+        />
+        <arc:Button
+            Grid.Column="3"
+            Variant="Ghost"
+            Size="Small"
+            Padding="0"
+            Width="34"
+            Click="OnToggleSecretClick"
+            ToolTip.Tip="{Binding SecretTip}"
+            AutomationProperties.Name="切换机密变量"
+        >
+            <Panel VerticalAlignment="Center">
+                <arc:ArcGlyph
+                    Data="{x:Static arc:ArcIcons.Lock}"
+                    Size="14"
+                    Foreground="{arc:ArcDesignTokenResource Warning}"
+                    IsVisible="{Binding IsSecret}"
+                />
+                <arc:ArcGlyph
+                    Data="{x:Static arc:ArcIcons.LockOpen}"
+                    Size="14"
+                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                    IsVisible="{Binding !IsSecret}"
+                />
+            </Panel>
+        </arc:Button>
+        <arc:Button
+            Grid.Column="4"
+            Content="×"
+            Variant="Ghost"
+            Size="Small"
+            Padding="0"
+            Width="34"
+            Command="{Binding RemoveCommand}"
+            AutomationProperties.Name="删除该行"
+        />
+    </Grid>
+</UserControl>

@@ -49,15 +49,7 @@ public sealed class TestStep
 
     public string? BodyContains { get; set; }
 
-    public BadgeTone MethodTone =>
-        Method.ToUpperInvariant() switch
-        {
-            "GET" => BadgeTone.Info,
-            "POST" => BadgeTone.Success,
-            "PUT" or "PATCH" => BadgeTone.Warning,
-            "DELETE" => BadgeTone.Danger,
-            _ => BadgeTone.Neutral,
-        };
+    public BadgeTone MethodTone => MethodTones.Of(Method);
 
     public string ExpectationText =>
         ExpectedStatus is null
@@ -177,7 +169,19 @@ public sealed class TestRunResult
 
     public bool Stopped { get; set; }
 
+    /// <summary>The run was cancelled before every step finished.</summary>
+    public bool Cancelled { get; set; }
+
+    /// <summary>Steps that never ran because the run was stopped or cancelled.</summary>
+    public int NotRun { get; set; }
+
     public List<TestStepResult> Steps { get; set; } = new();
 
-    public string Summary => $"{Passed}/{Total} 通过 · {Timestamp.LocalDateTime:HH:mm:ss}";
+    /// <summary>Pass count, plus how many steps never ran.</summary>
+    public string Outcome =>
+        $"{Passed}/{Total} 通过" + (NotRun > 0 ? $" · {NotRun} 步未运行" : string.Empty);
+
+    public string Summary =>
+        (Cancelled ? "已取消 · " : string.Empty)
+        + $"{Outcome} · {Timestamp.LocalDateTime:HH:mm:ss}";
 }
