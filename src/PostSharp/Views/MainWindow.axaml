@@ -3802,7 +3802,7 @@
 
                         <TextBlock
                             Grid.Row="4"
-                            Text="填写最后一行会自动新增一行；未启用的变量不会参与替换。点锁形图标设为机密变量：值会隐藏，审计和 MCP 中显示为 ******。"
+                            Text="填写最后一行会自动新增一行；未启用的变量不会参与替换。点锁形图标设为机密变量：值会隐藏，审计和 MCP 中显示为 ******；服务器返回的内容里只替换 8 个字符以上的值。"
                             TextWrapping="Wrap"
                             FontSize="{arc:ArcDesignTokenResource TypeXS}"
                             Foreground="{arc:ArcDesignTokenResource TextMuted}"

@@ -72,8 +72,10 @@ public partial class DataNoticeViewModel : ObservableObject
     /// <summary>Adds a warning that is not about reading a file, keeping a more serious tone if one is shown.</summary>
     public void Warn(string text)
     {
+        // A repeat is not listed twice, but the banner reopens so the failure is seen again.
         if (_messages.Contains(text))
         {
+            IsOpen = true;
             return;
         }
 

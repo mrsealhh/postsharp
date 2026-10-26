@@ -49,28 +49,14 @@ public static partial class SecretMasker
     /// Every secret value across the environments in the forms it can take in text (raw, URL-encoded, JSON-escaped,
     /// shell-quoted), longest first so overlapping values mask fully.
     /// </summary>
-    public static IReadOnlyList<string> CollectSecrets(IEnumerable<EnvironmentModel> environments)
-    {
-        return environments
-            .SelectMany(environment => environment.Variables)
-            .Where(row =>
-                row.IsSecret
-                && !string.IsNullOrWhiteSpace(row.Key)
-                && row.Value.Length >= MinimumSecretLength
-            )
-            .SelectMany(row =>
-                new[]
-                {
-                    row.Value,
-                    Uri.EscapeDataString(row.Value),
-                    JsonEncodedText.Encode(row.Value, JsonText).ToString(),
-                    row.Value.Replace("'", "'\\''", StringComparison.Ordinal),
-                }
-            )
-            .Distinct(StringComparer.Ordinal)
-            .OrderByDescending(value => value.Length)
-            .ToList();
-    }
+    public static IReadOnlyList<string> CollectSecrets(
+        IEnumerable<EnvironmentModel> environments
+    ) =>
+        Variants(
+            environments
+                .SelectMany(environment => environment.Variables)
+                .Where(row => row.IsSecret && row.Value.Length >= MinimumSecretLength)
+        );
 
     /// <summary>A copy of the environment in which every secret variable resolves to the mask.</summary>
     public static EnvironmentModel? MaskEnvironment(EnvironmentModel? environment)
@@ -122,7 +108,15 @@ public static partial class SecretMasker
                 "按打码环境重建请求失败，改为在已发送请求上打码 {RequestName}",
                 request.Name
             );
-            masked = sent;
+
+            // Only the sent request is left to mask, so every secret of its environment is searched, however short.
+            var ownSecrets = Variants(
+                environment?.Variables.Where(row => row.IsSecret && row.Value.Length > 0) ?? []
+            );
+            return MaskRequest(
+                sent,
+                ownSecrets.Concat(secrets).OrderByDescending(value => value.Length).ToList()
+            );
         }
 
         return MaskRequest(masked, secrets);
@@ -136,11 +130,48 @@ public static partial class SecretMasker
     public static string MaskHead(string text, int length, IReadOnlyList<string> secrets)
     {
         var margin = secrets.Count == 0 ? 0 : secrets[0].Length;
-        var head = text.Length > length + margin + 1 ? text[..(length + margin + 1)] : text;
-        return MaskSecrets(head, secrets);
+        var take = length + margin + 1;
+        while (take < text.Length)
+        {
+            // A secret cut at the end of the head leaves fewer than `margin` characters, which must all lie past
+            // `length`. Masked copies earlier in the head shorten it, so keep taking more until that holds.
+            var masked = MaskSecrets(text[..take], secrets);
+            if (masked.Length > length + margin)
+            {
+                return masked;
+            }
+
+            take += length + margin + 1 - masked.Length;
+        }
+
+        return MaskSecrets(text, secrets);
+    }
+
+    /// <summary>A masked preview of at most <paramref name="length"/> characters, marked when the text was cut.</summary>
+    public static string MaskPreview(string text, int length, IReadOnlyList<string> secrets)
+    {
+        // MaskHead returns more than `length` characters whenever it cut the text, so this also marks every cut.
+        var masked = MaskHead(text, length, secrets);
+        return masked.Length <= length ? masked : masked[..length] + "\n…（已截断）";
     }
 
     public static bool IsCredentialHeader(string name) => CredentialHeaders.Contains(name.Trim());
+
+    /// <summary>The forms a value takes in text (raw, URL-encoded, JSON-escaped, shell-quoted), longest first.</summary>
+    private static IReadOnlyList<string> Variants(IEnumerable<KeyValueRow> rows) =>
+        rows.Where(row => !string.IsNullOrWhiteSpace(row.Key))
+            .SelectMany(row =>
+                new[]
+                {
+                    row.Value,
+                    Uri.EscapeDataString(row.Value),
+                    JsonEncodedText.Encode(row.Value, JsonText).ToString(),
+                    row.Value.Replace("'", "'\\''", StringComparison.Ordinal),
+                }
+            )
+            .Distinct(StringComparer.Ordinal)
+            .OrderByDescending(value => value.Length)
+            .ToList();
 
     public static string MaskSecrets(string text, IReadOnlyList<string> secrets)
     {
@@ -251,6 +282,9 @@ public static partial class SecretMasker
                     MaskSecrets(pair.Value, secrets)
                 ))
                 .ToList(),
+            UploadFilePath = request.UploadFilePath is null
+                ? null
+                : MaskSecrets(request.UploadFilePath, secrets),
         };
     }
 

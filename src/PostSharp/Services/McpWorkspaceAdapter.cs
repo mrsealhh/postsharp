@@ -379,7 +379,11 @@ public sealed class McpWorkspaceAdapter
                 ? _viewModel.Environments.FirstOrDefault(candidate => candidate.Id == requested)
                 : _viewModel.ActiveEnvironment;
 
-            return new SendSnapshot(request.Clone(), CloneEnvironment(environment));
+            return new SendSnapshot(
+                request.Clone(),
+                CloneEnvironment(environment),
+                SecretMasker.CollectSecrets(_viewModel.Environments)
+            );
         });
 
         if (snapshot is null)
@@ -391,11 +395,20 @@ public sealed class McpWorkspaceAdapter
             FindRequest(id)?.Name ?? snapshot.Request.Name
         );
 
+        // The snapshot cannot change, so the masked copy for the audit and the AI is built once, off the UI thread.
+        var secrets = snapshot.Secrets;
         ComposedRequest? composed = null;
+        ComposedRequest? stored = null;
         HttpResult result;
         try
         {
             composed = RequestComposer.Compose(snapshot.Request, snapshot.Environment);
+            stored = SecretMasker.MaskComposed(
+                snapshot.Request,
+                snapshot.Environment,
+                composed,
+                secrets
+            );
             result = await _http.SendAsync(
                 composed,
                 cancellationToken,
@@ -412,8 +425,7 @@ public sealed class McpWorkspaceAdapter
         {
             _viewModel.RecordExternalSend(
                 snapshot.Request,
-                snapshot.Environment,
-                composed,
+                stored,
                 result,
                 "MCP",
                 context.Tool,
@@ -423,9 +435,6 @@ public sealed class McpWorkspaceAdapter
         });
 
         // Secret values never go back to the AI client, even when a server echoes them.
-        var secrets = await Dispatcher.UIThread.InvokeAsync(() =>
-            SecretMasker.CollectSecrets(_viewModel.Environments)
-        );
         var headers = result
             .Headers.Select(header => new McpRowInfo(
                 header.Key,
@@ -438,11 +447,7 @@ public sealed class McpWorkspaceAdapter
             id,
             snapshot.Request.Name,
             composed?.Method ?? snapshot.Request.Method,
-            composed is null
-                ? SecretMasker.MaskSecrets(snapshot.Request.Url, secrets)
-                : SecretMasker
-                    .MaskComposed(snapshot.Request, snapshot.Environment, composed, secrets)
-                    .Url,
+            stored?.Url ?? SecretMasker.MaskSecrets(snapshot.Request.Url, secrets),
             result.StatusCode,
             string.IsNullOrWhiteSpace(result.ReasonPhrase)
                 ? result.StatusCode.ToString()
@@ -533,15 +538,22 @@ public sealed class McpWorkspaceAdapter
             var environment = _viewModel.ActiveEnvironment;
             var secrets = SecretMasker.CollectSecrets(_viewModel.Environments);
 
-            // A request that cannot be built comes back as a "# 无法生成 cURL" hint.
-            var plain = RequestComposer.BuildCurl(request, environment);
-            if (plain.StartsWith('#'))
+            ComposedRequest composed;
+            try
             {
-                return SecretMasker.MaskSecrets(plain, secrets);
+                composed = RequestComposer.Compose(request, environment);
+            }
+            catch (InvalidOperationException exception)
+            {
+                // BuildCurl turns the same problem into a "# 无法生成 cURL" hint for the client.
+                Log.Debug(exception, "MCP 获取 cURL 时请求无法生成 {RequestId}", id);
+                return SecretMasker.MaskSecrets(
+                    RequestComposer.BuildCurl(request, environment),
+                    secrets
+                );
             }
 
             // Mask before quoting, so short secrets and secrets with quotes are covered too.
-            var composed = RequestComposer.Compose(request, environment);
             return RequestComposer.BuildCurl(
                 SecretMasker.MaskComposed(request, environment, composed, secrets)
             );
@@ -1081,5 +1093,9 @@ public sealed class McpWorkspaceAdapter
         };
     }
 
-    private sealed record SendSnapshot(RequestItem Request, EnvironmentModel? Environment);
+    private sealed record SendSnapshot(
+        RequestItem Request,
+        EnvironmentModel? Environment,
+        IReadOnlyList<string> Secrets
+    );
 }

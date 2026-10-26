@@ -35,17 +35,9 @@ public sealed class TrashedNode
     public string BadgeLabel => Request?.Method ?? "集合";
 
     public BadgeTone BadgeTone =>
-        Request?.Method.ToUpperInvariant() switch
-        {
-            null => BadgeTone.Neutral,
-            "GET" => BadgeTone.Info,
-            "POST" => BadgeTone.Success,
-            "PUT" or "PATCH" => BadgeTone.Warning,
-            "DELETE" => BadgeTone.Danger,
-            _ => BadgeTone.Neutral,
-        };
+        Request is null ? BadgeTone.Neutral : MethodTones.Of(Request.Method);
 
-    public int RequestCount => Collection is null ? 1 : CountRequests(Collection);
+    public int RequestCount => Collection is null ? 1 : Collection.TotalRequestCount;
 
     public string Detail =>
         Collection is not null
@@ -60,7 +52,4 @@ public sealed class TrashedNode
     public IRelayCommand? RestoreCommand { get; set; }
 
     public IRelayCommand? PurgeCommand { get; set; }
-
-    private static int CountRequests(RequestCollection collection) =>
-        collection.Requests.Count + collection.Children.Sum(CountRequests);
 }

@@ -18,8 +18,8 @@ public partial class KeyValueRow : ObservableObject
     private string _value = string.Empty;
 
     /// <summary>
-    /// Environment variables only: the value is hidden in the editor, masked in audit records and never handed
-    /// to an AI client in clear text.
+    /// Environment variables only: the value is hidden in the editor and masked in audit records and in what MCP
+    /// returns (in server responses only values of 8 or more characters).
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SecretTip))]
@@ -27,8 +27,8 @@ public partial class KeyValueRow : ObservableObject
 
     public string SecretTip =>
         IsSecret
-            ? "机密变量：值已隐藏，审计和 MCP 中显示为 ******。点击取消机密"
-            : "设为机密：隐藏值，审计和 MCP 中显示为 ******";
+            ? "机密变量：值已隐藏，审计和 MCP 中显示为 ******（服务器返回的内容里只替换 8 个字符以上的值）。点击取消机密"
+            : "设为机密：隐藏值，审计和 MCP 中显示为 ******（服务器返回的内容里只替换 8 个字符以上的值）";
 
     /// <summary>Set by the owning collection so a row can remove itself from a data template.</summary>
     public IRelayCommand? RemoveCommand { get; set; }

@@ -79,6 +79,53 @@ public sealed class SecretMaskerTests
     }
 
     [Fact]
+    public void FallbackMasksShortSecretsWhenTheMaskedRequestCannotBeBuilt()
+    {
+        var file = Path.GetTempFileName();
+        try
+        {
+            var environment = new EnvironmentModel();
+            environment.Variables.AddRow("pin", "12", isSecret: true);
+            environment.Variables.AddRow("file", file, isSecret: true);
+            var request = new RequestItem
+            {
+                Url = "https://api.example.com/upload",
+                BodyMode = "Multipart",
+                UploadFilePath = "{{file}}",
+            };
+            request.Headers.AddRow("X-Pin", "{{pin}}");
+
+            var sent = RequestComposer.Compose(request, environment);
+            var curl = RequestComposer.BuildCurl(
+                SecretMasker.MaskComposed(request, environment, sent, [])
+            );
+
+            Assert.Contains("X-Pin: ******", curl);
+            Assert.DoesNotContain(file, curl);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Theory]
+    [InlineData(1990)]
+    [InlineData(2000)]
+    [InlineData(2017)]
+    [InlineData(2041)]
+    public void PreviewNeverKeepsAPieceOfASecretCutAtTheEnd(int limit)
+    {
+        var token = "tok_" + new string('a', 36);
+        var text = string.Join(",", Enumerable.Repeat(token, 600));
+
+        var preview = SecretMasker.MaskPreview(text, limit, [token]);
+
+        Assert.DoesNotContain("tok_", preview);
+        Assert.EndsWith("（已截断）", preview);
+    }
+
+    [Fact]
     public void MasksOnlyTheHeadOfLargeText()
     {
         var text = "secret-token-1" + new string('x', 10_000) + "secret-token-1";

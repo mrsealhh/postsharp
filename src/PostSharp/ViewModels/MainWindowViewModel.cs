@@ -30,6 +30,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly HttpRequestService _http = new();
     private readonly MockApiServer _mockServer = new();
     private readonly Dictionary<Guid, TestRunResult> _suiteResults = new();
+    private readonly AuditScrubber _auditScrubber;
 
     private const int AuditPreviewLimit = 2000;
     private const int ResponsePreviewLimit = 8 * 1024;
@@ -53,7 +54,6 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _auditPurgeAllPending;
     private CancellationTokenSource? _sendCts;
     private CancellationTokenSource? _suiteCts;
-    private IReadOnlyList<string>? _scrubbedSecrets;
     private CancellationTokenSource? _importCts;
     private bool _initializing = true;
     private IReadOnlyList<SuiteStepOption> _mappingSourceOptions = Array.Empty<SuiteStepOption>();
@@ -61,6 +61,14 @@ public partial class MainWindowViewModel : ObservableObject
     public MainWindowViewModel()
     {
         TreeTrash = new TreeTrashViewModel(Collections, OnTreeTrashChanged, ShowToast);
+        _auditScrubber = new AuditScrubber(
+            Audit,
+            AuditTrash,
+            Environments,
+            PersistAudit,
+            _auditStore.DeleteBackups,
+            DataNotice
+        );
         Settings = _settingsStore.Load();
         FontService.Initialize(Settings);
         AppLog.Reconfigure(Settings.LogDirectory, Settings.LogLevel);
@@ -2412,14 +2420,15 @@ public partial class MainWindowViewModel : ObservableObject
 
         IsSending = true;
         _sendCts = new CancellationTokenSource();
-        ComposedRequest? composed = null;
+        ComposedRequest? stored = null;
 
         try
         {
             HttpResult result;
             try
             {
-                composed = RequestComposer.Compose(Editing, ActiveEnvironment);
+                var composed = RequestComposer.Compose(Editing, ActiveEnvironment);
+                stored = MaskForAudit(Editing, ActiveEnvironment, composed);
                 result = await _http.SendAsync(composed, _sendCts.Token, Editing.TimeoutSeconds);
             }
             catch (Exception exception)
@@ -2435,7 +2444,7 @@ public partial class MainWindowViewModel : ObservableObject
                 AddHistory(Editing, result);
             }
 
-            RecordAudit(Editing, ActiveEnvironment, composed, result, "UI", null, null);
+            RecordAudit(Editing, stored, result, "UI", null, null);
             Persist();
         }
         finally
@@ -2910,7 +2919,7 @@ public partial class MainWindowViewModel : ObservableObject
                 _pendingDelete = collection;
                 DeleteDialogTitle = "删除集合？";
                 DeleteDialogDescription =
-                    $"“{collection.Name}”及其子集合、共 {CountRequests(collection)} 个请求将移入集合回收站，可在回收站中恢复到原位置。";
+                    $"“{collection.Name}”及其子集合、共 {collection.TotalRequestCount} 个请求将移入集合回收站，可在回收站中恢复到原位置。";
                 break;
             default:
                 ShowToast("请先选择集合或请求");
@@ -3464,16 +3473,20 @@ public partial class MainWindowViewModel : ObservableObject
         IsEnvironmentDialogOpen = false;
         RefreshDerivedState();
         Persist();
-        ScrubAuditSecrets();
         ShowToast("环境变量已保存");
     }
 
     [RelayCommand]
-    private void CancelEnvironmentDialog()
+    private void CancelEnvironmentDialog() => IsEnvironmentDialogOpen = false;
+
+    // Edits apply as they are typed, and the dialog also closes on Esc or a click outside it, so a variable marked
+    // secret here is masked in the audit whichever way it closes.
+    partial void OnIsEnvironmentDialogOpenChanged(bool value)
     {
-        // Edits apply as they are typed, so a variable marked secret here must be masked in the audit as well.
-        IsEnvironmentDialogOpen = false;
-        ScrubAuditSecrets();
+        if (!value)
+        {
+            ScrubAuditSecrets();
+        }
     }
 
     [RelayCommand]
@@ -3701,11 +3714,6 @@ public partial class MainWindowViewModel : ObservableObject
         return false;
     }
 
-    private static int CountRequests(RequestCollection collection)
-    {
-        return collection.Requests.Count + collection.Children.Sum(child => CountRequests(child));
-    }
-
     public void LoadHistory(HistoryEntry entry)
     {
         Editing = entry.ToRequest();
@@ -3747,10 +3755,10 @@ public partial class MainWindowViewModel : ObservableObject
         RefreshDerivedState();
     }
 
+    /// <summary>Records a send made outside the window; <paramref name="stored"/> is already masked.</summary>
     public void RecordExternalSend(
         RequestItem request,
-        EnvironmentModel? environment,
-        ComposedRequest? composed,
+        ComposedRequest? stored,
         HttpResult result,
         string source,
         string? tool,
@@ -3758,7 +3766,7 @@ public partial class MainWindowViewModel : ObservableObject
     )
     {
         AddHistory(request, result);
-        RecordAudit(request, environment, composed, result, source, tool, client);
+        RecordAudit(request, stored, result, source, tool, client);
         Persist();
     }
 
@@ -3784,11 +3792,29 @@ public partial class MainWindowViewModel : ObservableObject
         return string.Join("\n", lines);
     }
 
-    /// <summary>Stores a masked record of a send and returns it; <paramref name="environment"/> is the one it used.</summary>
-    private AuditEntry RecordAudit(
+    /// <summary>
+    /// The sent request as the audit may keep it. Built before the send, because the request and the environment
+    /// can be edited while the response is on its way.
+    /// </summary>
+    private ComposedRequest MaskForAudit(
         RequestItem request,
         EnvironmentModel? environment,
-        ComposedRequest? composed,
+        ComposedRequest composed
+    ) =>
+        SecretMasker.MaskComposed(
+            request,
+            environment,
+            composed,
+            SecretMasker.CollectSecrets(Environments)
+        );
+
+    /// <summary>
+    /// Stores a record of a send and returns it. <paramref name="stored"/> is the sent request already masked by
+    /// <see cref="MaskForAudit"/>, or null when nothing was sent.
+    /// </summary>
+    private AuditEntry RecordAudit(
+        RequestItem request,
+        ComposedRequest? stored,
         HttpResult result,
         string source,
         string? tool,
@@ -3797,9 +3823,6 @@ public partial class MainWindowViewModel : ObservableObject
     {
         // The audit file and MCP readers must never see credentials, so everything stored is masked first.
         var secrets = SecretMasker.CollectSecrets(Environments);
-        var stored = composed is null
-            ? null
-            : SecretMasker.MaskComposed(request, environment, composed, secrets);
         var requestHeaders = stored is not null
             ? string.Join(
                 "\n",
@@ -3825,9 +3848,9 @@ public partial class MainWindowViewModel : ObservableObject
             Client = client,
             RequestId = request.Id,
             RequestName = request.Name,
-            Method = composed?.Method ?? request.Method,
+            Method = stored?.Method ?? request.Method,
             Url = stored?.Url ?? SecretMasker.MaskSecrets(request.Url, secrets),
-            Environment = composed?.EnvironmentName ?? ActiveEnvironment?.Name,
+            Environment = stored?.EnvironmentName ?? ActiveEnvironment?.Name,
             StatusCode = result.StatusCode,
             StatusText = result.ReasonPhrase,
             ElapsedMs = result.ElapsedMs,
@@ -3850,7 +3873,7 @@ public partial class MainWindowViewModel : ObservableObject
                 ),
                 AuditPreviewLimit
             ),
-            ResponseBodyPreview = MaskedPreview(result.Body, AuditPreviewLimit, secrets),
+            ResponseBodyPreview = SecretMasker.MaskPreview(result.Body, AuditPreviewLimit, secrets),
             ResponseContentType = result.MediaType,
             IsSse = result.IsSse,
             SseEventCount = result.SseEventCount,
@@ -3868,15 +3891,6 @@ public partial class MainWindowViewModel : ObservableObject
 
         PersistAudit();
         return entry;
-    }
-
-    /// <summary>A masked preview of a possibly large text, marked when it was cut.</summary>
-    private static string MaskedPreview(string text, int limit, IReadOnlyList<string> secrets)
-    {
-        var masked = SecretMasker.MaskHead(text, limit, secrets);
-        return text.Length > limit && masked.Length <= limit
-            ? masked + "\n…（已截断）"
-            : Truncate(masked, limit);
     }
 
     private void RefreshAuditView()
@@ -4038,50 +4052,8 @@ public partial class MainWindowViewModel : ObservableObject
         return _auditStore.SaveTrash(AuditTrash) && saved;
     }
 
-    /// <summary>
-    /// Masks credentials and current secret values in every stored audit record. Runs at startup and whenever a
-    /// variable may have become secret, so records written earlier stop exposing it to MCP readers.
-    /// </summary>
-    public void ScrubAuditSecrets()
-    {
-        var secrets = SecretMasker.CollectSecrets(Environments);
-
-        // Records added since the last pass were masked when written, so only a new set of secrets needs a pass.
-        if (_scrubbedSecrets is not null && _scrubbedSecrets.SequenceEqual(secrets))
-        {
-            return;
-        }
-
-        _scrubbedSecrets = secrets;
-        var changed = false;
-        foreach (var entry in Audit.Concat(AuditTrash))
-        {
-            changed |= SecretMasker.MaskAuditEntry(entry, secrets);
-        }
-
-        if (!changed)
-        {
-            return;
-        }
-
-        // The backups still hold the old text; drop them only once the scrubbed files are safely on disk.
-        if (!PersistAudit())
-        {
-            DataNotice.Warn(
-                "审计记录已在界面中打码，但写入 audit.json 失败，磁盘上的文件和备份仍含旧的明文凭据。请检查数据目录是否可写后重启 PostSharp。"
-            );
-            return;
-        }
-
-        foreach (var backup in _auditStore.DeleteBackups())
-        {
-            DataNotice.Warn(
-                $"审计备份 {backup} 无法删除，其中仍含打码前的明文凭据。请关闭占用它的程序后手动删除该文件。"
-            );
-        }
-
-        Log.Information("已为审计记录中的凭据和机密变量打码");
-    }
+    /// <summary>Masks stored audit records again when a variable may have become secret.</summary>
+    public void ScrubAuditSecrets() => _auditScrubber.Scrub();
 
     [RelayCommand]
     private void OpenSelectedAuditRequest()
@@ -4538,15 +4510,7 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 var failure = HttpRequestService.Failure(mappingError);
                 AddHistory(effectiveRequest, failure);
-                RecordAudit(
-                    effectiveRequest,
-                    ActiveEnvironment,
-                    null,
-                    failure,
-                    source,
-                    tool,
-                    client
-                );
+                RecordAudit(effectiveRequest, null, failure, source, tool, client);
                 stepResults[step.Id] = failure;
                 steps.Add(
                     new TestStepResult
@@ -4571,11 +4535,12 @@ public partial class MainWindowViewModel : ObservableObject
                 continue;
             }
 
-            ComposedRequest? composed = null;
+            ComposedRequest? stored = null;
             HttpResult result;
             try
             {
-                composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment);
+                var composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment);
+                stored = MaskForAudit(effectiveRequest, ActiveEnvironment, composed);
                 result = await _http.SendAsync(
                     composed,
                     cancellationToken,
@@ -4597,15 +4562,7 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 // A step cut short by the cancel is not a failed assertion: keep it in the audit like a cancelled
                 // UI send, but leave it out of the step results and the pass/fail counts.
-                RecordAudit(
-                    effectiveRequest,
-                    ActiveEnvironment,
-                    composed,
-                    result,
-                    source,
-                    tool,
-                    client
-                );
+                RecordAudit(effectiveRequest, stored, result, source, tool, client);
                 stopped = true;
                 cancelled = true;
                 break;
@@ -4613,22 +4570,17 @@ public partial class MainWindowViewModel : ObservableObject
 
             stepResults[step.Id] = result;
             AddHistory(effectiveRequest, result);
-            var audited = RecordAudit(
-                effectiveRequest,
-                ActiveEnvironment,
-                composed,
-                result,
-                source,
-                tool,
-                client
-            );
+            var audited = RecordAudit(effectiveRequest, stored, result, source, tool, client);
 
             var statusMatches = step.ExpectedStatus is null
                 ? result.StatusCode is >= 200 and < 400
                 : result.StatusCode == step.ExpectedStatus;
+            // Checked on the masked body, so an assertion cannot be used to guess a secret one piece at a time.
             var bodyMatches =
                 string.IsNullOrWhiteSpace(step.BodyContains)
-                || result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
+                || SecretMasker
+                    .MaskSecrets(result.Body, secrets)
+                    .Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
             var passed = result.HasResponse && statusMatches && bodyMatches;
             var error = result.Error;
             if (passed is false && error is null)
@@ -4651,7 +4603,7 @@ public partial class MainWindowViewModel : ObservableObject
                     ElapsedMs = result.ElapsedMs,
                     Passed = passed,
                     Error = error is null ? null : SecretMasker.MaskSecrets(error, secrets),
-                    ResponsePreview = MaskedPreview(result.Body, 500, secrets),
+                    ResponsePreview = SecretMasker.MaskPreview(result.Body, 500, secrets),
                 }
             );
 

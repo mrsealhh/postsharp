@@ -303,7 +303,8 @@ http://127.0.0.1:5199/mcp
 - 审计详情包括：请求名称、方法、解析后的 URL、环境、状态、耗时、大小、cURL、请求头、请求/响应预览。
 - SSE 请求额外记录 **AI 聚合输出**：thinking、content、事件数。
 - **凭据打码**：`Authorization`、`Proxy-Authorization`、`Cookie`、`Set-Cookie`、`X-Api-Key` 等请求/响应头只保留认证方案（如 `Bearer ******`），PostSharp 自己生成的 URL、请求头、请求体和 cURL 按「机密变量解析为 `******`」重新生成，不论值多长、是否含引号都不会写入明文；服务器返回的内容（响应预览、AI 输出、回显）则按值查找替换，只替换不少于 8 个字符的值，避免把 `true`、`admin` 这类常见文本一并改掉。
-- 升级后首次启动、保存或关闭环境变量对话框、MCP 把变量设为机密时，都会对已有审计记录补做打码；只有打码后的文件写盘成功才删除旧备份，写入或删除失败会在顶部提示条中说明。
+- 审计中的请求在发送前就按发送时的请求和环境生成打码副本，发送途中修改请求或切换环境不会改变审计内容。
+- 升级后首次启动、以任何方式关闭环境变量对话框（保存、取消、Esc、点击外部）、MCP 把变量设为机密时，都会对已有审计记录补做打码；写入失败会在下次触发时重试；只有打码后的文件写盘成功才删除旧备份，写入或删除失败会在顶部提示条中说明。
 - 清空审计会先确认并移入 **审计回收站**，不会立即永久删除；回收站支持恢复、单条永久删除和清空，永久删除/清空均需再次确认。
 - 审计单独保存在 `audit.json`，审计回收站保存在 `audit-trash.json`，默认保留 500 条（可在设置中调整）。
 
@@ -326,7 +327,7 @@ http://127.0.0.1:5199/mcp
 - **值模板**：默认 `{value}`，也可写成 `Bearer {value}` 等；目标为请求体时保留原始 JSON 类型，模板自定义时自动解析 JSON 或作为字符串。
 - 每个步骤支持：
   - `expectedStatus`：期望状态码；省略时接受 2xx/3xx。
-  - `bodyContains`：响应体必须包含的文本。
+  - `bodyContains`：响应体必须包含的文本；在打码后的响应体上判断，避免借断言逐字猜出机密。
 - `stopOnError` 控制失败后是否停止。
 - 运行中「运行套件」显示「运行中…」，旁边的「取消运行」可中止正在发送的请求并跳过后续步骤；结果标记为「已取消」并保留已完成步骤，被中断的那一步不计入失败；因取消或失败停止而没有运行的步骤显示为「N 步未运行」。
 - 运行结果展示通过/失败、状态码、耗时和错误原因，并逐条写入审计。
@@ -456,6 +457,7 @@ src/PostSharp/
     OpenApiImport.cs      OpenAPI 导入后的分组/请求模型
     TransferImport.cs     Postman / cURL / HAR 导入的分离式请求与导出文档模型
     TrashedNode.cs        集合回收站条目（保留原位置与 id）
+    MethodTones.cs        HTTP 方法徽标颜色（各列表共用）
   Services/
     AppPaths.cs           本地数据与日志目录
     AppLog.cs             Serilog 文件日志与目录切换
@@ -485,6 +487,7 @@ src/PostSharp/
     SettingsViewModel.cs  设置草稿、校验与保存
     TreeTrashViewModel.cs 集合回收站：移入、恢复到原位置、永久删除确认
     CollectionTree.cs     集合树规则（层级上限、扁平顺序同步），主窗口与回收站共用
+    AuditScrubber.cs      审计记录补做打码、写盘与删除旧备份
     DataNoticeViewModel.cs 数据文件恢复提示
   Views/
     MainWindow.axaml      主界面 + 管理层
@@ -514,6 +517,7 @@ tests/
     SecretMaskerTests.cs
     McpServerSecurityTests.cs
     TreeTrashViewModelTests.cs
+    AuditScrubberTests.cs
 docs/
   screenshot.png
   postman-import.png
@@ -611,7 +615,7 @@ docs/
 | 导入反馈 | 单文件成功 Toast；批量或有提示时显示「导入结果」绿色结果区和「兼容性提示」橙色提示区，含请求/分组/环境数量，默认折叠可展开 |
 | 粘贴区 | 长 JSON 在固定高度内自适应滚动；底部边框完整，不再被外层裁切 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：55 个测试全部通过（新增数据文件、打码、MCP 来源校验、集合回收站 25 个） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：63 个测试全部通过（新增数据文件、打码、MCP 来源校验、集合回收站、审计补做打码 33 个） |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
@@ -636,6 +640,7 @@ docs/
 | 损坏恢复 | 在 `workspace.json` 写入半截 JSON 后启动：原文件移到 `workspace.unreadable-*.json`（内容原样保留），工作区从 `.bak` 恢复，顶部显示「数据文件已从备份恢复」提示条；日志无 ERR |
 | 审核复测 | MCP `set_variable` 省略 `value` 设为机密后原值保留；`secret=false` 被拒绝；运行中设为机密后，此前的审计记录、`audit.json` 与 `audit.json.bak` 均不再含明文；文件被独占打开时原地保留、不移动不覆盖（单测） |
 | 二次审核复测 | 5 个字符且含单引号的机密值用于请求头和查询参数时，打码后的 cURL 中不含原值（单测）；文件被独占时改用 `.bak` 打开且之后写入被拒绝（单测）；集合连同子集合移入回收站后按原顺序恢复，原集合已不存在的请求恢复到根级集合（单测） |
+| 三次审核复测 | 重建打码请求失败时按当前环境全部机密值兜底，短机密与上传文件路径均不出现在 cURL 中；同一机密重复 600 次时预览截断处不残留机密片段；审计补做打码写盘失败后下次触发会重试；关闭后重复出现的警告会重新打开提示条（单测） |
 | 截图 | 新增 `docs/tree-trash.png`、`docs/env-secret.png`、`docs/data-recovery.png`（示例工作区）；`screenshot.png` 与 `management-automation.png` 未重截，差异仅为侧栏回收站图标与「取消运行」按钮 |
 | 构建 | Debug / Release 0 警告、0 错误 |
 
