@@ -410,7 +410,7 @@ public partial class MainWindow : Window
         var path = files.FirstOrDefault()?.TryGetLocalPath();
         if (!string.IsNullOrWhiteSpace(path))
         {
-            await _viewModel.ImportFromFileAsync(path);
+            await _viewModel.Import.ImportFromFileAsync(path);
         }
     }
 
@@ -445,13 +445,13 @@ public partial class MainWindow : Window
             var path = files.FirstOrDefault()?.TryGetLocalPath();
             if (!string.IsNullOrWhiteSpace(path))
             {
-                await _viewModel.ImportPostmanFileAsync(path);
+                await _viewModel.Import.ImportPostmanFileAsync(path);
             }
         }
         catch (Exception exception)
         {
-            _viewModel.HasImportError = true;
-            _viewModel.ImportStatus =
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
                 "无法打开文件选择器，请稍后重试或把 Collection JSON 粘贴到下方。";
             Log.Error(exception, "打开 Postman Collection 文件选择器失败");
         }
@@ -488,13 +488,13 @@ public partial class MainWindow : Window
             var path = files.FirstOrDefault()?.TryGetLocalPath();
             if (!string.IsNullOrWhiteSpace(path))
             {
-                await _viewModel.ImportPostmanEnvironmentFileAsync(path);
+                await _viewModel.Import.ImportPostmanEnvironmentFileAsync(path);
             }
         }
         catch (Exception exception)
         {
-            _viewModel.HasImportError = true;
-            _viewModel.ImportStatus = "无法打开环境文件选择器，请稍后重试。";
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus = "无法打开环境文件选择器，请稍后重试。";
             Log.Error(exception, "打开 Postman 环境文件选择器失败");
         }
     }
@@ -527,13 +527,13 @@ public partial class MainWindow : Window
             var path = files.FirstOrDefault()?.TryGetLocalPath();
             if (!string.IsNullOrWhiteSpace(path))
             {
-                await _viewModel.ImportHarFileAsync(path);
+                await _viewModel.Import.ImportHarFileAsync(path);
             }
         }
         catch (Exception exception)
         {
-            _viewModel.HasImportError = true;
-            _viewModel.ImportStatus =
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
                 "无法打开 HAR 文件选择器，请稍后重试或把 HAR JSON 粘贴到下方。";
             Log.Error(exception, "打开 HAR 文件选择器失败");
         }
@@ -570,13 +570,13 @@ public partial class MainWindow : Window
             var path = files.FirstOrDefault()?.TryGetLocalPath();
             if (!string.IsNullOrWhiteSpace(path))
             {
-                await _viewModel.ImportInsomniaFileAsync(path);
+                await _viewModel.Import.ImportInsomniaFileAsync(path);
             }
         }
         catch (Exception exception)
         {
-            _viewModel.HasImportError = true;
-            _viewModel.ImportStatus =
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
                 "无法打开 Insomnia 文件选择器，请稍后重试或把 JSON 粘贴到下方。";
             Log.Error(exception, "打开 Insomnia 文件选择器失败");
         }
@@ -613,13 +613,13 @@ public partial class MainWindow : Window
             var path = files.FirstOrDefault()?.TryGetLocalPath();
             if (!string.IsNullOrWhiteSpace(path))
             {
-                await _viewModel.ImportHoppscotchFileAsync(path);
+                await _viewModel.Import.ImportHoppscotchFileAsync(path);
             }
         }
         catch (Exception exception)
         {
-            _viewModel.HasImportError = true;
-            _viewModel.ImportStatus =
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
                 "无法打开 Hoppscotch 文件选择器，请稍后重试或把 JSON 粘贴到下方。";
             Log.Error(exception, "打开 Hoppscotch 文件选择器失败");
         }
@@ -674,13 +674,13 @@ public partial class MainWindow : Window
                 .ToList();
             if (paths.Count > 0)
             {
-                await _viewModel.ImportBatchFilesAsync(paths);
+                await _viewModel.Import.ImportBatchFilesAsync(paths);
             }
         }
         catch (Exception exception)
         {
-            _viewModel.HasImportError = true;
-            _viewModel.ImportStatus = "无法打开批量文件选择器，请稍后重试。";
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus = "无法打开批量文件选择器，请稍后重试。";
             Log.Error(exception, "打开批量导入文件选择器失败");
         }
     }
@@ -698,8 +698,8 @@ public partial class MainWindow : Window
         var document = _viewModel.BuildPostmanExport();
         if (document is null)
         {
-            _viewModel.HasImportError = true;
-            _viewModel.ImportStatus = "当前工作区没有可导出的集合。请先创建或导入集合。";
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus = "当前工作区没有可导出的集合。请先创建或导入集合。";
             return;
         }
 
@@ -724,8 +724,9 @@ public partial class MainWindow : Window
         var document = _viewModel.BuildCurlExport();
         if (document is null)
         {
-            _viewModel.HasImportError = true;
-            _viewModel.ImportStatus = "当前请求还没有可导出的 cURL，请先选择请求并填写有效地址。";
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
+                "当前请求还没有可导出的 cURL，请先选择请求并填写有效地址。";
             return;
         }
 
@@ -771,20 +772,20 @@ public partial class MainWindow : Window
             var path = file.TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(path))
             {
-                _viewModel.HasImportError = true;
-                _viewModel.ImportStatus = "无法写入所选位置，请换一个本地文件夹。";
+                _viewModel.Import.HasImportError = true;
+                _viewModel.Import.ImportStatus = "无法写入所选位置，请换一个本地文件夹。";
                 return;
             }
 
             await File.WriteAllTextAsync(path, document.Content);
-            _viewModel.HasImportError = false;
-            _viewModel.ImportStatus = $"已导出：{Path.GetFileName(path)}";
+            _viewModel.Import.HasImportError = false;
+            _viewModel.Import.ImportStatus = $"已导出：{Path.GetFileName(path)}";
             Log.Information("导出文件完成 {FilePath}", path);
         }
         catch (Exception exception)
         {
-            _viewModel.HasImportError = true;
-            _viewModel.ImportStatus = "导出失败，请检查目标文件夹是否可写后重试。";
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus = "导出失败，请检查目标文件夹是否可写后重试。";
             Log.Error(exception, "导出文件失败 {Title}", title);
         }
     }

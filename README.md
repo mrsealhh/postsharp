@@ -578,8 +578,9 @@ docs/
 | 批量导入 | 文件选择器允许多选；自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL，逐文件成功/失败互不影响 |
 | 导入反馈 | 单文件成功 Toast；批量或有提示时显示「导入结果」绿色结果区和「兼容性提示」橙色提示区，含请求/分组/环境数量，默认折叠可展开 |
 | 粘贴区 | 长 JSON 在固定高度内自适应滚动；底部边框完整，不再被外层裁切 |
+| 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：30 个测试全部通过 |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：35 个测试全部通过 |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
@@ -674,7 +675,7 @@ master                 稳定可发布
 - 导入反馈：请求/分组/环境统计；结果和兼容性提示默认折叠，可展开。
 - OpenAPI：`x-apifox-folder` 分组、securitySchemes 占位头、多服务器/多 tag/外部 `$ref` 提示。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：30 个 xUnit 测试。
+- 自测：35 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
