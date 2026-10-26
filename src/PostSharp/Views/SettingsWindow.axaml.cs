@@ -1,11 +1,10 @@
-using System.Reflection;
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
-using Avalonia.VisualTree;
+using PostSharp.Controls;
 using PostSharp.Models;
 using PostSharp.ViewModels;
 
@@ -20,7 +19,7 @@ public partial class SettingsWindow : Window
         KeyDown += OnWindowKeyDown;
         Opened += (_, _) =>
         {
-            EnablePopupOverlayLayer();
+            this.EnablePopupOverlayLayer();
             ApplyTitleBarTheme();
         };
         ActualThemeVariantChanged += (_, _) => ApplyTitleBarTheme();
@@ -31,25 +30,6 @@ public partial class SettingsWindow : Window
                 viewModel.DiscardFontPreview();
             }
         };
-    }
-
-    /// <summary>
-    /// Arc Select renders its popup in the window overlay layer. A plain Avalonia window must opt into that
-    /// layer explicitly, otherwise opening the popup throws "no overlay layer is found for the target control".
-    /// </summary>
-    private void EnablePopupOverlayLayer()
-    {
-        var manager = this.GetVisualDescendants()
-            .OfType<Avalonia.Controls.Primitives.VisualLayerManager>()
-            .FirstOrDefault();
-
-        manager
-            ?.GetType()
-            .GetProperty(
-                "EnablePopupOverlayLayer",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-            )
-            ?.SetValue(manager, true);
     }
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)

@@ -1,0 +1,48 @@
+using System.Reflection;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.VisualTree;
+
+namespace PostSharp.Controls;
+
+/// <summary>
+/// Arc 的弹层（Select、菜单、ToolTip）在窗口内渲染，依赖窗口自带的弹出层。
+/// AtomUI 的窗口模板不创建该层，Avalonia 的 VisualLayerManager 又默认关闭它，
+/// 弹层拿不到原生 popup 时就会抛 "no overlay layer is found for the target control"。
+/// </summary>
+public static class WindowPopupOverlay
+{
+    private static readonly PropertyInfo? PopupOverlayLayerProperty =
+        typeof(VisualLayerManager).GetProperty(
+            "EnablePopupOverlayLayer",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+        );
+
+    extension(Window window)
+    {
+        /// <summary>
+        /// 在窗口打开后调用：打开该窗口的弹出层，让 Arc 弹层留在窗口内部渲染。
+        /// </summary>
+        public void EnablePopupOverlayLayer()
+        {
+            var managers = window.GetVisualDescendants().OfType<VisualLayerManager>().ToList();
+
+            if (managers.Count == 0)
+            {
+                Log.Warning("窗口没有 VisualLayerManager，Arc 弹层将无法使用窗口弹出层");
+                return;
+            }
+
+            if (PopupOverlayLayerProperty is null)
+            {
+                Log.Warning("当前 Avalonia 版本没有 EnablePopupOverlayLayer，Arc 弹层可能无法打开");
+                return;
+            }
+
+            foreach (var manager in managers)
+            {
+                PopupOverlayLayerProperty.SetValue(manager, true);
+            }
+        }
+    }
+}

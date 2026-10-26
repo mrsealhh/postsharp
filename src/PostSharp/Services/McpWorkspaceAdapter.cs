@@ -380,7 +380,7 @@ public sealed class McpWorkspaceAdapter
                 : _viewModel.ActiveEnvironment;
 
             return new SendSnapshot(
-                request.Clone(),
+                request.Clone(copyAuthorization: false),
                 CloneEnvironment(environment),
                 SecretMasker.CollectSecrets(_viewModel.Environments)
             );
@@ -402,7 +402,8 @@ public sealed class McpWorkspaceAdapter
         HttpResult result;
         try
         {
-            composed = RequestComposer.Compose(snapshot.Request, snapshot.Environment);
+            var auth = await _viewModel.ResolveAuthAsync(snapshot.Request, cancellationToken);
+            composed = RequestComposer.Compose(snapshot.Request, snapshot.Environment, auth);
             stored = SecretMasker.MaskComposed(
                 snapshot.Request,
                 snapshot.Environment,
@@ -542,11 +543,12 @@ public sealed class McpWorkspaceAdapter
                 FindRequest(id) ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的请求。");
             var environment = _viewModel.ActiveEnvironment;
             var secrets = SecretMasker.CollectSecrets(_viewModel.Environments);
+            var auth = _viewModel.ResolveAuth(request);
 
             ComposedRequest composed;
             try
             {
-                composed = RequestComposer.Compose(request, environment);
+                composed = RequestComposer.Compose(request, environment, auth);
             }
             catch (InvalidOperationException exception)
             {
@@ -558,10 +560,12 @@ public sealed class McpWorkspaceAdapter
                 );
             }
 
-            // Mask before quoting, so short secrets and secrets with quotes are covered too.
-            return RequestComposer.BuildCurl(
-                SecretMasker.MaskComposed(request, environment, composed, secrets)
+            // Mask environment secrets and injected credentials before quoting.
+            var masked = SecretMasker.MaskRequest(
+                composed,
+                SecretMasker.CollectAllSecrets(_viewModel.Environments)
             );
+            return RequestComposer.BuildCurl(RequestComposer.MaskAuthorization(masked));
         });
     }
 

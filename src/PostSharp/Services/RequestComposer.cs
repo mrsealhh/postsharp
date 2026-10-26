@@ -21,7 +21,15 @@ public sealed record ComposedUploadFile(string FieldName, string FilePath);
 
 public static class RequestComposer
 {
-    public static ComposedRequest Compose(RequestItem request, EnvironmentModel? environment)
+    /// <summary>
+    /// 组合请求。<paramref name="auth" /> 是这次请求解析出来的认证材料：
+    /// 写请求头时不覆盖用户手写的同名头，写查询参数时追加到 URL 末尾。
+    /// </summary>
+    public static ComposedRequest Compose(
+        RequestItem request,
+        EnvironmentModel? environment,
+        AuthInjection? auth = null
+    )
     {
         var method = string.IsNullOrWhiteSpace(request.Method)
             ? "GET"
@@ -34,6 +42,27 @@ public static class RequestComposer
                 VariableResolver.Resolve(row.Value, environment)
             ))
             .ToList();
+
+        if (auth is { InQuery: false } header)
+        {
+            if (
+                !headers.Any(pair =>
+                    pair.Key.Equals(header.Key, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            {
+                headers.Add(
+                    new KeyValuePair<string, string>(
+                        header.Key,
+                        VariableResolver.Resolve(header.Value, environment)
+                    )
+                );
+            }
+        }
+        else if (auth is { InQuery: true } query)
+        {
+            url = AppendQuery(url, query.Key, VariableResolver.Resolve(query.Value, environment));
+        }
 
         var bodyMode = request.BodyMode ?? "None";
         var isMultipart = string.Equals(bodyMode, "Multipart", StringComparison.OrdinalIgnoreCase);
@@ -193,7 +222,11 @@ public static class RequestComposer
     }
 
     /// <summary>Builds a cURL command for the current request, or a comment explaining why it cannot.</summary>
-    public static string BuildCurl(RequestItem request, EnvironmentModel? environment)
+    public static string BuildCurl(
+        RequestItem request,
+        EnvironmentModel? environment,
+        AuthInjection? auth = null
+    )
     {
         var blocker = FindCurlBlocker(request, environment);
         if (blocker is not null)
@@ -203,13 +236,109 @@ public static class RequestComposer
 
         try
         {
-            return BuildCurl(Compose(request, environment));
+            return BuildCurl(Compose(request, environment, auth));
         }
         catch (Exception exception)
         {
             Log.Error(exception, "生成 cURL 时出现意外错误 {RequestName}", request.Name);
             return "# 无法生成 cURL：生成时出现意外错误，请检查请求配置。";
         }
+    }
+
+    /// <summary>审计落盘前隐藏令牌与密钥，避免把凭据写进审计文件。</summary>
+    public static ComposedRequest MaskAuthorization(ComposedRequest request)
+    {
+        var headers = request
+            .Headers.Select(pair =>
+                IsSensitiveHeader(pair.Key)
+                    ? new KeyValuePair<string, string>(
+                        pair.Key,
+                        MaskHeaderValue(pair.Key, pair.Value)
+                    )
+                    : pair
+            )
+            .ToList();
+
+        return request with
+        {
+            Headers = headers,
+            Url = MaskQuery(request.Url),
+        };
+    }
+
+    private static bool IsSensitiveHeader(string name) =>
+        name.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Cookie", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Set-Cookie", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("token", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("api-key", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("apikey", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("secret", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("password", StringComparison.OrdinalIgnoreCase);
+
+    private static string MaskHeaderValue(string name, string value) =>
+        name.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)
+            ? MaskToken(value)
+            : "****";
+
+    private static string MaskToken(string value)
+    {
+        var separator = value.IndexOf(' ');
+        return separator > 0 ? value[..separator] + " ****" : "****";
+    }
+
+    /// <summary>
+    /// 认证写在查询参数时（OAuth 2.0 的 access_token、API Key）也不会以明文进审计；
+    /// 键名带 token / key / secret / password 的参数一律遮掉值。
+    /// </summary>
+    private static string MaskQuery(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Query))
+        {
+            return url;
+        }
+
+        var pairs = uri.Query.TrimStart('?').Split('&');
+        var masked = false;
+        for (var index = 0; index < pairs.Length; index++)
+        {
+            var separator = pairs[index].IndexOf('=');
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            var key = Uri.UnescapeDataString(pairs[index][..separator]);
+            if (!IsSensitiveQueryKey(key))
+            {
+                continue;
+            }
+
+            pairs[index] = pairs[index][..separator] + "=****";
+            masked = true;
+        }
+
+        if (!masked)
+        {
+            return url;
+        }
+
+        var builder = new UriBuilder(uri) { Query = string.Join('&', pairs) };
+        return builder.Uri.ToString();
+    }
+
+    private static bool IsSensitiveQueryKey(string key) =>
+        key.Contains("token", StringComparison.OrdinalIgnoreCase)
+        || key.Contains("key", StringComparison.OrdinalIgnoreCase)
+        || key.Contains("secret", StringComparison.OrdinalIgnoreCase)
+        || key.Contains("password", StringComparison.OrdinalIgnoreCase);
+
+    private static string AppendQuery(string url, string key, string value)
+    {
+        var separator = url.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+        return url + separator + Uri.EscapeDataString(key) + "=" + Uri.EscapeDataString(value);
     }
 
     /// <summary>

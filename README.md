@@ -16,6 +16,7 @@
 - [MCP 接入](#mcp-接入)
 - [AI 审计与自动化](#ai-审计与自动化)
 - [请求与响应能力](#请求与响应能力)
+- [授权（OIDC / OAuth 2.0）](#授权oidc--oauth-20)
 - [系统全局设置](#系统全局设置)
 - [快捷键](#快捷键)
 - [数据与配置](#数据与配置)
@@ -79,6 +80,31 @@ PostSharp 的定位是：
 - **历史记录管理**：单条删除与清空都会先弹出确认，删除项进入回收站；回收站支持恢复、永久删除，永久删除前再次确认。
 - **OpenAPI 导入**：从本地 JSON / YAML 文件或 URL 读取 OpenAPI 3.x / Swagger 2.0；按 `x-apifox-folder` 或第一个 tag 创建分组，支持安全方案占位头、多服务器选择、外部 `$ref` 自动下载（限 20 个、每个 2 MB、10 秒超时），并带出服务器地址、查询参数和请求体示例。
 
+### 授权（OIDC / OAuth 2.0）
+
+- **按请求 / 按集合配置**：授权挂在请求或集合上，默认行为是「不附加任何认证」，不再有全局默认令牌。请求默认「继承上级集合」，沿集合层级向上找到最近一层配置；一路都是「继承」就表示这次请求不附加认证。
+- **作用域跟着树选中对象走**：选中请求时，「授权」标签页和顶栏钥匙按钮编辑该请求；选中集合时，同一处改为编辑该集合自己的配置，不会再落到上一次打开的请求上。切换集合或请求会立即换成对应的一份配置，上一份的令牌与登录状态不会带过来。
+- **逐级覆盖**：请求或子集合可以单独选择「无认证」或换成另一套凭据，只影响自己和它的下级。
+- **认证类型**：继承上级集合 / 无认证 / Bearer 令牌 / Basic 认证 / API Key（请求头或查询参数）/ OAuth 2.0。
+- **OAuth 2.0（OIDC）**：授权码 + S256 PKCE，读取 `.well-known/openid-configuration` 自动发现授权与令牌端点；内嵌 WebView2 完成登录、二次验证与「确认授权」，回调的 `state` 校验通过后才换取令牌；访问令牌过期前自动用 refresh_token 续期。
+- **新配置不预填测试环境**：OAuth 2.0 的发现地址、客户端 ID、重定向地址默认空白，输入框只显示灰色示例；只有授权范围默认 `openid profile offline_access`。已保存的配置仍按原样保留。
+- **附加位置**：请求头（`Authorization: Bearer …`）或查询参数（`access_token=…`）；请求里已经手写的同名请求头优先，不会被覆盖。
+- **全链路一致**：界面发送、cURL 预览、MCP `send_request` / `get_curl`、自动化套件使用同一套解析结果。
+- **落盘加密**：OAuth 的 access_token、refresh_token、id_token，以及 Bearer 令牌、Basic 密码、API Key 值都用 Windows DPAPI 加密后写入 `workspace.json`，只允许当前用户解密；审计中的 `Authorization` 与敏感查询参数统一打码。
+- **失败可见**：发现、授权、换取令牌每一步的错误都停在窗口里并可复制，不会一闪而过。
+
+![授权配置](docs/authorization.png)
+
+截图中的地址来自本地测试环境已保存的配置；新建配置默认是空白，输入框里的灰色文字只是示例。
+
+请求编辑区的「授权」标签页会在标题里写明当前作用对象：选中请求时显示「请求「…」」和继承来源，选中集合时显示「集合「…」」；「打开授权配置…」与顶栏钥匙按钮都按当前选中对象打开。集合配置也可以从树节点右键菜单「授权配置」进入：
+
+![请求授权](docs/request-authorization.png)
+
+选中集合后，同一标签页直接编辑该集合的授权，并把保存范围写清楚；切换集合会换成它自己的一份：
+
+![集合授权](docs/collection-authorization.png)
+
 ### 界面
 
 - 启动时读取系统深色 / 浅色主题；设置窗口可固定为浅色或深色，原生标题栏同步。
@@ -123,6 +149,8 @@ PostSharp 的定位是：
 | AtomUI | 由 TKCode.Arc 带入，`6.2.8` |
 | MVVM | CommunityToolkit.Mvvm `8.4.0` |
 | 持久化 | `System.Text.Json`，本地文件 |
+| 内嵌浏览器 | `Avalonia.Controls.WebView` `12.1.1`（Windows 走 WebView2 运行时） |
+| 令牌存储 | Windows DPAPI：`System.Security.Cryptography.ProtectedData` `10.0.13` |
 | 日志 | Serilog `4.3.0` + Serilog.Sinks.File `7.0.0`，按天滚动 |
 | OpenAPI | YAML：YamlDotNet `16.3.0`；JSON：`System.Text.Json` |
 | Postman / cURL / HAR / Insomnia / Hoppscotch | `System.Text.Json` 与内置解析器，无新增运行时依赖 |
@@ -135,6 +163,7 @@ PostSharp 的定位是：
 
 - .NET 10 SDK（验证版本：10.0.402）
 - Windows 10/11 为主要验证平台；Windows 专属的标题栏 API 做了平台判断。
+- 单点登录使用系统 WebView2 运行时（Windows 11 自带，Windows 10 若缺失需安装 Microsoft Edge WebView2 Runtime）。
 
 ### 运行
 
@@ -186,6 +215,7 @@ Apifox 的原生格式暂未直接解析；当前推荐三条官方导出路径�
    - **指南**：一分钟了解全部核心功能。
 4. 顶栏「设置」打开独立设置窗口：主题、日志目录、字体、超时、默认请求体等。
 5. 集合树顶部的「导入」打开导入/导出对话框，先选择来源卡片，再选择文件或粘贴内容；底部「批量导入文件…」可以一次选择多个文件并自动识别格式。
+6. 选中请求并打开「授权」标签页：默认「继承上级集合」，标题会写明继承自哪个集合；要单独配置就先选类型（Bearer / Basic / API Key / OAuth 2.0），再点「打开授权配置…」。选中集合时同一标签页改为编辑该集合的授权，同集合下未单独配置的请求共用这份授权；切到另一个集合会显示它自己的配置，不会沿用上一份。
 
 ![一分钟指南](docs/guide.png)
 
@@ -422,7 +452,7 @@ http://127.0.0.1:5199/mcp
 
 ```text
 Windows: %APPDATA%\PostSharp\
-  workspace.json   集合、请求、环境（含机密标记）、历史、历史回收站、集合回收站、自动化套件
+  workspace.json   集合、请求、环境（含机密标记）、历史、历史回收站、集合回收站、自动化套件、按请求/集合保存的授权配置与加密令牌
   *.json.bak       上一次成功保存的版本，主文件损坏时自动使用
   *.unreadable-YYYYMMDD-HHmmss.json  启动时无法读取的原文件，移到旁边保留、不会被覆盖
   audit.json       UI / MCP 请求审计（含 AI 聚合输出）
@@ -438,7 +468,7 @@ Windows: %APPDATA%\PostSharp\
 - 主文件缺失或损坏时会读 `.bak`；`.bak` 也损坏则移到旁边保留，`.bak` 被占用则本次运行不写入该文件，保证唯一的好备份不会被覆盖。
 - `.bak` 被其他程序打开时，保存仍会完成，只是本次不更新备份；保存真正失败（如目录不可写）时，顶部提示条会显示原因，下次保存自动重试。
 - 只删除 `workspace.json` 而保留 `workspace.json.bak` 时，启动会从备份恢复；要恢复首次运行的示例，请删除整个数据目录。
-- 机密变量的值仍以明文保存在本机 `workspace.json` 中（发送请求需要原值），打码只作用于审计、MCP 返回与套件结果。
+- 机密变量的值仍以明文保存在本机 `workspace.json` 中（发送请求需要原值），打码只作用于审计、MCP 返回与套件结果；授权配置跟着请求/集合走，令牌用 DPAPI 以当前用户为范围加密后写入 `workspace.json`，换机器或换用户后需要重新登录。
 - 日志为 UTF-8 文本，默认保留最近 30 个文件；修改设置中的日志目录或日志级别后立即生效，旧日志不会自动迁移。
 - 字体文件只在本机读取；导入时复制到应用字体库，移除字体目录不会删除已导入的文件。
 - 数据不上传任何服务。
@@ -450,6 +480,8 @@ src/PostSharp/
   Assets/                 透明底 Logo、紧凑图标、多尺寸 ICO
   Models/
     RequestItem.cs        请求/集合、multipart 字段、收藏与展开状态
+    RequestAuth.cs        请求/集合的授权配置（类型、附加位置、凭据、OAuth 2.0）
+    AuthorizationProfile.cs OAuth 2.0 发现配置与加密令牌
     TreeDisplayNode.cs    展平后的侧栏树行
     SuiteSourceCollection.cs 套件来源集合选择
     AppSettings.cs        全局设置（字体、字体目录、侧栏宽度、历史折叠等）
@@ -478,12 +510,16 @@ src/PostSharp/
     HoppscotchImportService.cs Hoppscotch Collection JSON 解析
     ImportFileDetector.cs 批量导入文件格式自动识别
     CurlImportService.cs   bash 风格 cURL 参数解析与请求还原
-    RequestComposer.cs    环境变量、URL、cURL、multipart 组合
+    RequestComposer.cs    环境变量、URL、认证注入、cURL、multipart 组合
+    AuthResolver.cs       请求 → 集合的授权继承解析与摘要
+    AuthInjection.cs      一次请求解析出的认证材料
+    AuthorizationService.cs OIDC 流程、令牌刷新与认证头/查询参数生成
+    AuthSecretProtector.cs 令牌与密钥的 DPAPI 加密
     HttpRequestService.cs HTTP、超时、格式化、SSE 解析聚合
     MockApiServer.cs      Mock API / SSE / 上传
     McpServer.cs          MCP JSON-RPC 协议与工具
     McpWorkspaceAdapter.cs MCP 与 UI 线程的适配
-    WorkspaceStore.cs     工作区持久化
+    WorkspaceStore.cs     工作区持久化（含授权配置）
     AuditStore.cs         审计持久化
     SettingsStore.cs      设置持久化
   ViewModels/
@@ -493,9 +529,11 @@ src/PostSharp/
     CollectionTree.cs     集合树规则（层级上限、扁平顺序同步），主窗口与回收站共用
     AuditScrubber.cs      审计记录补做打码、写盘与删除旧备份
     DataNoticeViewModel.cs 数据文件恢复提示
+    AuthorizationViewModel.cs 授权窗口状态机（登录、回调、刷新、注销）
   Views/
     MainWindow.axaml      主界面 + 管理层
     SettingsWindow.axaml  独立设置窗口
+    AuthorizationWindow.axaml 授权配置与内嵌登录窗口
     TextViewerWindow.axaml 大响应分页详情
     TreeTrashDialogs.axaml 集合回收站与永久删除确认弹窗
     EnvironmentVariableRow.axaml 环境变量行（含机密开关）
@@ -539,6 +577,9 @@ docs/
   tree-trash.png
   env-secret.png
   data-recovery.png
+  authorization.png
+  request-authorization.png
+  collection-authorization.png
 ```
 
 ## 设计与实现
@@ -551,7 +592,8 @@ docs/
 - **大响应**：主视图只绑定预览字符串，完整文本只保存在 VM；详情窗口按页取子串，避免一次性布局超大文本。
 - **侧栏树**：可见行扁平化为 `TreeDisplayNode`；刷新时按集合/请求对象做增量对账，未变化的行复用节点与容器，`ItemsControl` 使用 `VirtualizingStackPanel` 只实例化视口内的行。
 - **审计**：发送路径统一走 `RecordAudit`，UI/MCP 共用；MCP 客户端名和工具名由调用上下文传入。
-- **安全**：Mock/MCP 仅回环。
+- **授权解析**：`AuthResolver` 沿「请求 → 父集合 → …」找到最近一层非「继承」的配置，一路继承则返回 null（不附加认证）；`MainWindowViewModel` 用当前树选中对象决定 `EditingAuth`，集合与请求各编辑自己的 `RequestAuth`。`AuthorizationService` 把配置解析成请求头或查询参数，`RequestComposer` 统一注入并跳过用户手写的同名头。
+- **安全**：Mock/MCP 仅回环；审计写入前对 `Authorization` 头和含 token/key/secret/password 的查询参数打码。
 
 ## 验证记录
 
@@ -591,6 +633,7 @@ docs/
 | 集合组装套件 | 勾选集合生成 9 步骤套件并出现在自动化列表 |
 | 设置窗口 | 顶栏「设置」直达独立窗口；主题、日志、字体、请求默认值分组展示，保存后写入 `settings.json` 并立即应用；重复点击只激活已打开窗口 |
 | 设置弹层 | 设置窗口内的 Arc 下拉正常弹出，不再触发「no overlay layer」崩溃 |
+| 授权窗口弹层 | 请求「GET /ping」打开授权配置窗口，「类型」下拉正常展开并列出 6 项认证方式，进程保持运行，日志无「no overlay layer」异常 |
 | 请求级超时 | 慢响应请求单独设为 1 秒后发送，返回「请求超时，1 秒内没有收到响应」；超时期间可通过取消停止请求 |
 | 启动主题 | Windows 为深色时「跟随系统」启动为深色；切换为「浅色」或「深色」重启后保持对应外观 |
 | 文件日志 | 启动写入 `%APPDATA%\PostSharp\logs\postsharp-20261025.log`；修改日志目录并保存后，新日志立即写入新目录 |
@@ -654,6 +697,22 @@ docs/
 | 四次审核复测 | 主文件缺失且 `.bak` 被占用时两次保存均被拒绝、`.bak` 原样保留；`.bak` 损坏时移到旁边；`.bak` 被独占打开时保存仍成功；目录不可写时保存返回失败而不抛异常；`\/` 与 `\u002B` 转义的机密回显被打码；集合回收站超过 200 项时丢弃最早一项；无所属集合的请求删除返回失败（单测） |
 | 截图 | 新增 `docs/tree-trash.png`、`docs/env-secret.png`、`docs/data-recovery.png`（示例工作区）；`screenshot.png` 与 `management-automation.png` 未重截，差异仅为侧栏回收站图标与「取消运行」按钮 |
 | 构建 | Debug / Release 0 警告、0 错误 |
+| OIDC 登录 | 本地 `dpz.core.test` 授权码 + S256 PKCE：在「OAuth 验证」集合上打开授权窗口，内嵌浏览器登录 `pengqian`，拦截 `redirect_uri` 换取令牌；状态显示「已登录」、用户与到期时间 |
+| 集合级授权 | 请求「账号列表（集合授权）」为「继承上级集合」，解析到集合的 OAuth 2.0 令牌；`GET https://localhost:53381/api/Account` 返回 `200 OK`（155ms），cURL 预览含 `Authorization: Bearer …` |
+| 请求级覆盖 | 同一集合内请求「账号列表（请求关闭认证）」显式设为「无认证」，发送返回 `401 Unauthorized`，证明请求级可以覆盖集合 |
+| 无全局默认 | 根集合「无认证验证」的请求未配置授权；即使集合授权已登录，发送仍返回 `401 Unauthorized`，不再有全局默认令牌 |
+| Bearer 与变量 | 集合设为 Bearer 且令牌填 `{{token}}`，MCP 发送 `GET /api/echo` 回显 `Authorization: Bearer demo-token-123`；未配置认证的对照请求无该头 |
+| 查询参数注入 | 请求级 Bearer + 附加位置「查询参数」：回显 `access_token=demo-token-123`，请求头不含 Authorization |
+| MCP 授权一致性 | `send_request` 走同一解析：集合授权请求 `200`、无认证请求 `401`；审计 `Curl` / `RequestHeaders` 中 `Authorization` 为 `Bearer ****` |
+| 授权窗口 | 新窗口包含类型/附加位置、Bearer/Basic/API Key 凭据、OAuth 2.0 配置、登录/刷新/退出与内嵌浏览器；`docs/authorization.png`、`docs/request-authorization.png`、`docs/collection-authorization.png` 已更新 |
+| 集合级授权入口 | 树中选中集合后，「授权」标签页标题为「集合「测试集合A」· 未配置授权」，类型下拉默认「继承上级集合」；改为 Bearer 并填写令牌后保存，`workspace.json` 中该集合 `Auth.AuthType=Bearer`、`TokenCipher` 有值，集合内两个请求的 `Auth` 仍为空 |
+| 作用域切换 | 选中「测试集合B」后授权标签页立即变为「集合「测试集合B」· 未配置授权」，令牌输入为空，不显示集合 A 的 `collection-a-token`；再选中请求 A1 时变为「请求「请求A1」· 继承自集合「测试集合A」」，摘要显示集合 A 的 Bearer 令牌 |
+| 集合级 OIDC | 集合 A 配置 OAuth 2.0，内嵌浏览器登录 `pengqian` 后状态「已登录：胖胖°」；请求 A1 保持「继承上级集合」，`GET https://localhost:53381/api/Account` 返回 `200 OK`（154ms）并显示账号列表 |
+| 集合作用域隔离 | 从集合 B 打开授权窗口，标题为「授权配置 · 集合「测试集合B」· PostSharp」，说明为「该集合当前未配置授权」；切换为 OAuth 2.0 后显示「尚未登录」，不出现集合 A 的登录用户与令牌 |
+| 授权说明联动 | 在集合 B 的授权窗口切换类型后，窗口上方的对象说明从「Bearer 令牌」实时改为「OAuth 2.0 · 未登录」，不再停留在打开窗口时的旧摘要 |
+| OAuth 默认值 | 新集合切换到 OAuth 2.0 后，发现地址、客户端 ID、重定向地址为空，不出现 `dpz.core.test`、`localhost:7183` 或 `localhost:53381`；输入框显示灰色示例占位符，授权范围默认 `openid profile offline_access` |
+| 授权复制与解析 | 临时控制台验证：`RequestAuth.Clone()` 后修改副本的 access_token 不影响原对象；`AuthResolver` 对「集合 A Bearer → 子集合 B 继承 → 请求」解析到集合 A，子集合 C 配 API Key 时请求 2 解析到集合 C |
+| 构建 | Debug / Release 均 0 警告、0 错误；`csharpier check .` 通过 |
 
 ## 开发约定
 
@@ -746,7 +805,9 @@ master                 稳定可发布
 - Hoppscotch 支持 Collection JSON；环境文件、multipart 文件内容和脚本不会导入。
 - 字体设置主要覆盖窗口正文和代码视图；Arc 组件的内部令牌字体不保证全部跟随。
 - OpenAPI 导入会优先使用 `x-apifox-folder`，支持 securitySchemes 占位认证头、服务器选择和外部 `$ref` 自动下载；回调/Webhook 仍未实现。
-- Cookie 管理、代理、客户端证书、OAuth、Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
+- Cookie 管理、代理、客户端证书、OAuth 2.0 之外的授权类型（隐式、客户端凭据、设备码）、Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
+- 授权只支持请求与集合两级（含多级集合继承），没有工作区级或环境级默认授权；同一集合的授权由该集合对象持有，未单独覆盖的下级请求共用同一个令牌，刷新后同步生效。
+- 单点登录依赖系统 WebView2 运行时；复制请求会复制一份独立的授权与令牌，副本重新登录或刷新不会影响原请求；删除集合/请求时其授权配置一起移除。
 - MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。
 - 删除环境仍为直接删除，尚未进入回收站。
 

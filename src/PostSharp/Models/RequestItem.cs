@@ -41,6 +41,9 @@ public partial class RequestCollection : ObservableObject
 
     /// <summary>Requests in this collection and all of its sub-collections.</summary>
     public int TotalRequestCount => Requests.Count + Children.Sum(child => child.TotalRequestCount);
+
+    /// <summary>集合级授权；子集合与请求默认继承它。</summary>
+    public RequestAuth Auth { get; } = new();
 }
 
 public partial class RequestItem : ObservableObject
@@ -100,6 +103,9 @@ public partial class RequestItem : ObservableObject
 
     public EditableRowCollection FormFields { get; } = new();
 
+    /// <summary>请求级授权，默认继承所属集合。</summary>
+    public RequestAuth Auth { get; set; } = new();
+
     public RequestCollection? Owner { get; set; }
 
     partial void OnUploadFilePathChanged(string value)
@@ -146,7 +152,11 @@ public partial class RequestItem : ObservableObject
         _syncingUploadFields = false;
     }
 
-    public RequestItem Clone()
+    /// <summary>
+    /// 复制请求。<paramref name="copyAuthorization" /> 为 false 时与原请求共用同一份授权配置，
+    /// 供 MCP、套件这类「只读快照」使用；变成新请求时则复制一份，避免两处互相影响。
+    /// </summary>
+    public RequestItem Clone(bool copyAuthorization = true)
     {
         var clone = new RequestItem
         {
@@ -156,6 +166,8 @@ public partial class RequestItem : ObservableObject
             TimeoutSeconds = TimeoutSeconds,
             BodyMode = BodyMode,
             Body = Body,
+            Owner = Owner,
+            Auth = copyAuthorization ? Auth.Clone() : Auth,
         };
 
         foreach (var file in UploadFiles)

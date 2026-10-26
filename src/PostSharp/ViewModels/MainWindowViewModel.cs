@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PostSharp.Models;
@@ -28,6 +29,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private readonly AuditStore _auditStore = new();
     private readonly SettingsStore _settingsStore = new();
     private readonly HttpRequestService _http = new();
+    private readonly AuthorizationService _authorizationService = new();
     private readonly MockApiServer _mockServer = new();
     private readonly Dictionary<Guid, TestRunResult> _suiteResults = new();
     private readonly AuditScrubber _auditScrubber;
@@ -174,7 +176,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         Import = new ImportViewModel(this);
         RefreshAuditView();
         BindEditingTracking();
-        RefreshDerivedState();
+        RefreshAuthState();
         RefreshTree();
         UpdateSelectionFlags();
 
@@ -878,6 +880,207 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public SettingsViewModel CreateSettingsViewModel() => new(Settings, _settingsStore);
 
+    public AuthorizationViewModel CreateAuthorizationViewModel(
+        RequestAuth auth,
+        string targetLabel,
+        Func<string> targetDetailFactory
+    ) => new(auth, targetLabel, targetDetailFactory);
+
+    private RequestCollection? AuthCollectionTarget =>
+        SelectedRequest is null ? SelectedCollection : null;
+
+    /// <summary>树里选中的是集合而不是请求；此时授权标签页编辑集合自己的配置。</summary>
+    public bool IsCollectionSelected => AuthCollectionTarget is not null;
+
+    /// <summary>授权标签页与工具栏钥匙按钮当前编辑的那份配置：选中的集合或当前请求。</summary>
+    public RequestAuth EditingAuth =>
+        AuthCollectionTarget is { } collection ? collection.Auth : Editing.Auth;
+
+    /// <summary>当前编辑对象通过继承拿到授权的集合；自己配置了授权或一路继承时为 null。</summary>
+    public RequestCollection? InheritedAuthSource { get; private set; }
+
+    /// <summary>「编辑所属 / 上级集合授权」按钮要打开的集合；没有可跳转的上级时为 null。</summary>
+    public RequestCollection? EnclosingCollectionAuthTarget
+    {
+        get
+        {
+            if (AuthCollectionTarget is not null)
+            {
+                return InheritedAuthSource;
+            }
+
+            return Editing.Owner;
+        }
+    }
+
+    public bool HasEnclosingCollectionAuth => EnclosingCollectionAuthTarget is not null;
+
+    public string EnclosingCollectionAuthLabel =>
+        AuthCollectionTarget is not null ? "编辑上级集合授权" : "编辑所属集合授权";
+
+    public string AuthScopeTitle { get; private set; } = string.Empty;
+
+    public string AuthScopeDetail { get; private set; } = string.Empty;
+
+    public string AuthScopeSummary { get; private set; } = string.Empty;
+
+    public void RefreshAuthState()
+    {
+        InheritedAuthSource = AuthCollectionTarget is { } collection
+            ? AuthResolver.FindInheritSource(collection)
+            : AuthResolver.FindInheritSource(Editing);
+
+        AuthScopeTitle = BuildAuthScopeTitle();
+        AuthScopeDetail = BuildAuthScopeDetail();
+        AuthScopeSummary = BuildAuthScopeSummary();
+        OnPropertyChanged(nameof(InheritedAuthSource));
+        OnPropertyChanged(nameof(EnclosingCollectionAuthTarget));
+        OnPropertyChanged(nameof(HasEnclosingCollectionAuth));
+        OnPropertyChanged(nameof(EnclosingCollectionAuthLabel));
+        OnPropertyChanged(nameof(AuthScopeTitle));
+        OnPropertyChanged(nameof(AuthScopeDetail));
+        OnPropertyChanged(nameof(AuthScopeSummary));
+        RefreshDerivedState();
+    }
+
+    /// <summary>授权窗口与标签页共用这段说明：写清保存后到底影响谁。</summary>
+    public string DescribeCollectionAuthTarget(RequestCollection collection)
+    {
+        if (!collection.Auth.IsInherit)
+        {
+            return $"只作用于集合「{collection.Name}」及其下级中仍选择「继承」的请求：{AuthResolver.Describe(collection.Auth)}。";
+        }
+
+        return AuthResolver.FindInheritSource(collection) is { } source
+            ? $"当前继承上级集合「{source.Name}」的授权：{AuthResolver.Describe(source.Auth)}。在这里配置后只覆盖本集合及其下级。"
+            : "该集合当前未配置授权；在这里配置后只影响本集合及其下级，其他集合不受影响。";
+    }
+
+    public string DescribeRequestAuthTarget(RequestItem request)
+    {
+        if (!request.Auth.IsInherit)
+        {
+            return $"只影响请求「{request.Name}」：{AuthResolver.Describe(request.Auth)}。";
+        }
+
+        return AuthResolver.FindInheritSource(request) is { } source
+            ? $"请求「{request.Name}」当前继承集合「{source.Name}」的授权：{AuthResolver.Describe(source.Auth)}。在这里配置后只覆盖这个请求。"
+            : $"请求「{request.Name}」当前不附加认证；在这里配置后只影响这个请求。";
+    }
+
+    /// <summary>授权窗口关闭后调用：把窗口里改过的配置落盘，并刷新摘要与 cURL。</summary>
+    public void OnAuthorizationDialogClosed()
+    {
+        Persist();
+        RefreshAuthState();
+    }
+
+    /// <summary>发送前解析这次请求的授权；OAuth 2.0 令牌过期时先续期。</summary>
+    public async Task<AuthInjection?> ResolveAuthAsync(
+        RequestItem request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var auth = AuthResolver.Resolve(request);
+        if (auth is null)
+        {
+            return null;
+        }
+
+        if (auth.AuthType == AuthKinds.OAuth2 && auth.OAuth2 is { } profile)
+        {
+            if (profile.IsTokenExpired && profile.CanRefresh)
+            {
+                await _authorizationService.EnsureFreshAsync(profile, cancellationToken);
+            }
+
+            return AuthorizationService.BuildInjection(profile, auth.Target);
+        }
+
+        return AuthorizationService.BuildInjection(auth);
+    }
+
+    /// <summary>同步版本，给 cURL 预览这类不能等待令牌刷新的地方用。</summary>
+    public AuthInjection? ResolveAuth(RequestItem request)
+    {
+        var auth = AuthResolver.Resolve(request);
+        return auth is null ? null : AuthorizationService.BuildInjection(auth);
+    }
+
+    private string BuildAuthScopeTitle()
+    {
+        if (AuthCollectionTarget is { } collection)
+        {
+            if (!collection.Auth.IsInherit)
+            {
+                return $"集合「{collection.Name}」· 本级授权";
+            }
+
+            return InheritedAuthSource is { } source
+                ? $"集合「{collection.Name}」· 继承自「{source.Name}」"
+                : $"集合「{collection.Name}」· 未配置授权";
+        }
+
+        if (!Editing.Auth.IsInherit)
+        {
+            return $"请求「{Editing.Name}」· 本级授权";
+        }
+
+        return InheritedAuthSource is { } inherited
+            ? $"请求「{Editing.Name}」· 继承自集合「{inherited.Name}」"
+            : $"请求「{Editing.Name}」· 未配置授权";
+    }
+
+    private string BuildAuthScopeDetail()
+    {
+        if (AuthCollectionTarget is { } collection)
+        {
+            if (!collection.Auth.IsInherit)
+            {
+                return $"只作用于该集合及其下级中仍选择「继承」的请求：{AuthResolver.Describe(collection.Auth)}。";
+            }
+
+            return InheritedAuthSource is { } source
+                ? $"本集合未覆盖，使用上级集合「{source.Name}」的授权：{AuthResolver.Describe(source.Auth)}；该集合下未单独配置的请求共用这份授权。"
+                : "该集合与其下级都未配置授权，发送时不附加认证；选择一种认证类型即可为本集合配置。";
+        }
+
+        if (!Editing.Auth.IsInherit)
+        {
+            return $"只影响「{Editing.Name}」：{AuthResolver.Describe(Editing.Auth)}。";
+        }
+
+        return InheritedAuthSource is { } inherited
+            ? $"{AuthResolver.Describe(inherited.Auth)}；该集合下未单独配置的请求共用这份授权，修改集合授权会影响这些请求。"
+            : "发送时不附加 Authorization 头或令牌参数；选择一种认证类型即可为这个请求单独配置。";
+    }
+
+    private string BuildAuthScopeSummary()
+    {
+        if (AuthCollectionTarget is { } collection)
+        {
+            var resolved = AuthResolver.Resolve(collection);
+            if (resolved is null)
+            {
+                return $"集合「{collection.Name}」：不附加认证";
+            }
+
+            return InheritedAuthSource is { } source
+                ? $"集合「{collection.Name}」继承「{source.Name}」：{AuthResolver.Describe(resolved)}"
+                : $"集合「{collection.Name}」：{AuthResolver.Describe(resolved)}";
+        }
+
+        var requestAuth = AuthResolver.Resolve(Editing);
+        if (requestAuth is null)
+        {
+            return $"请求「{Editing.Name}」：不附加认证";
+        }
+
+        return AuthResolver.FindInheritSource(Editing) is { } inherited
+            ? $"请求「{Editing.Name}」继承「{inherited.Name}」：{AuthResolver.Describe(requestAuth)}"
+            : $"请求「{Editing.Name}」：{AuthResolver.Describe(requestAuth)}";
+    }
+
     private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
     {
         _http.TimeoutSeconds = Math.Clamp(Settings.RequestTimeoutSeconds, 5, 600);
@@ -1189,14 +1392,31 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         + "套件：list_suites、get_suite、create_suite、create_suite_from_collections、update_suite、run_suite、delete_suite；"
         + "运行与审计：send_request、run_sequence、get_curl、list_audit、get_audit、list_history、list_environments、set_variable。";
 
-    public string EditorHint => IsDraft ? "草稿 · 保存后加入集合" : "Ctrl+S 保存 · Ctrl+Enter 发送";
+    public string EditorHint =>
+        IsCollectionSelected ? "已选中集合 · 「授权」标签页正在配置集合授权"
+        : IsDraft ? "草稿 · 保存后加入集合"
+        : "Ctrl+S 保存 · Ctrl+Enter 发送";
 
     partial void OnEditingChanged(RequestItem value)
     {
         OnPropertyChanged(nameof(IsDraft));
         OnPropertyChanged(nameof(EditorHint));
         BindEditingTracking();
-        RefreshDerivedState();
+        OnPropertyChanged(nameof(EditingAuth));
+        RefreshAuthState();
+    }
+
+    partial void OnSelectedCollectionChanged(RequestCollection? value) => OnAuthScopeChanged();
+
+    partial void OnSelectedRequestChanged(RequestItem? value) => OnAuthScopeChanged();
+
+    private void OnAuthScopeChanged()
+    {
+        BindAuthTracking();
+        OnPropertyChanged(nameof(IsCollectionSelected));
+        OnPropertyChanged(nameof(EditingAuth));
+        OnPropertyChanged(nameof(EditorHint));
+        RefreshAuthState();
     }
 
     partial void OnFilterTextChanged(string value) => NotifyTreeChanged();
@@ -1272,7 +1492,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             HttpResult result;
             try
             {
-                var composed = RequestComposer.Compose(request, ActiveEnvironment);
+                var auth = await ResolveAuthAsync(request, _sendCts.Token);
+                var composed = RequestComposer.Compose(request, ActiveEnvironment, auth);
 
                 // Masked before the await: the request and environment can be edited while it is on its way.
                 stored = SecretMasker.MaskComposed(request, ActiveEnvironment, composed, secrets);
@@ -1556,6 +1777,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         Persist();
         NotifySelectionChanged();
         NotifyTreeChanged();
+        RefreshAuthState();
         return collection;
     }
 
@@ -1664,6 +1886,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             SelectedCollection = target;
         }
 
+        RefreshAuthState();
         Persist();
         NotifySelectionChanged();
         NotifyTreeChanged();
@@ -1997,6 +2220,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         Persist();
         NotifySelectionChanged();
         NotifyTreeChanged();
+        RefreshAuthState();
         return true;
     }
 
@@ -2026,6 +2250,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         Persist();
         NotifySelectionChanged();
         NotifyTreeChanged();
+        RefreshAuthState();
         return true;
     }
 
@@ -2280,6 +2505,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         _pendingDelete = null;
         IsRenameDialogOpen = false;
+        RefreshAuthState();
         Persist();
         NotifyTreeChanged();
         ShowToast("名称已更新");
@@ -3432,7 +3658,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 continue;
             }
 
-            var effectiveRequest = step.InputMappings.Count > 0 ? request.Clone() : request;
+            var effectiveRequest =
+                step.InputMappings.Count > 0 ? request.Clone(copyAuthorization: false) : request;
             var mappingError =
                 step.InputMappings.Count > 0
                     ? ApplyInputMappings(effectiveRequest, step, stepResults)
@@ -3480,7 +3707,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 attempts++;
                 try
                 {
-                    var composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment);
+                    var auth = await ResolveAuthAsync(effectiveRequest, cancellationToken);
+                    var composed = RequestComposer.Compose(
+                        effectiveRequest,
+                        ActiveEnvironment,
+                        auth
+                    );
                     stored = SecretMasker.MaskComposed(
                         effectiveRequest,
                         ActiveEnvironment,
@@ -4115,6 +4347,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         _trackedHeaders = Editing.Headers;
 
         _trackedEditing.PropertyChanged += OnTrackedEditingPropertyChanged;
+        BindAuthTracking();
         _trackedParams.CollectionChanged += OnTrackedRowsCollectionChanged;
         _trackedHeaders.CollectionChanged += OnTrackedRowsCollectionChanged;
 
@@ -4125,16 +4358,40 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
     }
 
+    /// <summary>跟踪当前作用域那份授权，集合与请求切换时换订阅。</summary>
+    private void BindAuthTracking()
+    {
+        if (_trackedAuth is not null)
+        {
+            _trackedAuth.PropertyChanged -= OnTrackedAuthPropertyChanged;
+        }
+
+        _trackedAuth = EditingAuth;
+        _trackedAuth.PropertyChanged += OnTrackedAuthPropertyChanged;
+    }
+
     private RequestItem? _trackedEditing;
+    private RequestAuth? _trackedAuth;
     private EditableRowCollection? _trackedParams;
     private EditableRowCollection? _trackedHeaders;
     private readonly List<KeyValueRow> _trackedRows = new();
+
+    private void OnTrackedAuthPropertyChanged(
+        object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e
+    ) => RefreshAuthState();
 
     private void OnTrackedEditingPropertyChanged(
         object? sender,
         System.ComponentModel.PropertyChangedEventArgs e
     )
     {
+        if (e.PropertyName == nameof(RequestItem.Name))
+        {
+            RefreshAuthState();
+            return;
+        }
+
         if (
             e.PropertyName
             is nameof(RequestItem.Url)
@@ -4203,7 +4460,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             ? $"重复请求头：{string.Join("、", duplicates)}；发送时会按行依次附加。"
             : string.Empty;
 
-        CurlPreview = RequestComposer.BuildCurl(Editing, ActiveEnvironment);
+        CurlPreview = RequestComposer.BuildCurl(Editing, ActiveEnvironment, ResolveAuth(Editing));
     }
 
     private static string Truncate(string text, int limit)

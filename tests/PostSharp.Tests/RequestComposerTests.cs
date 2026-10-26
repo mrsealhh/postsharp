@@ -95,6 +95,38 @@ public sealed class RequestComposerTests
         }
     }
 
+    [Fact]
+    public void MaskAuthorizationHidesQueryTokenAndApiKeyHeader()
+    {
+        var composed = new ComposedRequest(
+            "GET",
+            "https://example.com/api?access_token=secret&page=1",
+            new[]
+            {
+                new KeyValuePair<string, string>("X-Api-Key", "secret"),
+                new KeyValuePair<string, string>("Authorization", "Bearer secret"),
+                new KeyValuePair<string, string>("Accept", "application/json"),
+            },
+            null,
+            null,
+            null
+        );
+
+        var masked = RequestComposer.MaskAuthorization(composed);
+
+        Assert.DoesNotContain("secret", masked.Url);
+        Assert.Contains("access_token=****", masked.Url);
+        Assert.Contains(masked.Headers, pair => pair.Key == "X-Api-Key" && pair.Value == "****");
+        Assert.Contains(
+            masked.Headers,
+            pair => pair.Key == "Authorization" && pair.Value == "Bearer ****"
+        );
+        Assert.Contains(
+            masked.Headers,
+            pair => pair.Key == "Accept" && pair.Value == "application/json"
+        );
+    }
+
     private static string CreateTempFile(string fileName, string content)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"postsharp-{Guid.NewGuid():N}");
