@@ -38,6 +38,9 @@ public partial class RequestCollection : ObservableObject
     public ObservableCollection<RequestCollection> Children { get; } = new();
 
     public ObservableCollection<RequestItem> Requests { get; } = new();
+
+    /// <summary>集合级授权；子集合与请求默认继承它。</summary>
+    public RequestAuth Auth { get; } = new();
 }
 
 public partial class RequestItem : ObservableObject
@@ -82,9 +85,16 @@ public partial class RequestItem : ObservableObject
 
     public EditableRowCollection FormFields { get; } = new();
 
+    /// <summary>请求级授权，默认继承所属集合。</summary>
+    public RequestAuth Auth { get; set; } = new();
+
     public RequestCollection? Owner { get; set; }
 
-    public RequestItem Clone()
+    /// <summary>
+    /// 复制请求。<paramref name="copyAuthorization" /> 为 false 时与原请求共用同一份授权配置，
+    /// 供 MCP、套件这类「只读快照」使用；变成新请求时则复制一份，避免两处互相影响。
+    /// </summary>
+    public RequestItem Clone(bool copyAuthorization = true)
     {
         var clone = new RequestItem
         {
@@ -96,6 +106,8 @@ public partial class RequestItem : ObservableObject
             Body = Body,
             UploadFilePath = UploadFilePath,
             UploadFieldName = UploadFieldName,
+            Owner = Owner,
+            Auth = copyAuthorization ? Auth.Clone() : Auth,
         };
 
         foreach (

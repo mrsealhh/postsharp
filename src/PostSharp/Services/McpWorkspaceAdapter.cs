@@ -380,7 +380,10 @@ public sealed class McpWorkspaceAdapter
                 ? _viewModel.Environments.FirstOrDefault(candidate => candidate.Id == requested)
                 : _viewModel.ActiveEnvironment;
 
-            return new SendSnapshot(request.Clone(), CloneEnvironment(environment));
+            return new SendSnapshot(
+                request.Clone(copyAuthorization: false),
+                CloneEnvironment(environment)
+            );
         });
 
         if (snapshot is null)
@@ -396,7 +399,8 @@ public sealed class McpWorkspaceAdapter
         HttpResult result;
         try
         {
-            composed = RequestComposer.Compose(snapshot.Request, snapshot.Environment);
+            var auth = await _viewModel.ResolveAuthAsync(snapshot.Request, cancellationToken);
+            composed = RequestComposer.Compose(snapshot.Request, snapshot.Environment, auth);
             result = await _http.SendAsync(
                 composed,
                 cancellationToken,
@@ -517,7 +521,11 @@ public sealed class McpWorkspaceAdapter
         {
             var request =
                 FindRequest(id) ?? throw new KeyNotFoundException($"没有找到 id 为 {id} 的请求。");
-            return RequestComposer.BuildCurl(request, _viewModel.ActiveEnvironment);
+            return RequestComposer.BuildCurl(
+                request,
+                _viewModel.ActiveEnvironment,
+                _viewModel.ResolveAuth(request)
+            );
         });
     }
 

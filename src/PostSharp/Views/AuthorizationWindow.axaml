@@ -1,0 +1,413 @@
+<Window
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+    xmlns:vm="using:PostSharp.ViewModels"
+    x:Class="PostSharp.Views.AuthorizationWindow"
+    x:DataType="vm:AuthorizationViewModel"
+    Title="{Binding WindowTitle}"
+    Width="1120"
+    Height="840"
+    MinWidth="900"
+    MinHeight="640"
+    WindowStartupLocation="CenterOwner"
+    Background="{arc:ArcDesignTokenResource Background}"
+    FontFamily="{DynamicResource PostSharpBodyFont}"
+>
+    <Window.Styles>
+        <Style Selector="TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource PostSharpBodyFont}" />
+        </Style>
+        <Style Selector="SelectableTextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource PostSharpBodyFont}" />
+        </Style>
+        <Style Selector="Border.authSection">
+            <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}" />
+            <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusPanel}" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+        <Style Selector="Border.authError">
+            <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
+            <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Danger}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusControl}" />
+            <Setter Property="Padding" Value="12" />
+        </Style>
+    </Window.Styles>
+
+    <VisualLayerManager EnableOverlayLayer="True">
+        <Grid Margin="20" RowDefinitions="Auto,*" RowSpacing="14">
+            <StackPanel Spacing="2">
+                <TextBlock
+                    Text="授权配置"
+                    FontSize="{arc:ArcDesignTokenResource TypeXL}"
+                    FontWeight="SemiBold"
+                    Foreground="{arc:ArcDesignTokenResource Foreground}"
+                />
+                <TextBlock
+                    Text="{Binding TargetLabel}"
+                    FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                />
+                <TextBlock
+                    Text="{Binding TargetDetail}"
+                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                    TextWrapping="Wrap"
+                />
+                <TextBlock
+                    Text="这里保存的配置只属于上方对象；在树中切换集合或请求会打开各自的一份，不会沿用上一份。"
+                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                    TextWrapping="Wrap"
+                />
+            </StackPanel>
+
+            <Grid Grid.Row="1" ColumnDefinitions="440,*" ColumnSpacing="16">
+                <arc:ScrollArea Grid.Column="0" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="14" Margin="0,0,4,0">
+                        <Border Classes="authSection">
+                            <StackPanel Spacing="10">
+                                <TextBlock
+                                    Text="认证方式"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <arc:Select
+                                    Label="类型"
+                                    SelectedValue="{Binding Auth.AuthType, Mode=TwoWay}"
+                                    AutomationProperties.Name="认证类型"
+                                >
+                                    <arc:SelectItem Content="继承上级集合" Value="Inherit" />
+                                    <arc:SelectItem Content="无认证" Value="None" />
+                                    <arc:SelectItem Content="Bearer 令牌" Value="Bearer" />
+                                    <arc:SelectItem Content="Basic 认证" Value="Basic" />
+                                    <arc:SelectItem Content="API Key" Value="ApiKey" />
+                                    <arc:SelectItem Content="OAuth 2.0" Value="OAuth2" />
+                                </arc:Select>
+                                <arc:Select
+                                    Label="附加位置"
+                                    SelectedValue="{Binding Auth.Target, Mode=TwoWay}"
+                                    AutomationProperties.Name="附加位置"
+                                >
+                                    <arc:SelectItem Content="请求头" Value="Header" />
+                                    <arc:SelectItem Content="查询参数" Value="Query" />
+                                </arc:Select>
+                                <TextBlock
+                                    Text="请求头通常写 Authorization；查询参数写 access_token。Basic 认证固定写请求头。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <TextBlock
+                                    Text="继承上级集合：使用最近一层配置了授权的集合；根级集合选择继承等于这次请求不附加认证。"
+                                    IsVisible="{Binding Auth.IsInherit}"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    TextWrapping="Wrap"
+                                />
+                                <TextBlock
+                                    Text="无认证：明确关闭认证，即使上级集合配置了令牌也不会附加。"
+                                    IsVisible="{Binding Auth.IsNone}"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    TextWrapping="Wrap"
+                                />
+                                <arc:Input
+                                    Label="Bearer 令牌"
+                                    IsVisible="{Binding Auth.IsBearer}"
+                                    Text="{Binding Auth.Token, Mode=TwoWay}"
+                                    Description="只保存在本机，落盘时用 Windows DPAPI 加密。"
+                                    AutomationProperties.Name="Bearer 令牌"
+                                />
+                                <Grid
+                                    ColumnDefinitions="1*,1*"
+                                    ColumnSpacing="10"
+                                    IsVisible="{Binding Auth.IsBasic}"
+                                >
+                                    <arc:Input
+                                        Label="用户名"
+                                        Text="{Binding Auth.Username, Mode=TwoWay}"
+                                        AutomationProperties.Name="用户名"
+                                    />
+                                    <arc:Input
+                                        Grid.Column="1"
+                                        Label="密码"
+                                        Text="{Binding Auth.Password, Mode=TwoWay}"
+                                        Description="落盘时用 Windows DPAPI 加密。"
+                                        AutomationProperties.Name="密码"
+                                    />
+                                </Grid>
+                                <Grid
+                                    ColumnDefinitions="1*,1.2*,0.9*"
+                                    ColumnSpacing="10"
+                                    IsVisible="{Binding Auth.IsApiKey}"
+                                >
+                                    <arc:Input
+                                        Label="名称"
+                                        Text="{Binding Auth.ApiKeyName, Mode=TwoWay}"
+                                        AutomationProperties.Name="API Key 名称"
+                                    />
+                                    <arc:Input
+                                        Grid.Column="1"
+                                        Label="值"
+                                        Text="{Binding Auth.ApiKeyValue, Mode=TwoWay}"
+                                        Description="落盘时用 Windows DPAPI 加密。"
+                                        AutomationProperties.Name="API Key 值"
+                                    />
+                                    <arc:Select
+                                        Grid.Column="2"
+                                        Label="位置"
+                                        SelectedValue="{Binding Auth.ApiKeyLocation, Mode=TwoWay}"
+                                        AutomationProperties.Name="API Key 位置"
+                                    >
+                                        <arc:SelectItem Content="请求头" Value="Header" />
+                                        <arc:SelectItem Content="查询参数" Value="Query" />
+                                    </arc:Select>
+                                </Grid>
+                                <TextBlock
+                                    Text="OAuth 2.0 的服务器、客户端配置与登录在下方完成。"
+                                    IsVisible="{Binding Auth.IsOAuth2}"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    TextWrapping="Wrap"
+                                />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="authSection" IsVisible="{Binding Auth.IsOAuth2}">
+                            <StackPanel Spacing="10">
+                                <TextBlock
+                                    Text="OAuth 2.0 / OIDC"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <TextBlock
+                                    Text="新配置从空白开始，按当前授权服务器填写；下方灰色文字只是示例，不会自动保存。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                                <arc:Input
+                                    x:Name="DiscoveryInput"
+                                    Label="发现地址"
+                                    Text="{Binding Profile.DiscoveryUrl, Mode=TwoWay}"
+                                    Placeholder="https://login.example.com/.well-known/openid-configuration"
+                                    Description="读取 .well-known/openid-configuration，自动取得授权与令牌端点。"
+                                    AutomationProperties.Name="发现地址"
+                                />
+                                <arc:Input
+                                    Label="客户端 ID"
+                                    Text="{Binding Profile.ClientId, Mode=TwoWay}"
+                                    Placeholder="my-client-id"
+                                    AutomationProperties.Name="客户端 ID"
+                                />
+                                <arc:Input
+                                    Label="重定向地址"
+                                    Text="{Binding Profile.RedirectUri, Mode=TwoWay}"
+                                    Placeholder="https://app.example.com/signin-oidc"
+                                    Description="必须与授权服务器登记的地址完全一致。"
+                                    AutomationProperties.Name="重定向地址"
+                                />
+                                <arc:Input
+                                    Label="授权范围"
+                                    Text="{Binding Profile.Scopes, Mode=TwoWay}"
+                                    Placeholder="openid profile offline_access"
+                                    Description="空格分隔，例如 openid profile offline_access。"
+                                    AutomationProperties.Name="授权范围"
+                                />
+                                <arc:Input
+                                    Label="客户端密钥"
+                                    Text="{Binding Profile.ClientSecret, Mode=TwoWay}"
+                                    Description="公共客户端留空；机密客户端才需要填写。"
+                                    AutomationProperties.Name="客户端密钥"
+                                />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="authSection" IsVisible="{Binding Auth.IsOAuth2}">
+                            <StackPanel Spacing="10">
+                                <TextBlock
+                                    Text="操作"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    FontWeight="Medium"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                                <WrapPanel ItemSpacing="8" LineSpacing="8">
+                                    <arc:Button
+                                        Content="登录"
+                                        Variant="Primary"
+                                        Click="OnSignInClick"
+                                        IsEnabled="{Binding CanSignIn}"
+                                        AutomationProperties.Name="登录"
+                                    />
+                                    <arc:Button
+                                        Content="取消登录"
+                                        Variant="Secondary"
+                                        Click="OnCancelSignInClick"
+                                        IsVisible="{Binding IsSigningIn}"
+                                        AutomationProperties.Name="取消登录"
+                                    />
+                                    <arc:Button
+                                        Content="刷新令牌"
+                                        Variant="Secondary"
+                                        Click="OnRefreshClick"
+                                        IsEnabled="{Binding Profile.CanRefresh}"
+                                        AutomationProperties.Name="刷新令牌"
+                                    />
+                                    <arc:Button
+                                        Content="退出登录"
+                                        Variant="Ghost"
+                                        Click="OnSignOutClick"
+                                        IsEnabled="{Binding Profile.HasAccessToken}"
+                                        AutomationProperties.Name="退出登录"
+                                    />
+                                </WrapPanel>
+                                <TextBlock
+                                    Text="登录会在右侧内嵌浏览器里完成，授权码通过重定向地址拦截，不会打开系统浏览器。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="authSection" IsVisible="{Binding Auth.IsOAuth2}">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <arc:Badge
+                                        Content="{Binding StatusTitle}"
+                                        Tone="{Binding StatusTone}"
+                                    />
+                                    <TextBlock
+                                        Text="{Binding ExpiresAtText, StringFormat='到期 {0}'}"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        VerticalAlignment="Center"
+                                    />
+                                </StackPanel>
+                                <TextBlock
+                                    Text="{Binding StatusDetail}"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    TextWrapping="Wrap"
+                                />
+                                <Border Classes="authError" IsVisible="{Binding HasError}">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock
+                                            Text="失败原因"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            FontWeight="Medium"
+                                            Foreground="{arc:ArcDesignTokenResource Danger}"
+                                        />
+                                        <SelectableTextBlock
+                                            Text="{Binding ErrorText}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                            TextWrapping="Wrap"
+                                        />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </arc:ScrollArea>
+
+                <Border
+                    Grid.Column="1"
+                    CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                    BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+                    BorderThickness="1"
+                    ClipToBounds="True"
+                    Background="{arc:ArcDesignTokenResource Surface}"
+                >
+                    <Panel>
+                        <Border IsVisible="{Binding Auth.IsOAuth2}">
+                            <Panel>
+                                <NativeWebView x:Name="Browser" IsVisible="{Binding IsSigningIn}" />
+                                <Border
+                                    Background="{arc:ArcDesignTokenResource Surface}"
+                                    IsVisible="{Binding !IsSigningIn}"
+                                >
+                                    <StackPanel
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Center"
+                                        Spacing="10"
+                                        MaxWidth="420"
+                                        Margin="24"
+                                    >
+                                        <arc:ArcGlyph
+                                            Data="{x:Static arc:ArcIcons.Key}"
+                                            Size="30"
+                                            HorizontalAlignment="Center"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        />
+                                        <TextBlock
+                                            Text="{Binding BrowserPlaceholderTitle}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeLG}"
+                                            FontWeight="SemiBold"
+                                            HorizontalAlignment="Center"
+                                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                        />
+                                        <TextBlock
+                                            Text="{Binding BrowserPlaceholderDetail}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                            TextWrapping="Wrap"
+                                            TextAlignment="Center"
+                                        />
+                                        <arc:Button
+                                            Content="登录"
+                                            Variant="Primary"
+                                            HorizontalAlignment="Center"
+                                            Click="OnSignInClick"
+                                            IsEnabled="{Binding CanSignIn}"
+                                            AutomationProperties.Name="登录"
+                                        />
+                                    </StackPanel>
+                                </Border>
+                            </Panel>
+                        </Border>
+                        <Border
+                            IsVisible="{Binding !Auth.IsOAuth2}"
+                            Background="{arc:ArcDesignTokenResource Surface}"
+                        >
+                            <StackPanel
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Center"
+                                Spacing="10"
+                                MaxWidth="420"
+                                Margin="24"
+                            >
+                                <arc:ArcGlyph
+                                    Data="{x:Static arc:ArcIcons.Key}"
+                                    Size="30"
+                                    HorizontalAlignment="Center"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                />
+                                <TextBlock
+                                    Text="当前认证方式不需要登录"
+                                    FontSize="{arc:ArcDesignTokenResource TypeLG}"
+                                    FontWeight="SemiBold"
+                                    HorizontalAlignment="Center"
+                                    Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                />
+                                <TextBlock
+                                    Text="Bearer、Basic 与 API Key 的凭据直接填在左侧；需要浏览器授权时把类型切换为 OAuth 2.0。"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    TextWrapping="Wrap"
+                                    TextAlignment="Center"
+                                />
+                            </StackPanel>
+                        </Border>
+                    </Panel>
+                </Border>
+            </Grid>
+        </Grid>
+    </VisualLayerManager>
+</Window>

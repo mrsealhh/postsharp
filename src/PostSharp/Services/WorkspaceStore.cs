@@ -79,6 +79,7 @@ public sealed class WorkspaceStore
                     IsFavorite = collection.IsFavorite,
                     ParentId = collection.Parent?.Id,
                     Requests = collection.Requests.Select(ToDto).ToList(),
+                    Auth = ToAuthDto(collection.Auth),
                 })
                 .ToList(),
             Environments = environments
@@ -143,12 +144,42 @@ public sealed class WorkspaceStore
                 ? "file"
                 : dto.UploadFieldName,
             IsFavorite = dto.IsFavorite,
+            Auth = ToAuth(dto.Auth),
         };
 
         FillRows(request.Params, dto.Params);
         FillRows(request.Headers, dto.Headers);
         FillRows(request.FormFields, dto.FormFields);
         return request;
+    }
+
+    /// <summary>把落盘的授权配置还原成可用的对象；没有配置时得到默认的「继承」。</summary>
+    public static RequestAuth ToAuth(RequestAuthDto? dto)
+    {
+        var auth = new RequestAuth();
+        if (dto is null)
+        {
+            return auth;
+        }
+
+        auth.AuthType = AuthKinds.IsKnownType(dto.AuthType) ? dto.AuthType : AuthKinds.Inherit;
+        auth.Target = AuthKinds.IsKnownTarget(dto.Target) ? dto.Target : AuthKinds.InHeader;
+        auth.Username = dto.Username;
+        auth.ApiKeyName = string.IsNullOrWhiteSpace(dto.ApiKeyName)
+            ? RequestAuth.DefaultApiKeyName
+            : dto.ApiKeyName;
+        auth.ApiKeyLocation = AuthKinds.IsKnownTarget(dto.ApiKeyLocation)
+            ? dto.ApiKeyLocation
+            : AuthKinds.InHeader;
+        auth.TokenCipher = dto.TokenCipher;
+        auth.PasswordCipher = dto.PasswordCipher;
+        auth.ApiKeyValueCipher = dto.ApiKeyValueCipher;
+        if (dto.OAuth2 is not null)
+        {
+            auth.OAuth2 = dto.OAuth2;
+        }
+
+        return auth;
     }
 
     public static HistoryEntry ToHistory(HistoryDto dto)
@@ -204,6 +235,28 @@ public sealed class WorkspaceStore
             Params = ToRows(request.Params),
             Headers = ToRows(request.Headers),
             FormFields = ToRows(request.FormFields),
+            Auth = ToAuthDto(request.Auth),
+        };
+    }
+
+    private static RequestAuthDto? ToAuthDto(RequestAuth auth)
+    {
+        if (auth.IsDefault)
+        {
+            return null;
+        }
+
+        return new RequestAuthDto
+        {
+            AuthType = auth.AuthType,
+            Target = auth.Target,
+            TokenCipher = auth.TokenCipher,
+            Username = auth.Username,
+            PasswordCipher = auth.PasswordCipher,
+            ApiKeyName = auth.ApiKeyName,
+            ApiKeyValueCipher = auth.ApiKeyValueCipher,
+            ApiKeyLocation = auth.ApiKeyLocation,
+            OAuth2 = auth.OAuth2,
         };
     }
 
@@ -258,6 +311,8 @@ public sealed class CollectionDto
     public Guid? ParentId { get; set; }
 
     public List<RequestDto> Requests { get; set; } = new();
+
+    public RequestAuthDto? Auth { get; set; }
 }
 
 public sealed class RequestDto
@@ -287,6 +342,30 @@ public sealed class RequestDto
     public List<RowDto> Headers { get; set; } = new();
 
     public List<RowDto> FormFields { get; set; } = new();
+
+    public RequestAuthDto? Auth { get; set; }
+}
+
+/// <summary>一处授权配置的落盘形态；令牌、密码、API Key 值只保存 DPAPI 密文。</summary>
+public sealed class RequestAuthDto
+{
+    public string AuthType { get; set; } = AuthKinds.Inherit;
+
+    public string Target { get; set; } = AuthKinds.InHeader;
+
+    public string TokenCipher { get; set; } = string.Empty;
+
+    public string Username { get; set; } = string.Empty;
+
+    public string PasswordCipher { get; set; } = string.Empty;
+
+    public string ApiKeyName { get; set; } = RequestAuth.DefaultApiKeyName;
+
+    public string ApiKeyValueCipher { get; set; } = string.Empty;
+
+    public string ApiKeyLocation { get; set; } = AuthKinds.InHeader;
+
+    public AuthorizationProfile? OAuth2 { get; set; }
 }
 
 public sealed class EnvironmentDto
