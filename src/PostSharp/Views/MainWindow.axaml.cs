@@ -424,6 +424,22 @@ public partial class MainWindow : Window
     private void OnSuiteBuilderDialogOpened(object? sender, EventArgs e) =>
         ApplyWideDialog(SuiteBuilderDialog);
 
+    private void OnOpenWorkflowEditorClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var editor = new WorkflowEditorWindow(_viewModel.CreateWorkflowEditorViewModel());
+        editor.SuiteCreated += (_, result) =>
+        {
+            _viewModel.AddWorkflowSuite(result);
+            editor.Close();
+        };
+        editor.Show(this);
+    }
+
     private void OnMappingDialogOpened(object? sender, EventArgs e) =>
         ApplyWideDialog(MappingDialog);
 

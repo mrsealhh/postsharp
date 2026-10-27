@@ -4257,6 +4257,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         OpenRequest(request);
     }
 
+    public WorkflowEditorViewModel CreateWorkflowEditorViewModel() => new(Collections);
+
+    public void AddWorkflowSuite(WorkflowSuiteResult result)
+    {
+        Suites.Add(result.Suite);
+        SelectedSuite = result.Suite;
+        SelectedSuiteResult = null;
+        IsSuiteBuilderOpen = false;
+        Persist();
+        ShowToast($"已创建工作流套件（{result.Suite.Steps.Count} 个步骤）");
+    }
+
     [RelayCommand]
     private void OpenSuiteBuilder() => OpenSuiteBuilderCore(SelectedCollection ?? Editing.Owner);
 

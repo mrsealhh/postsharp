@@ -164,6 +164,32 @@ public sealed class WorkspaceStore
             suite.Steps.Add(step);
         }
 
+        if (suiteDto.Workflow is { } workflow)
+        {
+            suite.Workflow = new SuiteWorkflow();
+            foreach (var node in workflow.Nodes)
+            {
+                suite.Workflow.Nodes.Add(
+                    new SuiteWorkflowNode
+                    {
+                        Id = node.Id,
+                        Kind = node.Kind,
+                        CollectionId = node.CollectionId,
+                        RequestId = node.RequestId,
+                        X = node.X,
+                        Y = node.Y,
+                    }
+                );
+            }
+
+            foreach (var edge in workflow.Edges)
+            {
+                suite.Workflow.Edges.Add(
+                    new SuiteWorkflowEdge { SourceId = edge.SourceId, TargetId = edge.TargetId }
+                );
+            }
+        }
+
         return suite;
     }
 
@@ -211,6 +237,29 @@ public sealed class WorkspaceStore
                         .ToList(),
                 })
                 .ToList(),
+            Workflow = suite.Workflow is { } workflow
+                ? new SuiteWorkflowDto
+                {
+                    Nodes = workflow
+                        .Nodes.Select(node => new SuiteWorkflowNodeDto
+                        {
+                            Id = node.Id,
+                            Kind = node.Kind,
+                            CollectionId = node.CollectionId,
+                            RequestId = node.RequestId,
+                            X = node.X,
+                            Y = node.Y,
+                        })
+                        .ToList(),
+                    Edges = workflow
+                        .Edges.Select(edge => new SuiteWorkflowEdgeDto
+                        {
+                            SourceId = edge.SourceId,
+                            TargetId = edge.TargetId,
+                        })
+                        .ToList(),
+                }
+                : null,
         };
 
     /// <summary>Builds a collection and its requests; parent links are set by the caller.</summary>
@@ -694,6 +743,37 @@ public sealed class SuiteDto
     public string LastSummary { get; set; } = "尚未运行";
 
     public List<SuiteStepDto> Steps { get; set; } = new();
+
+    public SuiteWorkflowDto? Workflow { get; set; }
+}
+
+public sealed class SuiteWorkflowDto
+{
+    public List<SuiteWorkflowNodeDto> Nodes { get; set; } = new();
+
+    public List<SuiteWorkflowEdgeDto> Edges { get; set; } = new();
+}
+
+public sealed class SuiteWorkflowNodeDto
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string Kind { get; set; } = "request";
+
+    public Guid CollectionId { get; set; }
+
+    public Guid RequestId { get; set; }
+
+    public double X { get; set; }
+
+    public double Y { get; set; }
+}
+
+public sealed class SuiteWorkflowEdgeDto
+{
+    public string SourceId { get; set; } = string.Empty;
+
+    public string TargetId { get; set; } = string.Empty;
 }
 
 public sealed class SuiteStepDto

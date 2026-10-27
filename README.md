@@ -2,7 +2,7 @@
 
 <img src="src/PostSharp/Assets/logo.png" width="110" align="right" alt="PostSharp logo" />
 
-> 面向 AI 的本地接口调试工作台。基于 **Avalonia 12.1.4** 与 **TKCode.Arc 0.3.1-preview.2**，把「AI 通过 MCP 触发请求 → 审计留痕 → 自动化回归」串成一条闭环，同时保留完整的 Postman 式手动调试能力。
+> 面向 AI 的本地接口调试工作台。基于 **Avalonia 12.1.4** 与 **TKCode.Arc 0.3.1-preview.3**，把「AI 通过 MCP 触发请求 → 审计留痕 → 自动化回归」串成一条闭环，同时保留完整的 Postman 式手动调试能力。
 
 ![PostSharp 主界面](docs/screenshot.png)
 
@@ -156,9 +156,10 @@ PostSharp 的定位是：
 | --- | --- |
 | .NET | `net10.0` |
 | Avalonia | `12.1.4` |
-| TKCode.Arc | `0.3.1-preview.2` |
-| TKCode.Arc.Fonts | `0.3.1-preview.2` |
-| TKCode.Arc.Themes.Corners | `0.3.1-preview.2` |
+| TKCode.Arc | `0.3.1-preview.3` |
+| TKCode.Arc.Fonts | `0.3.1-preview.3` |
+| TKCode.Arc.Themes.Corners | `0.3.1-preview.3` |
+| TKCode.Arc.Workflow | `0.3.1-preview.3` |
 | AtomUI | 由 TKCode.Arc 带入，`6.2.8` |
 | MVVM | CommunityToolkit.Mvvm `8.4.0` |
 | 持久化 | 本地 SQLite：`Microsoft.Data.Sqlite` `10.0.14`；远程 PostgreSQL / MySQL / SQL Server / MongoDB 以插件随包发布（`Npgsql` `10.0.3`、`MySqlConnector` `2.6.2`、`Microsoft.Data.SqlClient` `7.1.1`、`MongoDB.Driver` `2.24.0`）；可选 OLAP 插件：ClickHouse（`ClickHouse.Client` `7.8.2`）、Doris / StarRocks（`MySqlConnector`） |
@@ -376,6 +377,7 @@ http://127.0.0.1:5199/mcp
 
 - **组装套件**：在自动化页勾选任意集合（含二级集合），把各集合中的请求组装成一个套件；步骤顺序沿用集合/请求排序，也可通过 MCP `create_suite` / `create_suite_from_collections` 创建。集合右键「套件设置」会直接打开组装窗口并默认勾选当前集合。
 - **AI 自主编排**：MCP 可完整创建/更新/重排/删除套件；`get_suite` 返回稳定步骤 id，`update_suite` 可整体替换步骤，运行结果带 `stepId` 和解析后的 URL，便于 AI 对照规则迭代。
+- **可视化工作流编排**：套件组装窗口新增「工作流编排」，使用 TKCode.Arc.WorkflowCanvas；左侧集合和明细接口都可拖入画布成为独立节点，节点可移动、连接、删除；保存时按拓扑顺序展开为现有套件步骤，集合节点会展开其下请求，节点位置与连线随套件持久化。
 - **工作流定位**：套件支持顺序/并行组、延迟、状态码/响应体/JSONPath/响应头断言、出参映射、失败重试、条件执行（上一步成功/失败）、失败停止和定时运行；DAG 依赖和条件跳转表达式属于下一步增强。
 - **下一步延迟**：每个步骤可设置当前步骤结束到下一请求的延迟，默认 200ms；用于维护接口依赖的调用间隔。
 - **前序出参映射**：每个步骤可配置多条映射规则，从前序某个步骤的响应中提取字段，写入当前请求的：
@@ -774,7 +776,7 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：157 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：159 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
@@ -931,7 +933,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：157 个 xUnit 测试。
+- 自测：159 个 xUnit 测试。
 
 ### 当前 MVP 限制
 

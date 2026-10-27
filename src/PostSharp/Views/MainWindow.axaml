@@ -5588,6 +5588,12 @@
                             HorizontalAlignment="Right"
                         >
                             <arc:Button
+                                Content="工作流编排"
+                                Variant="Secondary"
+                                Click="OnOpenWorkflowEditorClick"
+                                AutomationProperties.Name="打开工作流编排"
+                            />
+                            <arc:Button
                                 Content="取消"
                                 Variant="Secondary"
                                 Command="{Binding CancelSuiteBuilderCommand}"

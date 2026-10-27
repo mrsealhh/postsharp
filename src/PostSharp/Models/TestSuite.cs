@@ -25,6 +25,9 @@ public partial class TestSuite : ObservableObject
 
     public List<TestStep> Steps { get; } = new();
 
+    /// <summary>Optional visual graph used to author the suite.</summary>
+    public SuiteWorkflow? Workflow { get; set; }
+
     public override string ToString() => Name;
 }
 

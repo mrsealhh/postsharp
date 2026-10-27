@@ -89,6 +89,7 @@ internal static class Program
             {
                 builder.UseDesktopControls();
                 builder.UseArc();
+                builder.UseArcWorkflow();
             });
     }
 }
