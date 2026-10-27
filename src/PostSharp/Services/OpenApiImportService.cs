@@ -17,8 +17,12 @@ public sealed record OpenApiFetchResult(
     bool NotModified,
     string ETag,
     string LastModified,
-    string ContentHash
+    string ContentHash,
+    long ContentBytes
 );
+
+/// <summary>Progress reported while downloading and parsing a large OpenAPI document.</summary>
+public sealed record OpenApiFetchProgress(string Stage, double? Percent);
 
 /// <summary>
 /// Minimal OpenAPI 3.x / Swagger 2.0 reader. It keeps the parts that matter for manual debugging — method,
@@ -64,10 +68,12 @@ public static class OpenApiImportService
     public static async Task<OpenApiImportDocument> LoadFromUrlAsync(
         string url,
         CancellationToken cancellationToken = default,
-        HttpClient? client = null
+        HttpClient? client = null,
+        IProgress<OpenApiFetchProgress>? progress = null
     ) =>
         (
-            await FetchAsync(url, null, null, cancellationToken, client).ConfigureAwait(false)
+            await FetchAsync(url, null, null, cancellationToken, client, progress)
+                .ConfigureAwait(false)
         ).Document
         ?? throw new InvalidOperationException("OpenAPI 文档没有返回内容。");
 
@@ -76,7 +82,8 @@ public static class OpenApiImportService
         string? etag,
         string? lastModified,
         CancellationToken cancellationToken = default,
-        HttpClient? client = null
+        HttpClient? client = null,
+        IProgress<OpenApiFetchProgress>? progress = null
     )
     {
         if (
@@ -120,7 +127,14 @@ public static class OpenApiImportService
         if (response.StatusCode == HttpStatusCode.NotModified)
         {
             Log.Information("OpenAPI 文档未更新 {Url}", uri);
-            return new OpenApiFetchResult(null, true, responseTag, responseModified, string.Empty);
+            return new OpenApiFetchResult(
+                null,
+                true,
+                responseTag,
+                responseModified,
+                string.Empty,
+                0
+            );
         }
 
         if (!response.IsSuccessStatusCode)
@@ -130,33 +144,188 @@ public static class OpenApiImportService
             );
         }
 
-        var content = await response
-            .Content.ReadAsStringAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            throw new InvalidOperationException("下载到的 OpenAPI 文档为空。");
-        }
-
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)), 0, 16);
-        Log.Information(
-            "已下载 OpenAPI 文档 {Url}，大小 {Length} 字符，指纹 {Hash}",
-            uri,
-            content.Length,
-            hash
+        var totalBytes = response.Content.Headers.ContentLength;
+        var temporaryPath = Path.Combine(
+            Path.GetTempPath(),
+            $"postsharp-openapi-{Guid.NewGuid():N}.json"
         );
-        var document = await ParseWithExternalReferencesAsync(
-                content,
-                uri.ToString(),
+        try
+        {
+            long received = 0;
+            var lastReportedPercent = -1d;
+            progress?.Report(new OpenApiFetchProgress("正在下载 OpenAPI 文档…", null));
+            using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            await using (
+                var input = await response
+                    .Content.ReadAsStreamAsync(cancellationToken)
+                    .ConfigureAwait(false)
+            )
+            await using (var output = File.Create(temporaryPath))
+            {
+                var buffer = new byte[128 * 1024];
+                while (true)
+                {
+                    var read = await input
+                        .ReadAsync(buffer.AsMemory(), cancellationToken)
+                        .ConfigureAwait(false);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    await output
+                        .WriteAsync(buffer.AsMemory(0, read), cancellationToken)
+                        .ConfigureAwait(false);
+                    hasher.AppendData(buffer, 0, read);
+                    received += read;
+                    var percent = totalBytes is > 0
+                        ? Math.Clamp(received * 100d / totalBytes.Value, 0, 100)
+                        : (double?)null;
+                    if (
+                        percent is { } value
+                        && (Math.Abs(value - lastReportedPercent) >= 1 || value >= 100)
+                    )
+                    {
+                        lastReportedPercent = value;
+                        progress?.Report(
+                            new OpenApiFetchProgress(
+                                $"正在下载 OpenAPI 文档… {FormatBytes(received)}",
+                                value
+                            )
+                        );
+                    }
+                    else if (percent is null && received % (1024 * 1024) < read)
+                    {
+                        progress?.Report(
+                            new OpenApiFetchProgress(
+                                $"正在下载 OpenAPI 文档… {FormatBytes(received)}",
+                                null
+                            )
+                        );
+                    }
+                }
+
+                await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var hash = Convert.ToHexString(hasher.GetHashAndReset(), 0, 16);
+            if (received == 0)
+            {
+                throw new InvalidOperationException("下载到的 OpenAPI 文档为空。");
+            }
+
+            var isLarge = received >= BackgroundImportThresholdBytes;
+            Log.Information(
+                "已下载 OpenAPI 文档 {Url}，大小 {Bytes} 字节，指纹 {Hash}",
                 uri,
-                cancellationToken,
-                client,
+                received,
+                hash
+            );
+            progress?.Report(
+                new OpenApiFetchProgress(
+                    isLarge
+                        ? $"内容过多，已启用后台导入… {FormatBytes(received)}"
+                        : "正在解析 OpenAPI 文档…",
+                    null
+                )
+            );
+
+            JsonObject root;
+            if (await IsJsonFileAsync(temporaryPath, cancellationToken).ConfigureAwait(false))
+            {
+                await using var input = File.OpenRead(temporaryPath);
+                root =
+                    JsonNode.Parse(
+                        input,
+                        NodeOptions,
+                        new JsonDocumentOptions
+                        {
+                            AllowTrailingCommas = true,
+                            CommentHandling = JsonCommentHandling.Skip,
+                            MaxDepth = 4096,
+                        }
+                    ) as JsonObject
+                    ?? throw new InvalidOperationException("OpenAPI 文档的根节点必须是对象。");
+            }
+            else
+            {
+                var content = await File.ReadAllTextAsync(temporaryPath, cancellationToken)
+                    .ConfigureAwait(false);
+                root =
+                    ParseDocument(content) as JsonObject
+                    ?? throw new InvalidOperationException("OpenAPI 文档的根节点必须是对象。");
+            }
+
+            var document = await ParseWithExternalReferencesAsync(
+                    root,
+                    uri.ToString(),
+                    uri,
+                    cancellationToken,
+                    client,
+                    responseTag,
+                    responseModified,
+                    hash
+                )
+                .ConfigureAwait(false);
+            return new OpenApiFetchResult(
+                document,
+                false,
                 responseTag,
                 responseModified,
-                hash
-            )
+                hash,
+                received
+            );
+        }
+        finally
+        {
+            TryDeleteFile(temporaryPath);
+        }
+    }
+
+    private const long BackgroundImportThresholdBytes = 8 * 1024 * 1024;
+
+    private static async Task<bool> IsJsonFileAsync(
+        string path,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var stream = File.OpenRead(path);
+        var buffer = new byte[16];
+        var count = await stream
+            .ReadAsync(buffer.AsMemory(), cancellationToken)
             .ConfigureAwait(false);
-        return new OpenApiFetchResult(document, false, responseTag, responseModified, hash);
+        var index = 0;
+        if (count >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF)
+        {
+            index = 3;
+        }
+
+        while (index < count && char.IsWhiteSpace((char)buffer[index]))
+        {
+            index++;
+        }
+
+        return index < count && buffer[index] is (byte)'{' or (byte)'[';
+    }
+
+    private static string FormatBytes(long bytes) =>
+        bytes >= 1024 * 1024
+            ? $"{bytes / (1024d * 1024d):0.0} MB"
+            : $"{Math.Max(1, bytes / 1024)} KB";
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Debug(exception, "删除临时 OpenAPI 文件失败 {Path}", path);
+        }
     }
 
     public static async Task<OpenApiImportDocument> ParseWithExternalReferencesAsync(
@@ -173,9 +342,33 @@ public static class OpenApiImportService
         var root =
             ParseDocument(content) as JsonObject
             ?? throw new InvalidOperationException("OpenAPI 文档的根节点必须是对象。");
+        return await ParseWithExternalReferencesAsync(
+                root,
+                source,
+                baseUri,
+                cancellationToken,
+                client,
+                etag,
+                lastModified,
+                contentHash
+            )
+            .ConfigureAwait(false);
+    }
+
+    public static async Task<OpenApiImportDocument> ParseWithExternalReferencesAsync(
+        JsonObject root,
+        string source,
+        Uri? baseUri,
+        CancellationToken cancellationToken = default,
+        HttpClient? client = null,
+        string? etag = null,
+        string? lastModified = null,
+        string? contentHash = null
+    )
+    {
         if (CountExternalReferences(root) == 0)
         {
-            return Parse(content, source, null, etag, lastModified, contentHash);
+            return ParseRoot(root, source, null, etag, lastModified, contentHash);
         }
 
         var warnings = new List<string>();
@@ -187,14 +380,7 @@ public static class OpenApiImportService
             root["x-postsharp-external"] = bundle.DeepClone();
         }
 
-        return Parse(
-            root.ToJsonString(CompactJson),
-            source,
-            warnings,
-            etag,
-            lastModified,
-            contentHash
-        );
+        return ParseRoot(root, source, warnings, etag, lastModified, contentHash);
     }
 
     public static OpenApiImportDocument Parse(
@@ -217,6 +403,18 @@ public static class OpenApiImportService
             throw new InvalidOperationException("OpenAPI 文档的根节点必须是对象。");
         }
 
+        return ParseRoot(document, source, extraWarnings, etag, lastModified, contentHash);
+    }
+
+    private static OpenApiImportDocument ParseRoot(
+        JsonObject document,
+        string source,
+        IReadOnlyList<string>? extraWarnings = null,
+        string? etag = null,
+        string? lastModified = null,
+        string? contentHash = null
+    )
+    {
         var openApi = GetText(document["openapi"]);
         var swagger = GetText(document["swagger"]);
         if (string.IsNullOrWhiteSpace(openApi) && string.IsNullOrWhiteSpace(swagger))

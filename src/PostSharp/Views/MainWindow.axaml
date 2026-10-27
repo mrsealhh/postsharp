@@ -2430,6 +2430,15 @@
                                         ToolTip.Tip="{Binding Import.ImportStatus}"
                                         VerticalAlignment="Center"
                                     />
+                                    <arc:Button
+                                        Content="取消导入"
+                                        Variant="Ghost"
+                                        Size="Small"
+                                        Command="{Binding Import.CancelImportCommand}"
+                                        IsVisible="{Binding Import.IsImporting}"
+                                        ToolTip.Tip="取消当前后台导入"
+                                        AutomationProperties.Name="取消导入"
+                                    />
                                 </StackPanel>
                                 <StackPanel
                                     Grid.Column="1"
@@ -4676,10 +4685,12 @@
                             </StackPanel>
                             <arc:Button
                                 Grid.Column="1"
-                                Content="关闭"
+                                Content="{Binding Import.CloseImportDialogLabel}"
                                 Variant="Secondary"
                                 Command="{Binding Import.CloseImportDialogCommand}"
                                 HorizontalAlignment="Right"
+                                ToolTip.Tip="关闭窗口不会取消正在执行的导入"
+                                AutomationProperties.Name="关闭导入窗口"
                             />
                         </Grid>
                     </arc:Dialog.Actions>

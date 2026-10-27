@@ -159,7 +159,10 @@ public partial class ImportViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNotImporting))]
+    [NotifyPropertyChangedFor(nameof(CloseImportDialogLabel))]
     private bool _isImporting;
+
+    public string CloseImportDialogLabel => IsImporting ? "关闭（后台继续）" : "关闭";
 
     [ObservableProperty]
     private bool _isBackgroundStatusVisible;
@@ -238,6 +241,12 @@ public partial class ImportViewModel : ObservableObject
     [RelayCommand]
     private void OpenImportDialog()
     {
+        if (IsImporting)
+        {
+            IsImportDialogOpen = true;
+            return;
+        }
+
         ClearPendingOpenApiImport();
         ImportSource = "PostmanCollection";
         ImportUrl = string.Empty;
@@ -332,12 +341,22 @@ public partial class ImportViewModel : ObservableObject
     [RelayCommand]
     private void CloseImportDialog()
     {
-        if (IsImporting)
+        // Closing the dialog does not cancel a running import. The task continues in
+        // the background and reports through the main-window footer.
+        IsImportDialogOpen = false;
+    }
+
+    [RelayCommand]
+    private void CancelImport()
+    {
+        if (!IsImporting)
         {
-            _importCts?.Cancel();
+            return;
         }
 
-        IsImportDialogOpen = false;
+        ImportStatus = "正在取消导入…";
+        IsBackgroundProgressIndeterminate = true;
+        _importCts?.Cancel();
     }
 
     [RelayCommand]
@@ -370,9 +389,27 @@ public partial class ImportViewModel : ObservableObject
 
         try
         {
-            var document = await OpenApiImportService
-                .LoadFromUrlAsync(ImportUrl, _importCts!.Token)
+            var progress = new Progress<OpenApiFetchProgress>(value =>
+            {
+                if (value.Percent is { } percent)
+                {
+                    ReportBackgroundProgress(value.Stage, percent);
+                }
+                else
+                {
+                    ImportStatus = value.Stage;
+                    IsBackgroundProgressIndeterminate = true;
+                    IsBackgroundStatusVisible = true;
+                }
+            });
+            var result = await OpenApiImportService
+                .FetchAsync(ImportUrl, null, null, _importCts!.Token, progress: progress)
                 .ConfigureAwait(true);
+            if (result.NotModified || result.Document is not { } document)
+            {
+                throw new InvalidOperationException("OpenAPI 文档没有返回内容。");
+            }
+
             ApplyOpenApiDocument(document);
         }
         catch (OperationCanceledException exception)
@@ -432,11 +469,14 @@ public partial class ImportViewModel : ObservableObject
         try
         {
             var content = await File.ReadAllTextAsync(path, _importCts!.Token).ConfigureAwait(true);
-            var document = await OpenApiImportService
-                .ParseWithExternalReferencesAsync(
-                    content,
-                    Path.GetFileName(path),
-                    new Uri(Path.GetFullPath(path)),
+            var document = await Task.Run(
+                    () =>
+                        OpenApiImportService.ParseWithExternalReferencesAsync(
+                            content,
+                            Path.GetFileName(path),
+                            new Uri(Path.GetFullPath(path)),
+                            _importCts.Token
+                        ),
                     _importCts.Token
                 )
                 .ConfigureAwait(true);

@@ -69,7 +69,7 @@ PostSharp 的定位是：
 - **来源选择**：导入对话框直接展示 OpenAPI、Postman、Environment、cURL、HAR、Insomnia、Hoppscotch、其他工具、Apifox 等小分类卡片，可收起。
 - **批量导入**：一次选择多个文件，自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL；逐文件显示成功或失败结果，单个失败不会中断其他文件。
 - **导入反馈**：导入完成后弹出成功对话框，显示请求数、分组数、环境数和失败数；逐文件结果与兼容性提示仍保留在导入窗口，可展开/收起。
-- **导入导出进度**：导入、批量导入和导出时，主窗口右下角显示进度条、当前步骤和完成/失败状态；批量导入按文件更新进度，导入数量与文档字段不再做截断。
+- **导入导出进度**：导入、批量导入和导出时，主窗口右下角显示进度条、当前步骤和完成/失败状态；批量导入按文件更新进度，导入数量与文档字段不再做截断。大文档下载后显示「内容过多，已启用后台导入」，关闭导入窗口不会取消任务，右下角可继续查看进度或取消导入。
 - **响应**：
   - 状态、耗时、大小、内容类型、响应头。
   - JSON 使用 Arc JsonViewer（搜索、展开、复制值/路径）。
@@ -742,6 +742,8 @@ docs/
 | OpenAPI 增强 | `x-apifox-folder` 分组、securitySchemes 占位 Authorization、多服务器选择与请求 URL 重基、外部 `$ref` 自动下载与失败提示通过 |
 | OpenAPI 外部引用 | 相对文档 URL 引用、下载失败降级和大文档导入通过；不再限制外部引用数量与单文件大小 |
 | 大规模导入 | 600 个 OpenAPI 操作的模拟文档完整导入，单文档 500 条上限已取消；HAR 5000 条截断同样取消 |
+| 深层 OpenAPI | 80 层嵌套 schema 的文档导入成功，JSON 解析/写出不再受默认 64 层限制 |
+| 后台导入 | 大文档下载与解析在后台任务执行，关闭导入窗口不取消；右下角进度条、完成/失败状态和取消入口可用 |
 | OpenAPI 参数/文档 | 路径参数替换进 URL，请求参数表与响应状态码/响应头/响应 schema/示例渲染为 Markdown；单测 `ParsesPathParametersAndResponseDocuments` 通过 |
 | OpenAPI 表单 | urlencoded 生成 `Text` 请求体与 `Content-Type`，multipart 生成 `Multipart` + 表单字段并跳过二进制占位；单测通过 |
 | OpenAPI 同步 | 按 `METHOD + 路径` 合并：新增、更新、移除进回收站，用户改过的名称与参数值保留；单测 `SyncMergesOperationsAndKeepsUserEdits` 通过 |
