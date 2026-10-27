@@ -533,6 +533,43 @@ public sealed class OpenApiImportServiceTests
     }
 
     [Fact]
+    public void ImportsDeepSchemaWithoutDefaultJsonDepthLimit()
+    {
+        var schema = """{"type":"string"}""";
+        for (var index = 0; index < 80; index++)
+        {
+            schema = """{"type":"object","properties":{"child":""" + schema + "}}";
+        }
+
+        var json = $$"""
+            {
+              "openapi": "3.0.3",
+              "info": { "title": "Deep", "version": "1.0" },
+              "paths": {
+                "/deep": {
+                  "get": {
+                    "responses": {
+                      "200": {
+                        "description": "ok",
+                        "content": {
+                          "application/json": {
+                            "schema": {{schema}}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """;
+
+        var document = OpenApiImportService.Parse(json, "deep-openapi.json");
+
+        Assert.Single(Assert.Single(document.Groups).Requests);
+    }
+
+    [Fact]
     public void ImportsMoreThanFiveHundredOperations()
     {
         var paths = new StringBuilder();

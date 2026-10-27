@@ -2,7 +2,7 @@
 
 > 基线版本：v1.2.0（2026-10-27）
 > 基线形态：当前发布 Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.2
-> 基线测试：152 个 xUnit 测试，`csharpier check .` 通过
+> 基线测试：153 个 xUnit 测试，`csharpier check .` 通过
 > 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
@@ -94,7 +94,7 @@
 | 主工程 | `src/PostSharp`，单一桌面应用 |
 | 存储契约 | `src/PostSharp.Storage.Abstractions` |
 | 插件源码 | `src/Plugins/PostSharp.Storage.*` |
-| 测试 | `tests/PostSharp.Tests`，29 个测试文件，152 个用例 |
+| 测试 | `tests/PostSharp.Tests`，29 个测试文件，153 个用例 |
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
@@ -270,7 +270,7 @@
 
 **问题**
 
-当前依赖本地构建、手工测试和手工发布；没有 PR 门禁、UI 自动化和真实数据库 CI。152 个测试主要覆盖服务层，主窗口布局和关键交互仍靠人工回归。
+当前依赖本地构建、手工测试和手工发布；没有 PR 门禁、UI 自动化和真实数据库 CI。153 个测试主要覆盖服务层，主窗口布局和关键交互仍靠人工回归。
 
 **范围**
 
@@ -413,7 +413,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [ ] Linux x64 和 macOS arm64 至少各有一套可安装/可运行的发布包，完成首次启动、演示工作区、HTTP 请求、OpenAPI 导入、存储、套件和 MCP 基础验证。
 - [ ] OAuth 在内嵌浏览器或系统浏览器回环方案下可用；不可用时给出明确配置说明。
 - [ ] 非 Windows 环境不存在明文凭据落盘；DPAPI 密文迁移有提示。
-- [ ] Windows 现有安装包、更新、性能和 152+ 测试无回归。
+- [ ] Windows 现有安装包、更新、性能和 153+ 测试无回归。
 - [ ] 文档列出三平台支持矩阵、已知限制、安装/卸载和更新方式。
 
 **不在首批范围**：Windows 全部视觉细节 1:1 复刻、所有插件三平台官方支持、移动端、团队协作后端。
@@ -473,7 +473,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 - [ ] 阅读 `AGENTS.md`、`README.md`、`docs/storage-plugins.md` 和本文件。
 - [ ] 执行 `dotnet build src/PostSharp/PostSharp.csproj -c Debug`，确认 0 警告 0 错误。
-- [ ] 执行 `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj -c Debug`，确认 152 个基线用例通过。
+- [ ] 执行 `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj -c Debug`，确认 153 个基线用例通过。
 - [ ] 执行 `csharpier check .`。
 - [ ] 解压当前 Release 包，使用独立数据目录启动，确认首次为演示工作区。
 - [ ] 确认不会把 `.postsharp`、日志、Token、连接串或真实截图提交到仓库。

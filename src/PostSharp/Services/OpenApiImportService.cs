@@ -28,7 +28,7 @@ public static class OpenApiImportService
 {
     // Keep a recursion guard for cyclic/self-referencing schemas, but do not cap
     // the number of operations, external references, fields or sample size.
-    private const int MaxSchemaDepth = 64;
+    private const int MaxSchemaDepth = 4096;
 
     private static readonly string[] Methods =
     {
@@ -45,6 +45,13 @@ public static class OpenApiImportService
     {
         WriteIndented = true,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        MaxDepth = 4096,
+    };
+
+    private static readonly JsonSerializerOptions CompactJson = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        MaxDepth = 4096,
     };
 
     private static readonly JsonNodeOptions NodeOptions = new()
@@ -180,7 +187,14 @@ public static class OpenApiImportService
             root["x-postsharp-external"] = bundle.DeepClone();
         }
 
-        return Parse(root.ToJsonString(), source, warnings, etag, lastModified, contentHash);
+        return Parse(
+            root.ToJsonString(CompactJson),
+            source,
+            warnings,
+            etag,
+            lastModified,
+            contentHash
+        );
     }
 
     public static OpenApiImportDocument Parse(
@@ -1990,6 +2004,7 @@ public static class OpenApiImportService
                         {
                             AllowTrailingCommas = true,
                             CommentHandling = JsonCommentHandling.Skip,
+                            MaxDepth = 4096,
                         }
                     ) ?? throw new InvalidOperationException("OpenAPI JSON 文档为空。");
             }
@@ -2109,7 +2124,7 @@ public static class OpenApiImportService
             return text;
         }
 
-        return node.ToJsonString();
+        return node.ToJsonString(CompactJson);
     }
 
     private sealed class WarningBag
