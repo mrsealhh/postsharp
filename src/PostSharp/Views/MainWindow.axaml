@@ -2119,7 +2119,7 @@
 
                                     <arc:TabItem Header="AI 聚合">
                                         <Grid
-                                            RowDefinitions="Auto,Auto,*"
+                                            RowDefinitions="Auto,Auto,Auto,*"
                                             RowSpacing="8"
                                             Margin="0,6,0,0"
                                         >
@@ -2182,17 +2182,66 @@
                                                 Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                                 TextWrapping="Wrap"
                                             />
-                                            <Grid Grid.Row="2">
+                                            <WrapPanel
+                                                Grid.Row="2"
+                                                ItemSpacing="10"
+                                                LineSpacing="6"
+                                            >
+                                                <arc:Button
+                                                    Variant="Ghost"
+                                                    Size="Small"
+                                                    Command="{Binding FormatSseCommand}"
+                                                    IsEnabled="{Binding CanTransformSse}"
+                                                    ToolTip.Tip="JSON/XML 格式化；文本整理空行"
+                                                    AutomationProperties.Name="格式化 AI 聚合内容"
+                                                >
+                                                    <controls:IconLabel
+                                                        Icon="{x:Static arc:ArcIcons.Code}"
+                                                        Text="格式化"
+                                                        IconSize="13"
+                                                    />
+                                                </arc:Button>
+                                                <arc:Button
+                                                    Variant="Ghost"
+                                                    Size="Small"
+                                                    Command="{Binding MinifySseCommand}"
+                                                    IsEnabled="{Binding CanTransformSse}"
+                                                    ToolTip.Tip="JSON/XML 压成单行；文本移除空行和行尾空白"
+                                                    AutomationProperties.Name="压缩 AI 聚合内容"
+                                                >
+                                                    <controls:IconLabel
+                                                        Icon="{x:Static arc:ArcIcons.Shrink}"
+                                                        Text="压缩"
+                                                        IconSize="13"
+                                                    />
+                                                </arc:Button>
+                                            </WrapPanel>
+                                            <Grid Grid.Row="3">
                                                 <Grid IsVisible="{Binding ShowSseContent}">
-                                                    <arc:ScrollArea>
+                                                    <ScrollViewer
+                                                        x:Name="SseContentScroll"
+                                                        HorizontalScrollBarVisibility="Auto"
+                                                        VerticalScrollBarVisibility="Auto"
+                                                        HorizontalContentAlignment="Left"
+                                                        VerticalContentAlignment="Top"
+                                                        AutomationProperties.Name="AI 聚合内容"
+                                                    >
                                                         <SelectableTextBlock
                                                             Text="{Binding SseContent}"
+                                                            Width="{Binding SseContentTextWidth}"
+                                                            HorizontalAlignment="Left"
+                                                            VerticalAlignment="Top"
+                                                            Focusable="True"
+                                                            Cursor="IBeam"
+                                                            SelectionBrush="{arc:ArcDesignTokenResource Accent}"
+                                                            SelectionForegroundBrush="{arc:ArcDesignTokenResource AccentForeground}"
                                                             FontFamily="{DynamicResource PostSharpCodeFont}"
                                                             FontSize="{DynamicResource PostSharpCodeFontSize}"
                                                             Foreground="{arc:ArcDesignTokenResource Foreground}"
-                                                            TextWrapping="Wrap"
+                                                            TextWrapping="NoWrap"
+                                                            Margin="8"
                                                         />
-                                                    </arc:ScrollArea>
+                                                    </ScrollViewer>
                                                     <TextBlock
                                                         Text="没有解析到 content；可切换到「原始事件」查看推送内容。"
                                                         IsVisible="{Binding !HasSseContent}"
@@ -2203,15 +2252,30 @@
                                                     />
                                                 </Grid>
                                                 <Grid IsVisible="{Binding ShowSseThinking}">
-                                                    <arc:ScrollArea>
+                                                    <ScrollViewer
+                                                        x:Name="SseThinkingScroll"
+                                                        HorizontalScrollBarVisibility="Auto"
+                                                        VerticalScrollBarVisibility="Auto"
+                                                        HorizontalContentAlignment="Left"
+                                                        VerticalContentAlignment="Top"
+                                                        AutomationProperties.Name="AI 聚合思考过程"
+                                                    >
                                                         <SelectableTextBlock
                                                             Text="{Binding SseThinking}"
+                                                            Width="{Binding SseThinkingTextWidth}"
+                                                            HorizontalAlignment="Left"
+                                                            VerticalAlignment="Top"
+                                                            Focusable="True"
+                                                            Cursor="IBeam"
+                                                            SelectionBrush="{arc:ArcDesignTokenResource Accent}"
+                                                            SelectionForegroundBrush="{arc:ArcDesignTokenResource AccentForeground}"
                                                             FontFamily="{DynamicResource PostSharpCodeFont}"
                                                             FontSize="{DynamicResource PostSharpCodeFontSize}"
                                                             Foreground="{arc:ArcDesignTokenResource Foreground}"
-                                                            TextWrapping="Wrap"
+                                                            TextWrapping="NoWrap"
+                                                            Margin="8"
                                                         />
-                                                    </arc:ScrollArea>
+                                                    </ScrollViewer>
                                                     <TextBlock
                                                         Text="没有解析到 thinking；可切换到「原始事件」查看推送内容。"
                                                         IsVisible="{Binding !HasSseThinking}"
@@ -2221,15 +2285,31 @@
                                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                                     />
                                                 </Grid>
-                                                <arc:ScrollArea IsVisible="{Binding ShowSseRaw}">
+                                                <ScrollViewer
+                                                    x:Name="SseRawScroll"
+                                                    IsVisible="{Binding ShowSseRaw}"
+                                                    HorizontalScrollBarVisibility="Auto"
+                                                    VerticalScrollBarVisibility="Auto"
+                                                    HorizontalContentAlignment="Left"
+                                                    VerticalContentAlignment="Top"
+                                                    AutomationProperties.Name="AI 聚合原始事件"
+                                                >
                                                     <SelectableTextBlock
                                                         Text="{Binding SseRaw}"
+                                                        Width="{Binding SseRawTextWidth}"
+                                                        HorizontalAlignment="Left"
+                                                        VerticalAlignment="Top"
+                                                        Focusable="True"
+                                                        Cursor="IBeam"
+                                                        SelectionBrush="{arc:ArcDesignTokenResource Accent}"
+                                                        SelectionForegroundBrush="{arc:ArcDesignTokenResource AccentForeground}"
                                                         FontFamily="{DynamicResource PostSharpCodeFont}"
                                                         FontSize="{DynamicResource PostSharpCodeFontSize}"
                                                         Foreground="{arc:ArcDesignTokenResource Foreground}"
                                                         TextWrapping="NoWrap"
+                                                        Margin="8"
                                                     />
-                                                </arc:ScrollArea>
+                                                </ScrollViewer>
                                                 <arc:EmptyState
                                                     IsVisible="{Binding !IsSseResponse}"
                                                     Title="当前响应不是 SSE"

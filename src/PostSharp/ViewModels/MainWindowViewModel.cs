@@ -356,6 +356,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _treeIsEmpty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanTransformSse))]
     private bool _isSending;
 
     [ObservableProperty]
@@ -556,19 +557,26 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [NotifyPropertyChangedFor(nameof(ShowSseThinking))]
     [NotifyPropertyChangedFor(nameof(ShowSseRaw))]
     [NotifyPropertyChangedFor(nameof(SseSummary))]
+    [NotifyPropertyChangedFor(nameof(CanTransformSse))]
     private bool _isSseResponse;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SseSummary))]
     [NotifyPropertyChangedFor(nameof(HasSseThinking))]
+    [NotifyPropertyChangedFor(nameof(SseThinkingTextWidth))]
+    [NotifyPropertyChangedFor(nameof(CanTransformSse))]
     private string _sseThinking = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SseSummary))]
     [NotifyPropertyChangedFor(nameof(HasSseContent))]
+    [NotifyPropertyChangedFor(nameof(SseContentTextWidth))]
+    [NotifyPropertyChangedFor(nameof(CanTransformSse))]
     private string _sseContent = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SseRawTextWidth))]
+    [NotifyPropertyChangedFor(nameof(CanTransformSse))]
     private string _sseRaw = string.Empty;
 
     [ObservableProperty]
@@ -625,6 +633,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [NotifyPropertyChangedFor(nameof(ShowSseContent))]
     [NotifyPropertyChangedFor(nameof(ShowSseThinking))]
     [NotifyPropertyChangedFor(nameof(ShowSseRaw))]
+    [NotifyPropertyChangedFor(nameof(CanTransformSse))]
     private string _sseViewMode = "内容";
 
     [ObservableProperty]
@@ -1819,19 +1828,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public bool ShowRawResponse => HasResponse && !ShowJsonResponse;
 
-    public double ResponseTextWidth
-    {
-        get
-        {
-            if (string.IsNullOrEmpty(ResponseBody))
-            {
-                return 600;
-            }
+    public double ResponseTextWidth => EstimateTextWidth(ResponseBody);
 
-            var longest = ResponseBody.Split('\n').Max(line => line.Length);
-            return Math.Clamp(longest * 12.0, 600, 80000);
-        }
-    }
+    public double SseContentTextWidth => EstimateTextWidth(SseContent);
+
+    public double SseThinkingTextWidth => EstimateTextWidth(SseThinking);
+
+    public double SseRawTextWidth => EstimateTextWidth(SseRaw);
 
     public bool ShowEmptyResponse => !HasResponse && !HasResponseError;
 
@@ -1850,6 +1853,30 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     public bool HasSseContent => SseContent.Length > 0;
 
     public bool HasSseThinking => SseThinking.Length > 0;
+
+    public bool CanTransformSse =>
+        IsSseResponse
+        && !IsSending
+        && (
+            SseViewMode switch
+            {
+                "内容" => SseContent.Length > 0,
+                "思考过程" => SseThinking.Length > 0,
+                "原始事件" => SseRaw.Length > 0,
+                _ => false,
+            }
+        );
+
+    private static double EstimateTextWidth(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return 600;
+        }
+
+        var longest = text.Split('\n').Max(line => line.Length);
+        return Math.Clamp(longest * 12.0, 600, 80000);
+    }
 
     public bool IsMultipartBody => Editing.BodyMode == "Multipart";
 
@@ -2035,6 +2062,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         OnPropertyChanged(nameof(ShowSseContent));
         OnPropertyChanged(nameof(ShowSseThinking));
         OnPropertyChanged(nameof(ShowSseRaw));
+        OnPropertyChanged(nameof(CanTransformSse));
     }
 
     partial void OnIsWorkspaceSideBySideChanged(bool value) =>
@@ -5539,6 +5567,55 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private void MinifyResponse()
     {
         TransformResponse(indented: false);
+    }
+
+    [RelayCommand]
+    private void FormatSse()
+    {
+        TransformSse(compact: false);
+    }
+
+    [RelayCommand]
+    private void MinifySse()
+    {
+        TransformSse(compact: true);
+    }
+
+    private void TransformSse(bool compact)
+    {
+        if (!CanTransformSse)
+        {
+            return;
+        }
+
+        var isContent = SseViewMode == "内容";
+        var isThinking = SseViewMode == "思考过程";
+        var source =
+            isContent ? SseContent
+            : isThinking ? SseThinking
+            : SseRaw;
+        var result = SseTextFormatter.Apply(source, compact);
+        if (string.Equals(result.Text, source, StringComparison.Ordinal))
+        {
+            ShowToast(compact ? "当前内容没有可压缩的空白" : "当前内容已经是整理后的格式");
+            return;
+        }
+
+        if (isContent)
+        {
+            SseContent = result.Text;
+        }
+        else if (isThinking)
+        {
+            SseThinking = result.Text;
+        }
+        else
+        {
+            SseRaw = result.Text;
+        }
+
+        var action = compact ? "压缩" : "格式化";
+        ShowToast($"{result.Kind} 已{action}");
     }
 
     private void TransformResponse(bool indented)
