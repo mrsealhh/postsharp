@@ -949,6 +949,8 @@ master                 稳定可发布
 
 详细的产品化 TODO、验收标准、迭代顺序和交接清单见 [PostSharp 后续产品化 TODO 与开发交接](docs/product-todos.md)。
 
+平台约束：新功能按跨平台方案设计，Windows 专属能力单独开 feature；Linux / macOS 正式适配列入 TODO 的 P2-02，后续实施，不阻塞当前 Windows 版本。
+
 1. 导入对话框 XAML 独立拆分，继续降低 `MainWindow.axaml` 体积。
 2. OpenAPI 更多安全方案与回调/Webhook 提示。
 3. Apifox 原生格式评估：先收集官方导出样本和 schema，不做无样本逆向。

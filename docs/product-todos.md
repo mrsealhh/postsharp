@@ -1,9 +1,10 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
-> 基线版本：v1.2.0（2026-10-27）  
-> 基线形态：Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.2  
-> 基线测试：144 个 xUnit 测试，`csharpier check .` 通过  
-> 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0  
+> 基线版本：v1.2.0（2026-10-27）
+> 基线形态：当前发布 Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.2
+> 基线测试：144 个 xUnit 测试，`csharpier check .` 通过
+> 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0
+> 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
 
 ## 1. 产品定位
@@ -36,6 +37,7 @@
 4. **AI 可接管**：MCP 调用必须可审计、可取消、可复现，不能绕过人工确认的破坏性操作。
 5. **离线可用**：网络、数据库或更新服务不可用时，核心调试能力仍然可用。
 6. **发布可信**：安装包、更新包、插件和发布资产必须可校验来源与完整性。
+7. **跨平台设计优先、跨平台发布后续实施**：新增共享代码不直接绑定 Windows API；Windows 专属能力单独 feature；Linux/macOS 正式支持按 P2-02 择期启动，不阻塞当前 Windows 版本。
 
 ### 1.4 产品指标建议
 
@@ -54,6 +56,22 @@
 - 不在没有明确需求前引入强制云同步、账号体系、计费和移动端。
 - 不为了“功能多”牺牲本地启动速度、内存和离线可用性。
 - 不承诺插件热卸载；进程内插件隔离是当前明确的技术边界。
+
+### 1.6 平台实施边界
+
+**当前正式支持**：Windows 10/11 x64。Windows ARM64 尚未验证，Linux / macOS 尚未发布。
+
+**后续实施**：Linux / macOS 的完整方案统一放入 P2-02（见 6.2 节），由产品负责人择期启动，不纳入当前 Windows 版本的交付承诺。
+
+从本文件生效后，新增和重构代码遵守以下约束：
+
+- [ ] 共享核心（ViewModel、服务、模型、导入导出、套件）不新增直接 Win32、DPAPI、WebView2、PowerShell 依赖。
+- [ ] 平台能力通过接口注入；后续按 `ISecretProtector`、`IEmbeddedBrowser`、`IUpdateInstaller`、`IPlatformTheme` 等边界收敛。
+- [ ] Windows 专属能力无法跨平台实现时，单独放到 Windows 平台模块/feature，并在其他平台提供安全降级或无操作实现。
+- [ ] Windows 专属 feature 使用独立分支和 PR，例如 `feature/win-dwm-titlebar`，不得把 Windows 包引用、P/Invoke 或注册表访问带进共享核心。
+- [ ] 任何功能 PR 必须说明平台影响；涉及平台边界变更时，至少完成跨平台编译检查。
+- [ ] 现有 Windows 专属实现（DPAPI、WebView2、PowerShell 更新器、DWM 标题栏）保持现状，不在其他 P0/P1 任务中强行重构；在 P2-02 启动时统一迁移。
+- [ ] 已列入 P0/P1 的 Windows 安全与发布交付项（DPAPI 机密落盘、签名安装器、Windows CI）按当前 Windows 版本完成，不因 P2-02 延后；P2-02 启动后再抽象为平台接口。
 
 ## 2. 当前基线与技术现状
 
@@ -80,7 +98,7 @@
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
-| 平台 | Windows 10/11 x64；WebView2 依赖 |
+| 平台 | 当前仅 Windows 10/11 x64，WebView2 依赖；Linux/macOS 见 P2-02，后续实施 |
 | 版本锁定 | Avalonia 12.1.4、TKCode.Arc 0.3.1-preview.2、SDK 10.0.100，不随意升级 |
 
 ### 2.3 当前技术债与风险
@@ -318,13 +336,91 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | ID | TODO | 说明 | 验收标准 | 规模 |
 | --- | --- | --- | --- | --- |
 | P2-01 | 团队共享工作区 | 在远程文档存储上增加锁、冲突合并、成员/权限和变更记录；坚持本地优先，不强制云 | 两人同时编辑不丢数据；权限可审计；离线后恢复有冲突提示 | XL |
-| P2-02 | Linux / macOS | Avalonia 可跨平台，但 DPAPI、WebView2、PowerShell 更新器和 Win32 交互需要抽象 | 至少一个非 Windows 平台完成构建、启动、请求、存储和更新验证 | XL |
+| P2-02 | Linux / macOS 正式支持（后续实施） | 跨平台设计约束已生效，但正式打包、平台适配和发布不进入当前 Windows 版本；详细方案见 6.2 | Linux x64 与 macOS arm64 至少各一套安装包完成启动、请求、存储、授权和更新验证；Windows 功能不回归 | XL |
 | P2-03 | AI 原生工作流 | 自然语言生成请求/断言、失败解释、回归差异摘要；支持本地模型和远程模型 | 生成结果必须可预览、可拒绝、可审计；不自动执行破坏性操作 | XL |
 | P2-04 | 协议扩展 | gRPC、WebSocket、GraphQL、SOAP/WSDL、MQTT 等按客户需求立项 | 有明确使用场景和验收样例后再做，不做无样本逆向 | XL |
 | P2-05 | 插件市场/注册表 | 插件发现、版本、签名、评分、撤回和兼容性 | 只允许签名插件进入推荐列表；安装前显示权限和来源 | XL |
 | P2-06 | 企业能力 | SSO、RBAC、审计导出/SIEM、保留策略、策略锁定 | 企业部署可集中配置；本地离线模式仍可用 | XL |
 | P2-07 | 国际化 | 中文/英文 UI、文档和错误文案 | 语言可切换；布局不因英文长度溢出 | L |
 | P2-08 | 可选产品分析 | 崩溃率、更新成功率、功能使用；默认关闭、明确同意 | 不采集请求内容/Token；可一键关闭和删除 | M |
+
+### 6.2 P2-02：跨平台方案（后续实施）
+
+**启动条件**
+
+- [ ] 产品负责人确认 Linux / macOS 的目标用户、支持范围和发布节奏。
+- [ ] 明确是“完整功能对等”还是“先交付无头/调试核心”；默认先做调试核心。
+- [ ] 当前 Windows 版本继续按 P0/P1 迭代，不被跨平台工作阻塞。
+- [ ] 为 macOS 签名/公证、Linux 包格式和 WebView 运行时准备构建环境。
+
+**目标平台**
+
+| 平台 | 目标形态 | 优先级 |
+| --- | --- | --- |
+| Windows 10/11 x64 | 当前正式支持；签名安装包 + 便携 ZIP | 保持 |
+| Windows ARM64 | 视用户需求验证，不承诺首发 | 待定 |
+| Linux x64 | AppImage 或 deb 包，后续可补 rpm | P2 首批 |
+| macOS arm64 | 签名、公证的 `.dmg` / `.pkg` | P2 首批 |
+| macOS x64 | 视 Intel 用户占比决定 | 待定 |
+
+**实施顺序**
+
+1. **平台接口与 Windows 适配**
+   - [ ] 新建平台抽象层，定义 `ISecretProtector`、`IEmbeddedBrowser`、`IUpdateInstaller`、`IPlatformTheme`、`IPlatformPaths` 等最小接口。
+   - [ ] 把现有 DPAPI、WebView2、DWM、PowerShell 更新器迁入 Windows 平台实现；Windows 行为保持不变。
+   - [ ] 共享核心只依赖接口；平台实现通过启动时的组合根注入。
+   - [ ] 增加架构测试：共享项目不得引用 Windows 专属包/命名空间。
+
+2. **凭据保护**
+   - [ ] Windows 使用 DPAPI；macOS 使用 Keychain；Linux 优先 libsecret/Secret Service。
+   - [ ] 没有系统凭据库时使用受保护的本地文件方案，禁止回退为明文。
+   - [ ] 处理跨平台迁移：DPAPI 密文不能在 macOS/Linux 解密；导入数据包后要求重新输入对应凭据。
+   - [ ] 授权令牌、远程连接串、环境变量 secret 全部走同一接口。
+
+3. **授权浏览器**
+   - [ ] Windows 保持 WebView2；macOS 使用 WKWebView；Linux 使用 WebKitGTK。
+   - [ ] 内嵌浏览器不可用时退回系统浏览器 + 回环回调（loopback），并清晰提示。
+   - [ ] OAuth 回调、证书错误、取消、关闭窗口和超时行为在三个平台一致。
+   - [ ] 不把 WebView2Loader 或其他 Windows 原生库带进非 Windows 包。
+
+4. **更新与发布**
+   - [ ] 共用签名更新清单和完整性校验；平台安装器分别实现。
+   - [ ] Windows 使用签名安装器/便携包；macOS 使用签名公证的 dmg；Linux 使用 AppImage/deb。
+   - [ ] 自动更新在 macOS/Linux 上遵循平台惯例；不允许在共享核心直接调用 `powershell.exe`。
+   - [ ] 保留离线安装、手动下载和回滚路径。
+
+5. **平台集成**
+   - [ ] Windows DWM 标题栏主题、DPI 和文件关联只在 Windows 模块启用。
+   - [ ] macOS/Linux 使用平台原生窗口装饰、菜单栏和快捷键习惯；不支持的 Windows 专属显示能力安全降级。
+   - [ ] 字体、默认等宽字体、文件路径、日志目录和回收站行为按平台适配。
+
+6. **构建与测试**
+   - [ ] 发布脚本支持 `win-x64`、`linux-x64`、`osx-x64`、`osx-arm64`，RID 和包名不再写死在共享脚本。
+   - [ ] CI 至少完成三平台编译和核心单测；Windows 保留完整 UI 冒烟；Linux/macOS 增加启动/请求/存储冒烟。
+   - [ ] 建立真实 WebView、Keychain/libsecret、签名和更新验证清单。
+   - [ ] 发布资产按平台拆分，不把 Windows 插件/原生库混入其他平台包。
+
+**Windows 专属 feature 规则**
+
+- [ ] 独立分支/PR，例如 `feature/win-dwm-titlebar`、`feature/win-portable-updater`。
+- [ ] 实现放在 Windows 平台模块；共享核心只增加通用接口，不出现 `DllImport`、注册表、DPAPI、WebView2 或 PowerShell。
+- [ ] 运行时按平台启用；非 Windows 必须有 no-op 或安全降级。
+- [ ] PR 说明平台影响、测试平台和未覆盖平台；不得因 Windows feature 让其他平台无法构建。
+- [ ] Windows-only 功能不进入默认产品承诺，除非在支持矩阵中明确标注。
+
+**验收**
+
+- [ ] Linux x64 和 macOS arm64 至少各有一套可安装/可运行的发布包，完成首次启动、演示工作区、HTTP 请求、OpenAPI 导入、存储、套件和 MCP 基础验证。
+- [ ] OAuth 在内嵌浏览器或系统浏览器回环方案下可用；不可用时给出明确配置说明。
+- [ ] 非 Windows 环境不存在明文凭据落盘；DPAPI 密文迁移有提示。
+- [ ] Windows 现有安装包、更新、性能和 144+ 测试无回归。
+- [ ] 文档列出三平台支持矩阵、已知限制、安装/卸载和更新方式。
+
+**不在首批范围**：Windows 全部视觉细节 1:1 复刻、所有插件三平台官方支持、移动端、团队协作后端。
+
+**依赖/风险**：macOS 签名公证、Linux WebView 运行库、系统凭据库差异、CI 运行器成本、第三方数据库驱动的平台兼容性。
+
+**规模**：XL。
 
 ## 7. 建议迭代顺序
 
@@ -364,6 +460,13 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 **退出条件**：套件可在无人值守环境运行并产出报告；MCP 有鉴权和进度/取消语义。
 
+### 后续（暂不排期）：P2-02 跨平台
+
+- 不进入迭代 1–4，不阻塞当前 Windows 版本。
+- 由产品负责人确认 Linux/macOS 目标后启动，按 6.2 节执行。
+- 启动前只做两件事：新增代码遵守跨平台设计约束；Windows 专属能力走独立 feature。
+- **不要提前重构现有 DPAPI/WebView2/更新器**；统一迁移属于 P2-02 的第一步。
+
 ## 8. 交接清单
 
 ### 8.1 第一天
@@ -383,6 +486,8 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [ ] 先拆分再扩展：新增功能优先放子 ViewModel、子控件或独立 Resource，不继续堆进 `MainWindow`。
 - [ ] 所有 `catch` 必须有可见反馈或结构化日志，不允许静默吞掉。
 - [ ] 破坏性操作确认文案包含对象名和后果；Esc 取消，默认焦点在安全项。
+- [ ] 新增共享代码按跨平台设计：不直接引入 Win32/DPAPI/WebView2/PowerShell；确有 Windows 专属需求，单独开 `feature/win-*` 并在其他平台安全降级。
+- [ ] Linux/macOS 的正式适配、打包和发布属于 P2-02，后续实施；不要在日常功能 PR 中顺带做平台迁移。
 
 ### 8.3 发布约定
 
@@ -414,7 +519,8 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 - [ ] 是否采购代码签名证书，是否投入安装器（MSIX/MSI）。
 - [ ] 是否正式引入 CI；如果引入，是否允许 Windows runner 和容器测试成本。
-- [ ] 产品继续 Windows-only，还是 6 个月内支持 Linux/macOS。
+- [ ] Linux/macOS 是否列入后续路线、目标时间和首发平台；默认按 P2-02 后续实施，不进入当前 Windows 版本。
+- [ ] 哪些 Windows 专属能力需要单独 `feature/win-*`，哪些功能只承诺 Windows。
 - [ ] 远程存储面向个人还是团队；如果团队，是否接受冲突合并和权限模型。
 - [ ] 哪些数据库进入“官方支持矩阵”，哪些只作为社区插件。
 - [ ] 是否提供可选诊断/使用统计；默认必须关闭并明确同意。
