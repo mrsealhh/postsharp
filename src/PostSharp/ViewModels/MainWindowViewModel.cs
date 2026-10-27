@@ -1010,6 +1010,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public CollectionImportOutcome ApplyOpenApiImport(OpenApiImportDocument document)
     {
+        EnsureOpenApiEnvironments(document);
         var root = new RequestCollection { Name = document.Title, IsExpanded = true };
         if (
             Uri.TryCreate(document.Source, UriKind.Absolute, out var sourceUri)
@@ -1075,6 +1076,45 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         return new CollectionImportOutcome(document.Title, requestCount, groupCount, null);
+    }
+
+    private void EnsureOpenApiEnvironments(OpenApiImportDocument document)
+    {
+        var targets = OpenApiEnvironmentService.Resolve(document);
+        EnvironmentModel? first = null;
+        foreach (var target in targets)
+        {
+            var environment = Environments.FirstOrDefault(candidate =>
+                candidate.Variables.Any(row =>
+                    string.Equals(row.Key, "baseUrl", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(row.Value, target.BaseUrl, StringComparison.OrdinalIgnoreCase)
+                )
+            );
+            if (environment is null)
+            {
+                var name = target.Name;
+                for (
+                    var suffix = 2;
+                    Environments.Any(candidate => candidate.Name == name);
+                    suffix++
+                )
+                {
+                    name = $"{target.Name} ({suffix})";
+                }
+
+                environment = new EnvironmentModel { Name = name };
+                environment.Variables.AddRow("baseUrl", target.BaseUrl);
+                environment.Variables.EnsureTrailingRow();
+                Environments.Add(environment);
+            }
+
+            first ??= environment;
+        }
+
+        if (first is not null)
+        {
+            ActiveEnvironment = first;
+        }
     }
 
     [RelayCommand]
