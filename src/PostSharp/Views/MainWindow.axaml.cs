@@ -932,8 +932,10 @@ public partial class MainWindow : Window
         var document = _viewModel.BuildPostmanExport();
         if (document is null)
         {
-            _viewModel.Import.HasImportError = true;
-            _viewModel.Import.ImportStatus = "当前工作区没有可导出的集合。请先创建或导入集合。";
+            _viewModel.Import.CompleteBackgroundTask(
+                "当前工作区没有可导出的集合。请先创建或导入集合。",
+                success: false
+            );
             return;
         }
 
@@ -958,9 +960,10 @@ public partial class MainWindow : Window
         var document = _viewModel.BuildCurlExport();
         if (document is null)
         {
-            _viewModel.Import.HasImportError = true;
-            _viewModel.Import.ImportStatus =
-                "当前请求还没有可导出的 cURL，请先选择请求并填写有效地址。";
+            _viewModel.Import.CompleteBackgroundTask(
+                "当前请求还没有可导出的 cURL，请先选择请求并填写有效地址。",
+                success: false
+            );
             return;
         }
 
@@ -988,9 +991,10 @@ public partial class MainWindow : Window
         var document = _viewModel.BuildPowerShellExport();
         if (document is null)
         {
-            _viewModel.Import.HasImportError = true;
-            _viewModel.Import.ImportStatus =
-                "当前请求还没有可导出的 PowerShell 命令，请先选择请求并填写有效地址。";
+            _viewModel.Import.CompleteBackgroundTask(
+                "当前请求还没有可导出的 PowerShell 命令，请先选择请求并填写有效地址。",
+                success: false
+            );
             return;
         }
 
@@ -1015,9 +1019,10 @@ public partial class MainWindow : Window
         var document = _viewModel.BuildCodeExport();
         if (document is null)
         {
-            _viewModel.Import.HasImportError = true;
-            _viewModel.Import.ImportStatus =
-                "当前请求还没有可导出的调用代码，请先选择请求并填写有效地址。";
+            _viewModel.Import.CompleteBackgroundTask(
+                "当前请求还没有可导出的调用代码，请先选择请求并填写有效地址。",
+                success: false
+            );
             return;
         }
 
@@ -1063,20 +1068,27 @@ public partial class MainWindow : Window
             var path = file.TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(path))
             {
-                _viewModel.Import.HasImportError = true;
-                _viewModel.Import.ImportStatus = "无法写入所选位置，请换一个本地文件夹。";
+                _viewModel.Import.CompleteBackgroundTask(
+                    "无法写入所选位置，请换一个本地文件夹。",
+                    success: false
+                );
                 return;
             }
 
+            _viewModel.Import.StartBackgroundTask($"正在导出：{Path.GetFileName(path)}");
             await File.WriteAllTextAsync(path, document.Content);
-            _viewModel.Import.HasImportError = false;
-            _viewModel.Import.ImportStatus = $"已导出：{Path.GetFileName(path)}";
+            _viewModel.Import.CompleteBackgroundTask(
+                $"已导出：{Path.GetFileName(path)}",
+                success: true
+            );
             Log.Information("导出文件完成 {FilePath}", path);
         }
         catch (Exception exception)
         {
-            _viewModel.Import.HasImportError = true;
-            _viewModel.Import.ImportStatus = "导出失败，请检查目标文件夹是否可写后重试。";
+            _viewModel.Import.CompleteBackgroundTask(
+                "导出失败，请检查目标文件夹是否可写后重试。",
+                success: false
+            );
             Log.Error(exception, "导出文件失败 {Title}", title);
         }
     }

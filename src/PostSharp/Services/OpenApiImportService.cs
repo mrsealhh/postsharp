@@ -26,10 +26,9 @@ public sealed record OpenApiFetchResult(
 /// </summary>
 public static class OpenApiImportService
 {
-    private const int MaxRequests = 500;
-    private const int MaxSchemaDepth = 8;
-    private const int MaxExternalReferences = 20;
-    private const int MaxExternalReferenceBytes = 2 * 1024 * 1024;
+    // Keep a recursion guard for cyclic/self-referencing schemas, but do not cap
+    // the number of operations, external references, fields or sample size.
+    private const int MaxSchemaDepth = 64;
 
     private static readonly string[] Methods =
     {
@@ -270,15 +269,6 @@ public static class OpenApiImportService
                 if (pathItem[method] is not JsonObject operation)
                 {
                     continue;
-                }
-
-                if (total >= MaxRequests)
-                {
-                    Log.Warning(
-                        "OpenAPI 导入达到上限 {MaxRequests} 个请求，后续操作已忽略",
-                        MaxRequests
-                    );
-                    break;
                 }
 
                 var groupName = GetGroupName(operation);
@@ -785,7 +775,6 @@ public static class OpenApiImportService
         return result
             .GroupBy(field => field.Name, StringComparer.Ordinal)
             .Select(group => group.First())
-            .Take(200)
             .ToList();
     }
 
@@ -799,7 +788,7 @@ public static class OpenApiImportService
         ref int count
     )
     {
-        if (depth > 6 || count >= 200)
+        if (depth > MaxSchemaDepth)
         {
             return;
         }
@@ -831,11 +820,6 @@ public static class OpenApiImportService
         {
             foreach (var property in properties)
             {
-                if (count >= 200)
-                {
-                    return;
-                }
-
                 var name = prefix.Length == 0 ? property.Key : $"{prefix}.{property.Key}";
                 var propertySchema = ResolveObject(property.Value, document);
                 if (propertySchema is null)
@@ -930,11 +914,6 @@ public static class OpenApiImportService
         var result = new List<OpenApiResponseDoc>();
         foreach (var entry in OrderResponses(responses))
         {
-            if (result.Count >= 12)
-            {
-                break;
-            }
-
             var resolved = ResolveObject(entry.Value, document);
             if (resolved is null)
             {
@@ -945,7 +924,7 @@ public static class OpenApiImportService
             var fields = new List<OpenApiSchemaFieldDoc>();
             if (resolved["content"] is JsonObject content)
             {
-                foreach (var media in content.Take(3))
+                foreach (var media in content)
                 {
                     if (media.Value is not JsonObject mediaObject)
                     {
@@ -986,7 +965,7 @@ public static class OpenApiImportService
 
                 if (resolved["examples"] is JsonObject examples)
                 {
-                    foreach (var example in examples.Take(3))
+                    foreach (var example in examples)
                     {
                         samples.Add(
                             new OpenApiResponseSampleDoc
@@ -1013,7 +992,7 @@ public static class OpenApiImportService
                     Description = (GetText(resolved["description"]) ?? string.Empty).Trim(),
                     HeadersText = ReadResponseHeaders(document, resolved),
                     Samples = samples,
-                    Fields = fields.Take(120).ToList(),
+                    Fields = fields,
                 }
             );
         }
@@ -1050,7 +1029,7 @@ public static class OpenApiImportService
         }
 
         var lines = new List<string>();
-        foreach (var header in headers.Take(20))
+        foreach (var header in headers)
         {
             var resolved = ResolveObject(header.Value, document);
             if (resolved is null)
@@ -1086,7 +1065,7 @@ public static class OpenApiImportService
             return fields;
         }
 
-        foreach (var property in properties.Take(40))
+        foreach (var property in properties)
         {
             var propertySchema = ResolveObject(property.Value, document);
             if (propertySchema is null)
@@ -1145,7 +1124,7 @@ public static class OpenApiImportService
             IsJsonMediaType(mediaType) || sample is JsonObject || sample is JsonArray
                 ? sample.ToJsonString(PrettyJson)
                 : NodeToText(sample);
-        return text.Length > 12000 ? text[..12000] + "\n…（示例已截断）" : text;
+        return text;
     }
 
     private static bool IsJsonMediaType(string mediaType) =>
@@ -1223,7 +1202,7 @@ public static class OpenApiImportService
 
         return string.Join(
             " / ",
-            values.Take(10).Select(value => NodeToText(value ?? JsonValue.Create(string.Empty)!))
+            values.Select(value => NodeToText(value ?? JsonValue.Create(string.Empty)!))
         );
     }
 
@@ -1831,17 +1810,6 @@ public static class OpenApiImportService
             return BuildExternalReference(existingKey, fragment);
         }
 
-        if (state.ReferenceCount >= MaxExternalReferences)
-        {
-            if (!state.LimitWarningAdded)
-            {
-                state.Warnings.Add($"外部 $ref 超过 {MaxExternalReferences} 个，剩余引用未下载。");
-                state.LimitWarningAdded = true;
-            }
-
-            return null;
-        }
-
         if (!state.Visited.Add(uriKey))
         {
             state.Warnings.Add($"检测到循环外部引用，已跳过：{uri}");
@@ -1870,12 +1838,6 @@ public static class OpenApiImportService
             var bytes = await response
                 .Content.ReadAsByteArrayAsync(timeout.Token)
                 .ConfigureAwait(false);
-            if (bytes.Length > MaxExternalReferenceBytes)
-            {
-                state.Warnings.Add($"外部引用超过 2 MB，已跳过：{uri}");
-                return null;
-            }
-
             var externalRoot =
                 ParseDocument(Encoding.UTF8.GetString(bytes)) as JsonObject
                 ?? throw new InvalidOperationException("外部引用不是对象。");
@@ -1931,8 +1893,6 @@ public static class OpenApiImportService
         public HashSet<string> Visited { get; } = new(StringComparer.Ordinal);
 
         public int ReferenceCount { get; set; }
-
-        public bool LimitWarningAdded { get; set; }
     }
 
     private static int CountExternalReferences(JsonNode? node)
@@ -1992,7 +1952,7 @@ public static class OpenApiImportService
     private static JsonObject ResolveReference(JsonObject node, JsonObject document, int depth)
     {
         var reference = GetText(node["$ref"]);
-        if (string.IsNullOrWhiteSpace(reference) || depth > 12)
+        if (string.IsNullOrWhiteSpace(reference) || depth > MaxSchemaDepth)
         {
             return node;
         }

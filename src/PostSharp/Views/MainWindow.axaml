@@ -2384,8 +2384,55 @@
                                 />
                             </Grid>
 
-                            <Grid Grid.Row="5" Grid.ColumnSpan="3" Margin="0,8,0,0">
+                            <Grid
+                                Grid.Row="5"
+                                Grid.ColumnSpan="3"
+                                Margin="0,8,0,0"
+                                ColumnDefinitions="*,Auto"
+                            >
                                 <StackPanel
+                                    IsVisible="{Binding Import.IsBackgroundStatusVisible}"
+                                    Orientation="Horizontal"
+                                    Spacing="8"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    Margin="0,0,16,0"
+                                >
+                                    <ProgressBar
+                                        Width="160"
+                                        Height="6"
+                                        Minimum="0"
+                                        Maximum="100"
+                                        Value="{Binding Import.BackgroundProgress}"
+                                        IsIndeterminate="{Binding Import.IsBackgroundProgressIndeterminate}"
+                                        Foreground="{arc:ArcDesignTokenResource Accent}"
+                                        Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                                        VerticalAlignment="Center"
+                                        AutomationProperties.Name="导入导出进度"
+                                    />
+                                    <TextBlock
+                                        IsVisible="{Binding Import.HasNoImportError}"
+                                        Text="{Binding Import.ImportStatus}"
+                                        MaxWidth="420"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                        TextTrimming="CharacterEllipsis"
+                                        ToolTip.Tip="{Binding Import.ImportStatus}"
+                                        VerticalAlignment="Center"
+                                    />
+                                    <TextBlock
+                                        IsVisible="{Binding Import.HasImportError}"
+                                        Text="{Binding Import.ImportStatus}"
+                                        MaxWidth="420"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource Danger}"
+                                        TextTrimming="CharacterEllipsis"
+                                        ToolTip.Tip="{Binding Import.ImportStatus}"
+                                        VerticalAlignment="Center"
+                                    />
+                                </StackPanel>
+                                <StackPanel
+                                    Grid.Column="1"
                                     Orientation="Horizontal"
                                     Spacing="6"
                                     HorizontalAlignment="Right"

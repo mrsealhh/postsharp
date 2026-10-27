@@ -161,6 +161,15 @@ public partial class ImportViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsNotImporting))]
     private bool _isImporting;
 
+    [ObservableProperty]
+    private bool _isBackgroundStatusVisible;
+
+    [ObservableProperty]
+    private double _backgroundProgress;
+
+    [ObservableProperty]
+    private bool _isBackgroundProgressIndeterminate = true;
+
     public ObservableCollection<string> ImportWarnings { get; } = new();
 
     public ObservableCollection<string> ImportReport { get; } = new();
@@ -777,10 +786,15 @@ public partial class ImportViewModel : ObservableObject
 
         try
         {
-            foreach (var path in paths)
+            for (var index = 0; index < paths.Count; index++)
             {
+                var path = paths[index];
                 _importCts!.Token.ThrowIfCancellationRequested();
                 var fileName = Path.GetFileName(path);
+                ReportBackgroundProgress(
+                    $"正在导入 {index + 1}/{paths.Count}：{fileName}",
+                    paths.Count == 0 ? 0 : index * 100d / paths.Count
+                );
                 try
                 {
                     var content = await File.ReadAllTextAsync(path, _importCts.Token)
@@ -1270,7 +1284,7 @@ public partial class ImportViewModel : ObservableObject
         HasImportError = false;
         ImportWarnings.Clear();
         ImportReport.Clear();
-        ImportStatus = status;
+        StartBackgroundTask(status);
     }
 
     private void EndImport()
@@ -1278,6 +1292,35 @@ public partial class ImportViewModel : ObservableObject
         IsImporting = false;
         _importCts?.Dispose();
         _importCts = null;
+        BackgroundProgress = 100;
+        IsBackgroundProgressIndeterminate = false;
+        IsBackgroundStatusVisible = true;
+    }
+
+    public void StartBackgroundTask(string status)
+    {
+        ImportStatus = status;
+        HasImportError = false;
+        BackgroundProgress = 0;
+        IsBackgroundProgressIndeterminate = true;
+        IsBackgroundStatusVisible = true;
+    }
+
+    public void ReportBackgroundProgress(string status, double progress)
+    {
+        ImportStatus = status;
+        BackgroundProgress = Math.Clamp(progress, 0, 100);
+        IsBackgroundProgressIndeterminate = false;
+        IsBackgroundStatusVisible = true;
+    }
+
+    public void CompleteBackgroundTask(string status, bool success)
+    {
+        ImportStatus = status;
+        HasImportError = !success;
+        BackgroundProgress = 100;
+        IsBackgroundProgressIndeterminate = false;
+        IsBackgroundStatusVisible = true;
     }
 
     private void SetImportWarnings(IReadOnlyList<string> warnings)

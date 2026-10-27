@@ -69,6 +69,7 @@ PostSharp 的定位是：
 - **来源选择**：导入对话框直接展示 OpenAPI、Postman、Environment、cURL、HAR、Insomnia、Hoppscotch、其他工具、Apifox 等小分类卡片，可收起。
 - **批量导入**：一次选择多个文件，自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL；逐文件显示成功或失败结果，单个失败不会中断其他文件。
 - **导入反馈**：导入完成后弹出成功对话框，显示请求数、分组数、环境数和失败数；逐文件结果与兼容性提示仍保留在导入窗口，可展开/收起。
+- **导入导出进度**：导入、批量导入和导出时，主窗口右下角显示进度条、当前步骤和完成/失败状态；批量导入按文件更新进度，导入数量与文档字段不再做截断。
 - **响应**：
   - 状态、耗时、大小、内容类型、响应头。
   - JSON 使用 Arc JsonViewer（搜索、展开、复制值/路径）。
@@ -80,7 +81,7 @@ PostSharp 的定位是：
 - **机密变量**：环境变量可点锁形图标设为机密，值在编辑框中隐藏；审计、MCP 返回与套件结果中以 `******` 显示。
 - **数据文件保护**：工作区、审计、设置均先写临时文件再替换，并保留上一版 `.bak`；文件损坏时原文件移到旁边保留、自动改用备份，顶部提示条说明发生了什么和原文件位置。
 - **历史记录管理**：单条删除与清空都会先弹出确认，删除项进入回收站；回收站支持恢复、永久删除，永久删除前再次确认。
-- **OpenAPI 导入与同步**：从本地 JSON / YAML 文件或 URL 读取 OpenAPI 3.x / Swagger 2.0；按 `x-apifox-folder` 或第一个 tag 创建分组，支持安全方案占位头、多服务器选择、外部 `$ref` 自动下载（限 20 个、每个 2 MB、10 秒超时）。URL 导入会记住来源、ETag / Last-Modified 与内容指纹，右键集合可「同步 OpenAPI」按 `METHOD + 路径` 增量合并：新增接口、更新文档与缺失参数、保留用户改过的名称/参数值/请求体、文档中删除的接口移入集合回收站；也可开启启动时自动同步。
+- **OpenAPI 导入与同步**：从本地 JSON / YAML 文件或 URL 读取 OpenAPI 3.x / Swagger 2.0；按 `x-apifox-folder` 或第一个 tag 创建分组，支持安全方案占位头、多服务器选择、外部 `$ref` 自动下载。大文档不再限制操作数、外部引用数、字段数或示例大小；URL 导入会记住来源、ETag / Last-Modified 与内容指纹，右键集合可「同步 OpenAPI」按 `METHOD + 路径` 增量合并：新增接口、更新文档与缺失参数、保留用户改过的名称/参数值/请求体、文档中删除的接口移入集合回收站；也可开启启动时自动同步。
 - **接口文档与调用代码**：导入后的每个请求带「接口文档」页签，离线展示请求参数（路径/查询/请求头/Cookie，含类型、必填、说明、示例、枚举）、请求体 schema 与示例、全部响应状态码/响应头/响应示例；「调用代码」页签按当前环境解析变量后生成 cURL、PowerShell、C# HttpClient、JavaScript fetch、Python requests、Java HttpClient、Go net/http 代码，可复制或保存。
 
 ![OpenAPI 接口文档](docs/openapi-docs.png)
@@ -739,7 +740,8 @@ docs/
 | Insomnia 导入 | v4 JSON：workspace、request_group、request、environment、bearer 认证和 JSON body 解析通过 |
 | Hoppscotch 导入 | Collection JSON：文件夹、params、headers、JSON body、bearer 认证解析通过 |
 | OpenAPI 增强 | `x-apifox-folder` 分组、securitySchemes 占位 Authorization、多服务器选择与请求 URL 重基、外部 `$ref` 自动下载与失败提示通过 |
-| OpenAPI 外部引用 | 相对文档 URL 引用、下载失败降级、20 个/2 MB/10 秒限制通过 |
+| OpenAPI 外部引用 | 相对文档 URL 引用、下载失败降级和大文档导入通过；不再限制外部引用数量与单文件大小 |
+| 大规模导入 | 600 个 OpenAPI 操作的模拟文档完整导入，单文档 500 条上限已取消；HAR 5000 条截断同样取消 |
 | OpenAPI 参数/文档 | 路径参数替换进 URL，请求参数表与响应状态码/响应头/响应 schema/示例渲染为 Markdown；单测 `ParsesPathParametersAndResponseDocuments` 通过 |
 | OpenAPI 表单 | urlencoded 生成 `Text` 请求体与 `Content-Type`，multipart 生成 `Multipart` + 表单字段并跳过二进制占位；单测通过 |
 | OpenAPI 同步 | 按 `METHOD + 路径` 合并：新增、更新、移除进回收站，用户改过的名称与参数值保留；单测 `SyncMergesOperationsAndKeepsUserEdits` 通过 |
@@ -769,7 +771,7 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：151 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化与更新版本解析） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：152 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、大规模 OpenAPI 导入与更新版本解析） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
@@ -926,12 +928,12 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：151 个 xUnit 测试。
+- 自测：152 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
 - 存储插件在进程内加载，权限等同当前用户程序，不支持热卸载；替换同名插件后建议重启应用。
-- OpenAPI 同步按 `METHOD + 路径` 匹配，单文档最多导入 500 个操作；Webhook / callback 与运行时响应校验未实现。
+- OpenAPI 同步按 `METHOD + 路径` 匹配；导入不再限制操作数量，保留循环引用和网络超时保护。Webhook / callback 与运行时响应校验未实现。
 - SSE 取消后可用 `Last-Event-ID` 手动「继续」；自动重连和从任意断点恢复仍依赖服务端支持。
 - multipart 已支持多文件、64KB 流式上传、进度和取消；断点续传、分片上传协议和超大文件校验未实现。
 - 套件已支持上一步成功/失败条件、并行组和定时运行；复杂条件表达式、DAG 依赖和任意跳转未实现。

@@ -532,6 +532,43 @@ public sealed class OpenApiImportServiceTests
         );
     }
 
+    [Fact]
+    public void ImportsMoreThanFiveHundredOperations()
+    {
+        var paths = new StringBuilder();
+        for (var index = 0; index < 600; index++)
+        {
+            if (index > 0)
+            {
+                paths.Append(',');
+            }
+
+            paths.Append(
+                $$"""
+                "/operation-{{index}}": {
+                  "get": {
+                    "responses": { "200": { "description": "ok" } }
+                  }
+                }
+                """
+            );
+        }
+
+        var json = $$"""
+            {
+              "openapi": "3.0.3",
+              "info": { "title": "Large", "version": "1.0" },
+              "paths": {
+                {{paths}}
+              }
+            }
+            """;
+
+        var document = OpenApiImportService.Parse(json, "large-openapi.json");
+
+        Assert.Equal(600, document.Groups.Sum(group => group.Requests.Count));
+    }
+
     private sealed class StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
         : HttpMessageHandler
     {

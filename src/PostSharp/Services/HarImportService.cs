@@ -10,8 +10,6 @@ namespace PostSharp.Services;
 /// </summary>
 public static class HarImportService
 {
-    private const int MaxEntries = 5000;
-
     private static readonly HashSet<string> IgnoredHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
         "Accept-Encoding",
@@ -79,12 +77,7 @@ public static class HarImportService
         var skippedStatic = 0;
         var duplicateCount = 0;
 
-        if (entries.Count > MaxEntries)
-        {
-            warnings.Add($"HAR 包含 {entries.Count} 条记录，只导入前 {MaxEntries} 条。");
-        }
-
-        foreach (var node in entries.Take(MaxEntries))
+        foreach (var node in entries)
         {
             if (node is not JsonObject entry)
             {
