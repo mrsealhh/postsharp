@@ -1603,6 +1603,16 @@ public partial class MainWindow : Window
             DispatcherPriority.Background
         );
 
+    private void OnHistoryRowTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Control { DataContext: HistoryEntry entry } || IsInsideButton(e.Source))
+        {
+            return;
+        }
+
+        entry.OpenCommand?.Execute(null);
+    }
+
     private void OnTreeNodesCollectionChanged(
         object? sender,
         System.Collections.Specialized.NotifyCollectionChangedEventArgs e

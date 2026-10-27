@@ -60,90 +60,77 @@
         </DataTemplate>
 
         <DataTemplate x:Key="HistoryRowTemplate" x:DataType="models:HistoryEntry">
-            <Grid
-                ColumnDefinitions="*,68,56,32"
-                ColumnSpacing="4"
-                Margin="0,0,0,2"
-                HorizontalAlignment="Stretch"
-                ClipToBounds="True"
-            >
-                <arc:Button
-                    Grid.Column="0"
-                    Variant="Ghost"
-                    Size="Small"
+            <Border Margin="0,0,0,2" Padding="8,5" Cursor="Hand" Tapped="OnHistoryRowTapped">
+                <Grid
+                    ColumnDefinitions="56,*,68,56,32"
+                    ColumnSpacing="6"
                     HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Stretch"
-                    Padding="8,5"
-                    Focusable="False"
-                    Command="{Binding OpenCommand}"
                 >
-                    <Grid ColumnDefinitions="56,*" ColumnSpacing="6" HorizontalAlignment="Stretch">
-                        <arc:Badge
-                            Grid.Column="0"
-                            Content="{Binding MethodDisplay}"
-                            Tone="{Binding MethodTone}"
-                            Size="Small"
-                            HorizontalAlignment="Left"
-                            VerticalAlignment="Center"
-                            ToolTip.Tip="{Binding MethodDisplay}"
-                        />
-                        <StackPanel Grid.Column="1" Spacing="2" HorizontalAlignment="Stretch">
-                            <TextBlock
-                                Text="{Binding Name}"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource Foreground}"
-                                TextTrimming="CharacterEllipsis"
-                                HorizontalAlignment="Left"
-                                ToolTip.Tip="{Binding Name}"
-                            />
-                            <TextBlock
-                                Text="{Binding Url}"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                TextTrimming="CharacterEllipsis"
-                                HorizontalAlignment="Left"
-                                ToolTip.Tip="{Binding Url}"
-                            />
-                        </StackPanel>
-                    </Grid>
-                </arc:Button>
-                <arc:Badge
-                    Grid.Column="1"
-                    Content="{Binding StatusLabel}"
-                    Icon="{Binding StatusIcon}"
-                    Tone="{Binding StatusTone}"
-                    Size="Small"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Center"
-                    ToolTip.Tip="{Binding StatusLabel}"
-                />
-                <TextBlock
-                    Grid.Column="2"
-                    Text="{Binding DisplayTime}"
-                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                    VerticalAlignment="Center"
-                    HorizontalAlignment="Right"
-                    ToolTip.Tip="{Binding TimestampText}"
-                />
-                <arc:Button
-                    Grid.Column="3"
-                    Variant="Ghost"
-                    Size="Small"
-                    Padding="0"
-                    Height="32"
-                    VerticalAlignment="Center"
-                    Command="{Binding DeleteCommand}"
-                    ToolTip.Tip="移入回收站"
-                    AutomationProperties.Name="删除历史记录"
-                >
-                    <arc:ArcGlyph
-                        Data="{x:Static arc:ArcIcons.Trash2}"
-                        Size="14"
-                        Foreground="{arc:ArcDesignTokenResource Danger}"
+                    <arc:Badge
+                        Grid.Column="0"
+                        Content="{Binding MethodDisplay}"
+                        Tone="{Binding MethodTone}"
+                        Size="Small"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        ToolTip.Tip="{Binding MethodDisplay}"
                     />
-                </arc:Button>
-            </Grid>
+                    <StackPanel Grid.Column="1" Spacing="2" HorizontalAlignment="Stretch">
+                        <TextBlock
+                            Text="{Binding Name}"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                            TextTrimming="CharacterEllipsis"
+                            HorizontalAlignment="Left"
+                            ToolTip.Tip="{Binding Name}"
+                        />
+                        <TextBlock
+                            Text="{Binding Url}"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                            TextTrimming="CharacterEllipsis"
+                            HorizontalAlignment="Left"
+                            ToolTip.Tip="{Binding Url}"
+                        />
+                    </StackPanel>
+                    <arc:Badge
+                        Grid.Column="2"
+                        Content="{Binding StatusLabel}"
+                        Icon="{Binding StatusIcon}"
+                        Tone="{Binding StatusTone}"
+                        Size="Small"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        ToolTip.Tip="{Binding StatusLabel}"
+                    />
+                    <TextBlock
+                        Grid.Column="3"
+                        Text="{Binding DisplayTime}"
+                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Right"
+                        ToolTip.Tip="{Binding TimestampText}"
+                    />
+                    <arc:Button
+                        Grid.Column="4"
+                        Variant="Ghost"
+                        Size="Small"
+                        Padding="0"
+                        Height="32"
+                        VerticalAlignment="Center"
+                        Command="{Binding DeleteCommand}"
+                        ToolTip.Tip="移入回收站"
+                        AutomationProperties.Name="删除历史记录"
+                    >
+                        <arc:ArcGlyph
+                            Data="{x:Static arc:ArcIcons.Trash2}"
+                            Size="14"
+                            Foreground="{arc:ArcDesignTokenResource Danger}"
+                        />
+                    </arc:Button>
+                </Grid>
+            </Border>
         </DataTemplate>
 
         <DataTemplate x:Key="ResponseHeaderTemplate" x:DataType="models:ResponseHeaderView">
