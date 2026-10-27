@@ -1,6 +1,16 @@
 <Solution>
     <Folder Name="/src/">
+        <Project Path="src/PostSharp.Storage.Abstractions/PostSharp.Storage.Abstractions.csproj" />
         <Project Path="src/PostSharp/PostSharp.csproj" />
+    </Folder>
+    <Folder Name="/src/Plugins/">
+        <Project Path="src/Plugins/PostSharp.Storage.ClickHouse/PostSharp.Storage.ClickHouse.csproj" />
+        <Project Path="src/Plugins/PostSharp.Storage.Doris/PostSharp.Storage.Doris.csproj" />
+        <Project Path="src/Plugins/PostSharp.Storage.MongoDb/PostSharp.Storage.MongoDb.csproj" />
+        <Project Path="src/Plugins/PostSharp.Storage.MySql/PostSharp.Storage.MySql.csproj" />
+        <Project Path="src/Plugins/PostSharp.Storage.PostgreSql/PostSharp.Storage.PostgreSql.csproj" />
+        <Project Path="src/Plugins/PostSharp.Storage.SqlServer/PostSharp.Storage.SqlServer.csproj" />
+        <Project Path="src/Plugins/PostSharp.Storage.StarRocks/PostSharp.Storage.StarRocks.csproj" />
     </Folder>
     <Folder Name="/tests/">
         <Project Path="tests/PostSharp.Tests/PostSharp.Tests.csproj" />

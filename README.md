@@ -18,6 +18,7 @@
 - [请求与响应能力](#请求与响应能力)
 - [授权（OIDC / OAuth 2.0）](#授权oidc--oauth-20)
 - [系统全局设置](#系统全局设置)
+- [远程存储插件](docs/storage-plugins.md)
 - [快捷键](#快捷键)
 - [数据与配置](#数据与配置)
 - [项目结构](#项目结构)
@@ -79,7 +80,12 @@ PostSharp 的定位是：
 - **机密变量**：环境变量可点锁形图标设为机密，值在编辑框中隐藏；审计、MCP 返回与套件结果中以 `******` 显示。
 - **数据文件保护**：工作区、审计、设置均先写临时文件再替换，并保留上一版 `.bak`；文件损坏时原文件移到旁边保留、自动改用备份，顶部提示条说明发生了什么和原文件位置。
 - **历史记录管理**：单条删除与清空都会先弹出确认，删除项进入回收站；回收站支持恢复、永久删除，永久删除前再次确认。
-- **OpenAPI 导入**：从本地 JSON / YAML 文件或 URL 读取 OpenAPI 3.x / Swagger 2.0；按 `x-apifox-folder` 或第一个 tag 创建分组，支持安全方案占位头、多服务器选择、外部 `$ref` 自动下载（限 20 个、每个 2 MB、10 秒超时），并带出服务器地址、查询参数和请求体示例。
+- **OpenAPI 导入与同步**：从本地 JSON / YAML 文件或 URL 读取 OpenAPI 3.x / Swagger 2.0；按 `x-apifox-folder` 或第一个 tag 创建分组，支持安全方案占位头、多服务器选择、外部 `$ref` 自动下载（限 20 个、每个 2 MB、10 秒超时）。URL 导入会记住来源、ETag / Last-Modified 与内容指纹，右键集合可「同步 OpenAPI」按 `METHOD + 路径` 增量合并：新增接口、更新文档与缺失参数、保留用户改过的名称/参数值/请求体、文档中删除的接口移入集合回收站；也可开启启动时自动同步。
+- **接口文档与调用代码**：导入后的每个请求带「接口文档」页签，离线展示请求参数（路径/查询/请求头/Cookie，含类型、必填、说明、示例、枚举）、请求体 schema 与示例、全部响应状态码/响应头/响应示例；「调用代码」页签按当前环境解析变量后生成 cURL、PowerShell、C# HttpClient、JavaScript fetch、Python requests、Java HttpClient、Go net/http 代码，可复制或保存。
+
+![OpenAPI 接口文档](docs/openapi-docs.png)
+
+![调用代码](docs/openapi-code.png)
 - **自动更新**：已发布安装包启动后每 6 小时在后台检查 GitHub Releases；发现新版本时下载固定命名包并校验 SHA256。下载完成后只显示「可安装」，由你点击右下角「更新 / 安装」按钮主动决定何时替换程序并重启，失败时保留旧版本。右下角和设置窗口都可主动检查更新；设置窗口显示当前版本和更新状态，可关闭自动检查。
 
 ### 授权（OIDC / OAuth 2.0）
@@ -95,17 +101,14 @@ PostSharp 的定位是：
 - **落盘加密**：OAuth 的 access_token、refresh_token、id_token，以及 Bearer 令牌、Basic 密码、API Key 值都用 Windows DPAPI 加密后写入 `workspace.json`，只允许当前用户解密；审计中的 `Authorization` 与敏感查询参数统一打码。
 - **失败可见**：发现、授权、换取令牌每一步的错误都停在窗口里并可复制，不会一闪而过。
 
-![授权配置](docs/authorization.png)
 
 截图中的地址来自本地测试环境已保存的配置；新建配置默认是空白，输入框里的灰色文字只是示例。
 
 请求编辑区的「授权」标签页会在标题里写明当前作用对象：选中请求时显示「请求「…」」和继承来源，选中集合时显示「集合「…」」；「打开授权配置…」按当前选中对象打开。集合/请求配置也可以从树节点右键菜单「授权配置」进入：
 
-![请求授权](docs/request-authorization.png)
 
 选中集合后，同一标签页直接编辑该集合的授权，并把保存范围写清楚；切换集合会换成它自己的一份：
 
-![集合授权](docs/collection-authorization.png)
 
 ### 界面
 
@@ -114,6 +117,7 @@ PostSharp 的定位是：
 - 顶栏「设置」直达独立设置窗口；外观、日志和请求默认值分组展示，保存后立即生效。
 - **Serilog 文件日志**：默认写入 `<项目目录>\.postsharp\logs\postsharp-YYYYMMDD.log`，按天滚动，保留最近 30 个文件；日志目录与最低日志级别可在设置窗口修改，保存后立即生效。所有 `catch` 都会留下结构化异常日志。
 - 界面字体、代码字体、代码字号、窗口自适应；设置窗口可导入本地字体或添加字体目录，导入后的字体会出现在界面/代码字体选项中。
+- 设置窗口新增「界面缩放」60% / 80% / 90% / 100% / 120% / 150%、「界面布局」现代分隔 / 经典紧凑、「标签栏溢出」单行滚动 / 多行平铺；默认 80%，小屏幕一屏可看到更多请求参数、历史和响应区域。
 - 设置窗口新增「全局圆角」滑杆：0 = 直角、1 = Arc 默认、2 = 双倍圆角，保存后立即应用到全部 Arc 控件。
 - 左侧集合栏与编辑区之间有可拖拽分隔条（240–520 DIP），双击恢复默认 320 DIP；宽度随设置持久化。
 - 右下角「布局」可在左右 / 上下之间切换请求区与响应区；对应分隔条可拖拽调整宽高并持久化，双击恢复 1:1 默认比例。
@@ -140,11 +144,8 @@ PostSharp 的定位是：
 - 管理层指南使用左右分栏：左侧步骤说明，右侧竖排操作按钮，行动位置统一。
 - 内置一分钟指南和示例请求。
 
-![节点悬浮操作](docs/tree-actions.png)
 
-![导入来源](docs/postman-import.png)
 
-![HAR 导入](docs/har-import.png)
 
 ## 技术栈
 
@@ -157,7 +158,8 @@ PostSharp 的定位是：
 | TKCode.Arc.Themes.Corners | `0.3.1-preview.2` |
 | AtomUI | 由 TKCode.Arc 带入，`6.2.8` |
 | MVVM | CommunityToolkit.Mvvm `8.4.0` |
-| 持久化 | 本地 SQLite：`Microsoft.Data.Sqlite` `10.0.14`；远程 PostgreSQL：`Npgsql` `10.0.3`；MySQL：`MySqlConnector` `2.6.2`；SQL Server：`Microsoft.Data.SqlClient` `7.1.1` |
+| 持久化 | 本地 SQLite：`Microsoft.Data.Sqlite` `10.0.14`；远程 PostgreSQL / MySQL / SQL Server / MongoDB 以插件随包发布（`Npgsql` `10.0.3`、`MySqlConnector` `2.6.2`、`Microsoft.Data.SqlClient` `7.1.1`、`MongoDB.Driver` `2.24.0`）；可选 OLAP 插件：ClickHouse（`ClickHouse.Client` `7.8.2`）、Doris / StarRocks（`MySqlConnector`） |
+| 存储插件 | `PostSharp.Storage.Abstractions` 契约 + `plugins/<name>/plugin.json` 目录扫描 |
 | 内嵌浏览器 | `Avalonia.Controls.WebView` `12.1.1`（Windows 走 WebView2 运行时） |
 | 令牌存储 | Windows DPAPI：`System.Security.Cryptography.ProtectedData` `10.0.13` |
 | 日志 | Serilog `4.3.0` + Serilog.Sinks.File `7.0.0`，按天滚动 |
@@ -191,6 +193,14 @@ dotnet build PostSharp.slnx
 ```bash
 dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj
 ```
+
+单独构建/打包官方存储插件（默认四类 + ClickHouse / Doris / StarRocks）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-storage-plugins.ps1
+```
+
+插件契约与自定义数据库接入见 [docs/storage-plugins.md](docs/storage-plugins.md)。
 
 ### Apifox 迁移
 
@@ -226,7 +236,6 @@ Apifox 的原生格式暂未直接解析；当前推荐三条官方导出路径�
 5. 集合树顶部的「导入」打开导入/导出对话框，先选择来源卡片，再选择文件或粘贴内容；底部「批量导入文件…」可以一次选择多个文件并自动识别格式。
 6. 选中请求并打开「授权」标签页：默认「继承上级集合」，标题会写明继承自哪个集合；要单独配置就先选类型（Bearer / Basic / API Key / OAuth 2.0），再点「打开授权配置…」。选中集合时同一标签页改为编辑该集合的授权，同集合下未单独配置的请求共用这份授权；切到另一个集合会显示它自己的配置，不会沿用上一份。
 
-![一分钟指南](docs/guide.png)
 
 ## 内置 Mock API
 
@@ -301,7 +310,7 @@ http://127.0.0.1:5199/mcp
 | `duplicate_request` | 复制请求到同一集合的下一位置 |
 | `get_settings` / `update_settings` | 读取或修改系统配置 |
 | `check_updates` | 立即检查 GitHub Releases，已发布安装包会下载并校验新版 |
-| `get_storage_config` / `upsert_storage_profile` / `delete_storage_profile` / `set_storage_binding` | 查看/新增/删除远程存储配置，绑定三个数据分类 |
+| `get_storage_config` / `upsert_storage_profile` / `delete_storage_profile` / `set_storage_binding` | 查看/新增/删除远程存储配置，绑定三个数据分类（远程类型需安装对应插件） |
 | `test_storage_profile` / `sync_storage` / `switch_storage` | 测试连接、单向同步、备份后切换存储 |
 | `import_content` / `export_workspace` | 导入 Postman/OpenAPI/HAR/Insomnia/Hoppscotch/cURL/PowerShell，导出 Postman Collection |
 
@@ -358,9 +367,7 @@ http://127.0.0.1:5199/mcp
 - 清空审计会先确认并移入 **审计回收站**，不会立即永久删除；回收站支持恢复、单条永久删除和清空，永久删除/清空均需再次确认。
 - 审计记录与审计回收站保存在 SQLite `postsharp.db`；默认不限制条数，可在系统设置中指定最多保留条数，超出后自动丢弃最早记录（不再写入数据库），套件执行仍按步骤正常写入审计；旧版 `audit.json` / `audit-trash.json` 首次启动自动导入后不再增长。
 
-![AI 审计](docs/management-audit.png)
 
-![审计回收站](docs/audit-trash.png)
 
 ### 自动化套件
 
@@ -383,11 +390,8 @@ http://127.0.0.1:5199/mcp
 - 运行结果展示通过/失败、状态码、耗时和错误原因，并逐条写入审计。
 - 套件组装和映射规则窗口会按主窗口宽度自适应加宽；映射规则采用单行五列布局（来源步骤、来源字段、目标类型、目标字段、值模板），一屏可同时查看和编辑更多规则。
 
-![自动化套件](docs/management-automation.png)
 
-![从集合组装套件](docs/suite-builder.png)
 
-![出参到入参映射](docs/suite-mapping.png)
 
 ### SSE / AI 输出聚合
 
@@ -437,7 +441,6 @@ http://127.0.0.1:5199/mcp
 - 回收站支持恢复、单条永久删除和清空；永久删除前会再次确认。
 - 回收站内容随工作区一起持久化，重启后仍可恢复。
 
-![历史记录回收站](docs/history-trash.png)
 
 ## 系统全局设置
 
@@ -456,13 +459,13 @@ http://127.0.0.1:5199/mcp
 - **默认请求体**：无 / JSON / 文本 / 表单上传（用于新建请求）。
 - **大响应折叠阈值**：32 / 64 / 128 / 256 KB。
 - **审计最多保留**：不限（默认，0）/ 100 / 500 / 1000 / 2000；设置后超出自动丢弃最早记录，套件执行仍正常写入审计。
-- **存储**：系统配置、集合与接口记录、套件自动化分别绑定本地 SQLite 或远程 PostgreSQL / MySQL / SQL Server；支持测试连接、单向同步和备份后切换，切换后重启生效。
+- **存储**：系统配置、集合与接口记录、套件自动化分别绑定本地 SQLite 或远程 PostgreSQL / MySQL / SQL Server / MongoDB；远程类型由插件提供，默认四类随包发布，ClickHouse / Doris / StarRocks 作为可选 OLAP 插件提供，其它数据库可按 `docs/storage-plugins.md` 自行实现。支持测试连接、单向同步和备份后切换，切换后重启生效。连接不可用时只写本地 SQLite，不开启远程回写。
 - **自动格式化 JSON/XML 响应**。
 - **恢复默认**：把草稿恢复为默认值，保存后生效。
 
-![系统设置](docs/settings.png)
 
-![存储配置](docs/settings-storage.png)
+
+远程存储采用插件架构：主程序只内置本地 SQLite，PostgreSQL / MySQL / SQL Server / MongoDB 四个插件随包发布；ClickHouse / Doris / StarRocks 作为可选 OLAP 插件单独分发，其它数据库把实现放进数据目录的 `plugins` 后点「重新扫描」即可。插件契约、目录格式、OLTP/OLAP/NoSQL 实现示例和失败规则见 [远程存储插件开发指南](docs/storage-plugins.md)。插件以当前用户权限运行，只安装可信来源的插件。
 
 ### 内存与性能
 
@@ -470,7 +473,6 @@ http://127.0.0.1:5199/mcp
 - 审计只保留 AI 内容/思考各 32 KB、cURL 16 KB、请求/响应预览 2 KB；历史请求体最多 256 KB；SSE 原文、思考、内容各最多 2 MB。超出部分会标记为已截断，避免长时间运行后把完整 AI 流留在 500 + 1000 条审计/回收站记录里。
 - 大响应仍在当前响应区完整显示；只有审计与回收站使用截断副本。升级后旧的超大审计记录会在读取时截断到上述上限。
 
-![渲染模式](docs/settings-memory.png)
 
 ## 快捷键
 
@@ -494,6 +496,7 @@ Windows 默认: <项目目录>\.postsharp\
   postsharp.db     本地 SQLite：settings/workspace/suites 文档、审计与审计回收站
   storage.json     存储配置与三个分类的绑定；远程连接串用当前 Windows 用户 DPAPI 加密
   backups\         切换存储前自动备份的 SQLite 文件
+  plugins\         远程存储插件（用户下载后放入；默认四类随安装包发布）
   fonts\           导入的字体文件（应用字体库），启动时自动加载
   logs\            默认日志目录；postsharp-YYYYMMDD.log，按天滚动
   settings.json    旧版设置文件，首次启动导入 SQLite 后保留为兼容副本
@@ -506,7 +509,7 @@ Windows 默认: <项目目录>\.postsharp\
 - 删除整个目录即可恢复首次运行的示例。
 - 系统配置、集合与接口记录、套件自动化分别保存为 SQLite 文档 `settings` / `workspace` / `suites`；审计和审计回收站保存在同一数据库的 `AuditEntries` 表。旧版 JSON 会在首次启动导入，原文件保留作兼容副本。
 - SQLite 使用 WAL、事务和参数化 SQL；保存失败会在顶部提示条显示原因，下次保存自动重试。
-- 设置窗口「存储」可为三个分类分别绑定本地 SQLite 或远程 PostgreSQL / MySQL / SQL Server；本地 SQLite 同时作为离线缓存。切换或同步会先备份本地数据库，切换后重启 PostSharp 使用新存储。远程读取失败时自动回写会暂停，避免新机器上的默认数据覆盖远程库；恢复连接后在设置中执行同步或切换。
+- 设置窗口「存储」可为三个分类分别绑定本地 SQLite 或远程 PostgreSQL / MySQL / SQL Server / MongoDB；本地 SQLite 同时作为离线缓存。远程类型由 `plugins` 目录中的插件提供，默认四类随包发布；其它数据库按 `docs/storage-plugins.md` 实现。切换或同步会先备份本地数据库，切换后重启 PostSharp 使用新存储。远程连接失败或写入失败时自动回写会立即暂停，只写本地 SQLite；恢复连接后在设置中测试连接，或直接执行同步/切换。
 - 机密变量的值仍以明文保存在本机 SQLite 工作区文档中（发送请求需要原值），打码只作用于审计、MCP 返回与套件结果；授权配置跟着请求/集合走，令牌、刷新令牌、ID 令牌、客户端密钥（ClientSecret）、Basic 密码和 API Key 值均用 DPAPI 以当前用户为范围加密后写入工作区，换机器或换用户后需要重新登录。
 - 旧工作区中明文的 ClientSecret 会在首次加载时迁移为加密字段；授权刷新遇到网络、超时或服务端临时错误时保留 refresh_token，只有明确失效才要求重新登录。
 - 服务器返回的状态文本和 Content-Type 也进入打码流程；集合回收站超过容量时会明确提示已永久删除最早的条目。
@@ -566,9 +569,13 @@ src/PostSharp/
     SuiteStore.cs         自动化套件独立持久化
     AuditStore.cs         审计持久化
     SettingsStore.cs      设置持久化
-    DocumentBackends.cs   SQLite/PostgreSQL/MySQL/SQL Server 文档表
+    DocumentBackends.cs   本地 SQLite 文档表与后端工厂（远程类型交给插件）
+    StoragePlugins.cs     plugins 目录扫描、AssemblyLoadContext 隔离与失败降级
     StorageConfigStore.cs 本地存储配置与分类绑定
-    StorageCoordinator.cs 本地缓存、远程同步、备份与切换
+    StorageCoordinator.cs 本地缓存、远程连通性校验、同步、备份与切换
+    OpenApiMarkdownRenderer.cs OpenAPI 接口文档（请求参数/请求体/响应）
+    OpenApiSyncService.cs 按 METHOD + 路径增量合并，保留用户修改，移除项进回收站
+    CodeSampleService.cs  从当前请求生成 cURL/PowerShell/C#/JS/Python/Java/Go 调用代码
   ViewModels/
     MainWindowViewModel.cs 状态、命令、审计、套件运行、导入导出
     SettingsViewModel.cs  设置草稿、校验与保存
@@ -591,6 +598,17 @@ src/PostSharp/
     ToolTipStyles.axaml   全局 Tooltip 浮层卡片样式
   App.cs                  全局样式与主窗口启动
   Program.cs               Arc / AtomUI 启动注册
+src/PostSharp.Storage.Abstractions/
+  StorageContracts.cs      插件契约：IStorageProviderPlugin / IDocumentBackend / 选项与结果
+  SqlDocumentBackend.cs    ADO.NET 插件共用的分类文档表实现
+src/Plugins/
+  PostSharp.Storage.PostgreSql/  PostgreSQL 插件（Npgsql）
+  PostSharp.Storage.MySql/       MySQL 插件（MySqlConnector）
+  PostSharp.Storage.SqlServer/   SQL Server 插件（Microsoft.Data.SqlClient）
+  PostSharp.Storage.MongoDb/     MongoDB 插件（MongoDB.Driver）
+  PostSharp.Storage.ClickHouse/  ClickHouse OLAP 插件（ReplacingMergeTree）
+  PostSharp.Storage.Doris/       Apache Doris OLAP 插件（Unique Key）
+  PostSharp.Storage.StarRocks/   StarRocks OLAP 插件（Unique Key）
 tests/
   PostSharp.Tests/
     PostmanImportServiceTests.cs
@@ -661,6 +679,10 @@ docs/
 | SSE 供应商适配 | OpenRouter `reasoning_details[]`、阿里云 DashScope 原生 `output.choices[].message` / `output.text` 聚合通过；OpenAI 兼容模式保持 |
 | SSE 继续 | 取消后带 `Last-Event-ID` 的「继续」请求重连并追加内容；无 id 时按钮隐藏 |
 | 全局圆角 | 设置滑杆 0 / 1 / 2 保存后立即重绘 Arc 控件；0 为直角、1 为默认、2 为双倍圆角 |
+| 界面缩放 | 默认 80%；`AppSettings.UiScale=0.9` 启动后主窗口整体缩小、可见行数增加；1.0 恢复默认。缩放使用 `LayoutTransformControl`，提供 60% / 80% / 90% / 100% / 120% / 150% |
+| 界面布局 | 设置卡片可切换「现代分隔 / 经典紧凑」，保存后生效；紧凑模式收紧标题栏、编辑区边距和设置分区 |
+| 历史行布局 | 方法徽标（POST/GET）完整显示，名称与 URL 左对齐并按宽度省略，时间与删除按钮固定右对齐 |
+| 标签栏溢出 | 设置卡片可切换「单行滚动 / 多行平铺」；多行模式显示 WrapPanel 标签，点击「请求头」可切换 Arc Tabs 内容，弧形标题栏被覆盖隐藏 |
 | multipart 上传 | `200 OK`，receivedBytes 107111，fileName `screenshot.png` |
 | multipart 多文件 | 两个文件分别配置字段名并写入 multipart；cURL/Postman 导出均保留全部文件；拖拽添加与单文件移除验证通过 |
 | multipart 进度 | 文件按 64KB 流式读取；发送中显示已上传/总大小和百分比，取消按钮可中断 |
@@ -691,7 +713,6 @@ docs/
 | 启动主题 | Windows 为深色时「跟随系统」启动为深色；切换为「浅色」或「深色」重启后保持对应外观 |
 | 文件日志 | 启动写入 `%APPDATA%\PostSharp\logs\postsharp-20261025.log`；修改日志目录并保存后，新日志立即写入新目录 |
 | 日志级别 | 设置窗口把级别从「调试」改为「信息」「警告」并保存，`settings.json` 写入 `LogLevel`；当前会话立即过滤低级别日志，重启后从启动首行起按保存级别写入 |
-| 设置截图 | 「日志」分组新增「日志级别」下拉，`docs/settings.png` 已更新 |
 | cURL 预校验 | 空白 URL 调用 `BuildCurl` 直接返回「# 无法生成 cURL：请输入请求地址。」，日志中不再出现「生成 cURL 失败」和异常堆栈 |
 | 异常日志 | 所有 `catch` 均记录结构化异常；工作区写入失败、请求超时、OpenAPI 解析失败等可在日志中检索 |
 | 树节点 Delete | 选中请求按 `Delete` 弹出「删除请求？」；`Esc` 取消且保留请求，`Ctrl+Enter` 确认后删除 |
@@ -699,7 +720,8 @@ docs/
 | OpenAPI JSON | Petstore 样例：3 个请求 / 2 个分组；服务器地址、query/header、`$ref` schema 示例生成正确 |
 | OpenAPI YAML | Swagger 2 风格路径样例：2 个请求 / 1 个分组；路径级参数与 DELETE 正确解析 |
 | OpenAPI URL | 从本地 HTTP 服务下载 OpenAPI JSON 后导入，集合、分组、请求 URL 正确 |
-| Postman 导入 | 参考目录 9 个 Postman Collection v2.1 样例全部解析成功；飞友版收辅 Saas 53 个请求、38 个请求的吉祥航数据接口等数量与原文件一致，缺失 URL 与脚本/认证差异以提示列出 |
+| OpenAPI UI | 导入 `http://127.0.0.1:8099/openapi.json` 成功；请求显示「接口文档」与「调用代码」页签，路径参数 `petId` 替换为 42、query `verbose=true`，截图见 `docs/openapi-docs.png` / `docs/openapi-code.png` |
+| Postman 导入 | 参考目录 9 个 Postman Collection v2.1 样例全部解析成功；缺失 URL 与脚本/认证差异会以提示列出 |
 | Apifox 迁移 | 导入对话框提示 Apifox「项目设置 → 导出数据 → Postman / OpenAPI」路径，并新增 HAR 迁移入口；Apifox 原生格式适配列入后续计划 |
 | Postman 嵌套/表单 | 嵌套文件夹、query/header、Bearer 认证、raw JSON、urlencoded、formdata 单文件、集合变量导入为环境均验证通过 |
 | Postman 导出 | 选中集合导出后再导入，集合名、子集合、请求、查询参数、禁用请求头、multipart 字段与文件路径保持 |
@@ -715,6 +737,21 @@ docs/
 | Hoppscotch 导入 | Collection JSON：文件夹、params、headers、JSON body、bearer 认证解析通过 |
 | OpenAPI 增强 | `x-apifox-folder` 分组、securitySchemes 占位 Authorization、多服务器选择与请求 URL 重基、外部 `$ref` 自动下载与失败提示通过 |
 | OpenAPI 外部引用 | 相对文档 URL 引用、下载失败降级、20 个/2 MB/10 秒限制通过 |
+| OpenAPI 参数/文档 | 路径参数替换进 URL，请求参数表与响应状态码/响应头/响应 schema/示例渲染为 Markdown；单测 `ParsesPathParametersAndResponseDocuments` 通过 |
+| OpenAPI 表单 | urlencoded 生成 `Text` 请求体与 `Content-Type`，multipart 生成 `Multipart` + 表单字段并跳过二进制占位；单测通过 |
+| OpenAPI 同步 | 按 `METHOD + 路径` 合并：新增、更新、移除进回收站，用户改过的名称与参数值保留；单测 `SyncMergesOperationsAndKeepsUserEdits` 通过 |
+| 调用代码 | 当前请求可生成 cURL / PowerShell / C# HttpClient / JavaScript fetch / Python requests / Java HttpClient / Go net/http；multipart 与缺文件场景生成占位路径，不阻塞导出 |
+| 存储插件 | 主程序仅引用抽象层；四类默认插件构建/发布到程序 `plugins` 目录；临时数据目录加载 MongoDB 插件成功，连接不可达返回失败消息且进程不退出 |
+| OLAP 插件 | ClickHouse（`ReplacingMergeTree` + `FINAL/argMax`）、Doris / StarRocks（MySQL 协议 + Unique Key）三个插件可独立发布；加载、失败隔离与插件目录扫描沿用同一契约 |
+| 数据库不通降级 | 本地缓存存在时先只写 SQLite，后台连通性校验成功后才开启远程回写；写入失败立即暂停远程回写，等待用户测试连接或同步 |
+| 连接测试只读 | 单测确认 `TestAsync` 只执行 `SELECT 1`，不创建文档表；首次写入才建表，避免“测试连接”产生副作用 |
+| MySQL 实连 | 本机临时 MySQL 8.0.28：插件 `TestAsync` 成功，写入 workspace 后读取 Payload/Revision，覆盖写入后 Revision 更新，`ReadAll` 返回 1 条 |
+| PostgreSQL 实连 | 本机临时 PostgreSQL 11.15：插件 `TestAsync` 成功，写入/读取/覆盖写入 Revision 验证通过 |
+| SQL Server 实连 | 本机 LocalDB 2019：插件 `TestAsync` 成功，写入/读取/覆盖写入 Revision 验证通过 |
+| MongoDB 实连 | 本机临时 MongoDB：插件 `TestAsync` 成功，写入/读取/覆盖写入 Revision 验证通过 |
+| OLAP 插件 | ClickHouse / Doris / StarRocks 插件编译通过；七个官方插件放入临时插件目录后扫描结果为 7 个插件、0 个问题 |
+| ClickHouse 实连 | 公共 ClickHouse playground（play 账号）：插件 `TestAsync` 成功；无凭证/错误密码时返回明确认证失败且进程不退出，完整写入待在可写库验证 |
+| Doris / StarRocks | 插件编译、依赖打包与目录扫描通过；当前环境没有可连接的 Doris/StarRocks 实例，SQL 使用 MySQL 协议 + Unique Key 表，待有实例时补实连记录 |
 | 导入来源卡片 | OpenAPI、Postman Collection、Postman Environment、cURL、HAR、Insomnia、Hoppscotch、YApi/ApiPost/Eolink、Apifox 九张卡片同屏展示，选中态清晰 |
 | 批量导入 | 文件选择器允许多选；自动识别 OpenAPI / Postman / HAR / Insomnia / Hoppscotch / cURL，逐文件成功/失败互不影响 |
 | 导入反馈 | 导入完成后弹出成功对话框，显示文件/请求/分组/环境统计和失败数；批量结果与兼容性提示保留在导入窗口可展开 |
@@ -729,7 +766,7 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：134 个测试全部通过（含数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断与更新版本解析） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：144 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断与更新版本解析） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
@@ -737,7 +774,7 @@ docs/
 | 存储配置 | 设置窗口「存储」显示本地 SQLite 路径、数据库类型、连接串、三个分类绑定、测试连接、同步和切换按钮；新增远程库后字段可编辑 |
 | 项目数据目录 | 首次启动把旧 `%APPDATA%\PostSharp` 的 settings/workspace/audit/postsharp.db 复制到项目 `.postsharp`，本地文档表看到 settings/workspace/suites 三类 |
 | MCP 语义工具 | `tools/list` 返回 57 个工具；实测 `get_settings`、`update_settings`、`check_updates`、`get_storage_config`、`test_storage_profile`、`switch_storage`、集合授权、环境 CRUD、导出工作区均返回结果 |
-| 远程存储错误 | 用不可达 PostgreSQL 配置测试连接，返回 `success=false` 和连接失败原因，未阻塞本地 SQLite |
+| 远程存储错误 | 用不可达 PostgreSQL / MongoDB 配置测试连接，返回 `success=false` 和面向用户的失败原因，未阻塞本地 SQLite |
 | 自动更新入口 | 顶栏「更新」按钮和设置窗口「检查更新」均可主动触发；下载完成后按钮变为「安装」，由用户点击后才应用；版本标签解析、包名/校验文件和开发目录禁用逻辑通过单测 |
 | 发送 loading | 慢响应发送中切换到创建订单，发送按钮不显示其他请求的 loading；两个请求均完成并写入历史 |
 | 审计 SQLite | 旧 `audit.json` 55 条启动导入 `postsharp.db`，新请求写入数据库；`audit.json` 时间戳不再变化；SQLite 读写单测通过 |
@@ -770,22 +807,22 @@ docs/
 | 二次审核复测 | 5 个字符且含单引号的机密值用于请求头和查询参数时，打码后的 cURL 中不含原值（单测）；文件被独占时改用 `.bak` 打开且之后写入被拒绝（单测）；集合连同子集合移入回收站后按原顺序恢复，原集合已不存在的请求恢复到根级集合（单测） |
 | 三次审核复测 | 重建打码请求失败时按当前环境全部机密值兜底，短机密与上传文件路径均不出现在 cURL 中；同一机密重复 600 次时预览截断处不残留机密片段；审计补做打码写盘失败后下次触发会重试；关闭后重复出现的警告会重新打开提示条（单测） |
 | 四次审核复测 | 主文件缺失且 `.bak` 被占用时两次保存均被拒绝、`.bak` 原样保留；`.bak` 损坏时移到旁边；`.bak` 被独占打开时保存仍成功；目录不可写时保存返回失败而不抛异常；`\/` 与 `\u002B` 转义的机密回显被打码；集合回收站超过 200 项时丢弃最早一项；无所属集合的请求删除返回失败（单测） |
-| 截图 | 新增 `docs/tree-trash.png`、`docs/env-secret.png`、`docs/data-recovery.png`（示例工作区）；`screenshot.png` 与 `management-automation.png` 未重截，差异仅为侧栏回收站图标与「取消运行」按钮 |
+| 截图 | README 主界面与 OpenAPI 文档截图均使用初始演示工作区；旧本地数据截图已移除 |
 | 构建 | Debug / Release 0 警告、0 错误 |
-| OIDC 登录 | 本地 `dpz.core.test` 授权码 + S256 PKCE：在「OAuth 验证」集合上打开授权窗口，内嵌浏览器登录 `pengqian`，拦截 `redirect_uri` 换取令牌；状态显示「已登录」、用户与到期时间 |
-| 集合级授权 | 请求「账号列表（集合授权）」为「继承上级集合」，解析到集合的 OAuth 2.0 令牌；`GET https://localhost:53381/api/Account` 返回 `200 OK`（155ms），cURL 预览含 `Authorization: Bearer …` |
+| OIDC 登录 | 本地演示 OIDC 授权码 + S256 PKCE：在演示集合上打开授权窗口，内嵌浏览器登录演示账号，拦截 `redirect_uri` 换取令牌；状态显示「已登录」、用户与到期时间 |
+| 集合级授权 | 请求「账号列表（集合授权）」为「继承上级集合」，解析到集合的 OAuth 2.0 令牌；演示账号接口返回 `200 OK`，cURL 预览含 `Authorization: Bearer …` |
 | 请求级覆盖 | 同一集合内请求「账号列表（请求关闭认证）」显式设为「无认证」，发送返回 `401 Unauthorized`，证明请求级可以覆盖集合 |
 | 无全局默认 | 根集合「无认证验证」的请求未配置授权；即使集合授权已登录，发送仍返回 `401 Unauthorized`，不再有全局默认令牌 |
 | Bearer 与变量 | 集合设为 Bearer 且令牌填 `{{token}}`，MCP 发送 `GET /api/echo` 回显 `Authorization: Bearer demo-token-123`；未配置认证的对照请求无该头 |
 | 查询参数注入 | 请求级 Bearer + 附加位置「查询参数」：回显 `access_token=demo-token-123`，请求头不含 Authorization |
 | MCP 授权一致性 | `send_request` 走同一解析：集合授权请求 `200`、无认证请求 `401`；审计 `Curl` / `RequestHeaders` 中 `Authorization` 为 `Bearer ****` |
-| 授权窗口 | 新窗口包含类型/附加位置、Bearer/Basic/API Key 凭据、OAuth 2.0 配置、登录/刷新/退出与内嵌浏览器；`docs/authorization.png`、`docs/request-authorization.png`、`docs/collection-authorization.png` 已更新 |
+| 授权窗口 | 新窗口包含类型/附加位置、Bearer/Basic/API Key 凭据、OAuth 2.0 配置、登录/刷新/退出与内嵌浏览器 |
 | 集合级授权入口 | 树中选中集合后，「授权」标签页标题为「集合「测试集合A」· 未配置授权」，类型下拉默认「继承上级集合」；改为 Bearer 并填写令牌后保存，`workspace.json` 中该集合 `Auth.AuthType=Bearer`、`TokenCipher` 有值，集合内两个请求的 `Auth` 仍为空 |
 | 作用域切换 | 选中「测试集合B」后授权标签页立即变为「集合「测试集合B」· 未配置授权」，令牌输入为空，不显示集合 A 的 `collection-a-token`；再选中请求 A1 时变为「请求「请求A1」· 继承自集合「测试集合A」」，摘要显示集合 A 的 Bearer 令牌 |
-| 集合级 OIDC | 集合 A 配置 OAuth 2.0，内嵌浏览器登录 `pengqian` 后状态「已登录：胖胖°」；请求 A1 保持「继承上级集合」，`GET https://localhost:53381/api/Account` 返回 `200 OK`（154ms）并显示账号列表 |
+| 集合级 OIDC | 演示集合配置 OAuth 2.0，内嵌浏览器登录演示账号后状态「已登录」；请求保持「继承上级集合」，演示账号接口返回 `200 OK` 并显示账号列表 |
 | 集合作用域隔离 | 从集合 B 打开授权窗口，标题为「授权配置 · 集合「测试集合B」· PostSharp」，说明为「该集合当前未配置授权」；切换为 OAuth 2.0 后显示「尚未登录」，不出现集合 A 的登录用户与令牌 |
 | 授权说明联动 | 在集合 B 的授权窗口切换类型后，窗口上方的对象说明从「Bearer 令牌」实时改为「OAuth 2.0 · 未登录」，不再停留在打开窗口时的旧摘要 |
-| OAuth 默认值 | 新集合切换到 OAuth 2.0 后，发现地址、客户端 ID、重定向地址为空，不出现 `dpz.core.test`、`localhost:7183` 或 `localhost:53381`；输入框显示灰色示例占位符，授权范围默认 `openid profile offline_access` |
+| OAuth 默认值 | 新集合切换到 OAuth 2.0 后，发现地址、客户端 ID、重定向地址为空，不出现旧环境的具体地址和客户端 ID；输入框显示灰色示例占位符，授权范围默认 `openid profile offline_access` |
 | 授权复制与解析 | 临时控制台验证：`RequestAuth.Clone()` 后修改副本的 access_token 不影响原对象；`AuthResolver` 对「集合 A Bearer → 子集合 B 继承 → 请求」解析到集合 A，子集合 C 配 API Key 时请求 2 解析到集合 C |
 | 构建 | Debug / Release 均 0 警告、0 错误；`csharpier check .` 通过 |
 
@@ -864,8 +901,9 @@ master                 稳定可发布
 
 脚本会生成：
 
-- `artifacts/PostSharp-win-x64.zip`：应用目录内容，根目录包含 `PostSharp.exe`。
+- `artifacts/PostSharp-win-x64.zip`：应用目录内容，根目录包含 `PostSharp.exe` 和默认四个存储插件。
 - `artifacts/PostSharp-win-x64.zip.sha256`：SHA256 校验文件。
+- `artifacts/plugins/PostSharp.Storage.*.zip`：默认四类与 ClickHouse / Doris / StarRocks 插件包，可作为 Release 附加资产单独上传。
 
 在 GitHub 创建 tag `v0.3.0` 和 Release，上传上面两个文件。应用启动后每 6 小时检查 `releases/latest`，下载并校验包；下载完成后仅提示「可安装」，由用户点击右下角「更新 / 安装」确认后再由独立 PowerShell 更新器替换应用目录并重启，失败时恢复备份。更新前会把原应用目录复制到 LocalAppData 的更新区；如果项目数据目录位于应用目录内，会同步复制回新目录，避免更新丢失 SQLite 数据。设置窗口显示当前版本和更新状态，也可手动检查或关闭自动检查。
 
@@ -878,16 +916,19 @@ master                 稳定可发布
 - 导入来源小分类卡片：可收起，避免大分类隐藏入口。
 - 批量导入：多选文件、自动识别格式、逐文件成功/失败结果。
 - 导入反馈：成功弹出统计对话框；逐文件结果和兼容性提示默认折叠，可展开。
-- OpenAPI：`x-apifox-folder` 分组、securitySchemes 占位头、多服务器选择、外部 `$ref` 自动下载。
+- OpenAPI：`x-apifox-folder` 分组、securitySchemes 占位头、多服务器选择、外部 `$ref` 自动下载；路径/查询/请求头/Cookie 参数、请求体 schema、响应状态码/响应头/示例离线文档；URL 来源增量同步（新增/更新/移除进回收站，保留用户修改）；cURL/PowerShell/C#/JS/Python/Java/Go 调用代码导出。
+- 存储插件：`PostSharp.Storage.Abstractions` 契约 + `plugins` 目录扫描；本地 SQLite 兜底，PostgreSQL / MySQL / SQL Server / MongoDB 默认随包；ClickHouse / Doris / StarRocks 为可选 OLAP 插件；连接不可用时只写本地，写入失败立即暂停远程回写；自定义数据库接入见 `docs/storage-plugins.md`。
 - SSE：接收中 150ms 增量刷新，取消保留已接收内容，支持 `Last-Event-ID` 继续。
 - 套件：JSONPath / 响应头断言、失败重试、上下步条件、并行组、定时运行。
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：134 个 xUnit 测试。
+- 自测：144 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
+- 存储插件在进程内加载，权限等同当前用户程序，不支持热卸载；替换同名插件后建议重启应用。
+- OpenAPI 同步按 `METHOD + 路径` 匹配，单文档最多导入 500 个操作；Webhook / callback 与运行时响应校验未实现。
 - SSE 取消后可用 `Last-Event-ID` 手动「继续」；自动重连和从任意断点恢复仍依赖服务端支持。
 - multipart 已支持多文件、64KB 流式上传、进度和取消；断点续传、分片上传协议和超大文件校验未实现。
 - 套件已支持上一步成功/失败条件、并行组和定时运行；复杂条件表达式、DAG 依赖和任意跳转未实现。

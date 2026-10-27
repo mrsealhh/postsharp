@@ -69,7 +69,9 @@ public sealed class HistoryEntry
             Size = 12,
         };
 
-    public BadgeTone MethodTone => MethodTones.Of(Method);
+    public BadgeTone MethodTone => MethodTones.Of(MethodDisplay);
+
+    public string MethodDisplay => string.IsNullOrWhiteSpace(Method) ? "GET" : Method;
 
     public RequestItem ToRequest()
     {

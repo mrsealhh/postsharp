@@ -1261,12 +1261,14 @@ public sealed class McpServer
                         ["id"] = StringSchema("已有配置 id；省略时新增"),
                         ["name"] = StringSchema("配置名称"),
                         ["provider"] = EnumSchema(
-                            "数据库类型",
-                            StorageProviders.PostgreSql,
-                            StorageProviders.MySql,
-                            StorageProviders.SqlServer
+                            "数据库类型（远程类型需先在插件目录安装对应插件）",
+                            StorageProviders.Remote.Count > 0
+                                ? StorageProviders.Remote.ToArray()
+                                : StorageProviders.All.ToArray()
                         ),
-                        ["connectionString"] = StringSchema("ADO.NET 连接串；修改已有配置时可省略"),
+                        ["connectionString"] = StringSchema(
+                            "ADO.NET / MongoDB 连接串；修改已有配置时可省略"
+                        ),
                     },
                     "name",
                     "provider"

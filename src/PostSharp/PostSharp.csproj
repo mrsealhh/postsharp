@@ -23,10 +23,7 @@
         <PackageReference Include="Avalonia.Controls.WebView" Version="12.1.1" />
         <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
         <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
-        <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.1" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
-        <PackageReference Include="MySqlConnector" Version="2.6.2" />
-        <PackageReference Include="Npgsql" Version="10.0.3" />
         <PackageReference Include="TKCode.Arc" Version="0.3.1-preview.2" />
         <PackageReference Include="TKCode.Arc.Fonts" Version="0.3.1-preview.2" />
         <PackageReference Include="TKCode.Arc.Themes.Corners" Version="0.3.1-preview.2" />
@@ -58,5 +55,61 @@
 
     <ItemGroup>
         <Using Include="Serilog" />
+        <Using Include="PostSharp.Storage.Abstractions" />
     </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\PostSharp.Storage.Abstractions\PostSharp.Storage.Abstractions.csproj" />
+        <StoragePluginProject Include="..\Plugins\PostSharp.Storage.PostgreSql\PostSharp.Storage.PostgreSql.csproj">
+            <PluginFolder>PostSharp.Storage.PostgreSql</PluginFolder>
+        </StoragePluginProject>
+        <StoragePluginProject Include="..\Plugins\PostSharp.Storage.MySql\PostSharp.Storage.MySql.csproj">
+            <PluginFolder>PostSharp.Storage.MySql</PluginFolder>
+        </StoragePluginProject>
+        <StoragePluginProject Include="..\Plugins\PostSharp.Storage.SqlServer\PostSharp.Storage.SqlServer.csproj">
+            <PluginFolder>PostSharp.Storage.SqlServer</PluginFolder>
+        </StoragePluginProject>
+        <StoragePluginProject Include="..\Plugins\PostSharp.Storage.MongoDb\PostSharp.Storage.MongoDb.csproj">
+            <PluginFolder>PostSharp.Storage.MongoDb</PluginFolder>
+        </StoragePluginProject>
+        <ProjectReference
+            Include="@(StoragePluginProject)"
+            ReferenceOutputAssembly="false"
+            Private="false"
+        />
+    </ItemGroup>
+
+    <!--
+        默认随应用发布 PostgreSQL / MySQL / SQL Server / MongoDB 插件；其它数据库可由用户把外部插件
+        放进数据目录的 plugins 文件夹。插件程序集不进入主程序集，主程序保留本地 SQLite 兜底。
+    -->
+    <Target Name="CopyBundledStoragePlugins" AfterTargets="Build">
+        <MSBuild
+            Projects="@(StoragePluginProject)"
+            Targets="Build"
+            Properties="Configuration=$(Configuration)"
+            BuildInParallel="true"
+        />
+        <ItemGroup>
+            <StoragePluginFiles Include="..\Plugins\%(StoragePluginProject.PluginFolder)\bin\$(Configuration)\net10.0\**\*">
+                <PluginFolder>%(StoragePluginProject.PluginFolder)</PluginFolder>
+            </StoragePluginFiles>
+        </ItemGroup>
+        <Copy
+            SourceFiles="@(StoragePluginFiles)"
+            DestinationFiles="@(StoragePluginFiles->'$(OutDir)plugins\%(PluginFolder)\%(RecursiveDir)%(Filename)%(Extension)')"
+            SkipUnchangedFiles="true"
+        />
+    </Target>
+
+    <Target Name="CopyBundledStoragePluginsToPublish" AfterTargets="Publish">
+        <ItemGroup>
+            <BundledStoragePluginFiles Include="$(OutDir)plugins\**\*" />
+        </ItemGroup>
+        <Copy
+            SourceFiles="@(BundledStoragePluginFiles)"
+            DestinationFiles="@(BundledStoragePluginFiles->'$(PublishDir)plugins\%(RecursiveDir)%(Filename)%(Extension)')"
+            SkipUnchangedFiles="true"
+        />
+    </Target>
 </Project>

@@ -51,6 +51,13 @@ public static class AppPaths
 
     public static string BackupDirectory => Path.Combine(Root, "backups");
 
+    /// <summary>Fixed directory where users drop downloaded remote-storage plugins.</summary>
+    public static string StoragePluginDirectory => Path.Combine(Root, "plugins");
+
+    /// <summary>Portable installs may also ship plugins next to the executable.</summary>
+    public static string BundledPluginDirectory =>
+        Path.Combine(AppContext.BaseDirectory, "plugins");
+
     /// <summary>内嵌 WebView2 的配置与缓存目录，放到 LocalAppData 以免污染程序目录。</summary>
     public static string WebViewDataDirectory { get; } =
         Path.Combine(
@@ -72,6 +79,7 @@ public static class AppPaths
         try
         {
             Directory.CreateDirectory(Root);
+            Directory.CreateDirectory(StoragePluginDirectory);
             MigrateLegacyData();
         }
         catch (Exception exception)
@@ -81,6 +89,20 @@ public static class AppPaths
         }
 
         return Root;
+    }
+
+    public static string EnsureStoragePluginDirectory()
+    {
+        try
+        {
+            Directory.CreateDirectory(StoragePluginDirectory);
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "无法创建存储插件目录 {Directory}", StoragePluginDirectory);
+        }
+
+        return StoragePluginDirectory;
     }
 
     /// <summary>
@@ -132,7 +154,18 @@ public static class AppPaths
         var configured = Environment.GetEnvironmentVariable("POSTSHARP_DATA_DIR");
         if (!string.IsNullOrWhiteSpace(configured))
         {
-            return Path.GetFullPath(configured);
+            try
+            {
+                return Path.GetFullPath(configured);
+            }
+            catch (Exception exception)
+            {
+                Log.Warning(
+                    exception,
+                    "POSTSHARP_DATA_DIR 无效，改用项目数据目录 {Directory}",
+                    configured
+                );
+            }
         }
 
         var projectData = Path.Combine(ProjectRoot, ".postsharp");

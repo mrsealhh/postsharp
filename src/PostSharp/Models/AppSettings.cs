@@ -14,10 +14,38 @@ public static class RenderingModes
     public static string Label(string mode) => mode == Auto ? "自动（GPU）" : "软件（低内存）";
 }
 
+public static class UiLayouts
+{
+    public const string Modern = "Modern";
+    public const string Compact = "Compact";
+
+    public static string Label(string layout) => layout == Compact ? "经典紧凑" : "现代分隔";
+}
+
+public static class TabOverflows
+{
+    public const string Scroll = "Scroll";
+    public const string Wrap = "Wrap";
+
+    public static string Label(string overflow) => overflow == Wrap ? "多行平铺" : "单行滚动";
+}
+
 public partial class AppSettings : ObservableObject
 {
     [ObservableProperty]
     private string _theme = "跟随系统";
+
+    /// <summary>Whole-window zoom; 0.8 is the default for denser information on small screens.</summary>
+    [ObservableProperty]
+    private double _uiScale = 0.8;
+
+    /// <summary>Modern uses the roomy Arc panel rhythm; Compact tightens headers, margins and tabs.</summary>
+    [ObservableProperty]
+    private string _uiLayout = UiLayouts.Modern;
+
+    /// <summary>Scroll keeps one tab row with arrows; Wrap lays every visible tab out in multiple rows.</summary>
+    [ObservableProperty]
+    private string _tabOverflow = TabOverflows.Scroll;
 
     /// <summary>
     /// Software rendering keeps the native GPU/ANGLE memory low; Auto restores the platform default.

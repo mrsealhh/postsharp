@@ -221,6 +221,7 @@ public sealed class WorkspaceStore
             Id = dto.Id == Guid.Empty ? Guid.NewGuid() : dto.Id,
             Name = dto.Name,
             IsFavorite = dto.IsFavorite,
+            OpenApiSource = dto.OpenApiSource,
         };
         collection.Auth.CopyFrom(ToAuth(dto.Auth));
 
@@ -293,6 +294,7 @@ public sealed class WorkspaceStore
             Name = collection.Name,
             IsFavorite = collection.IsFavorite,
             ParentId = collection.Parent?.Id,
+            OpenApiSource = collection.OpenApiSource,
             Requests = collection.Requests.Select(ToDto).ToList(),
             Auth = ToAuthDto(collection.Auth),
         };
@@ -345,6 +347,8 @@ public sealed class WorkspaceStore
                 : dto.UploadFieldName,
             IsFavorite = dto.IsFavorite,
             Auth = ToAuth(dto.Auth),
+            OpenApiKey = dto.OpenApiKey,
+            OpenApiDoc = dto.OpenApiDoc,
         };
 
         foreach (var file in dto.UploadFiles)
@@ -456,6 +460,8 @@ public sealed class WorkspaceStore
             Headers = ToRows(request.Headers),
             FormFields = ToRows(request.FormFields),
             Auth = ToAuthDto(request.Auth),
+            OpenApiKey = request.OpenApiKey,
+            OpenApiDoc = request.OpenApiDoc,
         };
     }
 
@@ -533,6 +539,8 @@ public sealed class CollectionDto
 
     public Guid? ParentId { get; set; }
 
+    public OpenApiSource? OpenApiSource { get; set; }
+
     public List<RequestDto> Requests { get; set; } = new();
 
     public RequestAuthDto? Auth { get; set; }
@@ -589,6 +597,10 @@ public sealed class RequestDto
     public List<RowDto> FormFields { get; set; } = new();
 
     public RequestAuthDto? Auth { get; set; }
+
+    public string OpenApiKey { get; set; } = string.Empty;
+
+    public OpenApiOperationDoc? OpenApiDoc { get; set; }
 }
 
 /// <summary>一处授权配置的落盘形态；令牌、密码、API Key 值只保存 DPAPI 密文。</summary>

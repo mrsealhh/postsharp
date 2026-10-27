@@ -15,6 +15,12 @@ if (Test-Path $publish) {
     Remove-Item $publish -Recurse -Force
 }
 
+# Build the default four plugins (also copied into the app) and the optional OLAP plugin zips.
+& (Join-Path $PSScriptRoot "build-storage-plugins.ps1") -Configuration Release
+if ($LASTEXITCODE -ne 0) {
+    throw "storage plugin build failed."
+}
+
 dotnet publish (Join-Path $root "src\PostSharp\PostSharp.csproj") `
     -c Release `
     -r win-x64 `

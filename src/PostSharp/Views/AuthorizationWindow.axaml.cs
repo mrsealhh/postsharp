@@ -19,6 +19,7 @@ public partial class AuthorizationWindow : Window
     public AuthorizationWindow()
     {
         InitializeComponent();
+        UiScaleService.Attach(this);
         Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://PostSharp/Assets/logo-icon.png")));
         Browser.EnvironmentRequested += OnEnvironmentRequested;
         Browser.NavigationStarted += OnNavigationStarted;

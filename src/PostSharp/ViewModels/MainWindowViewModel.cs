@@ -66,6 +66,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private readonly Dictionary<Guid, CancellationTokenSource> _sendCancellations = new();
     private CancellationTokenSource? _suiteCts;
     private CancellationTokenSource? _updateCts;
+    private CancellationTokenSource? _openApiSyncCts;
+    private CancellationTokenSource? _openApiSyncRequestCts;
     private ComposedRequest? _lastComposedRequest;
     private SseResumeSnapshot? _sseResume;
     private readonly DispatcherTimer _suiteScheduleTimer = new()
@@ -110,6 +112,16 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (SettingsStore.StartupProblem is { } settingsProblem)
         {
             DataNotice.Report(settingsProblem, "设置文件 settings.json ", "已使用默认设置");
+        }
+
+        var pluginIssues = StoragePluginRegistry.Current.Refresh();
+        if (pluginIssues.Count > 0)
+        {
+            DataNotice.Warn(
+                $"存储插件加载有问题：{string.Join("；", pluginIssues.Take(3))}"
+                    + (pluginIssues.Count > 3 ? " 等。" : string.Empty)
+                    + $" 请检查插件目录 {AppPaths.StoragePluginDirectory} 后重新扫描。"
+            );
         }
 
         var workspaceLoad = _store.Load();
@@ -164,6 +176,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         SelectedSuite ??= Suites.FirstOrDefault();
         IsDraft = firstRequest is null;
         _initializing = false;
+        RefreshRequestTabOptions();
 
         MockStatus = _mockServer.IsRunning
             ? $"Mock 服务运行中 · {_mockServer.BaseUrl}"
@@ -233,6 +246,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         UpdateService.PendingChanged += OnPendingUpdateChanged;
         _updateCts = new CancellationTokenSource();
         _ = RunUpdateLoopAsync(_updateCts.Token);
+        _openApiSyncCts = new CancellationTokenSource();
+        _ = RunOpenApiAutoSyncAsync(_openApiSyncCts.Token);
 
         Persist();
     }
@@ -273,6 +288,48 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public IReadOnlyList<string> Methods { get; } =
         new[] { "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS" };
+
+    public IReadOnlyList<CodeLanguageOption> CodeLanguages => CodeSampleService.Languages;
+
+    public bool IsCompactLayout => Settings.UiLayout == UiLayouts.Compact;
+
+    public bool IsWrapTabs => Settings.TabOverflow == TabOverflows.Wrap;
+
+    public ObservableCollection<RequestTabOption> RequestTabOptions { get; } = new();
+
+    [ObservableProperty]
+    private int _requestTabIndex;
+
+    [ObservableProperty]
+    private CodeLanguageOption _selectedCodeLanguage = CodeSampleService.Languages[0];
+
+    [ObservableProperty]
+    private string _codePreview = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasOpenApiDoc;
+
+    [ObservableProperty]
+    private string _openApiDocMarkdown = string.Empty;
+
+    [ObservableProperty]
+    private string _openApiDocSourceText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasOpenApiSource;
+
+    [ObservableProperty]
+    private bool _hasOpenApiSourceSelected;
+
+    [ObservableProperty]
+    private string _openApiAutoSyncActionText = "开启自动同步";
+
+    [ObservableProperty]
+    private bool _isSyncingOpenApi;
+
+    public string CodeFileName => SelectedCodeLanguage.FileName;
+
+    public string CodeLanguageHighlight => SelectedCodeLanguage.Highlight;
 
     [ObservableProperty]
     private RequestItem _editing = new();
@@ -919,9 +976,52 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         );
     }
 
+    public ExportDocument? BuildCodeExport()
+    {
+        if (string.IsNullOrWhiteSpace(CodePreview))
+        {
+            return null;
+        }
+
+        var name = string.IsNullOrWhiteSpace(Editing.Name) ? "request" : Editing.Name.Trim();
+        var invalid = Path.GetInvalidFileNameChars();
+        var safeName = new string(
+            name.Select(character => invalid.Contains(character) ? '-' : character).ToArray()
+        )
+            .Trim()
+            .TrimEnd('.');
+        if (string.IsNullOrEmpty(safeName))
+        {
+            safeName = "request";
+        }
+
+        var extension = Path.GetExtension(SelectedCodeLanguage.FileName);
+        return new ExportDocument(CodePreview, $"{safeName}{extension}");
+    }
+
     public CollectionImportOutcome ApplyOpenApiImport(OpenApiImportDocument document)
     {
         var root = new RequestCollection { Name = document.Title, IsExpanded = true };
+        if (
+            Uri.TryCreate(document.Source, UriKind.Absolute, out var sourceUri)
+            && (sourceUri.Scheme == Uri.UriSchemeHttp || sourceUri.Scheme == Uri.UriSchemeHttps)
+        )
+        {
+            root.OpenApiSource = new OpenApiSource
+            {
+                Url = sourceUri.ToString(),
+                DocumentTitle = document.Title,
+                Version = document.Version,
+                ETag = document.ETag ?? string.Empty,
+                LastModifiedHeader = document.LastModifiedHeader ?? string.Empty,
+                ContentHash = document.ContentHash ?? string.Empty,
+                ImportedAt = DateTimeOffset.Now,
+                LastSyncedAt = DateTimeOffset.Now,
+                LastRequestCount = document.RequestCount,
+                SelectedServerIndex = document.SelectedServerIndex,
+            };
+        }
+
         Collections.Insert(0, root);
 
         var groupCount = 0;
@@ -946,29 +1046,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
             foreach (var imported in group.Requests)
             {
-                var request = new RequestItem
-                {
-                    Name = imported.Name,
-                    Method = imported.Method,
-                    Url = imported.Url,
-                    BodyMode = imported.BodyMode,
-                    Body = imported.Body,
-                    Owner = target,
-                };
-
-                foreach (var field in imported.Query)
-                {
-                    request.Params.AddRow(field.Name, field.Value, true);
-                }
-
-                foreach (var header in imported.Headers)
-                {
-                    request.Headers.AddRow(header.Name, header.Value, true);
-                }
-
-                request.Params.EnsureTrailingRow();
-                request.Headers.EnsureTrailingRow();
-                request.FormFields.EnsureTrailingRow();
+                var request = OpenApiRequestFactory.Create(imported);
+                request.Owner = target;
                 target.Requests.Add(request);
                 firstRequest ??= request;
                 requestCount++;
@@ -987,6 +1066,240 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         return new CollectionImportOutcome(document.Title, requestCount, groupCount, null);
+    }
+
+    [RelayCommand]
+    private Task SyncSelectedOpenApi() => SyncOpenApiAsync(SelectedCollection, silent: false);
+
+    [RelayCommand]
+    private void CancelOpenApiSync() => _openApiSyncRequestCts?.Cancel();
+
+    [RelayCommand]
+    private void ToggleSelectedOpenApiAutoSync()
+    {
+        var root = RootCollectionOf(SelectedCollection ?? Editing.Owner);
+        if (root?.OpenApiSource is not { CanSync: true } source)
+        {
+            ShowToast("当前集合不是从 OpenAPI URL 导入的，无法自动同步。");
+            return;
+        }
+
+        source.AutoSync = !source.AutoSync;
+        Persist();
+        RefreshOpenApiSelectionState();
+        RefreshOpenApiDocState();
+        ShowToast(source.AutoSync ? "已开启自动同步" : "已关闭自动同步");
+    }
+
+    /// <summary>
+    /// Downloads the source document and merges it into the imported collection. Downloads run off the UI
+    /// thread; the merge, persistence and notifications are marshalled back to it. Removed operations go to
+    /// the collection recycle bin, so a bad upstream change is reversible.
+    /// </summary>
+    public async Task SyncOpenApiAsync(
+        RequestCollection? collection,
+        bool silent,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var root = RootCollectionOf(collection ?? SelectedCollection ?? Editing.Owner);
+        if (root?.OpenApiSource is not { CanSync: true } source)
+        {
+            if (!silent)
+            {
+                ShowToast("当前集合不是从 OpenAPI URL 导入的，没有可同步的来源。");
+            }
+
+            return;
+        }
+
+        if (IsSyncingOpenApi)
+        {
+            if (!silent)
+            {
+                ShowToast("正在同步 OpenAPI 文档，请稍候。");
+            }
+
+            return;
+        }
+
+        CancellationTokenSource? requestCts = null;
+        if (!silent)
+        {
+            IsSyncingOpenApi = true;
+            _openApiSyncRequestCts?.Cancel();
+            _openApiSyncRequestCts?.Dispose();
+            requestCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _openApiSyncRequestCts = requestCts;
+        }
+
+        var syncToken = requestCts?.Token ?? cancellationToken;
+        try
+        {
+            Log.Information("开始同步 OpenAPI 文档 {Url}", source.Url);
+            var result = await OpenApiImportService.FetchAsync(
+                source.Url,
+                source.ETag,
+                source.LastModifiedHeader,
+                syncToken
+            );
+            if (result.NotModified)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    source.ETag = result.ETag;
+                    source.LastModifiedHeader = result.LastModified;
+                    source.LastSyncedAt = DateTimeOffset.Now;
+                    Persist();
+                    if (!silent)
+                    {
+                        RefreshOpenApiDocState();
+                        ShowToast($"OpenAPI「{root.Name}」已是最新");
+                    }
+                });
+                return;
+            }
+
+            if (result.Document is not { } document)
+            {
+                throw new InvalidOperationException("OpenAPI 文档没有返回内容。");
+            }
+
+            if (
+                source.ContentHash.Length > 0
+                && string.Equals(source.ContentHash, result.ContentHash, StringComparison.Ordinal)
+            )
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    source.ETag = result.ETag;
+                    source.LastModifiedHeader = result.LastModified;
+                    source.LastSyncedAt = DateTimeOffset.Now;
+                    Persist();
+                    if (!silent)
+                    {
+                        RefreshOpenApiDocState();
+                        ShowToast($"OpenAPI「{root.Name}」已是最新");
+                    }
+                });
+                return;
+            }
+
+            if (
+                source.SelectedServerIndex >= 0
+                && source.SelectedServerIndex < document.Servers.Count
+            )
+            {
+                document = document.WithServer(source.SelectedServerIndex);
+            }
+
+            var applied = await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                var syncResult = OpenApiSyncService.Apply(
+                    root,
+                    document,
+                    Collections.Add,
+                    request => TreeTrash.TrashRequest(request, "OpenAPI 同步")
+                );
+                source.ETag = result.ETag;
+                source.LastModifiedHeader = result.LastModified;
+                source.ContentHash = result.ContentHash;
+                source.LastSyncedAt = DateTimeOffset.Now;
+                source.LastRequestCount = document.RequestCount;
+                source.DocumentTitle = document.Title;
+                source.Version = document.Version;
+
+                SyncRootCollections();
+                if (!Collections.SelectMany(candidate => candidate.Requests).Contains(Editing))
+                {
+                    SelectFirstRequestOrBlank();
+                }
+
+                Persist();
+                NotifyTreeChanged();
+                NotifySelectionChanged();
+                RefreshOpenApiDocState();
+                return syncResult;
+            });
+
+            Log.Information(
+                "OpenAPI 同步完成 {Url}：新增 {Added}，更新 {Updated}，移除 {Removed}，未变 {Unchanged}",
+                source.Url,
+                applied.Added,
+                applied.Updated,
+                applied.Removed,
+                applied.Unchanged
+            );
+            if (!silent || applied.Changed)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                    ShowToast($"OpenAPI「{root.Name}」{applied.Summary}")
+                );
+            }
+        }
+        catch (OperationCanceledException) when (syncToken.IsCancellationRequested)
+        {
+            Log.Information("OpenAPI 同步已取消 {Url}", source.Url);
+            if (!silent)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() => ShowToast("已取消 OpenAPI 同步"));
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "同步 OpenAPI 文档失败 {Url}", source.Url);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                DataNotice.Warn(
+                    $"OpenAPI「{root.Name}」同步失败：{exception.Message} 请检查文档地址、网络和访问权限后重试。"
+                )
+            );
+        }
+        finally
+        {
+            if (!silent)
+            {
+                requestCts?.Dispose();
+                if (ReferenceEquals(_openApiSyncRequestCts, requestCts))
+                {
+                    _openApiSyncRequestCts = null;
+                }
+
+                await Dispatcher.UIThread.InvokeAsync(() => IsSyncingOpenApi = false);
+            }
+        }
+    }
+
+    private async Task RunOpenApiAutoSyncAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(6), cancellationToken).ConfigureAwait(false);
+            var roots = await Dispatcher.UIThread.InvokeAsync(() =>
+                Collections
+                    .Where(candidate =>
+                        candidate.Parent is null
+                        && candidate.OpenApiSource is { AutoSync: true, CanSync: true }
+                    )
+                    .ToList()
+            );
+            foreach (var root in roots)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await SyncOpenApiAsync(root, silent: true, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Application shutdown.
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "自动同步 OpenAPI 文档时意外终止");
+        }
     }
 
     [RelayCommand]
@@ -1268,6 +1581,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         )
         {
             _ = ThemeService.ApplyAsync(Settings.Theme, cornerScale: Settings.CornerScale);
+        }
+
+        if (
+            e.PropertyName == nameof(AppSettings.UiScale)
+            || e.PropertyName == nameof(AppSettings.UiLayout)
+            || e.PropertyName == nameof(AppSettings.TabOverflow)
+        )
+        {
+            OnPropertyChanged(nameof(IsCompactLayout));
+            OnPropertyChanged(nameof(IsWrapTabs));
+            UiScaleService.ApplyToAll(Settings.UiScale);
         }
 
         if (
@@ -1598,6 +1922,52 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         BindEditingTracking();
         OnPropertyChanged(nameof(EditingAuth));
         RefreshAuthState();
+        RefreshOpenApiDocState();
+        RefreshCodePreview();
+    }
+
+    partial void OnSelectedCodeLanguageChanged(CodeLanguageOption value)
+    {
+        OnPropertyChanged(nameof(CodeFileName));
+        OnPropertyChanged(nameof(CodeLanguageHighlight));
+        RefreshCodePreview();
+    }
+
+    partial void OnHasOpenApiDocChanged(bool value) => RefreshRequestTabOptions();
+
+    partial void OnRequestTabIndexChanged(int value)
+    {
+        foreach (var option in RequestTabOptions)
+        {
+            option.IsSelected = option.Index == value;
+        }
+    }
+
+    [RelayCommand]
+    private void SelectRequestTab(int index) => RequestTabIndex = index;
+
+    private void RefreshRequestTabOptions()
+    {
+        var current = RequestTabIndex;
+        RequestTabOptions.Clear();
+        RequestTabOptions.Add(new RequestTabOption(0, "参数"));
+        RequestTabOptions.Add(new RequestTabOption(1, "请求头"));
+        RequestTabOptions.Add(new RequestTabOption(2, "授权"));
+        RequestTabOptions.Add(new RequestTabOption(3, "请求体"));
+        RequestTabOptions.Add(new RequestTabOption(4, "cURL"));
+        if (HasOpenApiDoc)
+        {
+            RequestTabOptions.Add(new RequestTabOption(5, "接口文档"));
+        }
+
+        RequestTabOptions.Add(new RequestTabOption(6, "调用代码"));
+        RequestTabIndex =
+            RequestTabOptions.FirstOrDefault(option => option.Index == current)?.Index
+            ?? RequestTabOptions[0].Index;
+        foreach (var option in RequestTabOptions)
+        {
+            option.IsSelected = option.Index == RequestTabIndex;
+        }
     }
 
     partial void OnSelectedCollectionChanged(RequestCollection? value) => OnAuthScopeChanged();
@@ -1611,6 +1981,16 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         OnPropertyChanged(nameof(EditingAuth));
         OnPropertyChanged(nameof(EditorHint));
         RefreshAuthState();
+        RefreshOpenApiSelectionState();
+    }
+
+    private void RefreshOpenApiSelectionState()
+    {
+        var root = RootCollectionOf(SelectedCollection ?? Editing.Owner);
+        HasOpenApiSourceSelected = root?.OpenApiSource is { CanSync: true };
+        OpenApiAutoSyncActionText = root?.OpenApiSource is { AutoSync: true }
+            ? "关闭自动同步"
+            : "开启自动同步";
     }
 
     partial void OnFilterTextChanged(string value) => NotifyTreeChanged();
@@ -5323,6 +5703,58 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
     }
 
+    private void RefreshOpenApiDocState()
+    {
+        var doc = Editing.OpenApiDoc;
+        HasOpenApiDoc = doc is not null;
+        OpenApiDocMarkdown = doc is null ? string.Empty : OpenApiMarkdownRenderer.Render(doc);
+        var source = RootCollectionOf(Editing.Owner)?.OpenApiSource;
+        HasOpenApiSource = source is { CanSync: true };
+        if (doc is null)
+        {
+            OpenApiDocSourceText = string.Empty;
+            return;
+        }
+
+        var parts = new List<string> { $"{doc.Method} {doc.Path}" };
+        if (source is { CanSync: true } syncSource)
+        {
+            parts.Add($"来源：{syncSource.Url}");
+            parts.Add(
+                syncSource.LastSyncedAt == DateTimeOffset.MinValue
+                    ? "尚未同步"
+                    : $"上次同步：{syncSource.LastSyncedAt.ToLocalTime():yyyy-MM-dd HH:mm}"
+            );
+            parts.Add(syncSource.AutoSync ? "自动同步：开" : "自动同步：关");
+        }
+        else
+        {
+            parts.Add("来源：本地 OpenAPI 文件");
+        }
+
+        OpenApiDocSourceText = string.Join(" · ", parts);
+    }
+
+    private void RefreshCodePreview()
+    {
+        CodePreview = CodeSampleService.Generate(
+            SelectedCodeLanguage.Id,
+            Editing,
+            ActiveEnvironment
+        );
+    }
+
+    private static RequestCollection? RootCollectionOf(RequestCollection? collection)
+    {
+        var current = collection;
+        while (current?.Parent is not null)
+        {
+            current = current.Parent;
+        }
+
+        return current;
+    }
+
     private void RefreshDerivedState()
     {
         var body = Editing.Body ?? string.Empty;
@@ -5356,6 +5788,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             : string.Empty;
 
         CurlPreview = RequestComposer.BuildCurl(Editing, ActiveEnvironment, ResolveAuth(Editing));
+        RefreshCodePreview();
     }
 
     private static string Truncate(string text, int limit)
@@ -5375,6 +5808,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         UpdateService.PendingChanged -= OnPendingUpdateChanged;
         _updateCts?.Cancel();
         _updateCts?.Dispose();
+        _openApiSyncCts?.Cancel();
+        _openApiSyncCts?.Dispose();
+        _openApiSyncRequestCts?.Cancel();
+        _openApiSyncRequestCts?.Dispose();
         Persist();
         _mockServer.Dispose();
     }
@@ -5699,6 +6136,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         OnPropertyChanged(nameof(IsDraft));
         OnPropertyChanged(nameof(EditorHint));
         OnPropertyChanged(nameof(CanExportCurl));
+        RefreshOpenApiSelectionState();
     }
 
     private void UpdateSelectionFlags()
@@ -6270,4 +6708,26 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             _ => $"{bytes / (1024d * 1024d):0.##} MB",
         };
     }
+}
+
+public sealed partial class RequestTabOption : ObservableObject
+{
+    public RequestTabOption(int index, string header)
+    {
+        Index = index;
+        Header = header;
+    }
+
+    public int Index { get; }
+
+    public string Header { get; }
+
+    [ObservableProperty]
+    private bool _isSelected;
+
+    public string Variant => IsSelected ? "Secondary" : "Ghost";
+
+    partial void OnIsSelectedChanged(bool value) => OnPropertyChanged(nameof(Variant));
+
+    public override string ToString() => Header;
 }

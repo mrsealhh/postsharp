@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -6,6 +7,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using PostSharp.Controls;
 using PostSharp.Models;
+using PostSharp.Services;
 using PostSharp.ViewModels;
 
 namespace PostSharp.Views;
@@ -15,6 +17,8 @@ public partial class SettingsWindow : Window
     public SettingsWindow()
     {
         InitializeComponent();
+        UiScaleService.Attach(this);
+        DataContextChanged += (_, _) => ApplyCompactLayout();
         Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://PostSharp/Assets/logo-icon.png")));
         KeyDown += OnWindowKeyDown;
         Opened += (_, _) =>
@@ -42,6 +46,15 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void ApplyCompactLayout()
+    {
+        Classes.Set(
+            "compact",
+            DataContext is SettingsViewModel viewModel
+                && viewModel.Draft.UiLayout == UiLayouts.Compact
+        );
+    }
+
     private async void OnBrowseLogDirectoryClick(
         object? sender,
         Avalonia.Interactivity.RoutedEventArgs e
@@ -64,6 +77,27 @@ public partial class SettingsWindow : Window
     }
 
     private void OnCloseClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Close();
+
+    private void OnOpenStoragePluginFolderClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        try
+        {
+            var directory = AppPaths.EnsureStoragePluginDirectory();
+            Process.Start(new ProcessStartInfo { FileName = directory, UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            if (DataContext is SettingsViewModel viewModel)
+            {
+                viewModel.ReportStoragePluginFolderFailure(
+                    $"无法打开插件目录：{exception.Message}。请手动打开 {AppPaths.StoragePluginDirectory}。"
+                );
+            }
+        }
+    }
 
     private async void OnImportFontsClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {

@@ -28,7 +28,8 @@ public static class RequestComposer
     public static ComposedRequest Compose(
         RequestItem request,
         EnvironmentModel? environment,
-        AuthInjection? auth = null
+        AuthInjection? auth = null,
+        bool validateUploadFiles = true
     )
     {
         var method = string.IsNullOrWhiteSpace(request.Method)
@@ -132,7 +133,7 @@ public static class RequestComposer
 
             foreach (var file in candidates)
             {
-                if (!File.Exists(file.FilePath))
+                if (validateUploadFiles && !File.Exists(file.FilePath))
                 {
                     throw new InvalidOperationException($"上传文件不存在：{file.FilePath}");
                 }
@@ -222,9 +223,13 @@ public static class RequestComposer
     }
 
     /// <summary>Builds a PowerShell Invoke-RestMethod command for the current request.</summary>
-    public static string BuildPowerShell(RequestItem request, EnvironmentModel? environment)
+    public static string BuildPowerShell(
+        RequestItem request,
+        EnvironmentModel? environment,
+        bool validateUploadFiles = true
+    )
     {
-        var blocker = FindCurlBlocker(request, environment);
+        var blocker = FindCurlBlocker(request, environment, validateUploadFiles);
         if (blocker is not null)
         {
             return $"# 无法生成 PowerShell：{blocker}";
@@ -232,7 +237,9 @@ public static class RequestComposer
 
         try
         {
-            return BuildPowerShell(Compose(request, environment));
+            return BuildPowerShell(
+                Compose(request, environment, validateUploadFiles: validateUploadFiles)
+            );
         }
         catch (Exception exception)
         {
@@ -429,7 +436,11 @@ public static class RequestComposer
     /// Checks the request before composing it, so an incomplete draft (blank URL, missing upload file) is reported
     /// as a hint instead of being logged as a failure.
     /// </summary>
-    private static string? FindCurlBlocker(RequestItem request, EnvironmentModel? environment)
+    private static string? FindCurlBlocker(
+        RequestItem request,
+        EnvironmentModel? environment,
+        bool validateUploadFiles = true
+    )
     {
         if (
             !TryResolveHttpUri(
@@ -458,7 +469,7 @@ public static class RequestComposer
             foreach (var file in request.UploadFiles)
             {
                 var filePath = VariableResolver.Resolve(file.FilePath, environment).Trim();
-                if (filePath.Length > 0 && !File.Exists(filePath))
+                if (validateUploadFiles && filePath.Length > 0 && !File.Exists(filePath))
                 {
                     return $"上传文件不存在：{filePath}";
                 }
@@ -468,7 +479,7 @@ public static class RequestComposer
         }
 
         var legacyPath = VariableResolver.Resolve(request.UploadFilePath, environment).Trim();
-        if (legacyPath.Length > 0 && !File.Exists(legacyPath))
+        if (validateUploadFiles && legacyPath.Length > 0 && !File.Exists(legacyPath))
         {
             return $"上传文件不存在：{legacyPath}";
         }

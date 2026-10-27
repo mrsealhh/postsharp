@@ -1290,13 +1290,22 @@ public sealed class McpWorkspaceAdapter
     {
         if (!StorageProviders.All.Contains(provider, StringComparer.Ordinal))
         {
-            throw new InvalidOperationException($"不支持的存储类型：{provider}");
+            throw new InvalidOperationException(
+                $"不支持的存储类型或未安装对应插件：{provider}。请把插件放到 {AppPaths.StoragePluginDirectory} 后重新扫描。"
+            );
         }
 
         if (provider == StorageProviders.LocalSqlite)
         {
             throw new InvalidOperationException(
                 "本地 SQLite 配置固定为项目数据目录，不能通过 MCP 修改。"
+            );
+        }
+
+        if (!StoragePluginRegistry.Current.IsAvailable(provider))
+        {
+            throw new InvalidOperationException(
+                $"未安装存储插件「{provider}」。请把插件放到 {AppPaths.StoragePluginDirectory} 后重新扫描。"
             );
         }
 

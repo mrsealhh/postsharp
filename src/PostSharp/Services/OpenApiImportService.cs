@@ -1,4 +1,6 @@
+using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -8,6 +10,15 @@ using YamlDotNet.Core;
 using YamlDotNet.RepresentationModel;
 
 namespace PostSharp.Services;
+
+/// <summary>Result of downloading an OpenAPI document, including the cache validators used for re-sync.</summary>
+public sealed record OpenApiFetchResult(
+    OpenApiImportDocument? Document,
+    bool NotModified,
+    string ETag,
+    string LastModified,
+    string ContentHash
+);
 
 /// <summary>
 /// Minimal OpenAPI 3.x / Swagger 2.0 reader. It keeps the parts that matter for manual debugging — method,
@@ -48,6 +59,18 @@ public static class OpenApiImportService
         string url,
         CancellationToken cancellationToken = default,
         HttpClient? client = null
+    ) =>
+        (
+            await FetchAsync(url, null, null, cancellationToken, client).ConfigureAwait(false)
+        ).Document
+        ?? throw new InvalidOperationException("OpenAPI 文档没有返回内容。");
+
+    public static async Task<OpenApiFetchResult> FetchAsync(
+        string url,
+        string? etag,
+        string? lastModified,
+        CancellationToken cancellationToken = default,
+        HttpClient? client = null
     )
     {
         if (
@@ -65,10 +88,35 @@ public static class OpenApiImportService
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/yaml"));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/yaml"));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*", 0.5));
+        if (
+            !string.IsNullOrWhiteSpace(etag)
+            && EntityTagHeaderValue.TryParse(etag, out var cachedTag)
+        )
+        {
+            request.Headers.IfNoneMatch.Add(cachedTag);
+        }
+
+        if (
+            !string.IsNullOrWhiteSpace(lastModified)
+            && DateTimeOffset.TryParse(lastModified, out var cachedModified)
+        )
+        {
+            request.Headers.IfModifiedSince = cachedModified;
+        }
 
         using var response = await (client ?? Client)
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
+        var responseTag = response.Headers.ETag?.ToString() ?? etag ?? string.Empty;
+        var responseModified =
+            response.Content.Headers.LastModified?.ToString("R")
+            ?? (!string.IsNullOrWhiteSpace(lastModified) ? lastModified : string.Empty);
+        if (response.StatusCode == HttpStatusCode.NotModified)
+        {
+            Log.Information("OpenAPI 文档未更新 {Url}", uri);
+            return new OpenApiFetchResult(null, true, responseTag, responseModified, string.Empty);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
@@ -84,15 +132,25 @@ public static class OpenApiImportService
             throw new InvalidOperationException("下载到的 OpenAPI 文档为空。");
         }
 
-        Log.Information("已下载 OpenAPI 文档 {Url}，大小 {Length} 字符", uri, content.Length);
-        return await ParseWithExternalReferencesAsync(
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)), 0, 16);
+        Log.Information(
+            "已下载 OpenAPI 文档 {Url}，大小 {Length} 字符，指纹 {Hash}",
+            uri,
+            content.Length,
+            hash
+        );
+        var document = await ParseWithExternalReferencesAsync(
                 content,
                 uri.ToString(),
                 uri,
                 cancellationToken,
-                client
+                client,
+                responseTag,
+                responseModified,
+                hash
             )
             .ConfigureAwait(false);
+        return new OpenApiFetchResult(document, false, responseTag, responseModified, hash);
     }
 
     public static async Task<OpenApiImportDocument> ParseWithExternalReferencesAsync(
@@ -100,7 +158,10 @@ public static class OpenApiImportService
         string source,
         Uri? baseUri,
         CancellationToken cancellationToken = default,
-        HttpClient? client = null
+        HttpClient? client = null,
+        string? etag = null,
+        string? lastModified = null,
+        string? contentHash = null
     )
     {
         var root =
@@ -108,7 +169,7 @@ public static class OpenApiImportService
             ?? throw new InvalidOperationException("OpenAPI 文档的根节点必须是对象。");
         if (CountExternalReferences(root) == 0)
         {
-            return Parse(content, source);
+            return Parse(content, source, null, etag, lastModified, contentHash);
         }
 
         var warnings = new List<string>();
@@ -120,13 +181,16 @@ public static class OpenApiImportService
             root["x-postsharp-external"] = bundle.DeepClone();
         }
 
-        return Parse(root.ToJsonString(), source, warnings);
+        return Parse(root.ToJsonString(), source, warnings, etag, lastModified, contentHash);
     }
 
     public static OpenApiImportDocument Parse(
         string content,
         string source,
-        IReadOnlyList<string>? extraWarnings = null
+        IReadOnlyList<string>? extraWarnings = null,
+        string? etag = null,
+        string? lastModified = null,
+        string? contentHash = null
     )
     {
         if (string.IsNullOrWhiteSpace(content))
@@ -238,6 +302,7 @@ public static class OpenApiImportService
                 group.Requests.Add(
                     BuildRequest(
                         document,
+                        pathItem,
                         pathEntry.Key,
                         method,
                         operation,
@@ -287,8 +352,12 @@ public static class OpenApiImportService
             Title = title.Trim(),
             Version = version,
             Source = source,
+            Description = (GetText(info?["description"]) ?? string.Empty).Trim(),
             Servers = servers,
             BaseUrl = baseUrl,
+            ETag = etag,
+            LastModifiedHeader = lastModified,
+            ContentHash = contentHash,
             Groups = groups
                 .Select(group => new OpenApiImportGroup
                 {
@@ -302,6 +371,7 @@ public static class OpenApiImportService
 
     private static OpenApiImportRequest BuildRequest(
         JsonObject document,
+        JsonObject pathItem,
         string path,
         string method,
         JsonObject operation,
@@ -310,40 +380,88 @@ public static class OpenApiImportService
         out bool usedSecurity
     )
     {
+        var parameters = new List<OpenApiParameterDoc>();
         var query = new List<OpenApiImportField>();
         var headers = new List<OpenApiImportField>();
+        var pathValues = new Dictionary<string, string>(StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        AddParameters(document, pathParameters, query, headers, seen);
-        AddParameters(document, operation["parameters"] as JsonArray, query, headers, seen);
+        // Operation-level parameters override path-level ones with the same name and location.
+        CollectParameters(
+            document,
+            operation["parameters"] as JsonArray,
+            parameters,
+            query,
+            headers,
+            pathValues,
+            seen
+        );
+        CollectParameters(document, pathParameters, parameters, query, headers, pathValues, seen);
         usedSecurity = AddSecurity(document, operation, query, headers, seen);
 
-        var name = GetText(operation["summary"]) ?? GetText(operation["operationId"]);
-        if (string.IsNullOrWhiteSpace(name))
+        var summary = (GetText(operation["summary"]) ?? string.Empty).Trim();
+        var operationId = (GetText(operation["operationId"]) ?? string.Empty).Trim();
+        var generatedName =
+            summary.Length > 0 ? summary
+            : operationId.Length > 0 ? operationId
+            : $"{method.ToUpperInvariant()} {path}";
+        var description = (GetText(operation["description"]) ?? string.Empty).Trim();
+        var url = CombineUrl(baseUrl, path);
+        foreach (var (name, value) in pathValues)
         {
-            name = $"{method.ToUpperInvariant()} {path}";
+            if (value.Length > 0)
+            {
+                url = url.Replace("{" + name + "}", value, StringComparison.Ordinal);
+            }
         }
 
-        var url = CombineUrl(baseUrl, path);
-        var (bodyMode, body) = ResolveBody(document, operation);
+        var body = ResolveBodyDetails(document, operation);
+        if (body.ContentType is not null && !HasHeader(headers, "Content-Type"))
+        {
+            headers.Add(new OpenApiImportField("Content-Type", body.ContentType));
+        }
+
+        var responseDocs = BuildResponses(document, operation);
+        var doc = new OpenApiOperationDoc
+        {
+            Method = method.ToUpperInvariant(),
+            Path = path,
+            OperationId = operationId,
+            Summary = summary,
+            Description = description,
+            Deprecated = ReadBool(operation["deprecated"]),
+            TagsText = string.Join(" · ", ReadTags(operation)),
+            ServersText = ResolveOperationServers(document, pathItem, operation, baseUrl),
+            SecurityText = BuildSecurityText(document, operation),
+            GeneratedName = generatedName,
+            Url = url,
+            Parameters = parameters,
+            RequestBody = body.Doc,
+            Responses = responseDocs,
+        };
 
         return new OpenApiImportRequest
         {
-            Name = name.Trim(),
+            Name = generatedName,
             Method = method.ToUpperInvariant(),
+            Path = path,
             Url = url,
-            BodyMode = bodyMode,
-            Body = body,
+            BodyMode = body.BodyMode,
+            Body = body.Body,
             Query = query,
             Headers = headers,
+            FormFields = body.FormFields,
+            Doc = doc,
         };
     }
 
-    private static void AddParameters(
+    private static void CollectParameters(
         JsonObject document,
         JsonArray? parameters,
+        List<OpenApiParameterDoc> docs,
         List<OpenApiImportField> query,
         List<OpenApiImportField> headers,
+        Dictionary<string, string> pathValues,
         HashSet<string> seen
     )
     {
@@ -366,14 +484,9 @@ public static class OpenApiImportService
             }
 
             parameter = resolvedParameter;
-            var location = GetText(parameter["in"]);
-            var name = GetText(parameter["name"]);
-            if (string.IsNullOrWhiteSpace(location) || string.IsNullOrWhiteSpace(name))
-            {
-                continue;
-            }
-
-            if (location is not ("query" or "header"))
+            var location = (GetText(parameter["in"]) ?? string.Empty).Trim();
+            var name = (GetText(parameter["name"]) ?? string.Empty).Trim();
+            if (location.Length == 0 || name.Length == 0)
             {
                 continue;
             }
@@ -384,13 +497,31 @@ public static class OpenApiImportService
             }
 
             var value = ExtractParameterValue(document, parameter);
-            if (location == "query")
+            var schema = ResolveObject(parameter["schema"], document) ?? parameter;
+            docs.Add(
+                new OpenApiParameterDoc
+                {
+                    Name = name,
+                    Location = location,
+                    Type = SchemaTypeText(schema, document),
+                    Required = ReadBool(parameter["required"]),
+                    Description = (GetText(parameter["description"]) ?? string.Empty).Trim(),
+                    Example = value,
+                    EnumText = ReadEnumText(schema),
+                }
+            );
+
+            switch (location)
             {
-                query.Add(new OpenApiImportField(name, value));
-            }
-            else
-            {
-                headers.Add(new OpenApiImportField(name, value));
+                case "query":
+                    query.Add(new OpenApiImportField(name, value));
+                    break;
+                case "header":
+                    headers.Add(new OpenApiImportField(name, value));
+                    break;
+                case "path":
+                    pathValues[name] = value;
+                    break;
             }
         }
     }
@@ -418,7 +549,7 @@ public static class OpenApiImportService
             }
         }
 
-        var schema = ResolveObject(parameter["schema"], document);
+        var schema = ResolveObject(parameter["schema"], document) ?? parameter;
         if (schema is not null)
         {
             var sample = BuildSample(schema, document, 0);
@@ -431,85 +562,756 @@ public static class OpenApiImportService
         return string.Empty;
     }
 
-    private static (string BodyMode, string Body) ResolveBody(
+    private sealed record BodyResolution(
+        string BodyMode,
+        string Body,
+        string? ContentType,
+        IReadOnlyList<OpenApiImportField> FormFields,
+        OpenApiBodyDoc? Doc
+    );
+
+    private static BodyResolution ResolveBodyDetails(JsonObject document, JsonObject operation)
+    {
+        var requestBody = ResolveObject(operation["requestBody"], document);
+        if (requestBody?["content"] is JsonObject content && SelectMediaType(content) is { } media)
+        {
+            var mediaType = media.Key;
+            var mediaObject = media.Value;
+            var schema = ResolveObject(mediaObject["schema"], document);
+            var sample =
+                ExtractMediaExample(mediaObject, document) ?? BuildSample(schema, document, 0);
+            var fields = CollectSchemaFields(schema, document);
+            var sampleText = BuildSampleText(sample, mediaType);
+            var doc = new OpenApiBodyDoc
+            {
+                MediaType = mediaType,
+                Required = ReadBool(requestBody["required"]),
+                Sample = sampleText,
+                Body = sampleText,
+                Fields = fields,
+            };
+
+            if (IsFormUrlEncoded(mediaType))
+            {
+                var encodedFields = BuildFormFields(schema, document);
+                var encodedBody = EncodeFormBody(encodedFields);
+                doc.Sample = encodedBody;
+                doc.Body = encodedBody;
+                return new BodyResolution(
+                    "Text",
+                    encodedBody,
+                    "application/x-www-form-urlencoded",
+                    Array.Empty<OpenApiImportField>(),
+                    doc
+                );
+            }
+
+            if (IsMultipart(mediaType))
+            {
+                doc.Body = string.Empty;
+                var multipartFields = BuildFormFields(schema, document);
+                return new BodyResolution("Multipart", string.Empty, null, multipartFields, doc);
+            }
+
+            if (IsJsonMediaType(mediaType))
+            {
+                return new BodyResolution(
+                    "Json",
+                    sampleText,
+                    null,
+                    Array.Empty<OpenApiImportField>(),
+                    doc
+                );
+            }
+
+            return new BodyResolution(
+                "Text",
+                sampleText,
+                mediaType,
+                Array.Empty<OpenApiImportField>(),
+                doc
+            );
+        }
+
+        var bodyParameters = operation["parameters"] as JsonArray;
+        if (bodyParameters is null)
+        {
+            return new BodyResolution(
+                "None",
+                string.Empty,
+                null,
+                Array.Empty<OpenApiImportField>(),
+                null
+            );
+        }
+
+        var consumes = ReadMediaTypes(operation["consumes"] ?? document["consumes"]);
+        foreach (var node in bodyParameters)
+        {
+            if (node is not JsonObject parameter)
+            {
+                continue;
+            }
+
+            var resolvedParameter = ResolveObject(parameter, document);
+            if (resolvedParameter is null)
+            {
+                continue;
+            }
+
+            var location = (GetText(resolvedParameter["in"]) ?? string.Empty).Trim();
+            var schema = ResolveObject(resolvedParameter["schema"], document);
+            if (schema is null)
+            {
+                continue;
+            }
+
+            if (string.Equals(location, "body", StringComparison.OrdinalIgnoreCase))
+            {
+                var mediaType =
+                    consumes.FirstOrDefault(IsJsonMediaType)
+                    ?? consumes.FirstOrDefault()
+                    ?? "application/json";
+                var sample = BuildSample(schema, document, 0);
+                var bodyText = BuildSampleText(sample, mediaType);
+                return new BodyResolution(
+                    IsJsonMediaType(mediaType) ? "Json" : "Text",
+                    bodyText,
+                    IsJsonMediaType(mediaType) ? null : mediaType,
+                    Array.Empty<OpenApiImportField>(),
+                    new OpenApiBodyDoc
+                    {
+                        MediaType = mediaType,
+                        Required = ReadBool(resolvedParameter["required"]),
+                        Sample = bodyText,
+                        Body = bodyText,
+                        Fields = CollectSchemaFields(schema, document),
+                    }
+                );
+            }
+        }
+
+        var formParameters = bodyParameters
+            .OfType<JsonObject>()
+            .Select(parameter => ResolveObject(parameter, document))
+            .Where(parameter => parameter is not null)
+            .Select(parameter => parameter!)
+            .Where(parameter =>
+                string.Equals(
+                    (GetText(parameter["in"]) ?? string.Empty).Trim(),
+                    "formData",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .ToList();
+        if (formParameters.Count == 0)
+        {
+            return new BodyResolution(
+                "None",
+                string.Empty,
+                null,
+                Array.Empty<OpenApiImportField>(),
+                null
+            );
+        }
+
+        var isMultipart =
+            formParameters.Any(parameter =>
+                string.Equals(
+                    (GetText(parameter["type"]) ?? string.Empty).Trim(),
+                    "file",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            ) || consumes.Any(IsMultipart);
+        var formFields = new List<OpenApiImportField>();
+        var fieldDocs = new List<OpenApiSchemaFieldDoc>();
+        foreach (var parameter in formParameters)
+        {
+            var name = (GetText(parameter["name"]) ?? string.Empty).Trim();
+            if (name.Length == 0)
+            {
+                continue;
+            }
+
+            var value = ExtractParameterValue(document, parameter);
+            formFields.Add(new OpenApiImportField(name, value));
+            fieldDocs.Add(
+                new OpenApiSchemaFieldDoc
+                {
+                    Name = name,
+                    Type = (GetText(parameter["type"]) ?? "string").Trim(),
+                    Required = ReadBool(parameter["required"]),
+                    Description = (GetText(parameter["description"]) ?? string.Empty).Trim(),
+                    Example = value,
+                }
+            );
+        }
+
+        var formMediaType = isMultipart
+            ? "multipart/form-data"
+            : "application/x-www-form-urlencoded";
+        var formDoc = new OpenApiBodyDoc
+        {
+            MediaType = formMediaType,
+            Required = formParameters.Any(parameter => ReadBool(parameter["required"])),
+            Sample = isMultipart ? string.Empty : EncodeFormBody(formFields),
+            Body = isMultipart ? string.Empty : EncodeFormBody(formFields),
+            Fields = fieldDocs,
+        };
+        return isMultipart
+            ? new BodyResolution("Multipart", string.Empty, null, formFields, formDoc)
+            : new BodyResolution(
+                "Text",
+                EncodeFormBody(formFields),
+                formMediaType,
+                Array.Empty<OpenApiImportField>(),
+                formDoc
+            );
+    }
+
+    private static IReadOnlyList<OpenApiSchemaFieldDoc> CollectSchemaFields(
+        JsonObject? schema,
+        JsonObject document
+    )
+    {
+        var result = new List<OpenApiSchemaFieldDoc>();
+        if (schema is null)
+        {
+            return result;
+        }
+
+        var count = 0;
+        CollectSchemaFields(schema, document, string.Empty, false, result, 0, ref count);
+        return result
+            .GroupBy(field => field.Name, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .Take(200)
+            .ToList();
+    }
+
+    private static void CollectSchemaFields(
+        JsonNode? node,
+        JsonObject document,
+        string prefix,
+        bool required,
+        List<OpenApiSchemaFieldDoc> target,
+        int depth,
+        ref int count
+    )
+    {
+        if (depth > 6 || count >= 200)
+        {
+            return;
+        }
+
+        var schema = ResolveObject(node, document);
+        if (schema is null)
+        {
+            return;
+        }
+
+        if (schema["allOf"] is JsonArray allOf)
+        {
+            foreach (var candidate in allOf)
+            {
+                CollectSchemaFields(
+                    candidate,
+                    document,
+                    prefix,
+                    required,
+                    target,
+                    depth + 1,
+                    ref count
+                );
+            }
+        }
+
+        var requiredNames = ReadRequiredNames(schema);
+        if (schema["properties"] is JsonObject properties)
+        {
+            foreach (var property in properties)
+            {
+                if (count >= 200)
+                {
+                    return;
+                }
+
+                var name = prefix.Length == 0 ? property.Key : $"{prefix}.{property.Key}";
+                var propertySchema = ResolveObject(property.Value, document);
+                if (propertySchema is null)
+                {
+                    continue;
+                }
+
+                var propertyRequired = required || requiredNames.Contains(property.Key);
+                var type = (GetText(propertySchema["type"]) ?? string.Empty)
+                    .Trim()
+                    .ToLowerInvariant();
+                var field = CreateFieldDoc(name, propertySchema, propertyRequired, document);
+                target.Add(field);
+                count++;
+
+                if (type == "object" || propertySchema["properties"] is JsonObject)
+                {
+                    CollectSchemaFields(
+                        propertySchema,
+                        document,
+                        name,
+                        propertyRequired,
+                        target,
+                        depth + 1,
+                        ref count
+                    );
+                }
+                else if (type == "array" && propertySchema["items"] is { } items)
+                {
+                    CollectSchemaFields(
+                        items,
+                        document,
+                        name + "[]",
+                        propertyRequired,
+                        target,
+                        depth + 1,
+                        ref count
+                    );
+                }
+            }
+
+            return;
+        }
+
+        if (schema["items"] is { } arrayItems)
+        {
+            CollectSchemaFields(
+                arrayItems,
+                document,
+                prefix.Length == 0 ? "[]" : prefix,
+                required,
+                target,
+                depth + 1,
+                ref count
+            );
+            return;
+        }
+
+        if (prefix.Length > 0)
+        {
+            target.Add(CreateFieldDoc(prefix, schema, required, document));
+            count++;
+        }
+    }
+
+    private static OpenApiSchemaFieldDoc CreateFieldDoc(
+        string name,
+        JsonObject schema,
+        bool required,
+        JsonObject document
+    ) =>
+        new()
+        {
+            Name = string.IsNullOrWhiteSpace(name) ? "body" : name,
+            Type = SchemaTypeText(schema, document),
+            Required = required,
+            Description = (GetText(schema["description"]) ?? string.Empty).Trim(),
+            Example = schema["example"] is { } example ? NodeToText(example) : string.Empty,
+            EnumText = ReadEnumText(schema),
+        };
+
+    private static IReadOnlyList<OpenApiResponseDoc> BuildResponses(
         JsonObject document,
         JsonObject operation
     )
     {
-        var requestBody = ResolveObject(operation["requestBody"], document);
-        if (requestBody?["content"] is JsonObject content)
+        if (operation["responses"] is not JsonObject responses)
         {
-            var media = SelectMediaType(content);
-            if (media is not null)
+            return Array.Empty<OpenApiResponseDoc>();
+        }
+
+        var result = new List<OpenApiResponseDoc>();
+        foreach (var entry in OrderResponses(responses))
+        {
+            if (result.Count >= 12)
             {
-                var mediaType = media.Value.Key;
-                var mediaObject = media.Value.Value;
-                var sample = ExtractMediaExample(mediaObject, document);
+                break;
+            }
+
+            var resolved = ResolveObject(entry.Value, document);
+            if (resolved is null)
+            {
+                continue;
+            }
+
+            var samples = new List<OpenApiResponseSampleDoc>();
+            var fields = new List<OpenApiSchemaFieldDoc>();
+            if (resolved["content"] is JsonObject content)
+            {
+                foreach (var media in content.Take(3))
+                {
+                    if (media.Value is not JsonObject mediaObject)
+                    {
+                        continue;
+                    }
+
+                    var schema = ResolveObject(mediaObject["schema"], document);
+                    var sample =
+                        ExtractMediaExample(mediaObject, document)
+                        ?? BuildSample(schema, document, 0);
+                    samples.Add(
+                        new OpenApiResponseSampleDoc
+                        {
+                            MediaType = media.Key,
+                            Sample = BuildSampleText(sample, media.Key),
+                        }
+                    );
+                    if (fields.Count == 0)
+                    {
+                        fields.AddRange(CollectSchemaFields(schema, document));
+                    }
+                }
+            }
+            else
+            {
+                var schema = ResolveObject(resolved["schema"], document);
+                var sample = BuildSample(schema, document, 0);
                 if (sample is not null)
                 {
-                    var isJson =
-                        mediaType.Contains("json", StringComparison.OrdinalIgnoreCase)
-                        || sample is JsonObject
-                        || sample is JsonArray;
-                    return isJson
-                        ? ("Json", sample.ToJsonString(PrettyJson))
-                        : ("Text", NodeToText(sample));
+                    samples.Add(
+                        new OpenApiResponseSampleDoc
+                        {
+                            MediaType = "application/json",
+                            Sample = BuildSampleText(sample, "application/json"),
+                        }
+                    );
                 }
 
-                var schema = ResolveObject(mediaObject["schema"], document);
-                var generated = schema is null ? null : BuildSample(schema, document, 0);
-                if (generated is not null)
+                if (resolved["examples"] is JsonObject examples)
                 {
-                    return mediaType.Contains("json", StringComparison.OrdinalIgnoreCase)
-                        ? ("Json", generated.ToJsonString(PrettyJson))
-                        : ("Text", NodeToText(generated));
+                    foreach (var example in examples.Take(3))
+                    {
+                        samples.Add(
+                            new OpenApiResponseSampleDoc
+                            {
+                                MediaType = example.Key,
+                                Sample = NodeToText(
+                                    example.Value is JsonObject exampleObject
+                                    && exampleObject["value"] is { } value
+                                        ? value
+                                        : example.Value ?? JsonValue.Create(string.Empty)!
+                                ),
+                            }
+                        );
+                    }
                 }
+
+                fields.AddRange(CollectSchemaFields(schema, document));
             }
+
+            result.Add(
+                new OpenApiResponseDoc
+                {
+                    StatusCode = entry.Key,
+                    Description = (GetText(resolved["description"]) ?? string.Empty).Trim(),
+                    HeadersText = ReadResponseHeaders(document, resolved),
+                    Samples = samples,
+                    Fields = fields.Take(120).ToList(),
+                }
+            );
         }
 
-        var bodyParameters = operation["parameters"] as JsonArray;
-        if (bodyParameters is not null)
+        return result;
+    }
+
+    private static IEnumerable<KeyValuePair<string, JsonNode?>> OrderResponses(JsonObject responses)
+    {
+        var ordered = responses
+            .Where(entry => int.TryParse(entry.Key, out _))
+            .OrderBy(entry =>
+                int.Parse(entry.Key, System.Globalization.CultureInfo.InvariantCulture)
+            );
+        return ordered
+            .Concat(
+                responses.Where(entry =>
+                    !int.TryParse(entry.Key, out _)
+                    && !string.Equals(entry.Key, "default", StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            .Concat(
+                responses.Where(entry =>
+                    string.Equals(entry.Key, "default", StringComparison.OrdinalIgnoreCase)
+                )
+            );
+    }
+
+    private static string ReadResponseHeaders(JsonObject document, JsonObject response)
+    {
+        if (response["headers"] is not JsonObject headers)
         {
-            foreach (var node in bodyParameters)
+            return string.Empty;
+        }
+
+        var lines = new List<string>();
+        foreach (var header in headers.Take(20))
+        {
+            var resolved = ResolveObject(header.Value, document);
+            if (resolved is null)
             {
-                if (node is not JsonObject parameter)
+                continue;
+            }
+
+            var schema = ResolveObject(resolved["schema"], document);
+            var type = SchemaTypeText(schema, document);
+            if (type.Length == 0)
+            {
+                type = (GetText(resolved["type"]) ?? string.Empty).Trim();
+            }
+            var description = (GetText(resolved["description"]) ?? string.Empty).Trim();
+            lines.Add(
+                description.Length == 0
+                    ? $"{header.Key} ({type})"
+                    : $"{header.Key} ({type})：{description}"
+            );
+        }
+
+        return string.Join("；", lines);
+    }
+
+    private static IReadOnlyList<OpenApiImportField> BuildFormFields(
+        JsonObject? schema,
+        JsonObject document
+    )
+    {
+        var fields = new List<OpenApiImportField>();
+        if (schema?["properties"] is not JsonObject properties)
+        {
+            return fields;
+        }
+
+        foreach (var property in properties.Take(40))
+        {
+            var propertySchema = ResolveObject(property.Value, document);
+            if (propertySchema is null)
+            {
+                continue;
+            }
+
+            if (
+                string.Equals(
+                    (GetText(propertySchema["format"]) ?? string.Empty).Trim(),
+                    "binary",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                continue;
+            }
+
+            var type = (GetText(propertySchema["type"]) ?? "string").Trim();
+            if (
+                string.Equals(type, "object", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "array", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                continue;
+            }
+
+            var sample = BuildSample(propertySchema, document, 0);
+            fields.Add(
+                new OpenApiImportField(
+                    property.Key,
+                    sample is null ? string.Empty : NodeToText(sample)
+                )
+            );
+        }
+
+        return fields;
+    }
+
+    private static string EncodeFormBody(IReadOnlyList<OpenApiImportField> fields) =>
+        string.Join(
+            "&",
+            fields.Select(field =>
+                $"{Uri.EscapeDataString(field.Name)}={Uri.EscapeDataString(field.Value)}"
+            )
+        );
+
+    private static string BuildSampleText(JsonNode? sample, string mediaType)
+    {
+        if (sample is null)
+        {
+            return string.Empty;
+        }
+
+        var text =
+            IsJsonMediaType(mediaType) || sample is JsonObject || sample is JsonArray
+                ? sample.ToJsonString(PrettyJson)
+                : NodeToText(sample);
+        return text.Length > 12000 ? text[..12000] + "\n…（示例已截断）" : text;
+    }
+
+    private static bool IsJsonMediaType(string mediaType) =>
+        mediaType.Contains("json", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsFormUrlEncoded(string mediaType) =>
+        mediaType.Contains("x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsMultipart(string mediaType) =>
+        mediaType.Contains("multipart/form-data", StringComparison.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<string> ReadMediaTypes(JsonNode? node) =>
+        node is JsonArray array
+            ? array
+                .Select(item => GetText(item) ?? string.Empty)
+                .Where(value => value.Length > 0)
+                .ToList()
+            : Array.Empty<string>();
+
+    private static bool HasHeader(List<OpenApiImportField> headers, string name) =>
+        headers.Any(field => string.Equals(field.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    private static bool ReadBool(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue<bool>(out var result) && result;
+
+    private static HashSet<string> ReadRequiredNames(JsonObject schema)
+    {
+        if (schema["required"] is not JsonArray required)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        return required
+            .Select(GetText)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static string SchemaTypeText(JsonObject? schema, JsonObject document)
+    {
+        if (schema is null)
+        {
+            return string.Empty;
+        }
+
+        var type = (GetText(schema["type"]) ?? string.Empty).Trim().ToLowerInvariant();
+        if (type.Length == 0)
+        {
+            type =
+                schema["properties"] is JsonObject ? "object"
+                : schema["items"] is not null ? "array"
+                : schema["allOf"] is JsonArray ? "object"
+                : string.Empty;
+        }
+
+        if (type == "array")
+        {
+            var itemType = SchemaTypeText(ResolveObject(schema["items"], document), document);
+            return itemType.Length == 0 ? "array" : $"array<{itemType}>";
+        }
+
+        var format = (GetText(schema["format"]) ?? string.Empty).Trim();
+        return type.Length == 0 ? format
+            : format.Length == 0 ? type
+            : $"{type} ({format})";
+    }
+
+    private static string ReadEnumText(JsonObject? schema)
+    {
+        if (schema?["enum"] is not JsonArray values || values.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return string.Join(
+            " / ",
+            values.Take(10).Select(value => NodeToText(value ?? JsonValue.Create(string.Empty)!))
+        );
+    }
+
+    private static IReadOnlyList<string> ReadTags(JsonObject operation)
+    {
+        if (operation["tags"] is not JsonArray tags)
+        {
+            return Array.Empty<string>();
+        }
+
+        return tags.Select(GetText)
+            .Where(tag => !string.IsNullOrWhiteSpace(tag))
+            .Select(tag => tag!.Trim())
+            .ToList();
+    }
+
+    private static string ResolveOperationServers(
+        JsonObject document,
+        JsonObject pathItem,
+        JsonObject operation,
+        string baseUrl
+    )
+    {
+        var source =
+            operation["servers"] as JsonArray
+            ?? pathItem["servers"] as JsonArray
+            ?? document["servers"] as JsonArray;
+        if (source is null)
+        {
+            return baseUrl;
+        }
+
+        var urls = source
+            .OfType<JsonObject>()
+            .Select(ResolveServerUrl)
+            .Where(url => url.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return urls.Count == 0 ? baseUrl : string.Join(" · ", urls);
+    }
+
+    private static string BuildSecurityText(JsonObject document, JsonObject operation)
+    {
+        var security = operation["security"] as JsonArray ?? document["security"] as JsonArray;
+        if (security is null || security.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var components = document["components"] as JsonObject;
+        var schemes =
+            components?["securitySchemes"] as JsonObject
+            ?? document["securityDefinitions"] as JsonObject;
+        if (schemes is null)
+        {
+            return string.Empty;
+        }
+
+        var lines = new List<string>();
+        foreach (var requirement in security.OfType<JsonObject>())
+        {
+            foreach (var entry in requirement)
+            {
+                var scheme = ResolveObject(schemes[entry.Key], document);
+                if (scheme is null)
                 {
                     continue;
                 }
 
-                var resolvedParameter = ResolveObject(parameter, document);
-                if (resolvedParameter is null)
+                var type = (GetText(scheme["type"]) ?? string.Empty).Trim();
+                var location = (GetText(scheme["in"]) ?? string.Empty).Trim();
+                var name = (GetText(scheme["name"]) ?? string.Empty).Trim();
+                var text = type.ToLowerInvariant() switch
                 {
-                    continue;
-                }
-
-                parameter = resolvedParameter;
-                var location = GetText(parameter["in"]);
-                var schema = ResolveObject(parameter["schema"], document);
-                if (schema is null)
+                    "apikey" => $"API Key「{name}」（{location}）",
+                    "http" => $"HTTP {GetText(scheme["scheme"]) ?? "bearer"}",
+                    "oauth2" => "OAuth 2.0",
+                    "openidconnect" => "OpenID Connect",
+                    _ => type,
+                };
+                if (!lines.Contains(text, StringComparer.Ordinal))
                 {
-                    continue;
-                }
-
-                var generated = BuildSample(schema, document, 0);
-                if (generated is null)
-                {
-                    continue;
-                }
-
-                if (string.Equals(location, "body", StringComparison.OrdinalIgnoreCase))
-                {
-                    return ("Json", generated.ToJsonString(PrettyJson));
-                }
-
-                if (string.Equals(location, "formData", StringComparison.OrdinalIgnoreCase))
-                {
-                    return ("Text", NodeToText(generated));
+                    lines.Add(text);
                 }
             }
         }
 
-        return ("None", string.Empty);
+        return string.Join(" · ", lines);
     }
 
     private static KeyValuePair<string, JsonObject>? SelectMediaType(JsonObject content)

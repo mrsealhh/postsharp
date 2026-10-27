@@ -10,18 +10,46 @@ public static class StorageProviders
     public const string PostgreSql = "PostgreSql";
     public const string MySql = "MySql";
     public const string SqlServer = "SqlServer";
+    public const string MongoDb = "MongoDb";
 
-    public static IReadOnlyList<string> All { get; } = [LocalSqlite, PostgreSql, MySql, SqlServer];
+    /// <summary>Local SQLite plus every provider exposed by an installed storage plugin.</summary>
+    public static IReadOnlyList<string> All =>
+        [LocalSqlite, .. StoragePluginRegistry.Current.ProviderIds];
+
+    /// <summary>Providers that require a downloaded plugin (everything except the local fallback).</summary>
+    public static IReadOnlyList<string> Remote => StoragePluginRegistry.Current.ProviderIds;
 
     public static string Label(string provider) =>
         provider switch
         {
             LocalSqlite => "本地 SQLite",
+            _ => SafePluginLabel(provider),
+        };
+
+    private static string SafePluginLabel(string provider)
+    {
+        try
+        {
+            var info = StoragePluginRegistry.Current.Find(provider)?.Info;
+            if (!string.IsNullOrWhiteSpace(info?.DisplayName))
+            {
+                return info.DisplayName;
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "读取存储插件名称失败 {Provider}", provider);
+        }
+
+        return provider switch
+        {
             PostgreSql => "PostgreSQL",
             MySql => "MySQL",
             SqlServer => "SQL Server",
+            MongoDb => "MongoDB",
             _ => provider,
         };
+    }
 }
 
 public sealed partial class StorageProfile : ObservableObject
@@ -34,7 +62,7 @@ public sealed partial class StorageProfile : ObservableObject
     private string _name = "远程数据库";
 
     [ObservableProperty]
-    private string _provider = StorageProviders.PostgreSql;
+    private string _provider = StorageProviders.LocalSqlite;
 
     [JsonIgnore]
     public string ConnectionString

@@ -45,6 +45,12 @@ public partial class RequestCollection : ObservableObject
 
     /// <summary>集合级授权；子集合与请求默认继承它。</summary>
     public RequestAuth Auth { get; } = new();
+
+    /// <summary>OpenAPI 来源；只有从 URL 导入的根集合才有。</summary>
+    public OpenApiSource? OpenApiSource { get; set; }
+
+    [JsonIgnore]
+    public bool HasOpenApiSource => OpenApiSource is not null;
 }
 
 public partial class RequestItem : ObservableObject
@@ -112,6 +118,15 @@ public partial class RequestItem : ObservableObject
     public RequestAuth Auth { get; set; } = new();
 
     public RequestCollection? Owner { get; set; }
+
+    /// <summary>OpenAPI 操作标识（METHOD + 路径模板），用于重新同步时匹配。</summary>
+    public string OpenApiKey { get; set; } = string.Empty;
+
+    /// <summary>导入时的接口文档快照，不参与发送。</summary>
+    public OpenApiOperationDoc? OpenApiDoc { get; set; }
+
+    [JsonIgnore]
+    public bool HasOpenApiDoc => OpenApiDoc is not null;
 
     partial void OnUploadFilePathChanged(string value)
     {

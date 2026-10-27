@@ -28,6 +28,7 @@ public sealed class StorageCoordinator
     private readonly ConcurrentDictionary<string, bool> _remoteBlocked = new(
         StringComparer.OrdinalIgnoreCase
     );
+    private readonly SemaphoreSlim _validationGate = new(1, 1);
     private StorageConfig _config;
 
     public StorageCoordinator()
@@ -48,15 +49,24 @@ public sealed class StorageCoordinator
             var local = LocalBackend.ReadAsync(category).GetAwaiter().GetResult();
             if (local is not null)
             {
+                var localProfile = _config.ProfileFor(category);
+                if (localProfile.IsLocal)
+                {
+                    _remoteReady[category] = true;
+                    _remoteBlocked.TryRemove(category, out _);
+                    return local;
+                }
+
+                // A local cache never proves that the remote database is reachable. Writes stay local until a
+                // real connection test succeeds, so a down/unreachable database can never receive changes.
+                _remoteReady.TryRemove(category, out _);
                 if (_config.IsRemoteBlocked(category))
                 {
-                    _remoteReady.TryRemove(category, out _);
                     _remoteBlocked[category] = true;
                 }
                 else
                 {
-                    _remoteReady[category] = true;
-                    _remoteBlocked.TryRemove(category, out _);
+                    _ = ValidateRemoteCategoryAsync(category, localProfile);
                 }
 
                 return local;
@@ -96,6 +106,22 @@ public sealed class StorageCoordinator
                 _remoteBlocked.TryRemove(category, out _);
                 SetRemoteBlocked(category, false);
                 return remote;
+            }
+            catch (StoragePluginMissingException exception)
+            {
+                SetRemoteBlocked(category, true);
+                _remoteReady.TryRemove(category, out _);
+                Log.Warning(
+                    exception,
+                    "远程存储插件缺失，已暂停自动回写 {Category} {Provider}",
+                    category,
+                    profile.Provider
+                );
+                StatusChanged?.Invoke(
+                    this,
+                    $"{StorageCategories.Label(category)}远程存储插件未安装，已暂停自动回写"
+                );
+                return null;
             }
             catch (Exception exception)
             {
@@ -156,11 +182,29 @@ public sealed class StorageCoordinator
     public async Task<StorageTestResult> TestAsync(
         StorageProfile profile,
         CancellationToken cancellationToken = default
-    ) =>
-        await DocumentBackendFactory
-            .Create(profile)
-            .TestAsync(cancellationToken)
-            .ConfigureAwait(false);
+    )
+    {
+        StorageTestResult result;
+        try
+        {
+            result = await DocumentBackendFactory
+                .Create(profile)
+                .TestAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (StoragePluginMissingException exception)
+        {
+            result = new StorageTestResult(false, exception.Message, 0);
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "创建存储后端失败 {Profile}", profile.Name);
+            result = new StorageTestResult(false, $"连接失败：{exception.Message}", 0);
+        }
+
+        ApplyProfileAvailability(profile, result.Success, result.Message);
+        return result;
+    }
 
     public async Task<StorageSyncResult> SyncAsync(
         string sourceProfileId,
@@ -289,6 +333,97 @@ public sealed class StorageCoordinator
         );
     }
 
+    private async Task ValidateRemoteCategoryAsync(string category, StorageProfile profile)
+    {
+        try
+        {
+            await _validationGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (_remoteReady.ContainsKey(category))
+                {
+                    return;
+                }
+
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var result = await DocumentBackendFactory
+                    .Create(profile)
+                    .TestAsync(timeout.Token)
+                    .ConfigureAwait(false);
+                ApplyProfileAvailability(profile, result.Success, result.Message);
+            }
+            finally
+            {
+                _validationGate.Release();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            ApplyProfileAvailability(profile, false, "连接超时，已暂停远程回写。");
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(
+                exception,
+                "远程存储连接校验失败 {Category} {Profile}",
+                category,
+                profile.Name
+            );
+            ApplyProfileAvailability(profile, false, exception.Message);
+        }
+    }
+
+    private void ApplyProfileAvailability(StorageProfile profile, bool available, string message)
+    {
+        if (!profile.IsRemote)
+        {
+            return;
+        }
+
+        var matched = 0;
+        foreach (var category in StorageCategories.All)
+        {
+            var bound = _config.ProfileFor(category);
+            if (
+                !string.Equals(bound.Id, profile.Id, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(bound.Provider, profile.Provider, StringComparison.Ordinal)
+                || !string.Equals(
+                    bound.ConnectionString,
+                    profile.ConnectionString,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            matched++;
+            if (available)
+            {
+                _remoteReady[category] = true;
+                _remoteBlocked.TryRemove(category, out _);
+                SetRemoteBlocked(category, false);
+            }
+            else
+            {
+                _remoteReady.TryRemove(category, out _);
+                _remoteBlocked[category] = true;
+                SetRemoteBlocked(category, true);
+            }
+        }
+
+        StatusChanged?.Invoke(
+            this,
+            matched == 0
+                ? available
+                    ? $"「{profile.DisplayName}」连接成功。"
+                    : $"「{profile.DisplayName}」连接失败：{message}"
+                : available
+                    ? $"「{profile.DisplayName}」连接成功，远程回写已启用。"
+                    : $"「{profile.DisplayName}」不可用，已暂停远程回写：{message}"
+        );
+    }
+
     private void SetRemoteBlocked(string category, bool blocked)
     {
         if (_config.IsRemoteBlocked(category) == blocked)
@@ -334,7 +469,8 @@ public sealed class StorageCoordinator
                 var profile = _config.ProfileFor(category);
                 if (profile.IsRemote && !_config.IsRemoteBlocked(category))
                 {
-                    _remoteReady[category] = true;
+                    // The new binding is not trusted until the user tests it or a switch/sync succeeds.
+                    _remoteReady.TryRemove(category, out _);
                     _remoteBlocked.TryRemove(category, out _);
                 }
                 else if (!profile.IsRemote)
@@ -346,6 +482,15 @@ public sealed class StorageCoordinator
                 {
                     _remoteReady.TryRemove(category, out _);
                     _remoteBlocked[category] = true;
+                }
+            }
+
+            foreach (var category in StorageCategories.All)
+            {
+                var profile = _config.ProfileFor(category);
+                if (profile.IsRemote && !_config.IsRemoteBlocked(category))
+                {
+                    _ = ValidateRemoteCategoryAsync(category, profile);
                 }
             }
         }
@@ -375,6 +520,9 @@ public sealed class StorageCoordinator
     public StorageProfile FindProfile(string profileId) =>
         _config.Profiles.FirstOrDefault(profile => profile.Id == profileId)
         ?? throw new KeyNotFoundException($"没有找到存储配置 {profileId}。");
+
+    /// <summary>Drops cached backends so a freshly rescanned/replaced plugin is used on the next operation.</summary>
+    public void InvalidateBackends() => _backends.Clear();
 
     public string? BackupLocalDatabase()
     {
@@ -479,9 +627,10 @@ public sealed class StorageCoordinator
                     profile.Name,
                     profile.Provider
                 );
-                StatusChanged?.Invoke(
-                    this,
-                    $"{StorageCategories.Label(category)}同步失败：{exception.Message}"
+                ApplyProfileAvailability(
+                    profile,
+                    false,
+                    "写入失败，已暂停远程回写；请检查连接后在设置中测试连接。"
                 );
             }
         }

@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Platform;
 using Avalonia.Styling;
+using PostSharp.Services;
 
 namespace PostSharp.Views;
 
@@ -24,6 +25,7 @@ public partial class TextViewerWindow : Window
     public TextViewerWindow(string title, string text, string info)
     {
         InitializeComponent();
+        UiScaleService.Attach(this);
 
         _fullText = text ?? string.Empty;
         Title = title;

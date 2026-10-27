@@ -9,6 +9,7 @@ using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using PostSharp.Controls;
 using PostSharp.Models;
@@ -39,6 +40,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        UiScaleService.Attach(this);
         UpdateWindowStateVisuals();
         Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://PostSharp/Assets/logo-icon.png")));
         Application.Current?.Resources["PostSharpBodyFont"] = new FontFamily("Inter");
@@ -86,6 +88,20 @@ public partial class MainWindow : Window
             JsonRequestBodyViewer.MaxTreeHeight = Math.Clamp(available - 190, 80, 520);
         };
         HistoryScrollArea.SizeChanged += (_, _) => UpdateHistoryWidth();
+        HistoryScrollArea.ScrollChanged += (_, _) =>
+        {
+            if (HistoryScrollArea.Offset.X != 0)
+            {
+                HistoryScrollArea.Offset = new Vector(0, HistoryScrollArea.Offset.Y);
+            }
+        };
+        HistoryScrollArea.LayoutUpdated += (_, _) =>
+        {
+            if (HistoryScrollArea.Offset.X != 0)
+            {
+                HistoryScrollArea.Offset = new Vector(0, HistoryScrollArea.Offset.Y);
+            }
+        };
         DataContextChanged += OnDataContextChanged;
         Closed += OnClosed;
         SizeChanged += (_, _) =>
@@ -99,6 +115,10 @@ public partial class MainWindow : Window
         {
             this.EnablePopupOverlayLayer();
             ApplyTitleBarTheme();
+            Dispatcher.UIThread.Post(
+                () => HistoryScrollArea.ScrollToOffset(default),
+                DispatcherPriority.Loaded
+            );
         };
         ActualThemeVariantChanged += (_, _) => ApplyTitleBarTheme();
     }
@@ -985,6 +1005,33 @@ public partial class MainWindow : Window
         );
     }
 
+    private async void OnExportCodeClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var document = _viewModel.BuildCodeExport();
+        if (document is null)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
+                "当前请求还没有可导出的调用代码，请先选择请求并填写有效地址。";
+            return;
+        }
+
+        await SaveExportAsync(
+            document,
+            "保存调用代码",
+            new FilePickerFileType("代码文件")
+            {
+                Patterns = new[] { "*" + Path.GetExtension(document.FileName) },
+                MimeTypes = new[] { "text/plain" },
+            }
+        );
+    }
+
     private async Task SaveExportAsync(
         ExportDocument document,
         string title,
@@ -1499,6 +1546,7 @@ public partial class MainWindow : Window
         {
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _viewModel.History.CollectionChanged -= OnHistoryCollectionChanged;
         }
 
         _viewModel = DataContext as MainWindowViewModel;
@@ -1506,11 +1554,21 @@ public partial class MainWindow : Window
         {
             _viewModel.AppearanceChanged += OnAppearanceChanged;
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _viewModel.History.CollectionChanged += OnHistoryCollectionChanged;
             ApplyAppearance();
             ApplyRequestResponseLayout();
             ApplyWorkspaceLayout(_viewModel.IsWorkspaceSideBySide);
         }
     }
+
+    private void OnHistoryCollectionChanged(
+        object? sender,
+        System.Collections.Specialized.NotifyCollectionChangedEventArgs e
+    ) =>
+        Dispatcher.UIThread.Post(
+            () => HistoryScrollArea.ScrollToOffset(default),
+            DispatcherPriority.Background
+        );
 
     private void OnClosed(object? sender, EventArgs e)
     {
@@ -1520,6 +1578,7 @@ public partial class MainWindow : Window
             SaveRequestResponseRatio();
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _viewModel.History.CollectionChanged -= OnHistoryCollectionChanged;
             _viewModel.Shutdown();
             _viewModel = null;
         }
@@ -1578,6 +1637,10 @@ public partial class MainWindow : Window
                 settings.CodeFont
             );
         }
+
+        RootPanel.Classes.Set("compact", _viewModel.IsCompactLayout);
+        RequestTabs.Classes.Set("wrap-tabs", _viewModel.IsWrapTabs);
+        RequestTabWrap.IsVisible = _viewModel.IsWrapTabs;
     }
 
     private void UpdateHistoryWidth()
@@ -1590,7 +1653,9 @@ public partial class MainWindow : Window
 
         // The scroll area measures its content with infinite width; pin the rows to the viewport so
         // the name column can trim instead of pushing the status and time columns outside the panel.
-        HistoryItems.Width = Math.Max(160, width - 14);
+        var rowWidth = Math.Max(160, width - 14);
+        HistoryItems.Width = rowWidth;
+        HistoryScrollArea.Offset = new Vector(0, HistoryScrollArea.Offset.Y);
     }
 
     private void ApplySidebarLayout()
@@ -1670,10 +1735,10 @@ public partial class MainWindow : Window
         rows[3].Height = new GridLength(!sideBySide && !collapsed ? 8 : 0);
         rows[4].Height = new GridLength(!sideBySide && !collapsed ? 1 : 0, GridUnitType.Star);
 
-        Grid.SetRow(RequestTabs, 2);
-        Grid.SetColumn(RequestTabs, 0);
-        Grid.SetColumnSpan(RequestTabs, sideBySide && !collapsed ? 1 : 3);
-        Grid.SetRowSpan(RequestTabs, 1);
+        Grid.SetRow(RequestTabsHost, 2);
+        Grid.SetColumn(RequestTabsHost, 0);
+        Grid.SetColumnSpan(RequestTabsHost, sideBySide && !collapsed ? 1 : 3);
+        Grid.SetRowSpan(RequestTabsHost, 1);
 
         Grid.SetRow(ResponsePane, sideBySide ? 2 : 4);
         Grid.SetColumn(ResponsePane, sideBySide ? 2 : 0);

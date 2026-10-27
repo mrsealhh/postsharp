@@ -23,11 +23,16 @@ public partial class SettingsViewModel : ObservableObject
         _current = current;
         _store = store;
         _draft = Clone(current);
+        SelectedUiScale =
+            UiScaleOptions.FirstOrDefault(option =>
+                Math.Abs(option.Value - current.UiScale) < 0.001
+            ) ?? UiScaleOptions[^1];
         foreach (var profile in _storage.Config.Profiles)
         {
             StorageProfiles.Add(profile.Clone());
         }
 
+        RefreshStorageProviderOptions();
         _storage.StatusChanged += OnStorageStatusChanged;
         SettingsStorageProfile = FindProfile(
             _storage.Config.ProfileFor(StorageCategories.Settings)
@@ -39,6 +44,104 @@ public partial class SettingsViewModel : ObservableObject
         SelectedStorageProfile = StorageProfiles.FirstOrDefault();
         _updateStatusMessage = InitialUpdateStatus();
         RefreshFontState();
+    }
+
+    private void RefreshStorageProviderOptions()
+    {
+        var registry = StoragePluginRegistry.Current;
+        registry.EnsureLoaded();
+        var selectedProvider = SelectedStorageProfile?.Provider ?? SelectedStorageProvider?.Value;
+        StorageProviderOptions.Clear();
+        StorageProviderOptions.Add(
+            new StorageProviderOption(
+                StorageProviders.LocalSqlite,
+                "本地 SQLite",
+                "内置存储，离线可用。",
+                "数据库文件固定在 PostSharp 数据目录，不能修改连接串。"
+            )
+        );
+
+        var pluginOptions = new List<StorageProviderOption>();
+        var pluginLabels = new List<string>();
+        foreach (var plugin in registry.Plugins)
+        {
+            try
+            {
+                var info = plugin.Info;
+                var label = string.IsNullOrWhiteSpace(info.DisplayName)
+                    ? info.Id
+                    : info.DisplayName;
+                pluginOptions.Add(
+                    new StorageProviderOption(
+                        info.Id,
+                        label,
+                        info.Description,
+                        info.ConnectionStringPlaceholder
+                    )
+                );
+                pluginLabels.Add(label);
+            }
+            catch (Exception exception)
+            {
+                Log.Warning(exception, "读取存储插件信息失败 {Plugin}", plugin.GetType().Name);
+            }
+        }
+
+        foreach (
+            var option in pluginOptions.OrderBy(option => option.Label, StringComparer.Ordinal)
+        )
+        {
+            StorageProviderOptions.Add(option);
+        }
+
+        HasUsableStoragePlugins = pluginOptions.Count > 0;
+
+        foreach (
+            var provider in StorageProfiles
+                .Select(profile => profile.Provider)
+                .Where(provider =>
+                    !string.Equals(provider, StorageProviders.LocalSqlite, StringComparison.Ordinal)
+                    && !registry.IsAvailable(provider)
+                )
+                .Distinct(StringComparer.Ordinal)
+        )
+        {
+            StorageProviderOptions.Add(
+                new StorageProviderOption(
+                    provider,
+                    $"{provider}（插件未安装）",
+                    "下载插件并重新扫描后即可连接。",
+                    string.Empty
+                )
+            );
+        }
+
+        SelectedStorageProvider = StorageProviderOptions.FirstOrDefault(option =>
+            string.Equals(option.Value, selectedProvider, StringComparison.Ordinal)
+        );
+        StoragePluginSummary =
+            pluginLabels.Count == 0
+                ? "尚未安装远程存储插件；本地 SQLite 始终可用。"
+                : $"已安装 {pluginLabels.Count} 个远程存储插件：" + string.Join("、", pluginLabels);
+        var issues = registry.Issues;
+        HasStoragePluginIssue = issues.Count > 0;
+        StoragePluginIssues = string.Join(Environment.NewLine, issues);
+        OnPropertyChanged(nameof(CanAddStorageProfile));
+        OnPropertyChanged(nameof(StoragePluginDirectory));
+        OnPropertyChanged(nameof(StorageConnectionPlaceholder));
+    }
+
+    [RelayCommand]
+    private void RescanStoragePlugins()
+    {
+        var issues = StoragePluginRegistry.Current.Refresh();
+        _storage.InvalidateBackends();
+        RefreshStorageProviderOptions();
+        HasStorageError = issues.Count > 0;
+        StorageStatusMessage =
+            issues.Count == 0
+                ? "存储插件已重新扫描。"
+                : $"存储插件扫描完成，有 {issues.Count} 个问题；详见插件状态。";
     }
 
     [ObservableProperty]
@@ -92,15 +195,43 @@ public partial class SettingsViewModel : ObservableObject
 
     public ObservableCollection<StorageProfile> StorageProfiles { get; } = new();
 
-    public IReadOnlyList<StorageProviderOption> StorageProviderOptions { get; } =
-        StorageProviders
-            .All.Select(provider => new StorageProviderOption(
-                provider,
-                StorageProviders.Label(provider)
-            ))
-            .ToList();
+    public IReadOnlyList<UiScaleOption> UiScaleOptions { get; } =
+    [
+        new(0.6, "60%"),
+        new(0.8, "80%"),
+        new(0.9, "90%"),
+        new(1.0, "100%"),
+        new(1.2, "120%"),
+        new(1.5, "150%"),
+    ];
+
+    [ObservableProperty]
+    private UiScaleOption? _selectedUiScale;
+
+    public ObservableCollection<StorageProviderOption> StorageProviderOptions { get; } = new();
 
     public bool IsStorageProfileEditable => SelectedStorageProfile?.IsRemote == true;
+
+    public bool CanAddStorageProfile => !IsStorageBusy && HasUsableStoragePlugins;
+
+    [ObservableProperty]
+    private bool _hasUsableStoragePlugins;
+
+    public string StoragePluginDirectory => AppPaths.StoragePluginDirectory;
+
+    public string StorageConnectionPlaceholder =>
+        SelectedStorageProvider is { Placeholder.Length: > 0 } option
+            ? option.Placeholder
+            : "选择存储类型后填写连接串";
+
+    [ObservableProperty]
+    private string _storagePluginSummary = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasStoragePluginIssue;
+
+    [ObservableProperty]
+    private string _storagePluginIssues = string.Empty;
 
     public string LocalDatabasePath => AppPaths.DatabaseFile;
 
@@ -135,6 +266,12 @@ public partial class SettingsViewModel : ObservableObject
         Draft.LogDirectory = directory;
         StatusMessage = "日志目录已选择，点击「保存设置」后生效。";
         HasError = false;
+    }
+
+    public void ReportStoragePluginFolderFailure(string message)
+    {
+        HasStorageError = true;
+        StorageStatusMessage = message;
     }
 
     partial void OnIsCheckingUpdatesChanged(bool value) =>
@@ -468,6 +605,12 @@ public partial class SettingsViewModel : ObservableObject
         Draft.Theme = defaults.Theme;
         Draft.RenderingMode = defaults.RenderingMode;
         Draft.CornerScale = defaults.CornerScale;
+        Draft.UiScale = defaults.UiScale;
+        SelectedUiScale =
+            UiScaleOptions.FirstOrDefault(option => Math.Abs(option.Value - Draft.UiScale) < 0.001)
+            ?? UiScaleOptions[^1];
+        Draft.UiLayout = defaults.UiLayout;
+        Draft.TabOverflow = defaults.TabOverflow;
         Draft.UiFont = defaults.UiFont;
         Draft.CodeFont = defaults.CodeFont;
         Draft.CodeFontSize = defaults.CodeFontSize;
@@ -529,6 +672,17 @@ public partial class SettingsViewModel : ObservableObject
         });
     }
 
+    partial void OnIsStorageBusyChanged(bool value) =>
+        OnPropertyChanged(nameof(CanAddStorageProfile));
+
+    partial void OnSelectedUiScaleChanged(UiScaleOption? value)
+    {
+        if (value is not null)
+        {
+            Draft.UiScale = value.Value;
+        }
+    }
+
     partial void OnSelectedStorageProfileChanged(StorageProfile? value)
     {
         if (value is not null)
@@ -543,6 +697,7 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(IsStorageProfileEditable));
+        OnPropertyChanged(nameof(StorageConnectionPlaceholder));
     }
 
     partial void OnSelectedStorageProviderChanged(StorageProviderOption? value)
@@ -563,16 +718,30 @@ public partial class SettingsViewModel : ObservableObject
         if (!string.Equals(profile.Provider, value.Value, StringComparison.Ordinal))
         {
             profile.Provider = value.Value;
+            OnPropertyChanged(nameof(StorageConnectionPlaceholder));
         }
     }
 
     [RelayCommand]
     private void AddStorageProfile()
     {
+        var provider = StorageProviderOptions.FirstOrDefault(option =>
+            !string.Equals(option.Value, StorageProviders.LocalSqlite, StringComparison.Ordinal)
+            && !option.Label.Contains("插件未安装", StringComparison.Ordinal)
+        );
+        if (provider is null)
+        {
+            HasStorageError = true;
+            StorageStatusMessage =
+                $"尚未安装远程存储插件。请把插件文件夹放到 {AppPaths.StoragePluginDirectory}，"
+                + "再点击「重新扫描」。";
+            return;
+        }
+
         var profile = new StorageProfile
         {
             Name = $"远程库 {StorageProfiles.Count}",
-            Provider = StorageProviders.PostgreSql,
+            Provider = provider.Value,
             ConnectionString = string.Empty,
         };
         StorageProfiles.Add(profile);
@@ -838,6 +1007,13 @@ public partial class SettingsViewModel : ObservableObject
         _current.Theme = Draft.Theme;
         _current.RenderingMode = Draft.RenderingMode;
         _current.CornerScale = Math.Clamp(Draft.CornerScale, 0, 2);
+        _current.UiScale = Math.Clamp(
+            Draft.UiScale,
+            UiScaleService.MinimumScale,
+            UiScaleService.MaximumScale
+        );
+        _current.UiLayout = Draft.UiLayout;
+        _current.TabOverflow = Draft.TabOverflow;
         _current.UiFont = Draft.UiFont;
         _current.CodeFont = Draft.CodeFont;
         _current.CodeFontSize = Draft.CodeFontSize;
@@ -871,6 +1047,9 @@ public partial class SettingsViewModel : ObservableObject
             Theme = source.Theme,
             RenderingMode = source.RenderingMode,
             CornerScale = source.CornerScale,
+            UiScale = source.UiScale,
+            UiLayout = source.UiLayout,
+            TabOverflow = source.TabOverflow,
             UiFont = source.UiFont,
             CodeFont = source.CodeFont,
             CodeFontSize = source.CodeFontSize,
@@ -908,7 +1087,17 @@ public partial class SettingsViewModel : ObservableObject
     }
 }
 
-public sealed record StorageProviderOption(string Value, string Label)
+public sealed record StorageProviderOption(
+    string Value,
+    string Label,
+    string Description,
+    string Placeholder
+)
+{
+    public override string ToString() => Label;
+}
+
+public sealed record UiScaleOption(double Value, string Label)
 {
     public override string ToString() => Label;
 }

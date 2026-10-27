@@ -66,6 +66,79 @@ public sealed class StorageTests
     }
 
     [Fact]
+    public async Task ConnectionTestDoesNotCreateTheDocumentTable()
+    {
+        var database = Path.Combine(Path.GetTempPath(), $"postsharp-probe-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            var backend = new SqliteDocumentBackend(
+                new StorageProfile
+                {
+                    Id = "probe",
+                    Name = "测试 SQLite",
+                    Provider = StorageProviders.LocalSqlite,
+                    ConnectionString = database,
+                }
+            );
+
+            var result = await backend.TestAsync();
+            Assert.True(result.Success, result.Message);
+
+            await using (
+                var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                    $"Data Source={database}"
+                )
+            )
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText =
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'PostSharpDocuments';";
+                Assert.Equal(0L, Convert.ToInt64(await command.ExecuteScalarAsync()));
+            }
+
+            await backend.WriteAsync(StorageCategories.Workspace, "{}", 1);
+            await using (
+                var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                    $"Data Source={database}"
+                )
+            )
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText =
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'PostSharpDocuments';";
+                Assert.Equal(1L, Convert.ToInt64(await command.ExecuteScalarAsync()));
+            }
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            File.Delete(database);
+        }
+    }
+
+    [Fact]
+    public void MissingStoragePluginIsReportedInsteadOfSilentlyWriting()
+    {
+        var profile = new StorageProfile
+        {
+            Id = "missing",
+            Name = "未安装",
+            Provider = "MissingProvider",
+            ConnectionString = "whatever",
+        };
+
+        var exception = Assert.Throws<StoragePluginMissingException>(() =>
+            DocumentBackendFactory.Create(profile)
+        );
+
+        Assert.Contains("MissingProvider", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("plugins", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void DefaultConfigBindsEveryCategoryToLocalSqlite()
     {
         var config = StorageConfig.CreateDefault().Normalize();
