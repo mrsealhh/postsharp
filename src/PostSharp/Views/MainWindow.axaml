@@ -477,7 +477,7 @@
 
                                 <Grid
                                     Grid.Row="1"
-                                    ColumnDefinitions="*,Auto,Auto"
+                                    ColumnDefinitions="*,Auto,Auto,Auto"
                                     ColumnSpacing="6"
                                     Margin="0,8,0,0"
                                 >
@@ -498,6 +498,23 @@
                                     </arc:SegmentedControl>
                                     <arc:Button
                                         Grid.Column="2"
+                                        Variant="Ghost"
+                                        Size="Small"
+                                        Width="30"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        Command="{Binding ToggleAllCollectionsCommand}"
+                                        ToolTip.Tip="全部展开/折叠集合"
+                                        AutomationProperties.Name="全部展开或折叠集合"
+                                    >
+                                        <arc:ArcGlyph
+                                            Data="{x:Static arc:ArcIcons.ChevronsUpDown}"
+                                            Size="14"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        />
+                                    </arc:Button>
+                                    <arc:Button
+                                        Grid.Column="3"
                                         Variant="Ghost"
                                         Size="Small"
                                         Width="30"

@@ -1547,6 +1547,7 @@ public partial class MainWindow : Window
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.History.CollectionChanged -= OnHistoryCollectionChanged;
+            _viewModel.TreeNodes.CollectionChanged -= OnTreeNodesCollectionChanged;
         }
 
         _viewModel = DataContext as MainWindowViewModel;
@@ -1555,6 +1556,7 @@ public partial class MainWindow : Window
             _viewModel.AppearanceChanged += OnAppearanceChanged;
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.History.CollectionChanged += OnHistoryCollectionChanged;
+            _viewModel.TreeNodes.CollectionChanged += OnTreeNodesCollectionChanged;
             ApplyAppearance();
             ApplyRequestResponseLayout();
             ApplyWorkspaceLayout(_viewModel.IsWorkspaceSideBySide);
@@ -1570,6 +1572,11 @@ public partial class MainWindow : Window
             DispatcherPriority.Background
         );
 
+    private void OnTreeNodesCollectionChanged(
+        object? sender,
+        System.Collections.Specialized.NotifyCollectionChangedEventArgs e
+    ) => Dispatcher.UIThread.Post(ScrollSelectedTreeNodeIntoView, DispatcherPriority.Background);
+
     private void OnClosed(object? sender, EventArgs e)
     {
         if (_viewModel is not null)
@@ -1579,6 +1586,7 @@ public partial class MainWindow : Window
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.History.CollectionChanged -= OnHistoryCollectionChanged;
+            _viewModel.TreeNodes.CollectionChanged -= OnTreeNodesCollectionChanged;
             _viewModel.Shutdown();
             _viewModel = null;
         }
@@ -1774,6 +1782,76 @@ public partial class MainWindow : Window
         {
             ApplyWorkspaceLayout(_isSideBySide);
         }
+        else if (
+            e.PropertyName
+            is nameof(MainWindowViewModel.SelectedRequest)
+                or nameof(MainWindowViewModel.SelectedCollection)
+        )
+        {
+            Dispatcher.UIThread.Post(ScrollSelectedTreeNodeIntoView, DispatcherPriority.Background);
+        }
+    }
+
+    private void ScrollSelectedTreeNodeIntoView()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        object? target = _viewModel.SelectedRequest ?? (object?)_viewModel.SelectedCollection;
+        if (target is null)
+        {
+            return;
+        }
+
+        var node = _viewModel.TreeNodes.FirstOrDefault(candidate =>
+            ReferenceEquals(candidate.Request, target)
+            || ReferenceEquals(candidate.Collection, target)
+        );
+        if (node is null)
+        {
+            return;
+        }
+
+        if (FindTreeRow(node) is { } row)
+        {
+            row.BringIntoView();
+            return;
+        }
+
+        var index = _viewModel.TreeNodes.IndexOf(node);
+        if (index < 0)
+        {
+            return;
+        }
+
+        // The new row may not be realized yet in the virtualizing panel. Scroll near its
+        // estimated slot first, then bring the realized row into view on the next layout pass.
+        var rowHeight = 30d;
+        var offset = Math.Max(0, index * rowHeight - CollectionScrollArea.Bounds.Height / 2);
+        CollectionScrollArea.ScrollToOffset(new Vector(0, offset));
+        Dispatcher.UIThread.Post(
+            () => FindTreeRow(node)?.BringIntoView(),
+            DispatcherPriority.Background
+        );
+    }
+
+    private Border? FindTreeRow(TreeDisplayNode node)
+    {
+        foreach (var visual in CollectionScrollArea.GetVisualDescendants())
+        {
+            if (
+                visual is Border border
+                && border.Classes.Contains("treeRow")
+                && ReferenceEquals(border.DataContext, node)
+            )
+            {
+                return border;
+            }
+        }
+
+        return null;
     }
 
     private void SaveRequestResponseRatio()

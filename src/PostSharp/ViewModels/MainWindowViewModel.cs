@@ -2377,6 +2377,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         if (Editing.Owner is null)
         {
+            EnsureTreeShowsNewNode();
             var target = SelectedCollection ?? Collections.FirstOrDefault();
             if (target is null)
             {
@@ -2419,6 +2420,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public void AddRequestToCollection(RequestCollection target)
     {
+        EnsureTreeShowsNewNode();
         var request = new RequestItem
         {
             Name = $"新建请求 {target.Requests.Count + 1}",
@@ -2440,6 +2442,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public void AddSubcollection(RequestCollection parent)
     {
+        EnsureTreeShowsNewNode();
         if (parent.Depth >= CollectionTree.MaxDepth)
         {
             ShowToast($"集合最多支持 {CollectionTree.MaxDepth} 级");
@@ -2768,6 +2771,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [RelayCommand]
     private void AddCollection()
     {
+        EnsureTreeShowsNewNode();
         var collection = new RequestCollection { Name = $"新建集合 {Collections.Count + 1}" };
         Collections.Add(collection);
         collection.IsExpanded = true;
@@ -2781,6 +2785,27 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     }
 
     [RelayCommand]
+    private void ToggleAllCollections()
+    {
+        var expand = !Collections.Any(collection => collection.IsExpanded);
+        foreach (var collection in Collections)
+        {
+            collection.IsExpanded = expand;
+        }
+
+        NotifyTreeChanged();
+        ShowToast(expand ? "已展开全部集合" : "已折叠全部集合");
+    }
+
+    private void EnsureTreeShowsNewNode()
+    {
+        if (TreeFilterMode == "收藏")
+        {
+            TreeFilterMode = "全部";
+        }
+    }
+
+    [RelayCommand]
     private void DuplicateSelectedRequest()
     {
         if (SelectedRequest is not { } source || source.Owner is null)
@@ -2789,6 +2814,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return;
         }
 
+        EnsureTreeShowsNewNode();
         var copy = source.Clone();
         copy.Name = $"{source.Name} 副本";
         copy.Owner = source.Owner;
@@ -6385,8 +6411,19 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return;
         }
 
-        collection.IsExpanded = true;
+        // Search results must stay expanded so the matching descendants are visible.
+        // Favorite mode honors the user's collapse state instead of forcing every folder open.
+        if (!favoritesOnly || hasFilter)
+        {
+            collection.IsExpanded = true;
+        }
+
         nodes.Add(GetCollectionNode(collection, depth, reusable));
+        if (!collection.IsExpanded)
+        {
+            return;
+        }
+
         nodes.AddRange(childNodes);
         foreach (var request in requests)
         {
