@@ -105,9 +105,9 @@ public partial class AppSettings : ObservableObject
     [ObservableProperty]
     private double _requestPaneRatio = 0.5;
 
-    /// <summary>User-selected request/response layout; null keeps the automatic side-by-side switch.</summary>
+    /// <summary>User-selected request/response layout; defaults to side-by-side.</summary>
     [ObservableProperty]
-    private string? _workspaceLayout;
+    private string? _workspaceLayout = "SideBySide";
 
     [ObservableProperty]
     private bool _historyCollapsed;

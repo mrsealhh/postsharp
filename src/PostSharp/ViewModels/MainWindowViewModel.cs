@@ -100,7 +100,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Settings.LogLevel
         );
         Settings.PropertyChanged += OnSettingsChanged;
-        IsWorkspaceSideBySide = Settings.WorkspaceLayout == SideBySideLayout;
+        IsWorkspaceSideBySide = Settings.WorkspaceLayout != StackedLayout;
         _http.TimeoutSeconds = Settings.RequestTimeoutSeconds;
         _http.AutoFormatResponse = Settings.AutoFormatResponse;
         _http.SseThinkingPath = Settings.SseThinkingPath;

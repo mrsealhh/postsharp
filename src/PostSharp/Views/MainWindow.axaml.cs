@@ -1459,6 +1459,25 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnTreeFavoriteClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null || sender is not Control { DataContext: TreeDisplayNode node })
+        {
+            return;
+        }
+
+        if (node.Request is { } request)
+        {
+            _viewModel.ToggleFavoriteNode(request);
+        }
+        else if (node.Collection is { } collection)
+        {
+            _viewModel.ToggleFavoriteNode(collection);
+        }
+
+        e.Handled = true;
+    }
+
     private void OnTreeMenuNewRequestClick(object? sender, RoutedEventArgs e)
     {
         var collection = _viewModel?.SelectedCollection;

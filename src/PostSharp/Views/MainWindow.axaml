@@ -618,14 +618,32 @@
                                                                             VerticalAlignment="Center"
                                                                             TextTrimming="CharacterEllipsis"
                                                                         />
-                                                                        <arc:ArcGlyph
+                                                                        <arc:Button
                                                                             Grid.Column="2"
-                                                                            Data="{x:Static arc:ArcIcons.Star}"
-                                                                            Size="12"
-                                                                            Foreground="{arc:ArcDesignTokenResource Warning}"
+                                                                            Variant="Ghost"
+                                                                            Size="Small"
+                                                                            Width="24"
+                                                                            Padding="0"
                                                                             VerticalAlignment="Center"
-                                                                            IsVisible="{Binding Collection.IsFavorite}"
-                                                                        />
+                                                                            Click="OnTreeFavoriteClick"
+                                                                            ToolTip.Tip="收藏或取消收藏"
+                                                                            AutomationProperties.Name="收藏或取消收藏集合"
+                                                                        >
+                                                                            <Panel>
+                                                                                <arc:ArcGlyph
+                                                                                    Data="{x:Static arc:ArcIcons.Star}"
+                                                                                    Size="12"
+                                                                                    Foreground="{arc:ArcDesignTokenResource Warning}"
+                                                                                    IsVisible="{Binding Collection.IsFavorite}"
+                                                                                />
+                                                                                <arc:ArcGlyph
+                                                                                    Data="{x:Static arc:ArcIcons.Star}"
+                                                                                    Size="12"
+                                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                                    IsVisible="{Binding !Collection.IsFavorite}"
+                                                                                />
+                                                                            </Panel>
+                                                                        </arc:Button>
                                                                     </Grid>
                                                                 </Border>
                                                                 <StackPanel
@@ -727,14 +745,32 @@
                                                                             VerticalAlignment="Center"
                                                                             TextTrimming="CharacterEllipsis"
                                                                         />
-                                                                        <arc:ArcGlyph
+                                                                        <arc:Button
                                                                             Grid.Column="2"
-                                                                            Data="{x:Static arc:ArcIcons.Star}"
-                                                                            Size="12"
-                                                                            Foreground="{arc:ArcDesignTokenResource Warning}"
+                                                                            Variant="Ghost"
+                                                                            Size="Small"
+                                                                            Width="24"
+                                                                            Padding="0"
                                                                             VerticalAlignment="Center"
-                                                                            IsVisible="{Binding Request.IsFavorite}"
-                                                                        />
+                                                                            Click="OnTreeFavoriteClick"
+                                                                            ToolTip.Tip="收藏或取消收藏"
+                                                                            AutomationProperties.Name="收藏或取消收藏请求"
+                                                                        >
+                                                                            <Panel>
+                                                                                <arc:ArcGlyph
+                                                                                    Data="{x:Static arc:ArcIcons.Star}"
+                                                                                    Size="12"
+                                                                                    Foreground="{arc:ArcDesignTokenResource Warning}"
+                                                                                    IsVisible="{Binding Request.IsFavorite}"
+                                                                                />
+                                                                                <arc:ArcGlyph
+                                                                                    Data="{x:Static arc:ArcIcons.Star}"
+                                                                                    Size="12"
+                                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                                    IsVisible="{Binding !Request.IsFavorite}"
+                                                                                />
+                                                                            </Panel>
+                                                                        </arc:Button>
                                                                     </Grid>
                                                                 </Border>
                                                                 <StackPanel
