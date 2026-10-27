@@ -61,7 +61,7 @@
 
         <DataTemplate x:Key="HistoryRowTemplate" x:DataType="models:HistoryEntry">
             <Grid
-                ColumnDefinitions="*,56,32"
+                ColumnDefinitions="*,68,56,32"
                 ColumnSpacing="4"
                 Margin="0,0,0,2"
                 HorizontalAlignment="Stretch"
@@ -72,20 +72,14 @@
                     Variant="Ghost"
                     Size="Small"
                     HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Left"
+                    HorizontalContentAlignment="Stretch"
                     Padding="8,5"
                     Focusable="False"
                     Command="{Binding OpenCommand}"
                 >
-                    <Grid
-                        ColumnDefinitions="64,*"
-                        RowDefinitions="Auto,Auto"
-                        ColumnSpacing="6"
-                        RowSpacing="2"
-                        HorizontalAlignment="Stretch"
-                    >
+                    <Grid ColumnDefinitions="56,*" ColumnSpacing="6" HorizontalAlignment="Stretch">
                         <arc:Badge
-                            Grid.RowSpan="2"
+                            Grid.Column="0"
                             Content="{Binding MethodDisplay}"
                             Tone="{Binding MethodTone}"
                             Size="Small"
@@ -93,43 +87,38 @@
                             VerticalAlignment="Center"
                             ToolTip.Tip="{Binding MethodDisplay}"
                         />
-                        <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                        <StackPanel Grid.Column="1" Spacing="2" HorizontalAlignment="Stretch">
                             <TextBlock
                                 Text="{Binding Name}"
                                 FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                 Foreground="{arc:ArcDesignTokenResource Foreground}"
                                 TextTrimming="CharacterEllipsis"
-                                MaxWidth="120"
                                 HorizontalAlignment="Left"
-                                VerticalAlignment="Center"
                                 ToolTip.Tip="{Binding Name}"
                             />
-                            <arc:Badge
-                                Grid.Column="1"
-                                Content="{Binding StatusLabel}"
-                                Icon="{Binding StatusIcon}"
-                                Tone="{Binding StatusTone}"
-                                Size="Small"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Center"
-                                ToolTip.Tip="{Binding StatusLabel}"
+                            <TextBlock
+                                Text="{Binding Url}"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                TextTrimming="CharacterEllipsis"
+                                HorizontalAlignment="Left"
+                                ToolTip.Tip="{Binding Url}"
                             />
-                        </Grid>
-                        <TextBlock
-                            Grid.Column="1"
-                            Grid.Row="1"
-                            Text="{Binding Url}"
-                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                            TextTrimming="CharacterEllipsis"
-                            MaxWidth="120"
-                            HorizontalAlignment="Left"
-                            ToolTip.Tip="{Binding Url}"
-                        />
+                        </StackPanel>
                     </Grid>
                 </arc:Button>
-                <TextBlock
+                <arc:Badge
                     Grid.Column="1"
+                    Content="{Binding StatusLabel}"
+                    Icon="{Binding StatusIcon}"
+                    Tone="{Binding StatusTone}"
+                    Size="Small"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    ToolTip.Tip="{Binding StatusLabel}"
+                />
+                <TextBlock
+                    Grid.Column="2"
                     Text="{Binding DisplayTime}"
                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
                     Foreground="{arc:ArcDesignTokenResource TextMuted}"
@@ -138,7 +127,7 @@
                     ToolTip.Tip="{Binding TimestampText}"
                 />
                 <arc:Button
-                    Grid.Column="2"
+                    Grid.Column="3"
                     Variant="Ghost"
                     Size="Small"
                     Padding="0"
@@ -219,6 +208,10 @@
             <Setter Property="IsHitTestVisible" Value="False" />
         </Style>
         <Style Selector="Border.treeRow:pointerover .rowActions" x:SetterTargetType="Button">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="IsHitTestVisible" Value="True" />
+        </Style>
+        <Style Selector="Border.treeRow.selected .rowActions" x:SetterTargetType="Button">
             <Setter Property="Opacity" Value="1" />
             <Setter Property="IsHitTestVisible" Value="True" />
         </Style>
@@ -592,7 +585,7 @@
                                                                     Cursor="Hand"
                                                                 >
                                                                     <Grid
-                                                                        ColumnDefinitions="18,*,Auto"
+                                                                        ColumnDefinitions="18,*"
                                                                         ColumnSpacing="6"
                                                                     >
                                                                         <Panel VerticalAlignment="Center">
@@ -618,32 +611,6 @@
                                                                             VerticalAlignment="Center"
                                                                             TextTrimming="CharacterEllipsis"
                                                                         />
-                                                                        <arc:Button
-                                                                            Grid.Column="2"
-                                                                            Variant="Ghost"
-                                                                            Size="Small"
-                                                                            Width="24"
-                                                                            Padding="0"
-                                                                            VerticalAlignment="Center"
-                                                                            Click="OnTreeFavoriteClick"
-                                                                            ToolTip.Tip="收藏或取消收藏"
-                                                                            AutomationProperties.Name="收藏或取消收藏集合"
-                                                                        >
-                                                                            <Panel>
-                                                                                <arc:ArcGlyph
-                                                                                    Data="{x:Static arc:ArcIcons.Star}"
-                                                                                    Size="12"
-                                                                                    Foreground="{arc:ArcDesignTokenResource Warning}"
-                                                                                    IsVisible="{Binding Collection.IsFavorite}"
-                                                                                />
-                                                                                <arc:ArcGlyph
-                                                                                    Data="{x:Static arc:ArcIcons.Star}"
-                                                                                    Size="12"
-                                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                                                    IsVisible="{Binding !Collection.IsFavorite}"
-                                                                                />
-                                                                            </Panel>
-                                                                        </arc:Button>
                                                                     </Grid>
                                                                 </Border>
                                                                 <StackPanel
@@ -652,6 +619,32 @@
                                                                     Spacing="2"
                                                                     VerticalAlignment="Center"
                                                                 >
+                                                                    <arc:Button
+                                                                        Classes="rowActions"
+                                                                        Variant="Ghost"
+                                                                        Size="Small"
+                                                                        Width="24"
+                                                                        Padding="0"
+                                                                        IsTabStop="False"
+                                                                        Click="OnTreeFavoriteClick"
+                                                                        ToolTip.Tip="收藏或取消收藏"
+                                                                        AutomationProperties.Name="收藏或取消收藏集合"
+                                                                    >
+                                                                        <Panel>
+                                                                            <arc:ArcGlyph
+                                                                                Data="{x:Static arc:ArcIcons.Star}"
+                                                                                Size="12"
+                                                                                Foreground="{arc:ArcDesignTokenResource Warning}"
+                                                                                IsVisible="{Binding Collection.IsFavorite}"
+                                                                            />
+                                                                            <arc:ArcGlyph
+                                                                                Data="{x:Static arc:ArcIcons.Star}"
+                                                                                Size="12"
+                                                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                                IsVisible="{Binding !Collection.IsFavorite}"
+                                                                            />
+                                                                        </Panel>
+                                                                    </arc:Button>
                                                                     <arc:Button
                                                                         Classes="rowActions"
                                                                         Variant="Ghost"
@@ -747,11 +740,13 @@
                                                                         />
                                                                         <arc:Button
                                                                             Grid.Column="2"
+                                                                            Classes="rowActions"
                                                                             Variant="Ghost"
                                                                             Size="Small"
                                                                             Width="24"
                                                                             Padding="0"
                                                                             VerticalAlignment="Center"
+                                                                            IsTabStop="False"
                                                                             Click="OnTreeFavoriteClick"
                                                                             ToolTip.Tip="收藏或取消收藏"
                                                                             AutomationProperties.Name="收藏或取消收藏请求"
