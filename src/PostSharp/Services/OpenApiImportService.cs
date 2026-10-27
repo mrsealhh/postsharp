@@ -982,8 +982,15 @@ public static class OpenApiImportService
             return result;
         }
 
-        var count = 0;
-        CollectSchemaFields(schema, document, string.Empty, false, result, 0, ref count);
+        CollectSchemaFields(
+            schema,
+            document,
+            string.Empty,
+            false,
+            result,
+            0,
+            new HashSet<JsonObject>(ReferenceEqualityComparer.Instance)
+        );
         return result
             .GroupBy(field => field.Name, StringComparer.Ordinal)
             .Select(group => group.First())
@@ -997,7 +1004,7 @@ public static class OpenApiImportService
         bool required,
         List<OpenApiSchemaFieldDoc> target,
         int depth,
-        ref int count
+        HashSet<JsonObject> visiting
     )
     {
         if (depth > MaxSchemaDepth)
@@ -1006,94 +1013,98 @@ public static class OpenApiImportService
         }
 
         var schema = ResolveObject(node, document);
-        if (schema is null)
+        if (schema is null || !visiting.Add(schema))
         {
             return;
         }
 
-        if (schema["allOf"] is JsonArray allOf)
+        try
         {
-            foreach (var candidate in allOf)
+            if (schema["allOf"] is JsonArray allOf)
+            {
+                foreach (var candidate in allOf)
+                {
+                    CollectSchemaFields(
+                        candidate,
+                        document,
+                        prefix,
+                        required,
+                        target,
+                        depth + 1,
+                        visiting
+                    );
+                }
+            }
+
+            var requiredNames = ReadRequiredNames(schema);
+            if (schema["properties"] is JsonObject properties)
+            {
+                foreach (var property in properties)
+                {
+                    var name = prefix.Length == 0 ? property.Key : $"{prefix}.{property.Key}";
+                    var propertySchema = ResolveObject(property.Value, document);
+                    if (propertySchema is null)
+                    {
+                        continue;
+                    }
+
+                    var propertyRequired = required || requiredNames.Contains(property.Key);
+                    var type = (GetText(propertySchema["type"]) ?? string.Empty)
+                        .Trim()
+                        .ToLowerInvariant();
+                    target.Add(CreateFieldDoc(name, propertySchema, propertyRequired, document));
+
+                    if (type == "object" || propertySchema["properties"] is JsonObject)
+                    {
+                        CollectSchemaFields(
+                            propertySchema,
+                            document,
+                            name,
+                            propertyRequired,
+                            target,
+                            depth + 1,
+                            visiting
+                        );
+                    }
+                    else if (type == "array" && propertySchema["items"] is { } items)
+                    {
+                        CollectSchemaFields(
+                            items,
+                            document,
+                            name + "[]",
+                            propertyRequired,
+                            target,
+                            depth + 1,
+                            visiting
+                        );
+                    }
+                }
+
+                return;
+            }
+
+            if (schema["items"] is { } arrayItems)
             {
                 CollectSchemaFields(
-                    candidate,
+                    arrayItems,
                     document,
-                    prefix,
+                    prefix.Length == 0 ? "[]" : prefix,
                     required,
                     target,
                     depth + 1,
-                    ref count
+                    visiting
                 );
+                return;
             }
-        }
 
-        var requiredNames = ReadRequiredNames(schema);
-        if (schema["properties"] is JsonObject properties)
-        {
-            foreach (var property in properties)
+            if (prefix.Length > 0)
             {
-                var name = prefix.Length == 0 ? property.Key : $"{prefix}.{property.Key}";
-                var propertySchema = ResolveObject(property.Value, document);
-                if (propertySchema is null)
-                {
-                    continue;
-                }
-
-                var propertyRequired = required || requiredNames.Contains(property.Key);
-                var type = (GetText(propertySchema["type"]) ?? string.Empty)
-                    .Trim()
-                    .ToLowerInvariant();
-                var field = CreateFieldDoc(name, propertySchema, propertyRequired, document);
-                target.Add(field);
-                count++;
-
-                if (type == "object" || propertySchema["properties"] is JsonObject)
-                {
-                    CollectSchemaFields(
-                        propertySchema,
-                        document,
-                        name,
-                        propertyRequired,
-                        target,
-                        depth + 1,
-                        ref count
-                    );
-                }
-                else if (type == "array" && propertySchema["items"] is { } items)
-                {
-                    CollectSchemaFields(
-                        items,
-                        document,
-                        name + "[]",
-                        propertyRequired,
-                        target,
-                        depth + 1,
-                        ref count
-                    );
-                }
+                target.Add(CreateFieldDoc(prefix, schema, required, document));
             }
-
-            return;
         }
-
-        if (schema["items"] is { } arrayItems)
+        finally
         {
-            CollectSchemaFields(
-                arrayItems,
-                document,
-                prefix.Length == 0 ? "[]" : prefix,
-                required,
-                target,
-                depth + 1,
-                ref count
-            );
-            return;
-        }
-
-        if (prefix.Length > 0)
-        {
-            target.Add(CreateFieldDoc(prefix, schema, required, document));
-            count++;
+            visiting.Remove(schema);
         }
     }
 
@@ -1376,33 +1387,55 @@ public static class OpenApiImportService
             .ToHashSet(StringComparer.Ordinal);
     }
 
-    private static string SchemaTypeText(JsonObject? schema, JsonObject document)
+    private static string SchemaTypeText(JsonObject? schema, JsonObject document) =>
+        SchemaTypeText(
+            schema,
+            document,
+            new HashSet<JsonObject>(ReferenceEqualityComparer.Instance)
+        );
+
+    private static string SchemaTypeText(
+        JsonObject? schema,
+        JsonObject document,
+        HashSet<JsonObject> visiting
+    )
     {
-        if (schema is null)
+        if (schema is null || !visiting.Add(schema))
         {
             return string.Empty;
         }
 
-        var type = (GetText(schema["type"]) ?? string.Empty).Trim().ToLowerInvariant();
-        if (type.Length == 0)
+        try
         {
-            type =
-                schema["properties"] is JsonObject ? "object"
-                : schema["items"] is not null ? "array"
-                : schema["allOf"] is JsonArray ? "object"
-                : string.Empty;
-        }
+            var type = (GetText(schema["type"]) ?? string.Empty).Trim().ToLowerInvariant();
+            if (type.Length == 0)
+            {
+                type =
+                    schema["properties"] is JsonObject ? "object"
+                    : schema["items"] is not null ? "array"
+                    : schema["allOf"] is JsonArray ? "object"
+                    : string.Empty;
+            }
 
-        if (type == "array")
+            if (type == "array")
+            {
+                var itemType = SchemaTypeText(
+                    ResolveObject(schema["items"], document),
+                    document,
+                    visiting
+                );
+                return itemType.Length == 0 ? "array" : $"array<{itemType}>";
+            }
+
+            var format = (GetText(schema["format"]) ?? string.Empty).Trim();
+            return type.Length == 0 ? format
+                : format.Length == 0 ? type
+                : $"{type} ({format})";
+        }
+        finally
         {
-            var itemType = SchemaTypeText(ResolveObject(schema["items"], document), document);
-            return itemType.Length == 0 ? "array" : $"array<{itemType}>";
+            visiting.Remove(schema);
         }
-
-        var format = (GetText(schema["format"]) ?? string.Empty).Trim();
-        return type.Length == 0 ? format
-            : format.Length == 0 ? type
-            : $"{type} ({format})";
     }
 
     private static string ReadEnumText(JsonObject? schema)
@@ -1582,7 +1615,20 @@ public static class OpenApiImportService
         return null;
     }
 
-    private static JsonNode? BuildSample(JsonNode? node, JsonObject document, int depth)
+    private static JsonNode? BuildSample(JsonNode? node, JsonObject document, int depth) =>
+        BuildSample(
+            node,
+            document,
+            depth,
+            new HashSet<JsonObject>(ReferenceEqualityComparer.Instance)
+        );
+
+    private static JsonNode? BuildSample(
+        JsonNode? node,
+        JsonObject document,
+        int depth,
+        HashSet<JsonObject> visiting
+    )
     {
         if (node is null || depth > MaxSchemaDepth)
         {
@@ -1590,89 +1636,104 @@ public static class OpenApiImportService
         }
 
         var schema = ResolveObject(node, document);
-        if (schema is null)
+        if (schema is null || !visiting.Add(schema))
         {
             return null;
         }
 
-        if (schema["example"] is { } example)
+        try
         {
-            return example.DeepClone();
-        }
-
-        if (schema["default"] is { } defaultValue)
-        {
-            return defaultValue.DeepClone();
-        }
-
-        if (schema["enum"] is JsonArray enumValues && enumValues.Count > 0)
-        {
-            return enumValues[0]?.DeepClone();
-        }
-
-        foreach (var combinator in new[] { "oneOf", "anyOf", "allOf" })
-        {
-            if (schema[combinator] is JsonArray candidates && candidates.Count > 0)
+            if (schema["example"] is { } example)
             {
-                if (combinator == "allOf")
+                return example.DeepClone();
+            }
+
+            if (schema["default"] is { } defaultValue)
+            {
+                return defaultValue.DeepClone();
+            }
+
+            if (schema["enum"] is JsonArray enumValues && enumValues.Count > 0)
+            {
+                return enumValues[0]?.DeepClone();
+            }
+
+            foreach (var combinator in new[] { "oneOf", "anyOf", "allOf" })
+            {
+                if (schema[combinator] is JsonArray candidates && candidates.Count > 0)
                 {
-                    var merged = new JsonObject();
-                    foreach (var candidate in candidates)
+                    if (combinator == "allOf")
                     {
-                        if (BuildSample(candidate, document, depth + 1) is JsonObject part)
+                        var merged = new JsonObject();
+                        foreach (var candidate in candidates)
                         {
-                            foreach (var property in part)
+                            if (
+                                BuildSample(candidate, document, depth + 1, visiting)
+                                is JsonObject part
+                            )
                             {
-                                merged[property.Key] = property.Value?.DeepClone();
+                                foreach (var property in part)
+                                {
+                                    merged[property.Key] = property.Value?.DeepClone();
+                                }
                             }
                         }
-                    }
 
-                    if (merged.Count > 0)
-                    {
-                        return merged;
+                        if (merged.Count > 0)
+                        {
+                            return merged;
+                        }
                     }
-                }
-                else
-                {
-                    return BuildSample(candidates[0], document, depth + 1);
+                    else
+                    {
+                        return BuildSample(candidates[0], document, depth + 1, visiting);
+                    }
                 }
             }
+
+            var type = GetText(schema["type"]);
+            switch (type)
+            {
+                case "object":
+                    return BuildObjectSample(schema, document, depth, visiting);
+
+                case "array":
+                    var item = BuildSample(schema["items"], document, depth + 1, visiting);
+                    return new JsonArray(item?.DeepClone());
+
+                case "integer":
+                    return JsonValue.Create(0);
+
+                case "number":
+                    return JsonValue.Create(0.0);
+
+                case "boolean":
+                    return JsonValue.Create(false);
+
+                case "string":
+                    return JsonValue.Create(SampleString(GetText(schema["format"])));
+
+                default:
+                    if (schema["properties"] is JsonObject)
+                    {
+                        return BuildObjectSample(schema, document, depth, visiting);
+                    }
+
+                    return null;
+            }
         }
-
-        var type = GetText(schema["type"]);
-        switch (type)
+        finally
         {
-            case "object":
-                return BuildObjectSample(schema, document, depth);
-
-            case "array":
-                var item = BuildSample(schema["items"], document, depth + 1);
-                return new JsonArray(item?.DeepClone());
-
-            case "integer":
-                return JsonValue.Create(0);
-
-            case "number":
-                return JsonValue.Create(0.0);
-
-            case "boolean":
-                return JsonValue.Create(false);
-
-            case "string":
-                return JsonValue.Create(SampleString(GetText(schema["format"])));
-
-            default:
-                if (schema["properties"] is JsonObject)
-                {
-                    return BuildObjectSample(schema, document, depth);
-                }
-
-                return null;
+            visiting.Remove(schema);
         }
     }
 
-    private static JsonObject BuildObjectSample(JsonObject schema, JsonObject document, int depth)
+    private static JsonObject BuildObjectSample(
+        JsonObject schema,
+        JsonObject document,
+        int depth,
+        HashSet<JsonObject> visiting
+    )
     {
         var result = new JsonObject();
         if (schema["properties"] is not JsonObject properties)
@@ -1680,15 +1741,9 @@ public static class OpenApiImportService
             return result;
         }
 
-        var count = 0;
         foreach (var property in properties)
         {
-            if (count++ >= 30)
-            {
-                break;
-            }
-
-            var sample = BuildSample(property.Value, document, depth + 1);
+            var sample = BuildSample(property.Value, document, depth + 1, visiting);
             if (sample is not null)
             {
                 result[property.Key] = sample;
@@ -2158,34 +2213,51 @@ public static class OpenApiImportService
             return null;
         }
 
-        return ResolveReference(current, document, 0);
+        return ResolveReference(
+            current,
+            document,
+            0,
+            new HashSet<JsonObject>(ReferenceEqualityComparer.Instance)
+        );
     }
 
-    private static JsonObject ResolveReference(JsonObject node, JsonObject document, int depth)
+    private static JsonObject ResolveReference(
+        JsonObject node,
+        JsonObject document,
+        int depth,
+        HashSet<JsonObject> visiting
+    )
     {
         var reference = GetText(node["$ref"]);
-        if (string.IsNullOrWhiteSpace(reference) || depth > MaxSchemaDepth)
+        if (string.IsNullOrWhiteSpace(reference) || depth > MaxSchemaDepth || !visiting.Add(node))
         {
             return node;
         }
 
-        if (!reference.StartsWith("#/", StringComparison.Ordinal))
+        try
         {
-            return node;
-        }
+            if (!reference.StartsWith("#/", StringComparison.Ordinal))
+            {
+                return node;
+            }
 
-        JsonNode? target = document;
-        foreach (var segment in reference[2..].Split('/'))
+            JsonNode? target = document;
+            foreach (var segment in reference[2..].Split('/'))
+            {
+                var key = segment
+                    .Replace("~1", "/", StringComparison.Ordinal)
+                    .Replace("~0", "~", StringComparison.Ordinal);
+                target = target?[key];
+            }
+
+            return target is JsonObject targetObject
+                ? ResolveReference(targetObject, document, depth + 1, visiting)
+                : node;
+        }
+        finally
         {
-            var key = segment
-                .Replace("~1", "/", StringComparison.Ordinal)
-                .Replace("~0", "~", StringComparison.Ordinal);
-            target = target?[key];
+            visiting.Remove(node);
         }
-
-        return target is JsonObject targetObject
-            ? ResolveReference(targetObject, document, depth + 1)
-            : node;
     }
 
     private static JsonNode ParseDocument(string content)

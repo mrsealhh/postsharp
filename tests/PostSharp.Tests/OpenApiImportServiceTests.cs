@@ -570,6 +570,48 @@ public sealed class OpenApiImportServiceTests
     }
 
     [Fact]
+    public void RecursiveSchemaDoesNotRecurseForever()
+    {
+        const string json = """
+            {
+              "openapi": "3.0.3",
+              "info": { "title": "Recursive", "version": "1.0" },
+              "components": {
+                "schemas": {
+                  "Node": {
+                    "type": "object",
+                    "properties": {
+                      "value": { "type": "string" },
+                      "child": { "$ref": "#/components/schemas/Node" }
+                    }
+                  }
+                }
+              },
+              "paths": {
+                "/tree": {
+                  "get": {
+                    "responses": {
+                      "200": {
+                        "description": "ok",
+                        "content": {
+                          "application/json": {
+                            "schema": { "$ref": "#/components/schemas/Node" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """;
+
+        var document = OpenApiImportService.Parse(json, "recursive-openapi.json");
+
+        Assert.Single(Assert.Single(document.Groups).Requests);
+    }
+
+    [Fact]
     public void ImportsMoreThanFiveHundredOperations()
     {
         var paths = new StringBuilder();
