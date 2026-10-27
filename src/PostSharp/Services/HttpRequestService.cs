@@ -36,7 +36,8 @@ public sealed record HttpResult(
     int SseEventCount = 0,
     string SseRaw = "",
     bool SseCancelled = false,
-    string SseLastEventId = ""
+    string SseLastEventId = "",
+    bool IsTruncated = false
 );
 
 public sealed class HttpRequestService
@@ -44,6 +45,7 @@ public sealed class HttpRequestService
     private const int MaxFormatLength = 256 * 1024;
     private const int SseProgressIntervalMs = 150;
     private const int SseTextLimit = 2 * 1024 * 1024;
+    private const long MaxResponseBytes = 64 * 1024 * 1024;
 
     private static readonly HttpClient SharedClient = CreateClient();
 
@@ -293,8 +295,10 @@ public sealed class HttpRequestService
                 );
             }
 
-            var bytes = await response
-                .Content.ReadAsByteArrayAsync(linked.Token)
+            var (bytes, receivedBytes, isTruncated) = await ReadResponseBodyAsync(
+                    response.Content,
+                    linked.Token
+                )
                 .ConfigureAwait(false);
             stopwatch.Stop();
 
@@ -309,9 +313,10 @@ public sealed class HttpRequestService
                 IsJson: isJson,
                 MediaType: mediaType,
                 ElapsedMs: stopwatch.ElapsedMilliseconds,
-                SizeBytes: bytes.LongLength,
+                SizeBytes: receivedBytes,
                 Headers: responseHeaders,
-                Error: null
+                Error: null,
+                IsTruncated: isTruncated
             );
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -406,6 +411,46 @@ public sealed class HttpRequestService
         }
 
         return Encoding.UTF8.GetString(bytes);
+    }
+
+    private static async Task<(
+        byte[] Bytes,
+        long TotalBytes,
+        bool IsTruncated
+    )> ReadResponseBodyAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+        await using var stream = await content
+            .ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+        using var memory = new MemoryStream();
+        var buffer = new byte[128 * 1024];
+        long totalBytes = 0;
+        var truncated = false;
+        while (true)
+        {
+            var read = await stream
+                .ReadAsync(buffer.AsMemory(), cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            totalBytes += read;
+            var remaining = MaxResponseBytes - memory.Length;
+            if (remaining > 0)
+            {
+                memory.Write(buffer, 0, (int)Math.Min(read, remaining));
+            }
+
+            if (totalBytes >= MaxResponseBytes)
+            {
+                truncated = true;
+                break;
+            }
+        }
+
+        return (memory.ToArray(), totalBytes, truncated);
     }
 
     private (string Body, bool IsJson) FormatDocument(string text, string mediaType)

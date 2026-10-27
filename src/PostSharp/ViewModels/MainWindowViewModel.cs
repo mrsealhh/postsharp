@@ -6103,8 +6103,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             && !string.IsNullOrWhiteSpace(result.SseLastEventId);
         SseViewMode = "内容";
         ResponseTabIndex = result.IsSse ? 2 : 0;
-        LargeResponseNotice = isLarge
-            ? $"响应体 {FormatSize(result.SizeBytes)}，已折叠显示前 {ResponsePreviewLimit / 1024} KB。完整内容可在详情页分页查看或复制。"
+        LargeResponseNotice =
+            result.IsTruncated
+                ? "响应超过 64 MB，已截断并仅保留前 64 MB；请缩小响应内容后重试，避免一次性占用过多内存。"
+            : isLarge
+                ? $"响应体 {FormatSize(result.SizeBytes)}，已折叠显示前 {ResponsePreviewLimit / 1024} KB。完整内容可在详情页分页查看或复制。"
             : string.Empty;
         ResponseStatusText =
             result.SseCancelled
