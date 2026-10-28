@@ -1,6 +1,6 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
-> 基线版本：v1.10.10（2026-10-28）
+> 基线版本：v1.10.11（2026-10-28）
 > 基线形态：当前发布 Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
 > 基线测试：175 个 xUnit 测试，`csharpier check .` 通过
 > 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0
@@ -528,14 +528,14 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 ## 10. MCP 覆盖与 CLI 模式
 
-状态：当前 MCP 覆盖集合/请求 CRUD、发送、DAG 套件、运行历史、审计/历史/回收站、设置和存储；**仍不是 UI 功能 1:1 映射**。详细审核见 `C:\Users\Administrator\Desktop\AICoding\postsharp\PostSharp-MCP覆盖审核与CLI计划-2026-10-28.md`。
+状态：当前 MCP 覆盖集合/请求 CRUD、发送、DAG 套件、后台运行/进度/取消、结构化预检、运行历史、审计/历史/回收站、设置和存储；**仍不是 UI 功能 1:1 映射**。详细审核见 `C:\Users\Administrator\Desktop\AICoding\postsharp\PostSharp-MCP覆盖审核与CLI计划-2026-10-28.md`。
 
 ### P0：先补齐自动化回归闭环
 
 - [x] `get_suite` / `create_suite` / `update_suite` 支持节点、连线、边条件、`joinMode`、`maxParallelism`，可替代线性工作流。
 - [x] `run_suite` 返回稳定 `runId`；新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`。
-- [ ] 运行进度推送和主动取消；当前长任务只能等待 MCP HTTP 调用结束或被客户端断开。
-- [ ] 预检结果以结构化错误返回（节点 id、错误码、修复建议）。
+- [x] 后台任务与进度轮询：`start_suite_run`、`get_suite_run_job`、`cancel_suite_run`；任务只保存在当前进程内。
+- [x] 预检结果以结构化错误返回：`validate_suite` 和后台任务的 `validationIssues` 均带节点 id、错误码、消息和修复建议。
 - [x] 增加审计/历史单条操作：`delete_audit`、`get_history`、`delete_history`。
 - [ ] 审计/历史来源、状态、日期筛选与搜索。
 
