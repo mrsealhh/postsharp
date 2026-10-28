@@ -1,66 +1,11 @@
-using System.Security.Cryptography;
-using System.Text;
-
 namespace PostSharp.Services;
 
-/// <summary>用 Windows DPAPI 加密落盘的授权令牌，只允许当前用户解密。</summary>
+/// <summary>Protects authorization secrets with the current platform's local secret store.</summary>
 public static class AuthSecretProtector
 {
-    private const string Prefix = "dpapi:v1:";
+    public static string Protect(string value) =>
+        LocalSecretProtector.Protect(value, "Authorization");
 
-    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("PostSharp.Authorization.v1");
-
-    public static string Protect(string value)
-    {
-        if (string.IsNullOrEmpty(value) || !OperatingSystem.IsWindows())
-        {
-            return value;
-        }
-
-        try
-        {
-            var cipher = ProtectedData.Protect(
-                Encoding.UTF8.GetBytes(value),
-                Entropy,
-                DataProtectionScope.CurrentUser
-            );
-            return Prefix + Convert.ToBase64String(cipher);
-        }
-        catch (Exception exception)
-        {
-            Log.Warning(exception, "授权令牌加密失败，本次以明文保存");
-            return value;
-        }
-    }
-
-    public static string Unprotect(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return string.Empty;
-        }
-
-        if (!value.StartsWith(Prefix, StringComparison.Ordinal))
-        {
-            return value;
-        }
-
-        if (!OperatingSystem.IsWindows())
-        {
-            // A DPAPI ciphertext cannot be used as a plain credential on another OS.
-            return string.Empty;
-        }
-
-        try
-        {
-            var cipher = Convert.FromBase64String(value[Prefix.Length..]);
-            var plain = ProtectedData.Unprotect(cipher, Entropy, DataProtectionScope.CurrentUser);
-            return Encoding.UTF8.GetString(plain);
-        }
-        catch (Exception exception)
-        {
-            Log.Warning(exception, "授权令牌无法解密，需要重新登录");
-            return string.Empty;
-        }
-    }
+    public static string Unprotect(string value) =>
+        LocalSecretProtector.Unprotect(value, "Authorization");
 }

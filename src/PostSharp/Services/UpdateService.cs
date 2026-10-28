@@ -77,11 +77,14 @@ public static class UpdateService
     /// overwrite themselves while they are being debugged.
     /// </summary>
     public static bool IsEnabledLayout =>
-        string.Equals(
-            Environment.GetEnvironmentVariable("POSTSHARP_UPDATE_ENABLED"),
-            "1",
-            StringComparison.Ordinal
-        ) || File.Exists(Path.Combine(AppContext.BaseDirectory, UpdateMarkerFileName));
+        OperatingSystem.IsWindows()
+        && (
+            string.Equals(
+                Environment.GetEnvironmentVariable("POSTSHARP_UPDATE_ENABLED"),
+                "1",
+                StringComparison.Ordinal
+            ) || File.Exists(Path.Combine(AppContext.BaseDirectory, UpdateMarkerFileName))
+        );
 
     public static string PendingFilePath => Path.Combine(AppPaths.UpdateDirectory, "pending.json");
 

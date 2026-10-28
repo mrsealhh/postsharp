@@ -1,8 +1,8 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
-> 基线版本：v1.10.11（2026-10-28）
+> 基线版本：v1.10.12（2026-10-28）
 > 基线形态：当前发布 Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
-> 基线测试：175 个 xUnit 测试，`csharpier check .` 通过
+> 基线测试：178 个 xUnit 测试，`csharpier check .` 通过
 > 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
@@ -94,7 +94,7 @@
 | 主工程 | `src/PostSharp`，单一桌面应用 |
 | 存储契约 | `src/PostSharp.Storage.Abstractions` |
 | 插件源码 | `src/Plugins/PostSharp.Storage.*` |
-| 测试 | `tests/PostSharp.Tests`，30 个测试文件，175 个用例 |
+| 测试 | `tests/PostSharp.Tests`，30 个测试文件，178 个用例 |
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
@@ -348,10 +348,20 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 **启动条件**
 
-- [ ] 产品负责人确认 Linux / macOS 的目标用户、支持范围和发布节奏。
-- [ ] 明确是“完整功能对等”还是“先交付无头/调试核心”；默认先做调试核心。
+- [x] 产品负责人确认优先推进跨平台；当前先交付 Linux x64 预览包，Windows 继续正式发布。
+- [x] 先交付可运行桌面包，不追求 macOS 签名和完整安装器。
 - [ ] 当前 Windows 版本继续按 P0/P1 迭代，不被跨平台工作阻塞。
-- [ ] 为 macOS 签名/公证、Linux 包格式和 WebView 运行时准备构建环境。
+- [x] Linux x64 构建环境可用；macOS 签名/公证环境后续准备。
+
+**当前进度（2026-10-28）**
+
+- [x] 系统默认浏览器 + 本机 TCP 回环回调成为默认授权方式，不再要求 Linux 安装 WebView 运行时。
+- [x] Windows 保留 WebView2 可选；Linux 自动使用系统浏览器。
+- [x] Linux 使用本机 AES-GCM 密钥文件保存机密；Windows 保留 DPAPI。
+- [x] 单实例锁在 Windows 使用命名 Mutex，在 Unix 使用锁文件。
+- [x] `scripts/build-linux-release.ps1` 生成 `linux-x64` 自包含预览包；WebView2Loader 不进入 Linux 包。
+- [x] Linux 包不启用 Windows 自动更新标记。
+- [ ] libsecret/Secret Service、macOS Keychain、AppImage/deb、签名安装器和三平台 CI 仍待完成。
 
 **目标平台**
 
@@ -373,15 +383,15 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 2. **凭据保护**
    - [ ] Windows 使用 DPAPI；macOS 使用 Keychain；Linux 优先 libsecret/Secret Service。
-   - [ ] 没有系统凭据库时使用受保护的本地文件方案，禁止回退为明文。
+   - [x] 没有系统凭据库时使用受保护的本地文件方案（Linux AES-GCM 密钥文件），禁止回退为明文。
    - [ ] 处理跨平台迁移：DPAPI 密文不能在 macOS/Linux 解密；导入数据包后要求重新输入对应凭据。
-   - [ ] 授权令牌、远程连接串、环境变量 secret 全部走同一接口。
+   - [x] 授权令牌、远程连接串走同一 `LocalSecretProtector`；环境变量 secret 后续接入。
 
 3. **授权浏览器**
-   - [ ] Windows 保持 WebView2；macOS 使用 WKWebView；Linux 使用 WebKitGTK。
-   - [ ] 内嵌浏览器不可用时退回系统浏览器 + 回环回调（loopback），并清晰提示。
-   - [ ] OAuth 回调、证书错误、取消、关闭窗口和超时行为在三个平台一致。
-   - [ ] 不把 WebView2Loader 或其他 Windows 原生库带进非 Windows 包。
+   - [x] Windows 保留 WebView2；Linux 默认系统浏览器，macOS WKWebView 后续接入。
+   - [x] 内嵌浏览器不可用时退回系统浏览器 + 回环回调（loopback），并有明确提示。
+   - [x] OAuth 回调、取消和关闭窗口行为通过回环监听单测；证书错误/超时待真实 IdP 联调。
+   - [x] 不把 WebView2Loader 带进 Linux 包。
 
 4. **更新与发布**
    - [ ] 共用签名更新清单和完整性校验；平台安装器分别实现。
@@ -395,7 +405,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
    - [ ] 字体、默认等宽字体、文件路径、日志目录和回收站行为按平台适配。
 
 6. **构建与测试**
-   - [ ] 发布脚本支持 `win-x64`、`linux-x64`、`osx-x64`、`osx-arm64`，RID 和包名不再写死在共享脚本。
+   - [x] 发布脚本新增 `linux-x64` 自包含包；Windows 继续使用现有脚本；macOS RID 后续补齐。
    - [ ] CI 至少完成三平台编译和核心单测；Windows 保留完整 UI 冒烟；Linux/macOS 增加启动/请求/存储冒烟。
    - [ ] 建立真实 WebView、Keychain/libsecret、签名和更新验证清单。
    - [ ] 发布资产按平台拆分，不把 Windows 插件/原生库混入其他平台包。

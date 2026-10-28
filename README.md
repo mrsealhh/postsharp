@@ -95,11 +95,11 @@ PostSharp 的定位是：
 - **作用域跟着树选中对象走**：选中请求时，「授权」标签页编辑该请求；选中集合时，同一处改为编辑该集合自己的配置，不会再落到上一次打开的请求上。切换集合或请求会立即换成对应的一份配置，上一份的令牌与登录状态不会带过来。
 - **逐级覆盖**：请求或子集合可以单独选择「无认证」或换成另一套凭据，只影响自己和它的下级。
 - **认证类型**：继承上级集合 / 无认证 / Bearer 令牌 / Basic 认证 / API Key（请求头或查询参数）/ OAuth 2.0。
-- **OAuth 2.0（OIDC）**：授权码 + S256 PKCE，读取 `.well-known/openid-configuration` 自动发现授权与令牌端点；内嵌 WebView2 完成登录、二次验证与「确认授权」，回调的 `state` 校验通过后才换取令牌；访问令牌过期前自动用 refresh_token 续期。
-- **新配置不预填测试环境**：OAuth 2.0 的发现地址、客户端 ID、重定向地址默认空白，输入框只显示灰色示例；只有授权范围默认 `openid profile offline_access`。已保存的配置仍按原样保留。
+- **OAuth 2.0（OIDC）**：授权码 + S256 PKCE，读取 `.well-known/openid-configuration` 自动发现授权与令牌端点。默认使用系统默认浏览器：桌面端在 `127.0.0.1` 启动临时回环监听，浏览器授权后重定向到 `http://127.0.0.1:端口/callback`，PostSharp 接收授权码并换取令牌；回调的 `state` 校验通过后才使用。Windows 也可切换为应用内 WebView2；回调页不会把 token 交给浏览器。访问令牌过期前自动用 refresh_token 续期。
+- **新配置默认值**：OAuth 2.0 的重定向地址默认 `http://127.0.0.1:53682/callback`，发现地址和客户端 ID 留空，输入框只显示灰色示例；授权范围默认 `openid profile offline_access`。授权服务器登记的回调地址必须与这里完全一致；系统浏览器模式只接受 `http` 本机回环地址。
 - **附加位置**：请求头（`Authorization: Bearer …`）或查询参数（`access_token=…`）；请求里已经手写的同名请求头优先，不会被覆盖。
 - **全链路一致**：界面发送、cURL 预览、MCP `send_request` / `get_curl`、自动化套件使用同一套解析结果。
-- **落盘加密**：OAuth 的 access_token、refresh_token、id_token，以及 Bearer 令牌、Basic 密码、API Key 值都用 Windows DPAPI 加密后写入 `workspace.json`，只允许当前用户解密；审计中的 `Authorization` 与敏感查询参数统一打码。
+- **落盘加密**：OAuth 的 access_token、refresh_token、id_token，以及 Bearer 令牌、Basic 密码、API Key 值在 Windows 用 DPAPI、在 Linux/macOS 用本机 AES-GCM 密钥加密后写入 `workspace.json`；密钥文件在 Unix 上限制为当前用户读写。审计中的 `Authorization` 与敏感查询参数统一打码。
 - **失败可见**：发现、授权、换取令牌每一步的错误都停在窗口里并可复制，不会一闪而过。
 
 
@@ -164,8 +164,8 @@ PostSharp 的定位是：
 | MVVM | CommunityToolkit.Mvvm `8.4.0` |
 | 持久化 | 本地 SQLite：`Microsoft.Data.Sqlite` `10.0.14`；远程 PostgreSQL / MySQL / SQL Server / MongoDB 以插件随包发布（`Npgsql` `10.0.3`、`MySqlConnector` `2.6.2`、`Microsoft.Data.SqlClient` `7.1.1`、`MongoDB.Driver` `2.24.0`）；可选 OLAP 插件：ClickHouse（`ClickHouse.Client` `7.8.2`）、Doris / StarRocks（`MySqlConnector`） |
 | 存储插件 | `PostSharp.Storage.Abstractions` 契约 + `plugins/<name>/plugin.json` 目录扫描 |
-| 内嵌浏览器 | `Avalonia.Controls.WebView` `12.1.1`（Windows 走 WebView2 运行时） |
-| 令牌存储 | Windows DPAPI：`System.Security.Cryptography.ProtectedData` `10.0.13` |
+| 浏览器授权 | 系统默认浏览器 + 本机 TCP 回环回调（RFC 8252）；Windows 可选 `Avalonia.Controls.WebView` `12.1.1` / WebView2 |
+| 令牌存储 | Windows DPAPI（`System.Security.Cryptography.ProtectedData` `10.0.13`）；Linux/macOS AES-GCM + 本机密钥文件 |
 | 日志 | Serilog `4.3.0` + Serilog.Sinks.File `7.0.0`，按天滚动 |
 | OpenAPI | YAML：YamlDotNet `16.3.0`；JSON：`System.Text.Json` |
 | Postman / cURL / HAR / Insomnia / Hoppscotch | `System.Text.Json` 与内置解析器，无新增运行时依赖 |
@@ -755,10 +755,10 @@ docs/
 | 套件预检 | 缺失请求、环、悬空节点/连线、无效映射/条件/断言和环境变量会阻止保存或运行；编辑器按节点列出问题并支持定位，管理层持续展示提醒 |
 | 运行历史 | 每个套件持久化最近 20 次运行摘要、步骤结果、节点/连线快照；自动化页可切换历史，重启后保留 |
 | 失败重跑 | 失败运行可只重跑失败步骤及依赖；每个步骤结果提供「从此步继续」，自动补跑上游依赖 |
-| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；175 个测试全部通过 |
-| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、175 个测试通过 |
+| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；178 个测试全部通过 |
+| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、178 个测试通过 |
 | MCP DAG | `create_suite` / `update_suite` 接受 `workflow.nodes`、`workflow.edges`，支持边条件、All/Any 汇合和最大并行度；构建 0 警告/错误 |
-| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；175 个测试通过 |
+| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；178 个测试通过 |
 | MCP 单条清理 | 新增 `get_history`、`delete_history`、`delete_audit`，审计/历史单条移入回收站可恢复 |
 | MCP 后台运行 | 新增 `start_suite_run` / `get_suite_run_job` / `cancel_suite_run`；任务返回节点/连线实时进度和最终运行 id，退出应用后任务不保留 |
 | MCP 预检 | 新增 `validate_suite`，返回 `code`、`severity`、`stepId`、`stepName`、`message`、`hint`；后台任务预检失败也会带回结构化问题 |
@@ -829,7 +829,7 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：175 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：178 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
@@ -872,7 +872,9 @@ docs/
 | 四次审核复测 | 主文件缺失且 `.bak` 被占用时两次保存均被拒绝、`.bak` 原样保留；`.bak` 损坏时移到旁边；`.bak` 被独占打开时保存仍成功；目录不可写时保存返回失败而不抛异常；`\/` 与 `\u002B` 转义的机密回显被打码；集合回收站超过 200 项时丢弃最早一项；无所属集合的请求删除返回失败（单测） |
 | 截图 | README 主界面与 OpenAPI 文档截图均使用初始演示工作区；旧本地数据截图已移除 |
 | 构建 | Debug / Release 0 警告、0 错误 |
+| Linux 预览包 | `scripts/build-linux-release.ps1` 生成自包含 `linux-x64` 包；WebView2Loader 不进入包；系统浏览器、锁文件和 AES 本机密钥路径编译通过，待 WSL 实机启动验证 |
 | OIDC 登录 | 本地演示 OIDC 授权码 + S256 PKCE：在演示集合上打开授权窗口，内嵌浏览器登录演示账号，拦截 `redirect_uri` 换取令牌；状态显示「已登录」、用户与到期时间 |
+| OIDC 系统浏览器 | 默认通过系统默认浏览器登录；本机 TCP 回环监听收到 `code`/`state` 后返回成功页，回调地址校验和取消路径已通过单测；真实 IdP 需按登记的 `http://127.0.0.1:端口/callback` 验收 |
 | 集合级授权 | 请求「账号列表（集合授权）」为「继承上级集合」，解析到集合的 OAuth 2.0 令牌；演示账号接口返回 `200 OK`，cURL 预览含 `Authorization: Bearer …` |
 | 请求级覆盖 | 同一集合内请求「账号列表（请求关闭认证）」显式设为「无认证」，发送返回 `401 Unauthorized`，证明请求级可以覆盖集合 |
 | 无全局默认 | 根集合「无认证验证」的请求未配置授权；即使集合授权已登录，发送仍返回 `401 Unauthorized`，不再有全局默认令牌 |
@@ -885,7 +887,7 @@ docs/
 | 集合级 OIDC | 演示集合配置 OAuth 2.0，内嵌浏览器登录演示账号后状态「已登录」；请求保持「继承上级集合」，演示账号接口返回 `200 OK` 并显示账号列表 |
 | 集合作用域隔离 | 从集合 B 打开授权窗口，标题为「授权配置 · 集合「测试集合B」· PostSharp」，说明为「该集合当前未配置授权」；切换为 OAuth 2.0 后显示「尚未登录」，不出现集合 A 的登录用户与令牌 |
 | 授权说明联动 | 在集合 B 的授权窗口切换类型后，窗口上方的对象说明从「Bearer 令牌」实时改为「OAuth 2.0 · 未登录」，不再停留在打开窗口时的旧摘要 |
-| OAuth 默认值 | 新集合切换到 OAuth 2.0 后，发现地址、客户端 ID、重定向地址为空，不出现旧环境的具体地址和客户端 ID；输入框显示灰色示例占位符，授权范围默认 `openid profile offline_access` |
+| OAuth 默认值 | 新集合切换到 OAuth 2.0 后，发现地址和客户端 ID 为空，重定向地址默认 `http://127.0.0.1:53682/callback`；输入框显示灰色示例占位符，授权范围默认 `openid profile offline_access` |
 | 授权复制与解析 | 临时控制台验证：`RequestAuth.Clone()` 后修改副本的 access_token 不影响原对象；`AuthResolver` 对「集合 A Bearer → 子集合 B 继承 → 请求」解析到集合 A，子集合 C 配 API Key 时请求 2 解析到集合 C |
 | 构建 | Debug / Release 均 0 警告、0 错误；`csharpier check .` 通过 |
 
@@ -986,7 +988,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：175 个 xUnit 测试。
+- 自测：178 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
@@ -1013,7 +1015,7 @@ master                 稳定可发布
 
 详细的产品化 TODO、验收标准、迭代顺序和交接清单见 [PostSharp 后续产品化 TODO 与开发交接](docs/product-todos.md)。
 
-平台约束：新功能按跨平台方案设计，Windows 专属能力单独开 feature；Linux / macOS 正式适配列入 TODO 的 P2-02，后续实施，不阻塞当前 Windows 版本。
+平台约束：新功能按跨平台方案设计，Windows 专属能力单独开 feature。当前提供 Windows x64 正式包和 Linux x64 预览包；Linux/WSL 启动、依赖和 OIDC 回调说明见 [Linux / WSL 运行说明](docs/linux-wsl.md)。macOS、签名安装器和 AppImage/deb 打包仍属于 P2-02 后续工作。
 
 1. 导入对话框 XAML 独立拆分，继续降低 `MainWindow.axaml` 体积。
 2. OpenAPI 更多安全方案与回调/Webhook 提示。

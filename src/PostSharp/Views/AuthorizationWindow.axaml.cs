@@ -14,6 +14,7 @@ namespace PostSharp.Views;
 public partial class AuthorizationWindow : Window
 {
     private CancellationTokenSource? _signInCts;
+    private NativeWebView? _browser;
     private bool _suppressCompletionFailure;
 
     public AuthorizationWindow()
@@ -21,10 +22,6 @@ public partial class AuthorizationWindow : Window
         InitializeComponent();
         UiScaleService.Attach(this);
         Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://PostSharp/Assets/logo-icon.png")));
-        Browser.EnvironmentRequested += OnEnvironmentRequested;
-        Browser.NavigationStarted += OnNavigationStarted;
-        Browser.NavigationCompleted += OnNavigationCompleted;
-        Browser.NewWindowRequested += OnNewWindowRequested;
         KeyDown += OnWindowKeyDown;
         Opened += (_, _) =>
         {
@@ -48,14 +45,85 @@ public partial class AuthorizationWindow : Window
         _signInCts?.Cancel();
         _signInCts?.Dispose();
         _signInCts = new CancellationTokenSource();
+        var cancellationToken = _signInCts.Token;
 
-        var authorizationUri = await viewModel.BeginSignInAsync(_signInCts.Token);
+        var authorizationUri = await viewModel.BeginSignInAsync(cancellationToken);
         if (authorizationUri is null)
         {
             return;
         }
 
-        Browser.Navigate(authorizationUri);
+        if (viewModel.IsSystemBrowser)
+        {
+            await RunSystemBrowserSignInAsync(viewModel, authorizationUri, cancellationToken);
+            return;
+        }
+
+        try
+        {
+            EnsureEmbeddedBrowser();
+            _browser!.Navigate(authorizationUri);
+        }
+        catch (OidcException exception)
+        {
+            viewModel.ReportBrowserFailure(exception.Message);
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "打开应用内授权浏览器失败");
+            viewModel.ReportBrowserFailure();
+        }
+    }
+
+    private async Task RunSystemBrowserSignInAsync(
+        AuthorizationViewModel viewModel,
+        Uri authorizationUri,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            using var receiver = LoopbackRedirectListener.Start(viewModel.Profile.RedirectUri);
+            SystemBrowserLauncher.Open(authorizationUri);
+            var callback = await receiver.WaitForCallbackAsync(cancellationToken);
+            await viewModel.CompleteSignInAsync(callback, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            viewModel.CancelSignIn();
+        }
+        catch (OidcException exception)
+        {
+            viewModel.ReportBrowserFailure(exception.Message);
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "系统浏览器授权流程失败");
+            viewModel.ReportBrowserFailure(
+                "系统浏览器授权失败，请检查网络、回调地址和授权服务后重试。"
+            );
+        }
+    }
+
+    private void EnsureEmbeddedBrowser()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new OidcException("当前系统不支持应用内浏览器，请把登录方式改为系统默认浏览器。");
+        }
+
+        if (_browser is not null)
+        {
+            return;
+        }
+
+        var browser = new NativeWebView();
+        browser.EnvironmentRequested += OnEnvironmentRequested;
+        browser.NavigationStarted += OnNavigationStarted;
+        browser.NavigationCompleted += OnNavigationCompleted;
+        browser.NewWindowRequested += OnNewWindowRequested;
+        BrowserHost.Content = browser;
+        _browser = browser;
     }
 
     private void OnCancelSignInClick(object? sender, RoutedEventArgs e)
@@ -155,7 +223,7 @@ public partial class AuthorizationWindow : Window
             return;
         }
 
-        Dispatcher.UIThread.Post(viewModel.ReportBrowserFailure);
+        Dispatcher.UIThread.Post(() => viewModel.ReportBrowserFailure());
     }
 
     private void OnNewWindowRequested(object? sender, WebViewNewWindowRequestedEventArgs e) =>

@@ -45,7 +45,7 @@
         Avalonia.Controls.WebView 在 Windows 上通过 P/Invoke 加载 WebView2Loader.dll。
         这里只取 WebView2 包里的原生加载器（排除它的托管引用与构建目标，避免引入 WPF/WinForms 冲突）。
     -->
-    <ItemGroup>
+    <ItemGroup Condition="'$(RuntimeIdentifier)' == '' Or $(RuntimeIdentifier.StartsWith('win'))">
         <None
             Include="$(PkgMicrosoft_Web_WebView2)\runtimes\win-x64\native\WebView2Loader.dll"
             Link="WebView2Loader.dll"
