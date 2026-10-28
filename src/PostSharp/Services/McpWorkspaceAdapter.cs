@@ -95,6 +95,40 @@ public sealed record McpSuiteRunInfo(
     string? Error
 );
 
+public sealed record McpSuiteValidationIssue(
+    string Code,
+    string Severity,
+    Guid? StepId,
+    string StepName,
+    string Message,
+    string Hint
+);
+
+public sealed record McpSuiteValidationInfo(
+    bool HasErrors,
+    int ErrorCount,
+    int WarningCount,
+    string Summary,
+    IReadOnlyList<McpSuiteValidationIssue> Issues
+);
+
+public sealed record McpSuiteRunJobInfo(
+    Guid JobId,
+    Guid SuiteId,
+    string SuiteName,
+    string Status,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? CompletedAt,
+    string Summary,
+    string? Error,
+    Guid? RunId,
+    int TotalSteps,
+    int CompletedSteps,
+    IReadOnlyList<McpSuiteValidationIssue> ValidationIssues,
+    IReadOnlyList<SuiteRunNodeState> NodeStates,
+    IReadOnlyList<SuiteRunEdgeState> EdgeStates
+);
+
 public sealed record McpHistoryDetail(
     DateTimeOffset Time,
     string Name,
@@ -949,6 +983,75 @@ public sealed class McpWorkspaceAdapter
     {
         return await _viewModel.RunSuiteForMcpAsync(id, context.Client, cancellationToken);
     }
+
+    public async Task<McpSuiteRunJobInfo> StartSuiteRunAsync(Guid suiteId, McpCallContext context)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            ToSuiteRunJobInfo(_viewModel.StartSuiteRunForMcp(suiteId, context.Client))
+        );
+    }
+
+    public async Task<McpSuiteRunJobInfo> GetSuiteRunJobAsync(Guid jobId)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            ToSuiteRunJobInfo(_viewModel.GetSuiteRunJobForMcp(jobId))
+        );
+    }
+
+    public async Task<bool> CancelSuiteRunJobAsync(Guid jobId)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            _viewModel.CancelSuiteRunJobForMcp(jobId)
+        );
+    }
+
+    public async Task<McpSuiteValidationInfo> ValidateSuiteAsync(Guid suiteId)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var result = _viewModel.ValidateSuiteForMcp(suiteId);
+            return new McpSuiteValidationInfo(
+                result.HasErrors,
+                result.ErrorCount,
+                result.WarningCount,
+                result.Summary,
+                result.Issues.Select(ToSuiteValidationIssue).ToList()
+            );
+        });
+    }
+
+    private static McpSuiteRunJobInfo ToSuiteRunJobInfo(SuiteRunJob job)
+    {
+        lock (job.SyncRoot)
+        {
+            return new McpSuiteRunJobInfo(
+                job.Id,
+                job.SuiteId,
+                job.SuiteName,
+                job.Status,
+                job.StartedAt,
+                job.CompletedAt,
+                job.Summary,
+                job.Error,
+                job.RunId,
+                job.TotalSteps,
+                job.CompletedSteps,
+                job.ValidationIssues.Select(ToSuiteValidationIssue).ToList(),
+                job.NodeStates.ToList(),
+                job.EdgeStates.ToList()
+            );
+        }
+    }
+
+    private static McpSuiteValidationIssue ToSuiteValidationIssue(SuiteValidationIssue issue) =>
+        new(
+            issue.Code,
+            issue.SeverityLabel,
+            issue.StepId,
+            issue.StepName,
+            issue.Message,
+            issue.Hint
+        );
 
     public async Task<IReadOnlyList<McpSuiteRunInfo>> ListSuiteRunsAsync(Guid suiteId)
     {

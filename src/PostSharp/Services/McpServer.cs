@@ -13,7 +13,7 @@ namespace PostSharp.Services;
 /// </summary>
 public sealed class McpServer
 {
-    private const string ServerVersion = "0.4.0";
+    private const string ServerVersion = "0.5.0";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -258,7 +258,8 @@ public sealed class McpServer
                                 + "支持 expectedStatus、bodyContains、delayMs（默认 200ms，0-60000）和 mappings。mappings 用 sourceStepIndex（从 0 开始，只能引用更早步骤）"
                                 + "或 sourceStepId 提取上一步 JSON 响应字段（支持 data.token、items[0].id），通过 targetKind=Body/Header/Query/Path 和 targetPath 注入下一步请求，"
                                 + "template 支持 Bearer {value} 这类格式。步骤还支持 retryCount、retryDelayMs、condition、parallelGroup 和 assertions；用 run_suite 运行并读取每步断言，"
-                                + "用 list_suites / get_suite 检查规则，用 list_suite_runs / get_suite_run 查看最近 20 次运行历史，用 rerun_failed_suite / continue_suite_from_step 重跑失败或从节点继续。"
+                                + "用 list_suites / get_suite 检查规则，用 validate_suite 获取结构化预检错误，用 list_suite_runs / get_suite_run 查看最近 20 次运行历史，用 rerun_failed_suite / continue_suite_from_step 重跑失败或从节点继续。"
+                                + "长套件用 start_suite_run 立即拿到 jobId，再用 get_suite_run_job 轮询节点/连线进度，必要时 cancel_suite_run。"
                                 + "send_request、run_sequence、run_suite、rerun_failed_suite 和 continue_suite_from_step 都会写入审计记录；list_audit / get_audit 可查所有 UI 和 AI 触发记录。"
                                 + "环境和历史：list_environments / create_environment / rename_environment / delete_environment / activate_environment / set_variable / delete_variable；"
                                 + "list_history / get_history / delete_history / clear_history / list_history_trash / restore_history / purge_history / empty_history_trash。"
@@ -509,6 +510,9 @@ public sealed class McpServer
                 "get_suite" => await _workspace
                     .GetSuiteAsync(RequireGuid(arguments, "id"))
                     .ConfigureAwait(false),
+                "validate_suite" => await _workspace
+                    .ValidateSuiteAsync(RequireGuid(arguments, "id"))
+                    .ConfigureAwait(false),
                 "list_suites" => await _workspace.ListSuitesAsync().ConfigureAwait(false),
                 "run_suite" => await _workspace
                     .RunSuiteAsync(
@@ -517,6 +521,21 @@ public sealed class McpServer
                         cancellationToken
                     )
                     .ConfigureAwait(false),
+                "start_suite_run" => await _workspace
+                    .StartSuiteRunAsync(
+                        RequireGuid(arguments, "id"),
+                        new McpCallContext("start_suite_run", _clientName)
+                    )
+                    .ConfigureAwait(false),
+                "get_suite_run_job" => await _workspace
+                    .GetSuiteRunJobAsync(RequireGuid(arguments, "jobId"))
+                    .ConfigureAwait(false),
+                "cancel_suite_run" => new
+                {
+                    cancelled = await _workspace
+                        .CancelSuiteRunJobAsync(RequireGuid(arguments, "jobId"))
+                        .ConfigureAwait(false),
+                },
                 "list_suite_runs" => await _workspace
                     .ListSuiteRunsAsync(RequireGuid(arguments, "suiteId"))
                     .ConfigureAwait(false),
@@ -1236,6 +1255,11 @@ public sealed class McpServer
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("套件 id") }, "id")
             ),
             Tool(
+                "validate_suite",
+                "运行前预检套件，返回结构化错误/提醒（节点 id、错误码、修复建议）",
+                ObjectSchema(new JsonObject { ["id"] = StringSchema("套件 id") }, "id")
+            ),
+            Tool(
                 "update_suite",
                 "修改套件名称/策略；传入 steps 或 workflow 可整体替换步骤和 DAG，可用于增删、重排或分支编排",
                 ObjectSchema(
@@ -1262,6 +1286,21 @@ public sealed class McpServer
                 "run_suite",
                 "运行自动化套件并返回每个步骤的断言、延迟、映射执行结果和运行 id",
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("套件 id") }, "id")
+            ),
+            Tool(
+                "start_suite_run",
+                "在后台启动套件运行并立即返回 jobId；用 get_suite_run_job 轮询进度，用 cancel_suite_run 取消",
+                ObjectSchema(new JsonObject { ["id"] = StringSchema("套件 id") }, "id")
+            ),
+            Tool(
+                "get_suite_run_job",
+                "读取后台套件任务的状态、当前节点/连线进度和完成后的运行 id",
+                ObjectSchema(new JsonObject { ["jobId"] = StringSchema("后台任务 id") }, "jobId")
+            ),
+            Tool(
+                "cancel_suite_run",
+                "取消一个仍在运行或取消中的后台套件任务",
+                ObjectSchema(new JsonObject { ["jobId"] = StringSchema("后台任务 id") }, "jobId")
             ),
             Tool(
                 "list_suite_runs",

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Encodings.Web;
@@ -64,6 +65,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _auditPurgeAllPending;
     private readonly Dictionary<Guid, CancellationTokenSource> _sendCancellations = new();
     private CancellationTokenSource? _suiteCts;
+    private readonly ConcurrentDictionary<Guid, SuiteRunJob> _suiteRunJobs = new();
     private CancellationTokenSource? _updateCts;
     private CancellationTokenSource? _openApiSyncCts;
     private CancellationTokenSource? _openApiSyncRequestCts;
@@ -4563,6 +4565,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         return clone;
     }
 
+    public SuiteValidationResult ValidateSuiteForMcp(Guid suiteId)
+    {
+        var suite =
+            Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
+            ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+        return ValidateSuite(suite);
+    }
+
     private SuiteValidationResult ValidateSuite(TestSuite suite) =>
         SuitePreflight.Validate(suite, Collections, ActiveEnvironment);
 
@@ -4679,6 +4689,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return;
         }
 
+        if (HasActiveSuiteRunJob())
+        {
+            ShowToast("MCP 后台任务正在运行，请等待或先取消");
+            return;
+        }
+
         if (!EnsureSuiteValid(suite))
         {
             return;
@@ -4751,6 +4767,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         string actionLabel
     )
     {
+        if (HasActiveSuiteRunJob())
+        {
+            ShowToast("MCP 后台任务正在运行，请等待或先取消");
+            return;
+        }
+
         var subset = SuiteRunPlanner.CreateSubset(owner, stepIds);
         if (subset.Steps.Count == 0)
         {
@@ -4926,6 +4948,250 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             forceWorkflow: true,
             historySuite: owner
         );
+    }
+
+    public SuiteRunJob StartSuiteRunForMcp(Guid suiteId, string? client)
+    {
+        var suite =
+            Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
+            ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+        if (IsRunningSuite)
+        {
+            throw new InvalidOperationException("桌面端正在运行套件，请等待当前运行结束。");
+        }
+
+        if (
+            _suiteRunJobs.Values.Any(job =>
+                job.SuiteId == suiteId && (job.Status == "Running" || job.Status == "Cancelling")
+            )
+        )
+        {
+            throw new InvalidOperationException("该套件已有一个 MCP 运行任务，请先等待或取消。");
+        }
+
+        SuiteWorkflowFactory.EnsureLinear(suite);
+        var job = new SuiteRunJob
+        {
+            SuiteId = suite.Id,
+            SuiteName = suite.Name,
+            TotalSteps = suite.Steps.Count,
+        };
+        foreach (var step in suite.Steps)
+        {
+            job.NodeStates.Add(
+                new SuiteRunNodeState
+                {
+                    StepId = step.Id,
+                    Name = step.RequestName,
+                    State = "Pending",
+                }
+            );
+        }
+
+        _suiteRunJobs[job.Id] = job;
+        _ = RunSuiteJobAsync(job, suite, client);
+        PruneSuiteRunJobs();
+        return job;
+    }
+
+    public SuiteRunJob GetSuiteRunJobForMcp(Guid jobId)
+    {
+        return _suiteRunJobs.TryGetValue(jobId, out var job)
+            ? job
+            : throw new KeyNotFoundException($"没有找到 id 为 {jobId} 的运行任务。");
+    }
+
+    public bool CancelSuiteRunJobForMcp(Guid jobId)
+    {
+        if (!_suiteRunJobs.TryGetValue(jobId, out var job))
+        {
+            return false;
+        }
+
+        lock (job.SyncRoot)
+        {
+            if (job.Status != "Running" && job.Status != "Cancelling")
+            {
+                return false;
+            }
+
+            job.Status = "Cancelling";
+            job.Summary = "正在取消…";
+        }
+
+        job.Cancellation.Cancel();
+        return true;
+    }
+
+    private async Task RunSuiteJobAsync(SuiteRunJob job, TestSuite suite, string? client)
+    {
+        try
+        {
+            var result = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                var validation = ValidateSuite(suite);
+                lock (job.SyncRoot)
+                {
+                    job.ValidationIssues.Clear();
+                    job.ValidationIssues.AddRange(validation.Issues);
+                }
+
+                if (validation.HasErrors)
+                {
+                    return PreflightFailure(suite, validation);
+                }
+
+                return await RunSuiteCoreAsync(
+                    suite,
+                    "MCP",
+                    "start_suite_run",
+                    client,
+                    job.Cancellation.Token,
+                    progress => ApplySuiteRunProgress(job, progress),
+                    forceWorkflow: true
+                );
+            });
+
+            lock (job.SyncRoot)
+            {
+                job.RunId = result.Error is null ? result.Id : null;
+                job.Error = result.Error;
+                job.Summary = result.Summary;
+                job.CompletedSteps = result.Total;
+                job.NodeStates.Clear();
+                job.NodeStates.AddRange(result.NodeStates);
+                job.EdgeStates.Clear();
+                job.EdgeStates.AddRange(result.EdgeStates);
+                job.Status =
+                    result.Cancelled ? "Cancelled"
+                    : result.Error is not null || result.Failed > 0 ? "Failed"
+                    : "Completed";
+                job.CompletedAt = DateTimeOffset.Now;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            lock (job.SyncRoot)
+            {
+                job.Status = "Cancelled";
+                job.Summary = "已取消";
+                job.CompletedAt = DateTimeOffset.Now;
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "MCP 套件任务失败 {SuiteName}", suite.Name);
+            lock (job.SyncRoot)
+            {
+                job.Status = "Failed";
+                job.Error = exception.Message;
+                job.Summary = "运行失败";
+                job.CompletedAt = DateTimeOffset.Now;
+            }
+        }
+        finally
+        {
+            PruneSuiteRunJobs();
+        }
+    }
+
+    private void ApplySuiteRunProgress(SuiteRunJob job, SuiteWorkflowProgress progress)
+    {
+        lock (job.SyncRoot)
+        {
+            switch (progress.Kind)
+            {
+                case SuiteWorkflowProgressKind.StepStarted:
+                case SuiteWorkflowProgressKind.StepCompleted:
+                case SuiteWorkflowProgressKind.StepFailed:
+                case SuiteWorkflowProgressKind.StepSkipped:
+                case SuiteWorkflowProgressKind.StepNotRun:
+                {
+                    if (progress.StepId is not { } stepId)
+                    {
+                        break;
+                    }
+
+                    var node = job.NodeStates.FirstOrDefault(candidate =>
+                        candidate.StepId == stepId
+                    );
+                    if (node is null)
+                    {
+                        node = new SuiteRunNodeState { StepId = stepId, Name = "步骤" };
+                        job.NodeStates.Add(node);
+                    }
+
+                    node.State = progress.Kind switch
+                    {
+                        SuiteWorkflowProgressKind.StepStarted => "Running",
+                        SuiteWorkflowProgressKind.StepCompleted => "Done",
+                        SuiteWorkflowProgressKind.StepFailed => "Failed",
+                        SuiteWorkflowProgressKind.StepSkipped => "Skipped",
+                        _ => "NotRun",
+                    };
+                    node.ElapsedMs = progress.ElapsedMs;
+                    node.Detail = progress.Detail;
+                    job.CompletedSteps = job.NodeStates.Count(candidate =>
+                        candidate.State is "Done" or "Failed" or "Skipped" or "NotRun"
+                    );
+                    job.Summary = $"正在运行 · {job.CompletedSteps}/{job.TotalSteps} 步完成";
+                    break;
+                }
+
+                case SuiteWorkflowProgressKind.EdgeResolved:
+                {
+                    if (
+                        progress.SourceStepId is not { } sourceStepId
+                        || progress.TargetStepId is not { } targetStepId
+                    )
+                    {
+                        break;
+                    }
+
+                    var sourceId = sourceStepId.ToString();
+                    var targetId = targetStepId.ToString();
+                    var edge = job.EdgeStates.FirstOrDefault(candidate =>
+                        candidate.SourceId == sourceId && candidate.TargetId == targetId
+                    );
+                    if (edge is null)
+                    {
+                        edge = new SuiteRunEdgeState { SourceId = sourceId, TargetId = targetId };
+                        job.EdgeStates.Add(edge);
+                    }
+
+                    edge.Active = progress.EdgeActive == true;
+                    break;
+                }
+            }
+        }
+    }
+
+    private bool HasActiveSuiteRunJob() =>
+        _suiteRunJobs.Values.Any(job =>
+        {
+            lock (job.SyncRoot)
+            {
+                return job.Status == "Running" || job.Status == "Cancelling";
+            }
+        });
+
+    private void PruneSuiteRunJobs()
+    {
+        var stale = _suiteRunJobs
+            .Values.Where(job =>
+            {
+                lock (job.SyncRoot)
+                {
+                    return job.CompletedAt is not null;
+                }
+            })
+            .OrderBy(job => job.StartedAt)
+            .Take(Math.Max(0, _suiteRunJobs.Count - 20))
+            .ToList();
+        foreach (var job in stale)
+        {
+            _suiteRunJobs.TryRemove(job.Id, out _);
+        }
     }
 
     public async Task<TestRunResult> RunSuiteDraftAsync(

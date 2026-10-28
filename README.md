@@ -300,11 +300,13 @@ http://127.0.0.1:5199/mcp
 | `create_suite` | 创建套件，步骤支持断言/映射；可选 `workflow` 定义任意 DAG |
 | `create_suite_from_collections` | 按集合/请求当前顺序快速生成线性/并行组套件 |
 | `update_suite` | 修改名称/策略；传入 `steps` 或 `workflow` 可整体替换、增删、重排或分支编排 |
-| `run_suite` | 运行套件，返回运行 id、每个步骤的断言、延迟、映射执行结果 |
+| `validate_suite` | 运行前预检，返回节点 id、错误码、提醒和修复建议 |
+| `run_suite` | 同步运行套件，返回运行 id、每个步骤的断言、延迟、映射执行结果 |
+| `start_suite_run` / `get_suite_run_job` / `cancel_suite_run` | 后台启动套件、轮询节点/连线进度、主动取消 |
 | `list_suite_runs` / `get_suite_run` | 查看最近 20 次运行摘要 / 读取一次运行的完整结果 |
 | `rerun_failed_suite` / `continue_suite_from_step` | 只重跑失败步骤及依赖 / 从历史步骤继续并补跑上游依赖 |
 | `delete_suite` | 删除套件 |
-| `list_audit` | 查询 UI/MCP 审计摘要，支持 `source=UI|MCP` |
+| `list_audit` | 查询 UI/MCP 审计摘要，支持 `source=UI\|MCP` |
 | `get_audit` / `delete_audit` | 读取单条审计详情 / 移入审计回收站 |
 | `list_history` / `get_history` / `delete_history` / `list_history_trash` | 查看发送历史、读取完整快照、单条移入回收站 / 历史回收站 |
 | `clear_history` / `restore_history` / `purge_history` / `empty_history_trash` | 历史移入回收站、恢复、永久删除、清空 |
@@ -383,7 +385,7 @@ http://127.0.0.1:5199/mcp
 - **节点明细**：延迟、重试次数/间隔、条件、汇合方式、并行组；「规则映射」「规则断言」「条件规则」二级弹窗；映射来源可选择任意已完成上游步骤。
 - **DAG 执行语义**：连线表示依赖与分支，支持总是、上游成功、上游失败、上游跳过和条件表达式；节点汇合支持全部上游完成（All）与任一上游到达（Any）；套件可设置最大并行度、失败即停止和定时运行。顺序执行等价于线性 DAG。开启失败即停止时，失败节点的失败分支和汇合节点仍会执行，未进入失败分支的未开始节点标记为未运行。
 - **条件表达式**：结构化规则支持状态码、响应 JSON 字段、响应头、耗时、步骤结果和环境变量，操作符含等于/不等于/包含/不包含/存在/不存在/大于/小于/正则/属于，规则可按全部（All）或任一（Any）组合；条件不满足时节点标记跳过并沿分支继续传播。多上游汇合时，节点条件以第一条已到达的上游结果为准；需要按不同上游分别判断时请使用连线条件。
-- **AI 自主编排**：MCP 可按步骤数组或 `workflow` 创建/更新/重排/删除套件；`workflow` 支持任意节点、连线、边条件、All/Any 汇合和最大并行度，省略时自动生成线性/并行组 DAG。`get_suite` 返回稳定步骤 id 与完整工作流，`run_suite` 返回运行 id，`list_suite_runs` / `get_suite_run` 可回看最近 20 次运行，失败后可 `rerun_failed_suite` 或 `continue_suite_from_step`。
+- **AI 自主编排**：MCP 可按步骤数组或 `workflow` 创建/更新/重排/删除套件；`workflow` 支持任意节点、连线、边条件、All/Any 汇合和最大并行度，省略时自动生成线性/并行组 DAG。`validate_suite` 返回结构化预检错误，`get_suite` 返回稳定步骤 id 与完整工作流，`run_suite` 返回运行 id，`start_suite_run` 可在后台运行并通过 `get_suite_run_job` 轮询进度、`cancel_suite_run` 取消；`list_suite_runs` / `get_suite_run` 可回看最近 20 次运行，失败后可 `rerun_failed_suite` 或 `continue_suite_from_step`。
 - **下一步延迟**：每个步骤可设置当前步骤结束到下一请求的延迟，默认 200ms；用于维护接口依赖的调用间隔。
 - **前序出参映射**：每个步骤可配置多条映射规则，从前序某个步骤的响应中提取字段，写入当前请求的：
   - 请求体（支持 `data.token` 这类嵌套路径）
@@ -758,7 +760,9 @@ docs/
 | MCP DAG | `create_suite` / `update_suite` 接受 `workflow.nodes`、`workflow.edges`，支持边条件、All/Any 汇合和最大并行度；构建 0 警告/错误 |
 | MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；175 个测试通过 |
 | MCP 单条清理 | 新增 `get_history`、`delete_history`、`delete_audit`，审计/历史单条移入回收站可恢复 |
-| MCP 覆盖审核 | 明确 UI/MCP 差异与 CLI 路线，见 `docs/product-todos.md` 第 10 节；运行取消/进度、字体和流式能力列入后续 TODO |
+| MCP 后台运行 | 新增 `start_suite_run` / `get_suite_run_job` / `cancel_suite_run`；任务返回节点/连线实时进度和最终运行 id，退出应用后任务不保留 |
+| MCP 预检 | 新增 `validate_suite`，返回 `code`、`severity`、`stepId`、`stepName`、`message`、`hint`；后台任务预检失败也会带回结构化问题 |
+| MCP 覆盖审核 | 明确 UI/MCP 差异与 CLI 路线，见 `docs/product-todos.md` 第 10 节；CLI/JUnit、字体和流式能力列入后续 TODO |
 | 缩放弹层 | 窗口内容改由 `VisualLayerManager` 内的 `ScaleHost` 承载，弹层位于缩放容器外，并同步 `ArcZoom`，避免 80% 缩放时 Arc 下拉偏移 |
 | 设置窗口 | 顶栏「设置」直达独立窗口；主题、日志、字体、请求默认值分组展示，保存后写入 `settings.json` 并立即应用；重复点击只激活已打开窗口 |
 | 设置弹层 | 设置窗口内的 Arc 下拉正常弹出，不再触发「no overlay layer」崩溃 |
@@ -1002,7 +1006,7 @@ master                 稳定可发布
 - Cookie 管理、代理、客户端证书、OAuth 2.0 之外的授权类型（隐式、客户端凭据、设备码）、Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
 - 授权只支持请求与集合两级（含多级集合继承），没有工作区级或环境级默认授权；同一集合的授权由该集合对象持有，未单独覆盖的下级请求共用同一个令牌，刷新后同步生效。
 - 单点登录依赖系统 WebView2 运行时；复制请求会复制一份独立的授权与令牌，副本重新登录或刷新不会影响原请求；删除集合/请求时其授权配置一起移除。
-- MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。MCP 套件已支持任意 DAG、运行历史和失败重跑/从节点继续；仍不提供跨客户端任务队列、实时进度推送和主动取消，长任务只能等待当前 HTTP 调用结束。
+- MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。MCP 套件已支持任意 DAG、结构化预检、后台运行/进度轮询/取消、运行历史和失败重跑；后台任务只保存在当前进程内，应用退出后需通过运行历史查看已完成结果。
 - 删除环境仍为直接删除，尚未进入回收站。
 
 ### 后续路线图
