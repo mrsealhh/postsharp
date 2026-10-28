@@ -2,6 +2,7 @@
     <Folder Name="/src/">
         <Project Path="src/PostSharp.Storage.Abstractions/PostSharp.Storage.Abstractions.csproj" />
         <Project Path="src/PostSharp/PostSharp.csproj" />
+        <Project Path="src/PostSharp.Cli/PostSharp.Cli.csproj" />
     </Folder>
     <Folder Name="/src/Plugins/">
         <Project Path="src/Plugins/PostSharp.Storage.ClickHouse/PostSharp.Storage.ClickHouse.csproj" />
