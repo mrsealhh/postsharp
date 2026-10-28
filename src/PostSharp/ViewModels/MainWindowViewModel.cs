@@ -1181,7 +1181,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 source.Url,
                 source.ETag,
                 source.LastModifiedHeader,
-                syncToken
+                syncToken,
+                knownContentHash: source.ContentHash
             );
             if (result.NotModified)
             {
@@ -6699,7 +6700,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         ResponseTabIndex = result.IsSse ? 2 : 0;
         LargeResponseNotice =
             result.IsTruncated
-                ? "响应超过 64 MB，已截断并仅保留前 64 MB；请缩小响应内容后重试，避免一次性占用过多内存。"
+                ? "响应超过 8 MB，已截断并仅保留前 8 MB；请缩小响应内容后重试，避免一次性占用过多内存。"
             : isLarge
                 ? $"响应体 {FormatSize(result.SizeBytes)}，已折叠显示前 {ResponsePreviewLimit / 1024} KB。完整内容可在详情页分页查看或复制。"
             : string.Empty;

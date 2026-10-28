@@ -45,7 +45,7 @@ public sealed class HttpRequestService
     private const int MaxFormatLength = 256 * 1024;
     private const int SseProgressIntervalMs = 150;
     private const int SseTextLimit = 2 * 1024 * 1024;
-    private const long MaxResponseBytes = 64 * 1024 * 1024;
+    private const long MaxResponseBytes = 8 * 1024 * 1024;
 
     private static readonly HttpClient SharedClient = CreateClient();
 

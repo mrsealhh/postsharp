@@ -89,13 +89,6 @@ public partial class MainWindow : Window
             RequestBodyTextarea.FrameHeight = Math.Clamp(available - 170, 80, 560);
             JsonRequestBodyViewer.MaxTreeHeight = Math.Clamp(available - 190, 80, 520);
         };
-        AuditScrollArea.ScrollChanged += (_, _) =>
-        {
-            if (IsNearBottom(AuditScrollArea))
-            {
-                _viewModel?.AuditPage.LoadMore();
-            }
-        };
         CollectionScrollArea.ScrollChanged += (_, _) =>
         {
             if (IsNearBottom(CollectionScrollArea))
@@ -300,33 +293,11 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private void OnManagementDismiss(object? sender, PointerPressedEventArgs e)
-    {
-        _viewModel?.CloseManagementCommand.Execute(null);
-        e.Handled = true;
-    }
-
-    private void OnAuditRowClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (_viewModel is not null && sender is Control { DataContext: AuditEntry entry })
-        {
-            _viewModel.SelectedAuditEntry = entry;
-        }
-    }
-
     private void OnHistoryRowClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_viewModel is not null && sender is Control { DataContext: HistoryEntry entry })
         {
             _viewModel.LoadHistory(entry);
-        }
-    }
-
-    private void OnSuiteRowClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (_viewModel is not null && sender is Control { DataContext: TestSuite suite })
-        {
-            _viewModel.SelectedSuite = suite;
         }
     }
 
@@ -464,6 +435,54 @@ public partial class MainWindow : Window
         }
 
         OpenSuiteEditor(_viewModel.CreateSuiteDraftForEditing(suite), suite);
+    }
+
+    /// <summary>首次打开管理层时才构建那块界面；之后复用同一个实例。</summary>
+    private void EnsureManagementView()
+    {
+        if (_viewModel is null || ManagementHost.Children.Count > 0)
+        {
+            return;
+        }
+
+        var view = new ManagementOverlayView { DataContext = _viewModel };
+        view.AuditReachedBottom += (_, _) => _viewModel?.AuditPage.LoadMore();
+        view.SettingsRequested += (_, _) => OnOpenSettingsClick(null, new RoutedEventArgs());
+        view.SuiteEditRequested += (_, _) => OnEditSuiteClick(null, new RoutedEventArgs());
+        ManagementHost.Children.Add(view);
+    }
+
+    /// <summary>这些弹窗只在第一次真正打开时才实例化，平时不占控件树。</summary>
+    private static readonly string[] AuxiliaryDialogFlags =
+    [
+        nameof(MainWindowViewModel.IsEnvironmentDialogOpen),
+        nameof(MainWindowViewModel.IsRenameDialogOpen),
+        nameof(MainWindowViewModel.IsDeleteDialogOpen),
+        nameof(MainWindowViewModel.IsHistoryTrashConfirmOpen),
+        nameof(MainWindowViewModel.IsHistoryTrashOpen),
+        nameof(MainWindowViewModel.IsHistoryPurgeConfirmOpen),
+        nameof(MainWindowViewModel.IsAuditTrashConfirmOpen),
+        nameof(MainWindowViewModel.IsAuditTrashOpen),
+        nameof(MainWindowViewModel.IsAuditPurgeConfirmOpen),
+        nameof(MainWindowViewModel.IsMcpDialogOpen),
+    ];
+
+    private void EnsureAuxiliaryDialogs()
+    {
+        if (_viewModel is null || AuxiliaryDialogsHost.Children.Count > 0)
+        {
+            return;
+        }
+
+        AuxiliaryDialogsHost.Children.Add(new AuxiliaryDialogsView { DataContext = _viewModel });
+    }
+
+    private void OnImportViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ImportViewModel.IsImportSuccessOpen))
+        {
+            EnsureAuxiliaryDialogs();
+        }
     }
 
     private void OpenSuiteEditor(TestSuite draft, TestSuite? existing)
@@ -1653,6 +1672,7 @@ public partial class MainWindow : Window
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.TreeNodes.CollectionChanged += OnTreeNodesCollectionChanged;
             _viewModel.SuiteEditorRequested += OnSuiteEditorRequested;
+            _viewModel.Import.PropertyChanged += OnImportViewModelPropertyChanged;
             ApplyAppearance();
             ApplyRequestResponseLayout();
             ApplyWorkspaceLayout(_viewModel.IsWorkspaceSideBySide);
@@ -1674,6 +1694,7 @@ public partial class MainWindow : Window
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.TreeNodes.CollectionChanged -= OnTreeNodesCollectionChanged;
             _viewModel.SuiteEditorRequested -= OnSuiteEditorRequested;
+            _viewModel.Import.PropertyChanged -= OnImportViewModelPropertyChanged;
             _viewModel.Shutdown();
             _viewModel = null;
         }
@@ -1838,6 +1859,17 @@ public partial class MainWindow : Window
         if (e.PropertyName == nameof(MainWindowViewModel.IsWorkspaceSideBySide))
         {
             ApplyWorkspaceLayout(_viewModel.IsWorkspaceSideBySide);
+        }
+        else if (
+            e.PropertyName == nameof(MainWindowViewModel.IsManagementOpen)
+            && _viewModel.IsManagementOpen
+        )
+        {
+            EnsureManagementView();
+        }
+        else if (e.PropertyName is { } propertyName && AuxiliaryDialogFlags.Contains(propertyName))
+        {
+            EnsureAuxiliaryDialogs();
         }
         else if (e.PropertyName == nameof(MainWindowViewModel.IsResponseCollapsed))
         {
