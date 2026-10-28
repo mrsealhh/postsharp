@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PostSharp.Models;
+using PostSharp.Services;
 
 namespace PostSharp.Tests;
 
@@ -25,5 +26,41 @@ public sealed class AuthorizationProfileTests
 
         Assert.NotNull(profile);
         Assert.Equal("legacy-secret", profile.ClientSecret);
+    }
+
+    [Fact]
+    public void HttpsRedirectCanUseManualCallback()
+    {
+        var profile = new AuthorizationProfile
+        {
+            DiscoveryUrl = "https://login.example.com/.well-known/openid-configuration",
+            ClientId = "desktop-client",
+            RedirectUri = "https://app.example.com/signin-oidc",
+        };
+
+        Assert.Null(profile.FindConfigurationProblem());
+        Assert.False(LoopbackRedirectListener.IsLoopbackRedirect(profile.RedirectUri));
+    }
+
+    [Fact]
+    public void NewProfileUsesLoopbackRedirectByDefault()
+    {
+        var profile = new AuthorizationProfile();
+
+        Assert.Equal("http://127.0.0.1:53682/callback", profile.RedirectUri);
+    }
+
+    [Fact]
+    public void CustomSchemeRedirectCanUseManualCallback()
+    {
+        var profile = new AuthorizationProfile
+        {
+            DiscoveryUrl = "https://login.example.com/.well-known/openid-configuration",
+            ClientId = "desktop-client",
+            RedirectUri = "postsharp://auth/callback",
+        };
+
+        Assert.Null(profile.FindConfigurationProblem());
+        Assert.False(LoopbackRedirectListener.IsLoopbackRedirect(profile.RedirectUri));
     }
 }

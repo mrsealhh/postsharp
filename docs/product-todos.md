@@ -1,8 +1,8 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
-> 基线版本：v1.10.11（2026-10-28）
+> 基线版本：v1.10.13（2026-10-28）
 > 基线形态：当前发布 Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
-> 基线测试：175 个 xUnit 测试，`csharpier check .` 通过
+> 基线测试：179 个 xUnit 测试，`csharpier check .` 通过
 > 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
@@ -70,7 +70,7 @@
 - [ ] Windows 专属能力无法跨平台实现时，单独放到 Windows 平台模块/feature，并在其他平台提供安全降级或无操作实现。
 - [ ] Windows 专属 feature 使用独立分支和 PR，例如 `feature/win-dwm-titlebar`，不得把 Windows 包引用、P/Invoke 或注册表访问带进共享核心。
 - [ ] 任何功能 PR 必须说明平台影响；涉及平台边界变更时，至少完成跨平台编译检查。
-- [ ] 现有 Windows 专属实现（DPAPI、WebView2、PowerShell 更新器、DWM 标题栏）保持现状，不在其他 P0/P1 任务中强行重构；在 P2-02 启动时统一迁移。
+- [ ] 现有 Windows 专属实现（DPAPI、PowerShell 更新器、DWM 标题栏）保持现状，不在其他 P0/P1 任务中强行重构；在 P2-02 启动时统一迁移。
 - [ ] 已列入 P0/P1 的 Windows 安全与发布交付项（DPAPI 机密落盘、签名安装器、Windows CI）按当前 Windows 版本完成，不因 P2-02 延后；P2-02 启动后再抽象为平台接口。
 
 ## 2. 当前基线与技术现状
@@ -94,11 +94,11 @@
 | 主工程 | `src/PostSharp`，单一桌面应用 |
 | 存储契约 | `src/PostSharp.Storage.Abstractions` |
 | 插件源码 | `src/Plugins/PostSharp.Storage.*` |
-| 测试 | `tests/PostSharp.Tests`，30 个测试文件，175 个用例 |
+| 测试 | `tests/PostSharp.Tests`，30 个测试文件，179 个用例 |
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
-| 平台 | 当前仅 Windows 10/11 x64，WebView2 依赖；Linux/macOS 见 P2-02，后续实施 |
+| 平台 | Windows 10/11 x64 正式支持；Linux x64 / macOS arm64 预览包已进入构建验证，未签名/未公证 |
 | 版本锁定 | Avalonia 12.1.4、TKCode.Arc 0.3.1-preview.3、SDK 10.0.100，不随意升级 |
 
 ### 2.3 当前技术债与风险
@@ -225,7 +225,7 @@
 - [ ] 为旧数据做一次性迁移：识别遗留明文，加密后写回，并记录迁移结果。
 - [ ] 审计、日志、错误消息、cURL、MCP 返回、数据导出和诊断包统一走脱敏器。
 - [ ] 增加敏感值检测：导入 cURL/Postman/HAR 时提示可能包含 Token、Cookie、密码。
-- [ ] 设置中提供「清除本机缓存凭据」入口，至少清理授权令牌、WebView 缓存和更新缓存。
+- [ ] 设置中提供「清除本机缓存凭据」入口，至少清理授权令牌、本机密钥和更新缓存。
 - [ ] 测试覆盖：短密钥、带引号密钥、重复值、URL 编码、大小写变化、导出文件扫描。
 
 **验收**
@@ -348,10 +348,21 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 **启动条件**
 
-- [ ] 产品负责人确认 Linux / macOS 的目标用户、支持范围和发布节奏。
-- [ ] 明确是“完整功能对等”还是“先交付无头/调试核心”；默认先做调试核心。
+- [x] 产品负责人确认优先推进跨平台；当前先交付 Linux x64 预览包，Windows 继续正式发布。
+- [x] 先交付可运行桌面包，不追求 macOS 签名和完整安装器。
 - [ ] 当前 Windows 版本继续按 P0/P1 迭代，不被跨平台工作阻塞。
-- [ ] 为 macOS 签名/公证、Linux 包格式和 WebView 运行时准备构建环境。
+- [x] Linux x64 构建环境可用；macOS 签名/公证环境后续准备。
+
+**当前进度（2026-10-28）**
+
+- [x] 系统默认浏览器 + 本机 TCP 回环回调整合为唯一授权方式，不再引用 WebView2 或任何第三方浏览器引擎。
+- [x] 包引用中删除 `Avalonia.Controls.WebView` 与 `Microsoft.Web.WebView2`。
+- [x] Linux 使用本机 AES-GCM 密钥文件保存机密；Windows 保留 DPAPI。
+- [x] 单实例锁在 Windows 使用命名 Mutex，在 Unix 使用锁文件。
+- [x] `scripts/build-linux-release.ps1` 生成 `linux-x64` 自包含预览包；包内不含 WebView 运行时。
+- [x] `scripts/build-osx-release.ps1` 支持 `osx-arm64` / `osx-x64` 自包含包；未签名/未公证。
+- [x] Linux/macOS 包不启用 Windows 自动更新标记。
+- [ ] libsecret/Secret Service、macOS Keychain、AppImage/deb、签名安装器和三平台 CI 仍待完成。
 
 **目标平台**
 
@@ -366,22 +377,22 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 **实施顺序**
 
 1. **平台接口与 Windows 适配**
-   - [ ] 新建平台抽象层，定义 `ISecretProtector`、`IEmbeddedBrowser`、`IUpdateInstaller`、`IPlatformTheme`、`IPlatformPaths` 等最小接口。
-   - [ ] 把现有 DPAPI、WebView2、DWM、PowerShell 更新器迁入 Windows 平台实现；Windows 行为保持不变。
+   - [ ] 新建平台抽象层，定义 `ISecretProtector`、`IUpdateInstaller`、`IPlatformTheme`、`IPlatformPaths` 等最小接口。
+   - [ ] 把现有 DPAPI、DWM、PowerShell 更新器迁入 Windows 平台实现；系统浏览器授权保持共享实现。
    - [ ] 共享核心只依赖接口；平台实现通过启动时的组合根注入。
    - [ ] 增加架构测试：共享项目不得引用 Windows 专属包/命名空间。
 
 2. **凭据保护**
    - [ ] Windows 使用 DPAPI；macOS 使用 Keychain；Linux 优先 libsecret/Secret Service。
-   - [ ] 没有系统凭据库时使用受保护的本地文件方案，禁止回退为明文。
+   - [x] 没有系统凭据库时使用受保护的本地文件方案（Linux AES-GCM 密钥文件），禁止回退为明文。
    - [ ] 处理跨平台迁移：DPAPI 密文不能在 macOS/Linux 解密；导入数据包后要求重新输入对应凭据。
-   - [ ] 授权令牌、远程连接串、环境变量 secret 全部走同一接口。
+   - [x] 授权令牌、远程连接串走同一 `LocalSecretProtector`；环境变量 secret 后续接入。
 
 3. **授权浏览器**
-   - [ ] Windows 保持 WebView2；macOS 使用 WKWebView；Linux 使用 WebKitGTK。
-   - [ ] 内嵌浏览器不可用时退回系统浏览器 + 回环回调（loopback），并清晰提示。
-   - [ ] OAuth 回调、证书错误、取消、关闭窗口和超时行为在三个平台一致。
-   - [ ] 不把 WebView2Loader 或其他 Windows 原生库带进非 Windows 包。
+   - [x] Windows/Linux/macOS 统一使用系统默认浏览器 + 回环回调（loopback），不再内嵌浏览器引擎。
+   - [x] 打开浏览器失败时保留可复制的授权地址，并给出明确提示。
+   - [x] OAuth 回调、取消和关闭窗口行为通过回环监听单测；证书错误/超时待真实 IdP 联调。
+   - [x] 所有平台包都不包含 WebView2Loader 或 WebView 运行时。
 
 4. **更新与发布**
    - [ ] 共用签名更新清单和完整性校验；平台安装器分别实现。
@@ -395,15 +406,15 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
    - [ ] 字体、默认等宽字体、文件路径、日志目录和回收站行为按平台适配。
 
 6. **构建与测试**
-   - [ ] 发布脚本支持 `win-x64`、`linux-x64`、`osx-x64`、`osx-arm64`，RID 和包名不再写死在共享脚本。
+   - [x] 发布脚本支持 `win-x64`、`linux-x64`、`osx-arm64`、`osx-x64` 自包含包。
    - [ ] CI 至少完成三平台编译和核心单测；Windows 保留完整 UI 冒烟；Linux/macOS 增加启动/请求/存储冒烟。
-   - [ ] 建立真实 WebView、Keychain/libsecret、签名和更新验证清单。
-   - [ ] 发布资产按平台拆分，不把 Windows 插件/原生库混入其他平台包。
+   - [ ] 建立真实系统浏览器 OAuth、Keychain/libsecret、签名和更新验证清单。
+   - [x] 发布资产按平台拆分，插件目录移除其他平台的 RID 子目录。
 
 **Windows 专属 feature 规则**
 
 - [ ] 独立分支/PR，例如 `feature/win-dwm-titlebar`、`feature/win-portable-updater`。
-- [ ] 实现放在 Windows 平台模块；共享核心只增加通用接口，不出现 `DllImport`、注册表、DPAPI、WebView2 或 PowerShell。
+- [ ] 实现放在 Windows 平台模块；共享核心只增加通用接口，不出现 `DllImport`、注册表、DPAPI 或 PowerShell。
 - [ ] 运行时按平台启用；非 Windows 必须有 no-op 或安全降级。
 - [ ] PR 说明平台影响、测试平台和未覆盖平台；不得因 Windows feature 让其他平台无法构建。
 - [ ] Windows-only 功能不进入默认产品承诺，除非在支持矩阵中明确标注。
@@ -411,14 +422,14 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 **验收**
 
 - [ ] Linux x64 和 macOS arm64 至少各有一套可安装/可运行的发布包，完成首次启动、演示工作区、HTTP 请求、OpenAPI 导入、存储、套件和 MCP 基础验证。
-- [ ] OAuth 在内嵌浏览器或系统浏览器回环方案下可用；不可用时给出明确配置说明。
+- [ ] OAuth 在系统浏览器 + 回环回调方案下可用；打开浏览器或回调失败时给出可复制的授权地址和配置说明。
 - [ ] 非 Windows 环境不存在明文凭据落盘；DPAPI 密文迁移有提示。
 - [ ] Windows 现有安装包、更新、性能和 159+ 测试无回归。
 - [ ] 文档列出三平台支持矩阵、已知限制、安装/卸载和更新方式。
 
 **不在首批范围**：Windows 全部视觉细节 1:1 复刻、所有插件三平台官方支持、移动端、团队协作后端。
 
-**依赖/风险**：macOS 签名公证、Linux WebView 运行库、系统凭据库差异、CI 运行器成本、第三方数据库驱动的平台兼容性。
+**依赖/风险**：macOS 签名公证、系统默认浏览器启动差异、回环端口占用、系统凭据库差异、CI 运行器成本、第三方数据库驱动的平台兼容性。
 
 **规模**：XL。
 
@@ -465,7 +476,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - 不进入迭代 1–4，不阻塞当前 Windows 版本。
 - 由产品负责人确认 Linux/macOS 目标后启动，按 6.2 节执行。
 - 启动前只做两件事：新增代码遵守跨平台设计约束；Windows 专属能力走独立 feature。
-- **不要提前重构现有 DPAPI/WebView2/更新器**；统一迁移属于 P2-02 的第一步。
+- **不要提前重构现有 DPAPI/更新器**；统一迁移属于 P2-02 的第一步。
 
 ## 8. 交接清单
 
@@ -486,8 +497,8 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [ ] 先拆分再扩展：新增功能优先放子 ViewModel、子控件或独立 Resource，不继续堆进 `MainWindow`。
 - [ ] 所有 `catch` 必须有可见反馈或结构化日志，不允许静默吞掉。
 - [ ] 破坏性操作确认文案包含对象名和后果；Esc 取消，默认焦点在安全项。
-- [ ] 新增共享代码按跨平台设计：不直接引入 Win32/DPAPI/WebView2/PowerShell；确有 Windows 专属需求，单独开 `feature/win-*` 并在其他平台安全降级。
-- [ ] Linux/macOS 的正式适配、打包和发布属于 P2-02，后续实施；不要在日常功能 PR 中顺带做平台迁移。
+- [ ] 新增共享代码按跨平台设计：不直接引入 Win32/DPAPI/PowerShell；确有 Windows 专属需求，单独开 `feature/win-*` 并在其他平台安全降级。
+- [x] Linux/macOS 预览包和系统浏览器授权已启动实施；正式签名、安装器和三平台 CI 仍按 P2-02 收尾。
 
 ### 8.3 发布约定
 
@@ -549,16 +560,20 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 ### P2：CLI / 无人值守
 
-- [ ] 新增 CLI 骨架，默认连接 `http://127.0.0.1:5199/mcp`，支持 `--json`、超时和退出码。
-- [ ] 第一批命令：`suite list/get/validate/run`。
-- [ ] 第二批命令：`suite history/rerun-failed/continue`、`audit list`。
-- [ ] JUnit XML / HTML 报告。
+- [x] 新增 `src/PostSharp.Cli`，默认连接 `http://127.0.0.1:5199/mcp`，支持 `--json`、超时和退出码。
+- [x] 第一批命令：`suite list/get/validate/run`。
+- [x] 第二批命令：`suite runs/rerun-failed/continue`、`request send`、`audit list`。
+- [x] `mcp-stdio` 桥接：兼容只支持 stdio MCP 的 harness。
+- [x] JUnit XML：`suite run/rerun-failed/continue --junit <文件>`。
+- [ ] HTML/Markdown 测试报告和 CI 样例。
 - [ ] 以 `/postsharp:mcp ...` 形式包装 CLI，供 AI 客户端调用。
+- [ ] 将 CLI 产物纳入 Windows/Linux/macOS 发布包或独立 Release 资产。
 
 ## 11. 相关文件索引
 
 - 产品能力与已知限制：`README.md`「已知限制与路线图」。
 - 存储插件契约与自定义数据库：`docs/storage-plugins.md`。
+- CLI 使用说明：`docs/cli.md`；源码 `src/PostSharp.Cli`；打包脚本 `scripts/build-cli-release.ps1`。
 - 发布脚本：`scripts/build-release.ps1`。
 - 插件打包脚本：`scripts/build-storage-plugins.ps1`。
 - 存储契约：`src/PostSharp.Storage.Abstractions/StorageContracts.cs`。

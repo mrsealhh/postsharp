@@ -37,6 +37,8 @@ public partial class SettingsWindow : Window
                 viewModel.DiscardFontPreview();
                 viewModel.Dispose();
             }
+
+            HeapTrim.Request();
         };
     }
 

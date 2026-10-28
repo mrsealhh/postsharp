@@ -83,7 +83,8 @@ public static class OpenApiImportService
         string? lastModified,
         CancellationToken cancellationToken = default,
         HttpClient? client = null,
-        IProgress<OpenApiFetchProgress>? progress = null
+        IProgress<OpenApiFetchProgress>? progress = null,
+        string? knownContentHash = null
     )
     {
         if (
@@ -212,6 +213,23 @@ public static class OpenApiImportService
             if (received == 0)
             {
                 throw new InvalidOperationException("下载到的 OpenAPI 文档为空。");
+            }
+
+            if (
+                !string.IsNullOrWhiteSpace(knownContentHash)
+                && string.Equals(knownContentHash, hash, StringComparison.Ordinal)
+            )
+            {
+                // 内容没变就别解析：2MB 的文档会展开成上千个请求对象与 schema 文档，纯属浪费。
+                Log.Information("OpenAPI 文档内容未变化，跳过解析 {Url} {Hash}", uri, hash);
+                return new OpenApiFetchResult(
+                    null,
+                    true,
+                    responseTag,
+                    responseModified,
+                    hash,
+                    received
+                );
             }
 
             var isLarge = received >= BackgroundImportThresholdBytes;

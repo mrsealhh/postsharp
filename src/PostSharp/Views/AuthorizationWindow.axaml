@@ -210,8 +210,8 @@
                                     <arc:Input
                                         Label="重定向地址"
                                         Text="{Binding Profile.RedirectUri, Mode=TwoWay}"
-                                        Placeholder="https://app.example.com/signin-oidc"
-                                        Description="必须与授权服务器登记的地址完全一致。"
+                                        Placeholder="http://127.0.0.1:53682/callback"
+                                        Description="{Binding RedirectHint}"
                                         AutomationProperties.Name="重定向地址"
                                     />
                                     <arc:Input
@@ -268,8 +268,26 @@
                                             AutomationProperties.Name="退出登录"
                                         />
                                     </WrapPanel>
+                                    <StackPanel
+                                        Spacing="8"
+                                        IsVisible="{Binding IsManualCallbackAvailable}"
+                                    >
+                                        <arc:Input
+                                            Label="手动回调地址"
+                                            Text="{Binding ManualCallbackText, Mode=TwoWay}"
+                                            Placeholder="https://app.example.com/signin-oidc?code=...&amp;state=..."
+                                            Description="如果浏览器没有自动回到 PostSharp，复制地址栏里的完整地址粘贴到这里。"
+                                            AutomationProperties.Name="手动回调地址"
+                                        />
+                                        <arc:Button
+                                            Content="使用回调地址登录"
+                                            Variant="Secondary"
+                                            Click="OnManualCallbackClick"
+                                            AutomationProperties.Name="使用回调地址登录"
+                                        />
+                                    </StackPanel>
                                     <TextBlock
-                                        Text="登录会在右侧内嵌浏览器里完成，授权码通过重定向地址拦截，不会打开系统浏览器。"
+                                        Text="{Binding LoginHint}"
                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                         TextWrapping="Wrap"
@@ -329,10 +347,46 @@
                         <Panel>
                             <Border IsVisible="{Binding Auth.IsOAuth2}">
                                 <Panel>
-                                    <NativeWebView
-                                        x:Name="Browser"
+                                    <Border
+                                        Background="{arc:ArcDesignTokenResource Surface}"
                                         IsVisible="{Binding IsSigningIn}"
-                                    />
+                                    >
+                                        <StackPanel
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Center"
+                                            Spacing="10"
+                                            MaxWidth="420"
+                                            Margin="24"
+                                        >
+                                            <arc:ArcGlyph
+                                                Data="{x:Static arc:ArcIcons.Globe}"
+                                                Size="30"
+                                                HorizontalAlignment="Center"
+                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            />
+                                            <TextBlock
+                                                Text="等待浏览器授权"
+                                                FontSize="{arc:ArcDesignTokenResource TypeLG}"
+                                                FontWeight="SemiBold"
+                                                HorizontalAlignment="Center"
+                                                Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                            />
+                                            <TextBlock
+                                                Text="已在系统默认浏览器打开授权页；完成后会自动回到本窗口，不需要手动关闭浏览器。"
+                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                TextWrapping="Wrap"
+                                                TextAlignment="Center"
+                                            />
+                                            <arc:Button
+                                                Content="取消登录"
+                                                Variant="Secondary"
+                                                HorizontalAlignment="Center"
+                                                Click="OnCancelSignInClick"
+                                                AutomationProperties.Name="取消登录"
+                                            />
+                                        </StackPanel>
+                                    </Border>
                                     <Border
                                         Background="{arc:ArcDesignTokenResource Surface}"
                                         IsVisible="{Binding !IsSigningIn}"

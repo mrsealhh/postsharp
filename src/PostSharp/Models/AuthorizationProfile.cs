@@ -23,7 +23,7 @@ public sealed partial class AuthorizationProfile : ObservableObject
     private string _clientId = string.Empty;
 
     [ObservableProperty]
-    private string _redirectUri = string.Empty;
+    private string _redirectUri = "http://127.0.0.1:53682/callback";
 
     [ObservableProperty]
     private string _scopes = "openid profile offline_access";
@@ -196,7 +196,7 @@ public sealed partial class AuthorizationProfile : ObservableObject
     /// <summary>返回配置缺失时的用户可读说明；配置完整时返回 null。</summary>
     public string? FindConfigurationProblem()
     {
-        if (!IsAcceptableAddress(DiscoveryUrl))
+        if (!IsAcceptableDiscoveryAddress(DiscoveryUrl))
         {
             return "发现地址无效，请填写 https 开头的完整地址。";
         }
@@ -206,9 +206,9 @@ public sealed partial class AuthorizationProfile : ObservableObject
             return "客户端 ID 不能为空。";
         }
 
-        if (!IsAcceptableAddress(RedirectUri))
+        if (!IsAcceptableRedirectAddress(RedirectUri))
         {
-            return "重定向地址无效，请填写 https 开头的完整地址。";
+            return "重定向地址无效，请填写 IdP 登记的 https、本机回环或自定义协议地址。";
         }
 
         if (string.IsNullOrWhiteSpace(Scopes))
@@ -219,7 +219,7 @@ public sealed partial class AuthorizationProfile : ObservableObject
         return null;
     }
 
-    private static bool IsAcceptableAddress(string value)
+    private static bool IsAcceptableDiscoveryAddress(string value)
     {
         var text = value.Trim();
         return Uri.TryCreate(text, UriKind.Absolute, out var uri)
@@ -227,6 +227,24 @@ public sealed partial class AuthorizationProfile : ObservableObject
                 uri.Scheme == Uri.UriSchemeHttps
                 || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback)
             );
+    }
+
+    private static bool IsAcceptableRedirectAddress(string value)
+    {
+        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) || uri.Fragment.Length > 0)
+        {
+            return false;
+        }
+
+        if (uri.Scheme is "file" or "data" or "javascript" || string.IsNullOrWhiteSpace(uri.Scheme))
+        {
+            return false;
+        }
+
+        return string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrWhiteSpace(uri.Host)
+            || !string.IsNullOrWhiteSpace(uri.AbsolutePath);
     }
 
     private void SetTokenFromCipher(

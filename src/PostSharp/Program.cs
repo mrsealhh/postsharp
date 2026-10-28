@@ -31,12 +31,8 @@ internal static class Program
             );
         }
 
-        using var singleInstance = new Mutex(
-            initiallyOwned: true,
-            SingleInstanceMutexName,
-            out var createdNew
-        );
-        if (!createdNew)
+        using var singleInstance = SingleInstanceGuard.Acquire(SingleInstanceMutexName);
+        if (!singleInstance.IsAcquired)
         {
             Log.Information("已有 PostSharp 实例运行，本次启动直接退出");
             AppLog.Shutdown();
@@ -75,7 +71,10 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp()
     {
         var builder = AppBuilder.Configure<App>().UsePlatformDetect();
-        if (!string.Equals(_renderingMode, RenderingModes.Auto, StringComparison.Ordinal))
+        if (
+            OperatingSystem.IsWindows()
+            && !string.Equals(_renderingMode, RenderingModes.Auto, StringComparison.Ordinal)
+        )
         {
             builder = builder.With(
                 new Win32PlatformOptions { RenderingMode = [Win32RenderingMode.Software] }

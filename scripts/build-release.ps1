@@ -4,6 +4,23 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Remove-PlatformFolders {
+    param(
+        [string]$Root,
+        [string]$Pattern
+    )
+
+    if (-not (Test-Path $Root)) {
+        return
+    }
+
+    Get-ChildItem $Root -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match $Pattern } |
+        Sort-Object { $_.FullName.Length } -Descending |
+        ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 $Version = $Version.Trim().TrimStart("v", "V")
 $root = Split-Path -Parent $PSScriptRoot
 $artifacts = Join-Path $root "artifacts"
@@ -35,6 +52,7 @@ if ($LASTEXITCODE -ne 0) {
 # The application only enables updates when this marker is present.
 New-Item -ItemType File -Path (Join-Path $publish ".postsharp-update-enabled") -Force | Out-Null
 Get-ChildItem $publish -Filter *.pdb -Recurse -Force | Remove-Item -Force
+Remove-PlatformFolders (Join-Path $publish "plugins") "^(linux|osx)"
 
 if (Test-Path $zip) {
     Remove-Item $zip -Force
