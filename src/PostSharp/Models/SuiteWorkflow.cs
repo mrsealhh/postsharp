@@ -45,3 +45,39 @@ public sealed class SuiteWorkflowEdge
 
     public SuiteCondition Rules { get; } = new();
 }
+
+/// <summary>Externally supplied graph definition used by MCP and tests.</summary>
+public sealed record SuiteWorkflowSpec(
+    IReadOnlyList<SuiteWorkflowNodeSpec> Nodes,
+    IReadOnlyList<SuiteWorkflowEdgeSpec> Edges,
+    int? MaxParallelism = null
+);
+
+/// <summary>One node in a suite workflow; stepId or stepIndex resolves the backing step.</summary>
+public sealed record SuiteWorkflowNodeSpec(
+    Guid? StepId,
+    int? StepIndex,
+    string? Id,
+    double? X,
+    double? Y,
+    string? JoinMode
+);
+
+/// <summary>One directed branch between two workflow nodes.</summary>
+public sealed record SuiteWorkflowEdgeSpec(
+    string SourceId,
+    string TargetId,
+    string? Condition,
+    SuiteConditionSpec? Rules = null
+);
+
+/// <summary>Structured condition attached to a workflow edge.</summary>
+public sealed record SuiteConditionSpec(string? Mode, IReadOnlyList<SuiteConditionRuleSpec> Rules);
+
+/// <summary>One rule inside an edge condition.</summary>
+public sealed record SuiteConditionRuleSpec(
+    string? Source,
+    string? Path,
+    string? Operator,
+    string? Expected
+);
