@@ -273,13 +273,7 @@ public static class SystemBrowserLauncher
             var info = new ProcessStartInfo(fileName) { UseShellExecute = false };
             info.ArgumentList.Add(argument);
             using var process = Process.Start(info);
-            if (process is null)
-            {
-                return false;
-            }
-
-            // xdg-open/wslview normally exit quickly; a long-running process is treated as launched.
-            return !process.WaitForExit(1500) || process.ExitCode == 0;
+            return process is not null;
         }
         catch (Win32Exception)
         {
