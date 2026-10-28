@@ -181,6 +181,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         IsDraft = firstRequest is null;
         _initializing = false;
         RefreshRequestTabOptions();
+        ActivateRequestTab(RequestTabIndex);
 
         MockStatus = _mockServer.IsRunning
             ? $"Mock 服务运行中 · {_mockServer.BaseUrl}"
@@ -313,6 +314,25 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [ObservableProperty]
     private int _requestTabIndex;
+
+    /// <summary>
+    /// 请求标签页的懒加载宿主：值为 null 时对应的 DataTemplate 不会被实例化。
+    /// 启动时只构建默认的「参数」页，其余页的用户控件树等第一次点开再建，避免一开机就把十页全铺开。
+    /// </summary>
+    [ObservableProperty]
+    private object? _paramsTabContent;
+
+    [ObservableProperty]
+    private object? _headersTabContent;
+
+    [ObservableProperty]
+    private object? _authTabContent;
+
+    [ObservableProperty]
+    private object? _cUrlTabContent;
+
+    [ObservableProperty]
+    private object? _docTabContent;
 
     [ObservableProperty]
     private CodeLanguageOption _selectedCodeLanguage = CodeSampleService.Languages[0];
@@ -1996,6 +2016,31 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         foreach (var option in RequestTabOptions)
         {
             option.IsSelected = option.Index == value;
+        }
+
+        ActivateRequestTab(value);
+    }
+
+    /// <summary>第一次切到某个标签页时把宿主交给它，DataTemplate 才会真正构建这一页的控件树。</summary>
+    private void ActivateRequestTab(int index)
+    {
+        switch (index)
+        {
+            case 0:
+                ParamsTabContent ??= this;
+                break;
+            case 1:
+                HeadersTabContent ??= this;
+                break;
+            case 2:
+                AuthTabContent ??= this;
+                break;
+            case 4:
+                CUrlTabContent ??= this;
+                break;
+            case 5:
+                DocTabContent ??= this;
+                break;
         }
     }
 

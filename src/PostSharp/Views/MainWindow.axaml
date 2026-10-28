@@ -1243,313 +1243,340 @@
                                         AutomationProperties.Name="请求配置"
                                     >
                                         <arc:TabItem Header="参数">
-                                            <Grid RowDefinitions="Auto,*,Auto" Margin="0,6,0,0">
-                                                <Grid
-                                                    ColumnDefinitions="44,*,*,34"
-                                                    Margin="0,0,0,6"
-                                                >
-                                                    <TextBlock
-                                                        Grid.Column="1"
-                                                        Text="键"
-                                                        Margin="16,0,0,0"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                    />
-                                                    <TextBlock
-                                                        Grid.Column="2"
-                                                        Text="值"
-                                                        Margin="16,0,0,0"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                    />
-                                                </Grid>
-                                                <arc:ScrollArea Grid.Row="1">
-                                                    <ItemsControl
-                                                        ItemsSource="{Binding Editing.Params}"
-                                                        ItemTemplate="{StaticResource KeyValueRowTemplate}"
-                                                    />
-                                                </arc:ScrollArea>
-                                                <TextBlock
-                                                    Grid.Row="2"
-                                                    Text="填写最后一行会自动新增一行；未启用的行不会发送。"
-                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                    Margin="0,8,0,0"
-                                                />
-                                            </Grid>
+                                            <ContentControl Content="{Binding ParamsTabContent}">
+                                                <ContentControl.ContentTemplate>
+                                                    <DataTemplate x:DataType="vm:MainWindowViewModel">
+                                                        <Grid
+                                                            RowDefinitions="Auto,*,Auto"
+                                                            Margin="0,6,0,0"
+                                                        >
+                                                            <Grid
+                                                                ColumnDefinitions="44,*,*,34"
+                                                                Margin="0,0,0,6"
+                                                            >
+                                                                <TextBlock
+                                                                    Grid.Column="1"
+                                                                    Text="键"
+                                                                    Margin="16,0,0,0"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                />
+                                                                <TextBlock
+                                                                    Grid.Column="2"
+                                                                    Text="值"
+                                                                    Margin="16,0,0,0"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                />
+                                                            </Grid>
+                                                            <arc:ScrollArea Grid.Row="1">
+                                                                <ItemsControl
+                                                                    ItemsSource="{Binding Editing.Params}"
+                                                                    ItemTemplate="{StaticResource KeyValueRowTemplate}"
+                                                                />
+                                                            </arc:ScrollArea>
+                                                            <TextBlock
+                                                                Grid.Row="2"
+                                                                Text="填写最后一行会自动新增一行；未启用的行不会发送。"
+                                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                Margin="0,8,0,0"
+                                                            />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ContentControl.ContentTemplate>
+                                            </ContentControl>
                                         </arc:TabItem>
 
                                         <arc:TabItem Header="请求头">
-                                            <Grid
-                                                RowDefinitions="Auto,Auto,Auto,*"
-                                                Margin="0,6,0,0"
-                                                RowSpacing="8"
-                                            >
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <arc:Button
-                                                        Variant="Ghost"
-                                                        Size="Small"
-                                                        Command="{Binding AddJsonContentTypeCommand}"
-                                                    >
-                                                        <controls:IconLabel
-                                                            Icon="{x:Static arc:ArcIcons.Code}"
-                                                            Text="JSON 类型"
-                                                            IconSize="13"
-                                                        />
-                                                    </arc:Button>
-                                                    <arc:Button
-                                                        Variant="Ghost"
-                                                        Size="Small"
-                                                        Command="{Binding AddAcceptJsonCommand}"
-                                                    >
-                                                        <controls:IconLabel
-                                                            Icon="{x:Static arc:ArcIcons.CircleCheck}"
-                                                            Text="Accept JSON"
-                                                            IconSize="13"
-                                                        />
-                                                    </arc:Button>
-                                                    <arc:Button
-                                                        Variant="Ghost"
-                                                        Size="Small"
-                                                        Command="{Binding AddBearerTokenCommand}"
-                                                    >
-                                                        <controls:IconLabel
-                                                            Icon="{x:Static arc:ArcIcons.Key}"
-                                                            Text="Bearer Token"
-                                                            IconSize="13"
-                                                        />
-                                                    </arc:Button>
-                                                </StackPanel>
-                                                <StackPanel Grid.Row="1" Spacing="3">
-                                                    <TextBlock
-                                                        Text="{Binding HeaderWarningText}"
-                                                        IsVisible="{Binding HasHeaderWarning}"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource Danger}"
-                                                        TextWrapping="Wrap"
-                                                    />
-                                                    <TextBlock
-                                                        Text="支持 {{变量}}；发送时自动补充 Accept: */*、User-Agent: PostSharp/0.1；请求体模式下自动补充 Content-Type。"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                        TextWrapping="Wrap"
-                                                    />
-                                                </StackPanel>
-                                                <Grid Grid.Row="2" ColumnDefinitions="44,*,*,34">
-                                                    <TextBlock
-                                                        Grid.Column="1"
-                                                        Text="键"
-                                                        Margin="16,0,0,0"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                    />
-                                                    <TextBlock
-                                                        Grid.Column="2"
-                                                        Text="值"
-                                                        Margin="16,0,0,0"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                    />
-                                                </Grid>
-                                                <arc:ScrollArea Grid.Row="3">
-                                                    <ItemsControl
-                                                        ItemsSource="{Binding Editing.Headers}"
-                                                        ItemTemplate="{StaticResource KeyValueRowTemplate}"
-                                                    />
-                                                </arc:ScrollArea>
-                                            </Grid>
+                                            <ContentControl Content="{Binding HeadersTabContent}">
+                                                <ContentControl.ContentTemplate>
+                                                    <DataTemplate x:DataType="vm:MainWindowViewModel">
+                                                        <Grid
+                                                            RowDefinitions="Auto,Auto,Auto,*"
+                                                            Margin="0,6,0,0"
+                                                            RowSpacing="8"
+                                                        >
+                                                            <StackPanel
+                                                                Orientation="Horizontal"
+                                                                Spacing="6"
+                                                            >
+                                                                <arc:Button
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Command="{Binding AddJsonContentTypeCommand}"
+                                                                >
+                                                                    <controls:IconLabel
+                                                                        Icon="{x:Static arc:ArcIcons.Code}"
+                                                                        Text="JSON 类型"
+                                                                        IconSize="13"
+                                                                    />
+                                                                </arc:Button>
+                                                                <arc:Button
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Command="{Binding AddAcceptJsonCommand}"
+                                                                >
+                                                                    <controls:IconLabel
+                                                                        Icon="{x:Static arc:ArcIcons.CircleCheck}"
+                                                                        Text="Accept JSON"
+                                                                        IconSize="13"
+                                                                    />
+                                                                </arc:Button>
+                                                                <arc:Button
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Command="{Binding AddBearerTokenCommand}"
+                                                                >
+                                                                    <controls:IconLabel
+                                                                        Icon="{x:Static arc:ArcIcons.Key}"
+                                                                        Text="Bearer Token"
+                                                                        IconSize="13"
+                                                                    />
+                                                                </arc:Button>
+                                                            </StackPanel>
+                                                            <StackPanel Grid.Row="1" Spacing="3">
+                                                                <TextBlock
+                                                                    Text="{Binding HeaderWarningText}"
+                                                                    IsVisible="{Binding HasHeaderWarning}"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource Danger}"
+                                                                    TextWrapping="Wrap"
+                                                                />
+                                                                <TextBlock
+                                                                    Text="支持 {{变量}}；发送时自动补充 Accept: */*、User-Agent: PostSharp/0.1；请求体模式下自动补充 Content-Type。"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                    TextWrapping="Wrap"
+                                                                />
+                                                            </StackPanel>
+                                                            <Grid
+                                                                Grid.Row="2"
+                                                                ColumnDefinitions="44,*,*,34"
+                                                            >
+                                                                <TextBlock
+                                                                    Grid.Column="1"
+                                                                    Text="键"
+                                                                    Margin="16,0,0,0"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                />
+                                                                <TextBlock
+                                                                    Grid.Column="2"
+                                                                    Text="值"
+                                                                    Margin="16,0,0,0"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                />
+                                                            </Grid>
+                                                            <arc:ScrollArea Grid.Row="3">
+                                                                <ItemsControl
+                                                                    ItemsSource="{Binding Editing.Headers}"
+                                                                    ItemTemplate="{StaticResource KeyValueRowTemplate}"
+                                                                />
+                                                            </arc:ScrollArea>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ContentControl.ContentTemplate>
+                                            </ContentControl>
                                         </arc:TabItem>
 
                                         <arc:TabItem Header="授权">
-                                            <arc:ScrollArea Margin="0,6,0,0">
-                                                <StackPanel
-                                                    Spacing="10"
-                                                    Margin="0,0,4,0"
-                                                    HorizontalAlignment="Stretch"
-                                                >
-                                                    <Grid
-                                                        ColumnDefinitions="1*,1*"
-                                                        ColumnSpacing="10"
-                                                    >
-                                                        <arc:Select
-                                                            Label="认证类型"
-                                                            SelectedValue="{Binding EditingAuth.AuthType, Mode=TwoWay}"
-                                                            AutomationProperties.Name="认证类型"
-                                                        >
-                                                            <arc:SelectItem
-                                                                Content="继承上级集合"
-                                                                Value="Inherit"
-                                                            />
-                                                            <arc:SelectItem
-                                                                Content="无认证"
-                                                                Value="None"
-                                                            />
-                                                            <arc:SelectItem
-                                                                Content="Bearer 令牌"
-                                                                Value="Bearer"
-                                                            />
-                                                            <arc:SelectItem
-                                                                Content="Basic 认证"
-                                                                Value="Basic"
-                                                            />
-                                                            <arc:SelectItem
-                                                                Content="API Key"
-                                                                Value="ApiKey"
-                                                            />
-                                                            <arc:SelectItem
-                                                                Content="OAuth 2.0"
-                                                                Value="OAuth2"
-                                                            />
-                                                        </arc:Select>
-                                                        <arc:Select
-                                                            Grid.Column="1"
-                                                            Label="附加位置"
-                                                            SelectedValue="{Binding EditingAuth.Target, Mode=TwoWay}"
-                                                            AutomationProperties.Name="授权附加位置"
-                                                        >
-                                                            <arc:SelectItem
-                                                                Content="请求头"
-                                                                Value="Header"
-                                                            />
-                                                            <arc:SelectItem
-                                                                Content="查询参数"
-                                                                Value="Query"
-                                                            />
-                                                        </arc:Select>
-                                                    </Grid>
-
-                                                    <Border
-                                                        Background="{arc:ArcDesignTokenResource SurfaceMuted}"
-                                                        CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
-                                                        Padding="12"
-                                                    >
-                                                        <StackPanel Spacing="6">
-                                                            <TextBlock
-                                                                Text="{Binding AuthScopeTitle}"
-                                                                FontSize="{arc:ArcDesignTokenResource TypeSM}"
-                                                                FontWeight="Medium"
-                                                                Foreground="{arc:ArcDesignTokenResource Foreground}"
-                                                                TextWrapping="Wrap"
-                                                            />
-                                                            <TextBlock
-                                                                Text="{Binding AuthScopeDetail}"
-                                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                                                TextWrapping="Wrap"
-                                                            />
-                                                            <WrapPanel
-                                                                ItemSpacing="8"
-                                                                LineSpacing="8"
+                                            <ContentControl Content="{Binding AuthTabContent}">
+                                                <ContentControl.ContentTemplate>
+                                                    <DataTemplate x:DataType="vm:MainWindowViewModel">
+                                                        <arc:ScrollArea Margin="0,6,0,0">
+                                                            <StackPanel
+                                                                Spacing="10"
+                                                                Margin="0,0,4,0"
+                                                                HorizontalAlignment="Stretch"
                                                             >
-                                                                <arc:Button
-                                                                    Content="打开授权配置…"
-                                                                    Variant="Secondary"
-                                                                    Size="Small"
-                                                                    Click="OnOpenCurrentAuthorizationClick"
-                                                                    AutomationProperties.Name="打开当前对象的授权配置"
-                                                                />
-                                                                <arc:Button
-                                                                    Content="{Binding EnclosingCollectionAuthLabel}"
-                                                                    Variant="Ghost"
-                                                                    Size="Small"
-                                                                    IsVisible="{Binding HasEnclosingCollectionAuth}"
-                                                                    Click="OnOpenEnclosingCollectionAuthorizationClick"
-                                                                    AutomationProperties.Name="{Binding EnclosingCollectionAuthLabel}"
-                                                                />
-                                                            </WrapPanel>
-                                                        </StackPanel>
-                                                    </Border>
+                                                                <Grid
+                                                                    ColumnDefinitions="1*,1*"
+                                                                    ColumnSpacing="10"
+                                                                >
+                                                                    <arc:Select
+                                                                        Label="认证类型"
+                                                                        SelectedValue="{Binding EditingAuth.AuthType, Mode=TwoWay}"
+                                                                        AutomationProperties.Name="认证类型"
+                                                                    >
+                                                                        <arc:SelectItem
+                                                                            Content="继承上级集合"
+                                                                            Value="Inherit"
+                                                                        />
+                                                                        <arc:SelectItem
+                                                                            Content="无认证"
+                                                                            Value="None"
+                                                                        />
+                                                                        <arc:SelectItem
+                                                                            Content="Bearer 令牌"
+                                                                            Value="Bearer"
+                                                                        />
+                                                                        <arc:SelectItem
+                                                                            Content="Basic 认证"
+                                                                            Value="Basic"
+                                                                        />
+                                                                        <arc:SelectItem
+                                                                            Content="API Key"
+                                                                            Value="ApiKey"
+                                                                        />
+                                                                        <arc:SelectItem
+                                                                            Content="OAuth 2.0"
+                                                                            Value="OAuth2"
+                                                                        />
+                                                                    </arc:Select>
+                                                                    <arc:Select
+                                                                        Grid.Column="1"
+                                                                        Label="附加位置"
+                                                                        SelectedValue="{Binding EditingAuth.Target, Mode=TwoWay}"
+                                                                        AutomationProperties.Name="授权附加位置"
+                                                                    >
+                                                                        <arc:SelectItem
+                                                                            Content="请求头"
+                                                                            Value="Header"
+                                                                        />
+                                                                        <arc:SelectItem
+                                                                            Content="查询参数"
+                                                                            Value="Query"
+                                                                        />
+                                                                    </arc:Select>
+                                                                </Grid>
 
-                                                    <arc:Input
-                                                        Label="Bearer 令牌"
-                                                        IsVisible="{Binding EditingAuth.IsBearer}"
-                                                        Text="{Binding EditingAuth.Token, Mode=TwoWay}"
-                                                        Description="只保存在本机，落盘时用 Windows DPAPI 加密。"
-                                                        AutomationProperties.Name="Bearer 令牌"
-                                                    />
-                                                    <Grid
-                                                        ColumnDefinitions="1*,1*"
-                                                        ColumnSpacing="10"
-                                                        IsVisible="{Binding EditingAuth.IsBasic}"
-                                                    >
-                                                        <arc:Input
-                                                            Label="用户名"
-                                                            Text="{Binding EditingAuth.Username, Mode=TwoWay}"
-                                                            AutomationProperties.Name="用户名"
-                                                        />
-                                                        <arc:Input
-                                                            Grid.Column="1"
-                                                            Label="密码"
-                                                            Text="{Binding EditingAuth.Password, Mode=TwoWay}"
-                                                            Description="落盘时用 Windows DPAPI 加密。"
-                                                            AutomationProperties.Name="密码"
-                                                        />
-                                                    </Grid>
-                                                    <Grid
-                                                        ColumnDefinitions="1*,1.2*,0.9*"
-                                                        ColumnSpacing="10"
-                                                        IsVisible="{Binding EditingAuth.IsApiKey}"
-                                                    >
-                                                        <arc:Input
-                                                            Label="名称"
-                                                            Text="{Binding EditingAuth.ApiKeyName, Mode=TwoWay}"
-                                                            AutomationProperties.Name="API Key 名称"
-                                                        />
-                                                        <arc:Input
-                                                            Grid.Column="1"
-                                                            Label="值"
-                                                            Text="{Binding EditingAuth.ApiKeyValue, Mode=TwoWay}"
-                                                            Description="落盘时用 Windows DPAPI 加密。"
-                                                            AutomationProperties.Name="API Key 值"
-                                                        />
-                                                        <arc:Select
-                                                            Grid.Column="2"
-                                                            Label="位置"
-                                                            SelectedValue="{Binding EditingAuth.ApiKeyLocation, Mode=TwoWay}"
-                                                            AutomationProperties.Name="API Key 位置"
-                                                        >
-                                                            <arc:SelectItem
-                                                                Content="请求头"
-                                                                Value="Header"
-                                                            />
-                                                            <arc:SelectItem
-                                                                Content="查询参数"
-                                                                Value="Query"
-                                                            />
-                                                        </arc:Select>
-                                                    </Grid>
-                                                    <StackPanel
-                                                        Orientation="Horizontal"
-                                                        Spacing="8"
-                                                        IsVisible="{Binding EditingAuth.IsOAuth2}"
-                                                    >
-                                                        <arc:Badge
-                                                            Content="{Binding EditingAuth.OAuthStatusText}"
-                                                            Tone="Neutral"
-                                                            VerticalAlignment="Center"
-                                                        />
-                                                        <TextBlock
-                                                            Text="{Binding EditingAuth.OAuthExpiresText, StringFormat='到期 {0}'}"
-                                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                            VerticalAlignment="Center"
-                                                        />
-                                                    </StackPanel>
-                                                    <TextBlock
-                                                        Text="OAuth 2.0 的客户端配置与浏览器登录在「授权配置」窗口完成；令牌过期时会自动用 refresh_token 续期。"
-                                                        IsVisible="{Binding EditingAuth.IsOAuth2}"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                        TextWrapping="Wrap"
-                                                    />
-                                                    <TextBlock
-                                                        Text="树中选中集合时配置的是集合授权，选中请求时配置的是该请求；请求里手写的同名请求头优先。"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                        TextWrapping="Wrap"
-                                                    />
-                                                </StackPanel>
-                                            </arc:ScrollArea>
+                                                                <Border
+                                                                    Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                                                                    CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
+                                                                    Padding="12"
+                                                                >
+                                                                    <StackPanel Spacing="6">
+                                                                        <TextBlock
+                                                                            Text="{Binding AuthScopeTitle}"
+                                                                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                                                                            FontWeight="Medium"
+                                                                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                                            TextWrapping="Wrap"
+                                                                        />
+                                                                        <TextBlock
+                                                                            Text="{Binding AuthScopeDetail}"
+                                                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                            TextWrapping="Wrap"
+                                                                        />
+                                                                        <WrapPanel
+                                                                            ItemSpacing="8"
+                                                                            LineSpacing="8"
+                                                                        >
+                                                                            <arc:Button
+                                                                                Content="打开授权配置…"
+                                                                                Variant="Secondary"
+                                                                                Size="Small"
+                                                                                Click="OnOpenCurrentAuthorizationClick"
+                                                                                AutomationProperties.Name="打开当前对象的授权配置"
+                                                                            />
+                                                                            <arc:Button
+                                                                                Content="{Binding EnclosingCollectionAuthLabel}"
+                                                                                Variant="Ghost"
+                                                                                Size="Small"
+                                                                                IsVisible="{Binding HasEnclosingCollectionAuth}"
+                                                                                Click="OnOpenEnclosingCollectionAuthorizationClick"
+                                                                                AutomationProperties.Name="{Binding EnclosingCollectionAuthLabel}"
+                                                                            />
+                                                                        </WrapPanel>
+                                                                    </StackPanel>
+                                                                </Border>
+
+                                                                <arc:Input
+                                                                    Label="Bearer 令牌"
+                                                                    IsVisible="{Binding EditingAuth.IsBearer}"
+                                                                    Text="{Binding EditingAuth.Token, Mode=TwoWay}"
+                                                                    Description="只保存在本机，落盘时用 Windows DPAPI 加密。"
+                                                                    AutomationProperties.Name="Bearer 令牌"
+                                                                />
+                                                                <Grid
+                                                                    ColumnDefinitions="1*,1*"
+                                                                    ColumnSpacing="10"
+                                                                    IsVisible="{Binding EditingAuth.IsBasic}"
+                                                                >
+                                                                    <arc:Input
+                                                                        Label="用户名"
+                                                                        Text="{Binding EditingAuth.Username, Mode=TwoWay}"
+                                                                        AutomationProperties.Name="用户名"
+                                                                    />
+                                                                    <arc:Input
+                                                                        Grid.Column="1"
+                                                                        Label="密码"
+                                                                        Text="{Binding EditingAuth.Password, Mode=TwoWay}"
+                                                                        Description="落盘时用 Windows DPAPI 加密。"
+                                                                        AutomationProperties.Name="密码"
+                                                                    />
+                                                                </Grid>
+                                                                <Grid
+                                                                    ColumnDefinitions="1*,1.2*,0.9*"
+                                                                    ColumnSpacing="10"
+                                                                    IsVisible="{Binding EditingAuth.IsApiKey}"
+                                                                >
+                                                                    <arc:Input
+                                                                        Label="名称"
+                                                                        Text="{Binding EditingAuth.ApiKeyName, Mode=TwoWay}"
+                                                                        AutomationProperties.Name="API Key 名称"
+                                                                    />
+                                                                    <arc:Input
+                                                                        Grid.Column="1"
+                                                                        Label="值"
+                                                                        Text="{Binding EditingAuth.ApiKeyValue, Mode=TwoWay}"
+                                                                        Description="落盘时用 Windows DPAPI 加密。"
+                                                                        AutomationProperties.Name="API Key 值"
+                                                                    />
+                                                                    <arc:Select
+                                                                        Grid.Column="2"
+                                                                        Label="位置"
+                                                                        SelectedValue="{Binding EditingAuth.ApiKeyLocation, Mode=TwoWay}"
+                                                                        AutomationProperties.Name="API Key 位置"
+                                                                    >
+                                                                        <arc:SelectItem
+                                                                            Content="请求头"
+                                                                            Value="Header"
+                                                                        />
+                                                                        <arc:SelectItem
+                                                                            Content="查询参数"
+                                                                            Value="Query"
+                                                                        />
+                                                                    </arc:Select>
+                                                                </Grid>
+                                                                <StackPanel
+                                                                    Orientation="Horizontal"
+                                                                    Spacing="8"
+                                                                    IsVisible="{Binding EditingAuth.IsOAuth2}"
+                                                                >
+                                                                    <arc:Badge
+                                                                        Content="{Binding EditingAuth.OAuthStatusText}"
+                                                                        Tone="Neutral"
+                                                                        VerticalAlignment="Center"
+                                                                    />
+                                                                    <TextBlock
+                                                                        Text="{Binding EditingAuth.OAuthExpiresText, StringFormat='到期 {0}'}"
+                                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                        VerticalAlignment="Center"
+                                                                    />
+                                                                </StackPanel>
+                                                                <TextBlock
+                                                                    Text="OAuth 2.0 的客户端配置与浏览器登录在「授权配置」窗口完成；令牌过期时会自动用 refresh_token 续期。"
+                                                                    IsVisible="{Binding EditingAuth.IsOAuth2}"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                    TextWrapping="Wrap"
+                                                                />
+                                                                <TextBlock
+                                                                    Text="树中选中集合时配置的是集合授权，选中请求时配置的是该请求；请求里手写的同名请求头优先。"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                    TextWrapping="Wrap"
+                                                                />
+                                                            </StackPanel>
+                                                        </arc:ScrollArea>
+                                                    </DataTemplate>
+                                                </ContentControl.ContentTemplate>
+                                            </ContentControl>
                                         </arc:TabItem>
 
                                         <arc:TabItem Header="请求体">
@@ -1811,118 +1838,130 @@
                                         </arc:TabItem>
 
                                         <arc:TabItem Header="cURL">
-                                            <Grid
-                                                RowDefinitions="Auto,*"
-                                                Margin="0,6,0,0"
-                                                RowSpacing="10"
-                                            >
-                                                <Grid
-                                                    ColumnDefinitions="*,Auto,Auto,Auto"
-                                                    ColumnSpacing="8"
-                                                >
-                                                    <TextBlock
-                                                        Text="已按当前环境解析变量，可复制 bash cURL 或保存 PowerShell 脚本。"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                        VerticalAlignment="Center"
-                                                        TextWrapping="Wrap"
-                                                    />
-                                                    <arc:Button
-                                                        Grid.Column="1"
-                                                        Content="保存 cURL…"
-                                                        Variant="Ghost"
-                                                        Size="Small"
-                                                        Click="OnExportCurlClick"
-                                                        IsEnabled="{Binding CanExportCurl}"
-                                                        AutomationProperties.Name="保存当前请求 cURL"
-                                                    />
-                                                    <arc:Button
-                                                        Grid.Column="2"
-                                                        Content="保存 PowerShell…"
-                                                        Variant="Ghost"
-                                                        Size="Small"
-                                                        Click="OnExportPowerShellClick"
-                                                        IsEnabled="{Binding CanExportCurl}"
-                                                        AutomationProperties.Name="保存当前请求 PowerShell"
-                                                    />
-                                                    <arc:CopyButton
-                                                        Grid.Column="3"
-                                                        Value="{Binding CurlPreview}"
-                                                        Label="复制 cURL"
-                                                        Variant="Plain"
-                                                    />
-                                                </Grid>
-                                                <arc:ScrollArea Grid.Row="1">
-                                                    <arc:CodeBlock
-                                                        Code="{Binding CurlPreview}"
-                                                        Language="bash"
-                                                        FileName="request.sh"
-                                                        IsCollapsible="False"
-                                                        CopyLabel="复制 cURL"
-                                                    />
-                                                </arc:ScrollArea>
-                                            </Grid>
+                                            <ContentControl Content="{Binding CUrlTabContent}">
+                                                <ContentControl.ContentTemplate>
+                                                    <DataTemplate x:DataType="vm:MainWindowViewModel">
+                                                        <Grid
+                                                            RowDefinitions="Auto,*"
+                                                            Margin="0,6,0,0"
+                                                            RowSpacing="10"
+                                                        >
+                                                            <Grid
+                                                                ColumnDefinitions="*,Auto,Auto,Auto"
+                                                                ColumnSpacing="8"
+                                                            >
+                                                                <TextBlock
+                                                                    Text="已按当前环境解析变量，可复制 bash cURL 或保存 PowerShell 脚本。"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                    VerticalAlignment="Center"
+                                                                    TextWrapping="Wrap"
+                                                                />
+                                                                <arc:Button
+                                                                    Grid.Column="1"
+                                                                    Content="保存 cURL…"
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Click="OnExportCurlClick"
+                                                                    IsEnabled="{Binding CanExportCurl}"
+                                                                    AutomationProperties.Name="保存当前请求 cURL"
+                                                                />
+                                                                <arc:Button
+                                                                    Grid.Column="2"
+                                                                    Content="保存 PowerShell…"
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Click="OnExportPowerShellClick"
+                                                                    IsEnabled="{Binding CanExportCurl}"
+                                                                    AutomationProperties.Name="保存当前请求 PowerShell"
+                                                                />
+                                                                <arc:CopyButton
+                                                                    Grid.Column="3"
+                                                                    Value="{Binding CurlPreview}"
+                                                                    Label="复制 cURL"
+                                                                    Variant="Plain"
+                                                                />
+                                                            </Grid>
+                                                            <arc:ScrollArea Grid.Row="1">
+                                                                <arc:CodeBlock
+                                                                    Code="{Binding CurlPreview}"
+                                                                    Language="bash"
+                                                                    FileName="request.sh"
+                                                                    IsCollapsible="False"
+                                                                    CopyLabel="复制 cURL"
+                                                                />
+                                                            </arc:ScrollArea>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ContentControl.ContentTemplate>
+                                            </ContentControl>
                                         </arc:TabItem>
 
                                         <arc:TabItem
                                             Header="接口文档"
                                             IsVisible="{Binding HasOpenApiDoc}"
                                         >
-                                            <Grid
-                                                RowDefinitions="Auto,*"
-                                                Margin="0,6,0,0"
-                                                RowSpacing="10"
-                                            >
-                                                <Grid
-                                                    ColumnDefinitions="*,Auto,Auto,Auto"
-                                                    ColumnSpacing="8"
-                                                >
-                                                    <TextBlock
-                                                        Text="{Binding OpenApiDocSourceText}"
-                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                        VerticalAlignment="Center"
-                                                        TextTrimming="CharacterEllipsis"
-                                                        ToolTip.Tip="{Binding OpenApiDocSourceText}"
-                                                    />
-                                                    <arc:Button
-                                                        Grid.Column="1"
-                                                        Variant="Secondary"
-                                                        Size="Small"
-                                                        Command="{Binding SyncSelectedOpenApiCommand}"
-                                                        IsVisible="{Binding HasOpenApiSource}"
-                                                        IsLoading="{Binding IsSyncingOpenApi}"
-                                                        AutomationProperties.Name="同步当前集合的 OpenAPI 来源"
-                                                    >
-                                                        <controls:IconLabel
-                                                            Icon="{x:Static arc:ArcIcons.RefreshCw}"
-                                                            Text="同步来源"
-                                                            IconSize="13"
-                                                        />
-                                                    </arc:Button>
-                                                    <arc:Button
-                                                        Grid.Column="2"
-                                                        Variant="Ghost"
-                                                        Size="Small"
-                                                        Content="取消"
-                                                        Command="{Binding CancelOpenApiSyncCommand}"
-                                                        IsVisible="{Binding IsSyncingOpenApi}"
-                                                        AutomationProperties.Name="取消 OpenAPI 同步"
-                                                    />
-                                                    <arc:CopyButton
-                                                        Grid.Column="3"
-                                                        Value="{Binding OpenApiDocMarkdown}"
-                                                        Label="复制文档"
-                                                        Variant="Plain"
-                                                    />
-                                                </Grid>
-                                                <arc:ScrollArea Grid.Row="1">
-                                                    <arc:Markdown
-                                                        Text="{Binding OpenApiDocMarkdown}"
-                                                        AutomationProperties.Name="OpenAPI 接口文档"
-                                                    />
-                                                </arc:ScrollArea>
-                                            </Grid>
+                                            <ContentControl Content="{Binding DocTabContent}">
+                                                <ContentControl.ContentTemplate>
+                                                    <DataTemplate x:DataType="vm:MainWindowViewModel">
+                                                        <Grid
+                                                            RowDefinitions="Auto,*"
+                                                            Margin="0,6,0,0"
+                                                            RowSpacing="10"
+                                                        >
+                                                            <Grid
+                                                                ColumnDefinitions="*,Auto,Auto,Auto"
+                                                                ColumnSpacing="8"
+                                                            >
+                                                                <TextBlock
+                                                                    Text="{Binding OpenApiDocSourceText}"
+                                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                    VerticalAlignment="Center"
+                                                                    TextTrimming="CharacterEllipsis"
+                                                                    ToolTip.Tip="{Binding OpenApiDocSourceText}"
+                                                                />
+                                                                <arc:Button
+                                                                    Grid.Column="1"
+                                                                    Variant="Secondary"
+                                                                    Size="Small"
+                                                                    Command="{Binding SyncSelectedOpenApiCommand}"
+                                                                    IsVisible="{Binding HasOpenApiSource}"
+                                                                    IsLoading="{Binding IsSyncingOpenApi}"
+                                                                    AutomationProperties.Name="同步当前集合的 OpenAPI 来源"
+                                                                >
+                                                                    <controls:IconLabel
+                                                                        Icon="{x:Static arc:ArcIcons.RefreshCw}"
+                                                                        Text="同步来源"
+                                                                        IconSize="13"
+                                                                    />
+                                                                </arc:Button>
+                                                                <arc:Button
+                                                                    Grid.Column="2"
+                                                                    Variant="Ghost"
+                                                                    Size="Small"
+                                                                    Content="取消"
+                                                                    Command="{Binding CancelOpenApiSyncCommand}"
+                                                                    IsVisible="{Binding IsSyncingOpenApi}"
+                                                                    AutomationProperties.Name="取消 OpenAPI 同步"
+                                                                />
+                                                                <arc:CopyButton
+                                                                    Grid.Column="3"
+                                                                    Value="{Binding OpenApiDocMarkdown}"
+                                                                    Label="复制文档"
+                                                                    Variant="Plain"
+                                                                />
+                                                            </Grid>
+                                                            <arc:ScrollArea Grid.Row="1">
+                                                                <arc:Markdown
+                                                                    Text="{Binding OpenApiDocMarkdown}"
+                                                                    AutomationProperties.Name="OpenAPI 接口文档"
+                                                                />
+                                                            </arc:ScrollArea>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ContentControl.ContentTemplate>
+                                            </ContentControl>
                                         </arc:TabItem>
 
                                         <arc:TabItem Header="调用代码">
