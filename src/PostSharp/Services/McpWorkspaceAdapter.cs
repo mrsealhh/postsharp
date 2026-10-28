@@ -81,6 +81,34 @@ public sealed record McpHistoryInfo(
     long DurationMs
 );
 
+public sealed record McpSuiteRunInfo(
+    Guid Id,
+    DateTimeOffset Timestamp,
+    string Summary,
+    int Total,
+    int Passed,
+    int Failed,
+    int Skipped,
+    int NotRun,
+    bool Cancelled,
+    bool Stopped,
+    string? Error
+);
+
+public sealed record McpHistoryDetail(
+    DateTimeOffset Time,
+    string Name,
+    string Method,
+    string Url,
+    int TimeoutSeconds,
+    string BodyMode,
+    string Body,
+    IReadOnlyList<McpRowInfo> Params,
+    IReadOnlyList<McpRowInfo> Headers,
+    int StatusCode,
+    long DurationMs
+);
+
 public sealed record McpAuditSummary(
     Guid Id,
     DateTimeOffset Timestamp,
@@ -757,7 +785,8 @@ public sealed class McpWorkspaceAdapter
     public async Task<TestSuite> CreateSuiteAsync(
         string name,
         IReadOnlyList<McpSuiteStepInput> steps,
-        bool stopOnError
+        bool stopOnError,
+        SuiteWorkflowSpec? workflow = null
     )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
@@ -769,7 +798,7 @@ public sealed class McpWorkspaceAdapter
             };
 
             suite.Steps.AddRange(BuildSuiteSteps(steps));
-            SuiteWorkflowFactory.EnsureLinear(suite);
+            ApplySuiteWorkflow(suite, workflow, rebuildLinear: workflow is null);
             _viewModel.Suites.Add(suite);
             _viewModel.SelectedSuite = suite;
             _viewModel.NotifyWorkspaceChanged();
@@ -847,7 +876,8 @@ public sealed class McpWorkspaceAdapter
         bool? stopOnError,
         bool? runInParallel,
         int? scheduleMinutes,
-        IReadOnlyList<McpSuiteStepInput>? steps
+        IReadOnlyList<McpSuiteStepInput>? steps,
+        SuiteWorkflowSpec? workflow = null
     )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
@@ -881,14 +911,9 @@ public sealed class McpWorkspaceAdapter
                 var rebuilt = BuildSuiteSteps(steps);
                 suite.Steps.Clear();
                 suite.Steps.AddRange(rebuilt);
-                // Replacing a linear MCP step list must rebuild the graph, otherwise old node ids
-                // would leave the suite failing preflight.
-                suite.Workflow = SuiteWorkflowFactory.CreateLinear(suite.Steps);
             }
-            else
-            {
-                SuiteWorkflowFactory.EnsureLinear(suite);
-            }
+
+            ApplySuiteWorkflow(suite, workflow, rebuildLinear: steps is not null);
             _viewModel.SelectedSuite = suite;
             _viewModel.NotifyWorkspaceChanged();
             return suite;
@@ -925,6 +950,76 @@ public sealed class McpWorkspaceAdapter
         return await _viewModel.RunSuiteForMcpAsync(id, context.Client, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<McpSuiteRunInfo>> ListSuiteRunsAsync(Guid suiteId)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var suite =
+                _viewModel.Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            return (IReadOnlyList<McpSuiteRunInfo>)
+                suite
+                    .Runs.Select(run => new McpSuiteRunInfo(
+                        run.Id,
+                        run.Timestamp,
+                        run.Summary,
+                        run.Total,
+                        run.Passed,
+                        run.Failed,
+                        run.Skipped,
+                        run.NotRun,
+                        run.Cancelled,
+                        run.Stopped,
+                        run.Error
+                    ))
+                    .ToList();
+        });
+    }
+
+    public async Task<TestRunResult> GetSuiteRunAsync(Guid suiteId, Guid runId)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var suite =
+                _viewModel.Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            return suite.Runs.FirstOrDefault(candidate => candidate.Id == runId)
+                ?? throw new KeyNotFoundException($"套件中没有 id 为 {runId} 的运行记录。");
+        });
+    }
+
+    public async Task<TestRunResult> RerunFailedSuiteAsync(
+        Guid suiteId,
+        Guid runId,
+        McpCallContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        return await _viewModel.RerunFailedSuiteForMcpAsync(
+            suiteId,
+            runId,
+            context.Client,
+            cancellationToken
+        );
+    }
+
+    public async Task<TestRunResult> ContinueSuiteFromStepAsync(
+        Guid suiteId,
+        Guid runId,
+        Guid stepId,
+        McpCallContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        return await _viewModel.ContinueSuiteFromStepForMcpAsync(
+            suiteId,
+            runId,
+            stepId,
+            context.Client,
+            cancellationToken
+        );
+    }
+
     public async Task<IReadOnlyList<McpHistoryInfo>> ListHistoryAsync(int limit)
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
@@ -944,6 +1039,56 @@ public sealed class McpWorkspaceAdapter
                     ))
                     .ToList();
         });
+    }
+
+    public async Task<McpHistoryDetail> GetHistoryAsync(DateTimeOffset timestamp)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var entry =
+                _viewModel.History.FirstOrDefault(candidate => candidate.Timestamp == timestamp)
+                ?? throw new KeyNotFoundException($"没有找到时间戳为 {timestamp:O} 的历史记录。");
+            var secrets = SecretMasker.CollectAllSecrets(_viewModel.Environments);
+            return new McpHistoryDetail(
+                entry.Timestamp,
+                entry.Name,
+                entry.Method,
+                SecretMasker.MaskSecrets(entry.Url, secrets),
+                entry.TimeoutSeconds,
+                entry.BodyMode,
+                SecretMasker.MaskSecrets(entry.Body, secrets),
+                entry
+                    .Params.Where(row => !string.IsNullOrWhiteSpace(row.Key))
+                    .Select(row => new McpRowInfo(
+                        row.Key,
+                        SecretMasker.MaskSecrets(row.Value, secrets),
+                        row.IsEnabled
+                    ))
+                    .ToList(),
+                entry
+                    .Headers.Where(row => !string.IsNullOrWhiteSpace(row.Key))
+                    .Select(row => new McpRowInfo(
+                        row.Key,
+                        SecretMasker.MaskSecrets(row.Value, secrets),
+                        row.IsEnabled
+                    ))
+                    .ToList(),
+                entry.StatusCode,
+                entry.DurationMs
+            );
+        });
+    }
+
+    public async Task<bool> DeleteHistoryAsync(DateTimeOffset timestamp)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            _viewModel.DeleteHistoryForMcp(timestamp)
+        );
+    }
+
+    public async Task<bool> DeleteAuditAsync(Guid id)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.DeleteAuditForMcp(id));
     }
 
     public async Task<IReadOnlyList<McpEnvironmentInfo>> ListEnvironmentsAsync()
@@ -1042,6 +1187,34 @@ public sealed class McpWorkspaceAdapter
                     .ToList()
             );
         });
+    }
+
+    private static void ApplySuiteWorkflow(
+        TestSuite suite,
+        SuiteWorkflowSpec? workflow,
+        bool rebuildLinear
+    )
+    {
+        if (workflow is not null)
+        {
+            suite.Workflow = SuiteWorkflowFactory.CreateFromSpec(suite.Steps, workflow);
+            if (workflow.MaxParallelism is { } maxParallelism)
+            {
+                suite.MaxParallelism = Math.Clamp(maxParallelism, 0, 64);
+            }
+
+            return;
+        }
+
+        if (rebuildLinear)
+        {
+            // Replacing a linear MCP step list must rebuild the graph, otherwise old node ids
+            // would leave the suite failing preflight.
+            suite.Workflow = SuiteWorkflowFactory.CreateLinear(suite.Steps);
+            return;
+        }
+
+        SuiteWorkflowFactory.EnsureLinear(suite);
     }
 
     private List<TestStep> BuildSuiteSteps(IReadOnlyList<McpSuiteStepInput> steps)

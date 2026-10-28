@@ -4181,6 +4181,20 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         return count;
     }
 
+    public bool DeleteHistoryForMcp(DateTimeOffset timestamp)
+    {
+        var entry = History.FirstOrDefault(candidate => candidate.Timestamp == timestamp);
+        if (entry is null)
+        {
+            return false;
+        }
+
+        History.Remove(entry);
+        MoveToRecycleBin(entry);
+        Persist();
+        return true;
+    }
+
     public bool RestoreHistoryForMcp(DateTimeOffset timestamp)
     {
         var entry = RecycledHistory.FirstOrDefault(candidate => candidate.Timestamp == timestamp);
@@ -4233,6 +4247,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         return count;
+    }
+
+    public bool DeleteAuditForMcp(Guid id)
+    {
+        var entry = Audit.FirstOrDefault(candidate => candidate.Id == id);
+        if (entry is null)
+        {
+            return false;
+        }
+
+        DeleteAuditEntry(entry);
+        return true;
     }
 
     public bool RestoreAuditForMcp(Guid id)
@@ -4796,6 +4822,110 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
             return await RunSuiteCoreAsync(suite, "MCP", "run_suite", client, cancellationToken);
         });
+    }
+
+    public async Task<TestRunResult> RerunFailedSuiteForMcpAsync(
+        Guid suiteId,
+        Guid runId,
+        string? client,
+        CancellationToken cancellationToken
+    )
+    {
+        return await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var suite =
+                Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            var run =
+                suite.Runs.FirstOrDefault(candidate => candidate.Id == runId)
+                ?? throw new KeyNotFoundException($"套件中没有 id 为 {runId} 的运行记录。");
+            var stepIds = SuiteRunPlanner.SelectFailedWithDependencies(suite, run);
+            if (stepIds.Count == 0)
+            {
+                throw new InvalidOperationException("本次运行没有失败步骤。");
+            }
+
+            return await RunSuiteSubsetForMcpAsync(
+                suite,
+                stepIds,
+                "rerun_failed_suite",
+                client,
+                cancellationToken
+            );
+        });
+    }
+
+    public async Task<TestRunResult> ContinueSuiteFromStepForMcpAsync(
+        Guid suiteId,
+        Guid runId,
+        Guid stepId,
+        string? client,
+        CancellationToken cancellationToken
+    )
+    {
+        return await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var suite =
+                Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            var run =
+                suite.Runs.FirstOrDefault(candidate => candidate.Id == runId)
+                ?? throw new KeyNotFoundException($"套件中没有 id 为 {runId} 的运行记录。");
+            if (run.Steps.All(step => step.StepId != stepId))
+            {
+                throw new KeyNotFoundException($"运行记录中没有 id 为 {stepId} 的步骤。");
+            }
+
+            var stepIds = SuiteRunPlanner.SelectFromStepWithDependencies(suite, stepId);
+            if (stepIds.Count == 0)
+            {
+                throw new InvalidOperationException("该步骤已从套件中移除，无法继续运行。");
+            }
+
+            return await RunSuiteSubsetForMcpAsync(
+                suite,
+                stepIds,
+                "continue_suite_from_step",
+                client,
+                cancellationToken
+            );
+        });
+    }
+
+    private async Task<TestRunResult> RunSuiteSubsetForMcpAsync(
+        TestSuite owner,
+        IReadOnlySet<Guid> stepIds,
+        string tool,
+        string? client,
+        CancellationToken cancellationToken
+    )
+    {
+        if (IsRunningSuite)
+        {
+            throw new InvalidOperationException("桌面端正在运行套件，请等待当前运行结束。");
+        }
+
+        var subset = SuiteRunPlanner.CreateSubset(owner, stepIds);
+        if (subset.Steps.Count == 0)
+        {
+            throw new InvalidOperationException("所选步骤已不存在，无法运行。");
+        }
+
+        var validation = ValidateSuite(subset);
+        if (validation.HasErrors)
+        {
+            throw new InvalidOperationException($"{validation.Summary}，请先在桌面端修复套件。");
+        }
+
+        return await RunSuiteCoreAsync(
+            subset,
+            "MCP",
+            tool,
+            client,
+            cancellationToken,
+            forceWorkflow: true,
+            historySuite: owner
+        );
     }
 
     public async Task<TestRunResult> RunSuiteDraftAsync(

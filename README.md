@@ -295,16 +295,18 @@ http://127.0.0.1:5199/mcp
 | `send_request` | 发送请求，返回状态、耗时、大小、响应头、响应体；SSE 时同时返回聚合的 thinking/content |
 | `get_curl` | 生成已解析环境变量的可执行 cURL（机密变量以 `******` 代替） |
 | `run_sequence` | 按顺序运行一组请求（轻量自动化，不含断言/映射） |
-| `list_suites` | 查看套件、步骤顺序、延迟、断言和输入映射 |
-| `get_suite` | 读取单个套件的完整定义（含稳定步骤 id） |
-| `create_suite` | 创建套件，步骤支持 `expectedStatus`、`bodyContains`、`delayMs`、`mappings`、`stopOnError` |
-| `create_suite_from_collections` | 按集合/请求当前顺序快速生成套件 |
-| `update_suite` | 修改名称/失败策略，传入 `steps` 可整体替换、增删或重排工作流 |
-| `run_suite` | 运行套件，返回每个步骤的断言、延迟、映射执行结果 |
+| `list_suites` | 查看套件、步骤顺序、workflow 节点/连线、延迟、断言和输入映射 |
+| `get_suite` | 读取单个套件的完整定义（含稳定步骤 id、workflow 和运行策略） |
+| `create_suite` | 创建套件，步骤支持断言/映射；可选 `workflow` 定义任意 DAG |
+| `create_suite_from_collections` | 按集合/请求当前顺序快速生成线性/并行组套件 |
+| `update_suite` | 修改名称/策略；传入 `steps` 或 `workflow` 可整体替换、增删、重排或分支编排 |
+| `run_suite` | 运行套件，返回运行 id、每个步骤的断言、延迟、映射执行结果 |
+| `list_suite_runs` / `get_suite_run` | 查看最近 20 次运行摘要 / 读取一次运行的完整结果 |
+| `rerun_failed_suite` / `continue_suite_from_step` | 只重跑失败步骤及依赖 / 从历史步骤继续并补跑上游依赖 |
 | `delete_suite` | 删除套件 |
 | `list_audit` | 查询 UI/MCP 审计摘要，支持 `source=UI|MCP` |
-| `get_audit` | 读取单条审计详情（含完整请求/响应预览、cURL、AI 聚合输出） |
-| `list_history` / `list_history_trash` | 查看发送历史 / 历史回收站 |
+| `get_audit` / `delete_audit` | 读取单条审计详情 / 移入审计回收站 |
+| `list_history` / `get_history` / `delete_history` / `list_history_trash` | 查看发送历史、读取完整快照、单条移入回收站 / 历史回收站 |
 | `clear_history` / `restore_history` / `purge_history` / `empty_history_trash` | 历史移入回收站、恢复、永久删除、清空 |
 | `list_environments` | 查看环境和变量（机密变量值为 `******`，并带 `secret: true`） |
 | `create_environment` / `rename_environment` / `delete_environment` / `activate_environment` | 环境新建、重命名、删除、切换 |
@@ -381,7 +383,7 @@ http://127.0.0.1:5199/mcp
 - **节点明细**：延迟、重试次数/间隔、条件、汇合方式、并行组；「规则映射」「规则断言」「条件规则」二级弹窗；映射来源可选择任意已完成上游步骤。
 - **DAG 执行语义**：连线表示依赖与分支，支持总是、上游成功、上游失败、上游跳过和条件表达式；节点汇合支持全部上游完成（All）与任一上游到达（Any）；套件可设置最大并行度、失败即停止和定时运行。顺序执行等价于线性 DAG。开启失败即停止时，失败节点的失败分支和汇合节点仍会执行，未进入失败分支的未开始节点标记为未运行。
 - **条件表达式**：结构化规则支持状态码、响应 JSON 字段、响应头、耗时、步骤结果和环境变量，操作符含等于/不等于/包含/不包含/存在/不存在/大于/小于/正则/属于，规则可按全部（All）或任一（Any）组合；条件不满足时节点标记跳过并沿分支继续传播。多上游汇合时，节点条件以第一条已到达的上游结果为准；需要按不同上游分别判断时请使用连线条件。
-- **AI 自主编排**：MCP 可按步骤数组创建/更新/重排/删除套件；`create_suite` 和集合套件会自动生成线性/并行组 DAG，`get_suite` 返回稳定步骤 id，`update_suite` 可整体替换步骤，运行结果带 `stepId` 和解析后的 URL，便于 AI 对照规则迭代。任意节点/边编辑仍走 UI 编排器。
+- **AI 自主编排**：MCP 可按步骤数组或 `workflow` 创建/更新/重排/删除套件；`workflow` 支持任意节点、连线、边条件、All/Any 汇合和最大并行度，省略时自动生成线性/并行组 DAG。`get_suite` 返回稳定步骤 id 与完整工作流，`run_suite` 返回运行 id，`list_suite_runs` / `get_suite_run` 可回看最近 20 次运行，失败后可 `rerun_failed_suite` 或 `continue_suite_from_step`。
 - **下一步延迟**：每个步骤可设置当前步骤结束到下一请求的延迟，默认 200ms；用于维护接口依赖的调用间隔。
 - **前序出参映射**：每个步骤可配置多条映射规则，从前序某个步骤的响应中提取字段，写入当前请求的：
   - 请求体（支持 `data.token` 这类嵌套路径）
@@ -751,9 +753,12 @@ docs/
 | 套件预检 | 缺失请求、环、悬空节点/连线、无效映射/条件/断言和环境变量会阻止保存或运行；编辑器按节点列出问题并支持定位，管理层持续展示提醒 |
 | 运行历史 | 每个套件持久化最近 20 次运行摘要、步骤结果、节点/连线快照；自动化页可切换历史，重启后保留 |
 | 失败重跑 | 失败运行可只重跑失败步骤及依赖；每个步骤结果提供「从此步继续」，自动补跑上游依赖 |
-| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；172 个测试全部通过 |
-| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、172 个测试通过 |
-| MCP 覆盖审核 | 明确 UI/MCP 差异与 CLI 路线，见 `docs/product-todos.md` 第 10 节；DAG 编排、运行控制、单条删除、字体和流式能力列入后续 TODO |
+| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；175 个测试全部通过 |
+| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、175 个测试通过 |
+| MCP DAG | `create_suite` / `update_suite` 接受 `workflow.nodes`、`workflow.edges`，支持边条件、All/Any 汇合和最大并行度；构建 0 警告/错误 |
+| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；175 个测试通过 |
+| MCP 单条清理 | 新增 `get_history`、`delete_history`、`delete_audit`，审计/历史单条移入回收站可恢复 |
+| MCP 覆盖审核 | 明确 UI/MCP 差异与 CLI 路线，见 `docs/product-todos.md` 第 10 节；运行取消/进度、字体和流式能力列入后续 TODO |
 | 缩放弹层 | 窗口内容改由 `VisualLayerManager` 内的 `ScaleHost` 承载，弹层位于缩放容器外，并同步 `ArcZoom`，避免 80% 缩放时 Arc 下拉偏移 |
 | 设置窗口 | 顶栏「设置」直达独立窗口；主题、日志、字体、请求默认值分组展示，保存后写入 `settings.json` 并立即应用；重复点击只激活已打开窗口 |
 | 设置弹层 | 设置窗口内的 Arc 下拉正常弹出，不再触发「no overlay layer」崩溃 |
@@ -820,7 +825,7 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：172 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：175 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
@@ -977,7 +982,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：172 个 xUnit 测试。
+- 自测：175 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
@@ -997,7 +1002,7 @@ master                 稳定可发布
 - Cookie 管理、代理、客户端证书、OAuth 2.0 之外的授权类型（隐式、客户端凭据、设备码）、Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
 - 授权只支持请求与集合两级（含多级集合继承），没有工作区级或环境级默认授权；同一集合的授权由该集合对象持有，未单独覆盖的下级请求共用同一个令牌，刷新后同步生效。
 - 单点登录依赖系统 WebView2 运行时；复制请求会复制一份独立的授权与令牌，副本重新登录或刷新不会影响原请求；删除集合/请求时其授权配置一起移除。
-- MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。MCP 套件目前只能按步骤数组生成线性/并行组工作流，暂不支持通过 MCP 编写任意 DAG 节点/边、汇合方式和运行取消/进度；运行历史与失败重跑也在后续 TODO。
+- MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。MCP 套件已支持任意 DAG、运行历史和失败重跑/从节点继续；仍不提供跨客户端任务队列、实时进度推送和主动取消，长任务只能等待当前 HTTP 调用结束。
 - 删除环境仍为直接删除，尚未进入回收站。
 
 ### 后续路线图

@@ -13,7 +13,7 @@ namespace PostSharp.Services;
 /// </summary>
 public sealed class McpServer
 {
-    private const string ServerVersion = "0.3.0";
+    private const string ServerVersion = "0.4.0";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -253,14 +253,16 @@ public sealed class McpServer
                                 + "集合最多 5 级，可用 create_collection / update_collection / move_collection / delete_collection 自由整理目录。"
                                 + "用 get_request 查看接口，用 create_request / update_request / move_request / delete_request 管理请求，用 send_request 发请求，"
                                 + "用 get_curl 获取可直接执行的 cURL。"
-                                + "自动化优先用 create_suite / create_suite_from_collections 创建套件，再用 update_suite 反复调整。每个步骤按数组顺序执行，"
+                                + "自动化优先用 create_suite / create_suite_from_collections 创建套件，再用 update_suite 反复调整。steps 定义请求与断言，"
+                                + "可选 workflow.nodes / workflow.edges 定义任意 DAG、分支条件和 All/Any 汇合；省略 workflow 时按步骤顺序生成线性/并行组工作流。"
                                 + "支持 expectedStatus、bodyContains、delayMs（默认 200ms，0-60000）和 mappings。mappings 用 sourceStepIndex（从 0 开始，只能引用更早步骤）"
                                 + "或 sourceStepId 提取上一步 JSON 响应字段（支持 data.token、items[0].id），通过 targetKind=Body/Header/Query/Path 和 targetPath 注入下一步请求，"
-                                + "template 支持 Bearer {value} 这类格式。步骤还支持 retryCount、retryDelayMs、condition、parallelGroup 和 assertions；用 run_suite 运行并读取每步断言，用 list_suites / get_suite 检查规则。"
-                                + "send_request、run_sequence 和 run_suite 都会写入审计记录；list_audit / get_audit 可查所有 UI 和 AI 触发记录。"
+                                + "template 支持 Bearer {value} 这类格式。步骤还支持 retryCount、retryDelayMs、condition、parallelGroup 和 assertions；用 run_suite 运行并读取每步断言，"
+                                + "用 list_suites / get_suite 检查规则，用 list_suite_runs / get_suite_run 查看最近 20 次运行历史，用 rerun_failed_suite / continue_suite_from_step 重跑失败或从节点继续。"
+                                + "send_request、run_sequence、run_suite、rerun_failed_suite 和 continue_suite_from_step 都会写入审计记录；list_audit / get_audit 可查所有 UI 和 AI 触发记录。"
                                 + "环境和历史：list_environments / create_environment / rename_environment / delete_environment / activate_environment / set_variable / delete_variable；"
-                                + "list_history / clear_history / list_history_trash / restore_history / purge_history / empty_history_trash。"
-                                + "审计与集合回收站：clear_audit / list_audit_trash / restore_audit / purge_audit / empty_audit_trash；"
+                                + "list_history / get_history / delete_history / clear_history / list_history_trash / restore_history / purge_history / empty_history_trash。"
+                                + "审计与集合回收站：delete_audit / clear_audit / list_audit_trash / restore_audit / purge_audit / empty_audit_trash；"
                                 + "list_collection_trash / restore_collection_trash / purge_collection_trash / empty_collection_trash。"
                                 + "系统配置和存储：get_settings / update_settings；get_storage_config / upsert_storage_profile / delete_storage_profile / set_storage_binding / test_storage_profile / sync_storage / switch_storage。"
                                 + "导入导出：import_content 支持 Postman/OpenAPI/HAR/Insomnia/Hoppscotch/cURL/PowerShell，export_workspace 导出 Postman Collection。"
@@ -471,11 +473,18 @@ public sealed class McpServer
                 "get_audit" => await _workspace
                     .GetAuditAsync(RequireGuid(arguments, "id"))
                     .ConfigureAwait(false),
+                "delete_audit" => new
+                {
+                    deleted = await _workspace
+                        .DeleteAuditAsync(RequireGuid(arguments, "id"))
+                        .ConfigureAwait(false),
+                },
                 "create_suite" => await _workspace
                     .CreateSuiteAsync(
                         OptionalString(arguments, "name") ?? "MCP 测试套件",
                         ReadSuiteSteps(arguments),
-                        OptionalBool(arguments, "stopOnError") ?? true
+                        OptionalBool(arguments, "stopOnError") ?? true,
+                        ReadOptionalSuiteWorkflow(arguments)
                     )
                     .ConfigureAwait(false),
                 "create_suite_from_collections" => await _workspace
@@ -493,7 +502,8 @@ public sealed class McpServer
                         OptionalBool(arguments, "stopOnError"),
                         OptionalBool(arguments, "runInParallel"),
                         OptionalInt(arguments, "scheduleMinutes"),
-                        ReadOptionalSuiteSteps(arguments)
+                        ReadOptionalSuiteSteps(arguments),
+                        ReadOptionalSuiteWorkflow(arguments)
                     )
                     .ConfigureAwait(false),
                 "get_suite" => await _workspace
@@ -507,6 +517,32 @@ public sealed class McpServer
                         cancellationToken
                     )
                     .ConfigureAwait(false),
+                "list_suite_runs" => await _workspace
+                    .ListSuiteRunsAsync(RequireGuid(arguments, "suiteId"))
+                    .ConfigureAwait(false),
+                "get_suite_run" => await _workspace
+                    .GetSuiteRunAsync(
+                        RequireGuid(arguments, "suiteId"),
+                        RequireGuid(arguments, "runId")
+                    )
+                    .ConfigureAwait(false),
+                "rerun_failed_suite" => await _workspace
+                    .RerunFailedSuiteAsync(
+                        RequireGuid(arguments, "suiteId"),
+                        RequireGuid(arguments, "runId"),
+                        new McpCallContext("rerun_failed_suite", _clientName),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
+                "continue_suite_from_step" => await _workspace
+                    .ContinueSuiteFromStepAsync(
+                        RequireGuid(arguments, "suiteId"),
+                        RequireGuid(arguments, "runId"),
+                        RequireGuid(arguments, "stepId"),
+                        new McpCallContext("continue_suite_from_step", _clientName),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
                 "delete_suite" => new
                 {
                     deleted = await _workspace
@@ -516,6 +552,15 @@ public sealed class McpServer
                 "list_history" => await _workspace
                     .ListHistoryAsync(OptionalInt(arguments, "limit") ?? 20)
                     .ConfigureAwait(false),
+                "get_history" => await _workspace
+                    .GetHistoryAsync(RequireDate(arguments, "timestamp"))
+                    .ConfigureAwait(false),
+                "delete_history" => new
+                {
+                    deleted = await _workspace
+                        .DeleteHistoryAsync(RequireDate(arguments, "timestamp"))
+                        .ConfigureAwait(false),
+                },
                 "list_history_trash" => await _workspace
                     .ListHistoryTrashAsync(OptionalInt(arguments, "limit") ?? 20)
                     .ConfigureAwait(false),
@@ -749,6 +794,66 @@ public sealed class McpServer
     private static IReadOnlyList<McpSuiteStepInput>? ReadOptionalSuiteSteps(JsonObject arguments)
     {
         return arguments.TryGetPropertyValue("steps", out _) ? ReadSuiteSteps(arguments) : null;
+    }
+
+    private static SuiteWorkflowSpec? ReadOptionalSuiteWorkflow(JsonObject arguments)
+    {
+        if (arguments["workflow"] is not JsonObject workflow)
+        {
+            return null;
+        }
+
+        if (workflow["nodes"] is not JsonArray nodes || nodes.Count == 0)
+        {
+            throw new InvalidOperationException("workflow.nodes 不能为空。");
+        }
+
+        var nodeSpecs = nodes
+            .OfType<JsonObject>()
+            .Select(node => new SuiteWorkflowNodeSpec(
+                OptionalGuid(node, "stepId"),
+                OptionalInt(node, "stepIndex"),
+                OptionalString(node, "id"),
+                OptionalDouble(node, "x"),
+                OptionalDouble(node, "y"),
+                OptionalString(node, "joinMode")
+            ))
+            .ToList();
+        var edgeSpecs = workflow["edges"] is JsonArray edges
+            ? edges.OfType<JsonObject>().Select(ReadSuiteWorkflowEdge).ToList()
+            : new List<SuiteWorkflowEdgeSpec>();
+        return new SuiteWorkflowSpec(nodeSpecs, edgeSpecs, OptionalInt(workflow, "maxParallelism"));
+    }
+
+    private static SuiteWorkflowEdgeSpec ReadSuiteWorkflowEdge(JsonObject edge)
+    {
+        return new SuiteWorkflowEdgeSpec(
+            RequireString(edge, "sourceId"),
+            RequireString(edge, "targetId"),
+            OptionalString(edge, "condition"),
+            ReadSuiteCondition(edge)
+        );
+    }
+
+    private static SuiteConditionSpec? ReadSuiteCondition(JsonObject edge)
+    {
+        if (edge["rules"] is not JsonObject rules)
+        {
+            return null;
+        }
+
+        var ruleSpecs = rules["rules"] is JsonArray ruleArray
+            ? ruleArray
+                .OfType<JsonObject>()
+                .Select(rule => new SuiteConditionRuleSpec(
+                    OptionalString(rule, "source"),
+                    OptionalString(rule, "path"),
+                    OptionalString(rule, "operator"),
+                    OptionalString(rule, "expected")
+                ))
+                .ToList()
+            : new List<SuiteConditionRuleSpec>();
+        return new SuiteConditionSpec(OptionalString(rules, "mode"), ruleSpecs);
     }
 
     private static IReadOnlyList<McpSuiteMappingInput>? ReadMappings(JsonObject step)
@@ -1082,14 +1187,22 @@ public sealed class McpServer
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("审计记录 id") }, "id")
             ),
             Tool(
+                "delete_audit",
+                "把单条审计记录移入审计回收站；可用 restore_audit 恢复",
+                ObjectSchema(new JsonObject { ["id"] = StringSchema("审计记录 id") }, "id")
+            ),
+            Tool(
                 "create_suite",
-                "创建自动化套件；步骤按数组顺序执行，支持断言、步骤间延迟和上一步响应字段映射",
+                "创建自动化套件；steps 定义请求与断言，可选 workflow 定义任意 DAG 节点、连线和分支条件",
                 ObjectSchema(
                     new JsonObject
                     {
                         ["name"] = StringSchema("套件名称"),
                         ["stopOnError"] = BooleanSchema("断言或网络失败后停止，默认 true"),
                         ["steps"] = SuiteStepsSchema(),
+                        ["workflow"] = SuiteWorkflowSchema(
+                            "任意 DAG；省略时按步骤顺序生成线性/并行组工作流"
+                        ),
                     },
                     "steps"
                 )
@@ -1119,12 +1232,12 @@ public sealed class McpServer
             ),
             Tool(
                 "get_suite",
-                "读取单个套件的完整定义（步骤 id、延迟、断言、映射）",
+                "读取单个套件的完整定义（步骤、workflow 节点/连线、断言、映射、运行策略）",
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("套件 id") }, "id")
             ),
             Tool(
                 "update_suite",
-                "修改套件名称/失败策略；传入 steps 时整体替换步骤和顺序，可用于增删步骤或重排工作流",
+                "修改套件名称/策略；传入 steps 或 workflow 可整体替换步骤和 DAG，可用于增删、重排或分支编排",
                 ObjectSchema(
                     new JsonObject
                     {
@@ -1137,15 +1250,64 @@ public sealed class McpServer
                             0,
                             1440
                         ),
-                        ["steps"] = SuiteStepsSchema("新的完整步骤数组；省略则只改名称/策略"),
+                        ["steps"] = SuiteStepsSchema("新的完整步骤数组；省略则保留现有步骤"),
+                        ["workflow"] = SuiteWorkflowSchema(
+                            "新的 DAG；省略时，传 steps 会重建线性工作流"
+                        ),
                     },
                     "id"
                 )
             ),
             Tool(
                 "run_suite",
-                "运行自动化套件并返回每个步骤的断言、延迟、映射执行结果",
+                "运行自动化套件并返回每个步骤的断言、延迟、映射执行结果和运行 id",
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("套件 id") }, "id")
+            ),
+            Tool(
+                "list_suite_runs",
+                "列出套件最近的运行历史（最多 20 次）",
+                ObjectSchema(new JsonObject { ["suiteId"] = StringSchema("套件 id") }, "suiteId")
+            ),
+            Tool(
+                "get_suite_run",
+                "读取一次套件运行的完整结果，包括步骤、断言、节点和连线状态",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["suiteId"] = StringSchema("套件 id"),
+                        ["runId"] = StringSchema("运行 id"),
+                    },
+                    "suiteId",
+                    "runId"
+                )
+            ),
+            Tool(
+                "rerun_failed_suite",
+                "重跑一次失败运行中的失败步骤及其依赖，返回新的运行结果",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["suiteId"] = StringSchema("套件 id"),
+                        ["runId"] = StringSchema("历史运行 id"),
+                    },
+                    "suiteId",
+                    "runId"
+                )
+            ),
+            Tool(
+                "continue_suite_from_step",
+                "从历史运行中的某个步骤继续执行下游步骤，并自动补跑上游依赖",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["suiteId"] = StringSchema("套件 id"),
+                        ["runId"] = StringSchema("历史运行 id"),
+                        ["stepId"] = StringSchema("步骤 id"),
+                    },
+                    "suiteId",
+                    "runId",
+                    "stepId"
+                )
             ),
             Tool(
                 "delete_suite",
@@ -1373,6 +1535,22 @@ public sealed class McpServer
                         ["key"] = StringSchema("变量名"),
                     },
                     "key"
+                )
+            ),
+            Tool(
+                "get_history",
+                "按时间戳读取一条发送历史的完整请求快照（URL、参数、请求头和请求体）",
+                ObjectSchema(
+                    new JsonObject { ["timestamp"] = StringSchema("ISO 8601 时间戳") },
+                    "timestamp"
+                )
+            ),
+            Tool(
+                "delete_history",
+                "把单条发送历史移入历史回收站；可用 restore_history 恢复",
+                ObjectSchema(
+                    new JsonObject { ["timestamp"] = StringSchema("ISO 8601 时间戳") },
+                    "timestamp"
                 )
             ),
             Tool(
@@ -1632,6 +1810,109 @@ public sealed class McpServer
             },
         };
     }
+
+    private static JsonObject SuiteWorkflowSchema(string description) =>
+        new()
+        {
+            ["type"] = "object",
+            ["description"] = description,
+            ["properties"] = new JsonObject
+            {
+                ["nodes"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["description"] = "必须覆盖全部步骤；stepId 或 stepIndex 指向步骤",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["id"] = StringSchema("节点 id；省略时使用步骤 id"),
+                            ["stepId"] = StringSchema("步骤 id；与 stepIndex 二选一"),
+                            ["stepIndex"] = IntegerSchema("步骤的 0 基索引；与 stepId 二选一", 0),
+                            ["x"] = NumberSchema("画布横坐标，默认 80"),
+                            ["y"] = NumberSchema("画布纵坐标，默认按步骤顺序排列"),
+                            ["joinMode"] = EnumSchema("多上游汇合方式", "All", "Any"),
+                        },
+                    },
+                },
+                ["edges"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["description"] = "节点之间的有向依赖；sourceId/targetId 引用 nodes.id",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sourceId"] = StringSchema("上游节点 id"),
+                            ["targetId"] = StringSchema("下游节点 id"),
+                            ["condition"] = EnumSchema(
+                                "分支条件",
+                                "Always",
+                                "OnSuccess",
+                                "OnFailure",
+                                "OnSkipped",
+                                "Expression"
+                            ),
+                            ["rules"] = SuiteConditionSchema(),
+                        },
+                        ["required"] = new JsonArray("sourceId", "targetId"),
+                    },
+                },
+                ["maxParallelism"] = IntegerSchema("最大并行节点数；0 表示不限制，默认 4", 0, 64),
+            },
+            ["required"] = new JsonArray("nodes"),
+        };
+
+    private static JsonObject SuiteConditionSchema() =>
+        new()
+        {
+            ["type"] = "object",
+            ["description"] = "条件表达式；condition=Expression 时至少一条规则",
+            ["properties"] = new JsonObject
+            {
+                ["mode"] = EnumSchema("规则组合方式", "All", "Any"),
+                ["rules"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["source"] = EnumSchema(
+                                "条件来源",
+                                "StatusCode",
+                                "BodyJson",
+                                "Header",
+                                "ElapsedMs",
+                                "Result",
+                                "Variable"
+                            ),
+                            ["path"] = StringSchema("JSON 路径、响应头名或环境变量名"),
+                            ["operator"] = EnumSchema(
+                                "比较操作符",
+                                "Equals",
+                                "NotEquals",
+                                "Contains",
+                                "NotContains",
+                                "Exists",
+                                "NotExists",
+                                "GreaterThan",
+                                "LessThan",
+                                "Matches",
+                                "In"
+                            ),
+                            ["expected"] = StringSchema("期望值"),
+                        },
+                    },
+                },
+            },
+        };
+
+    private static JsonObject NumberSchema(string description) =>
+        new() { ["type"] = "number", ["description"] = description };
 
     private static JsonObject MappingArraySchema() =>
         new()

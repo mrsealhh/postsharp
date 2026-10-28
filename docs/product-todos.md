@@ -1,8 +1,8 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
-> 基线版本：v1.10.9（2026-10-28）
+> 基线版本：v1.10.10（2026-10-28）
 > 基线形态：当前发布 Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
-> 基线测试：172 个 xUnit 测试，`csharpier check .` 通过
+> 基线测试：175 个 xUnit 测试，`csharpier check .` 通过
 > 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
@@ -94,7 +94,7 @@
 | 主工程 | `src/PostSharp`，单一桌面应用 |
 | 存储契约 | `src/PostSharp.Storage.Abstractions` |
 | 插件源码 | `src/Plugins/PostSharp.Storage.*` |
-| 测试 | `tests/PostSharp.Tests`，30 个测试文件，172 个用例 |
+| 测试 | `tests/PostSharp.Tests`，30 个测试文件，175 个用例 |
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
@@ -528,14 +528,16 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 ## 10. MCP 覆盖与 CLI 模式
 
-状态：当前 MCP 覆盖集合/请求 CRUD、发送、线性套件、审计/历史/回收站、设置和存储；**不是 UI 功能 1:1 映射**。详细审核见 `C:\Users\Administrator\Desktop\AICoding\postsharp\PostSharp-MCP覆盖审核与CLI计划-2026-10-28.md`。
+状态：当前 MCP 覆盖集合/请求 CRUD、发送、DAG 套件、运行历史、审计/历史/回收站、设置和存储；**仍不是 UI 功能 1:1 映射**。详细审核见 `C:\Users\Administrator\Desktop\AICoding\postsharp\PostSharp-MCP覆盖审核与CLI计划-2026-10-28.md`。
 
 ### P0：先补齐自动化回归闭环
 
-- [ ] `get_suite` / `create_suite` / `update_suite` 支持节点、连线、边条件、`joinMode`、`maxParallelism`，而不是只生成线性工作流。
-- [ ] `run_suite` 返回稳定 `runId`；新增运行进度、取消、运行历史和 `rerun_failed` / `continue_from_step`。
+- [x] `get_suite` / `create_suite` / `update_suite` 支持节点、连线、边条件、`joinMode`、`maxParallelism`，可替代线性工作流。
+- [x] `run_suite` 返回稳定 `runId`；新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`。
+- [ ] 运行进度推送和主动取消；当前长任务只能等待 MCP HTTP 调用结束或被客户端断开。
 - [ ] 预检结果以结构化错误返回（节点 id、错误码、修复建议）。
-- [ ] 增加审计/历史单条操作：`delete_audit`、`get_history`、`delete_history`，以及来源/状态/日期筛选。
+- [x] 增加审计/历史单条操作：`delete_audit`、`get_history`、`delete_history`。
+- [ ] 审计/历史来源、状态、日期筛选与搜索。
 
 ### P1：补齐高频能力
 
