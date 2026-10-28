@@ -1340,6 +1340,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         {
             Log.Warning(exception, "自动同步 OpenAPI 文档时意外终止");
         }
+        finally
+        {
+            // 自动同步会一次性重建几百个请求和它们的 schema 文档，峰值过后立刻把这段内存还回去。
+            HeapTrim.Request();
+        }
     }
 
     [RelayCommand]

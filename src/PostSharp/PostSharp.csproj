@@ -42,9 +42,9 @@
     <ItemGroup>
         <!--
             交互型工具更需要「别常驻空堆」：消费内存越高，GC 越积极归还已提交的段。
-            实测 committed 277MB 而存活对象只有 99MB，这块空段是任务管理器里最显眼的浪费。
+            实测同一工作区、同样的启动同步：7 比旧构建省 79MB，9 再省 30MB（352 → 273 → 243）。
         -->
-        <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+        <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="9" />
     </ItemGroup>
 
     <ItemGroup>
