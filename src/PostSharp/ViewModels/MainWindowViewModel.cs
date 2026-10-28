@@ -5054,7 +5054,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
             lock (job.SyncRoot)
             {
-                job.RunId = result.Id;
+                job.RunId = result.Error is null ? result.Id : null;
                 job.Error = result.Error;
                 job.Summary = result.Summary;
                 job.CompletedSteps = result.Total;
