@@ -1,25 +1,25 @@
-using Avalonia;
+using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform;
+using Avalonia.Threading;
+using PostSharp.Controls;
 using PostSharp.Models;
 using PostSharp.Services;
 using PostSharp.ViewModels;
+using TKCode.Arc;
 
 namespace PostSharp.Views;
 
 public partial class WorkflowEditorWindow : Window
 {
-    private static readonly DataFormat<WorkflowPaletteItem> PaletteFormat =
-        DataFormat.CreateInProcessFormat<WorkflowPaletteItem>("PostSharp.WorkflowPaletteItem");
     private readonly WorkflowEditorViewModel _viewModel;
-    private Point _dragStart;
-    private WorkflowPaletteItem? _dragItem;
-    private PointerPressedEventArgs? _dragPressed;
+    private double _leftPaneWidth = 320;
+    private double _rightPaneWidth = 342;
 
     public WorkflowEditorWindow()
-        : this(new WorkflowEditorViewModel(Array.Empty<RequestCollection>())) { }
+        : this(new WorkflowEditorViewModel(Array.Empty<RequestCollection>(), null)) { }
 
     public WorkflowEditorWindow(WorkflowEditorViewModel viewModel)
     {
@@ -42,65 +42,26 @@ public partial class WorkflowEditorWindow : Window
             RoutingStrategies.Tunnel | RoutingStrategies.Bubble,
             handledEventsToo: true
         );
-    }
-
-    public event EventHandler<WorkflowSuiteResult>? SuiteCreated;
-
-    private void OnPalettePointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (sender is not Control { DataContext: WorkflowPaletteItem item })
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        viewModel.ContentChanged += OnContentChanged;
+        Closed += (_, _) =>
         {
-            return;
-        }
-
-        var point = e.GetCurrentPoint(this);
-        if (!point.Properties.IsLeftButtonPressed)
+            viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            viewModel.ContentChanged -= OnContentChanged;
+        };
+        Opened += (_, _) =>
         {
-            return;
-        }
-
-        _dragItem = item;
-        _dragStart = e.GetPosition(this);
-        _dragPressed = e;
-    }
-
-    private async void OnPalettePointerMoved(object? sender, PointerEventArgs e)
-    {
-        if (
-            _dragItem is null
-            || _dragPressed is null
-            || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
-        )
-        {
-            return;
-        }
-
-        var position = e.GetPosition(this);
-        if (Math.Abs(position.X - _dragStart.X) < 4 && Math.Abs(position.Y - _dragStart.Y) < 4)
-        {
-            return;
-        }
-
-        var item = _dragItem;
-        var pressed = _dragPressed;
-        _dragItem = null;
-        _dragPressed = null;
-        var transfer = new DataTransfer();
-        transfer.Add(DataTransferItem.Create(PaletteFormat, item));
-        await DragDrop.DoDragDropAsync(pressed, transfer, DragDropEffects.Copy);
-    }
-
-    private void OnPaletteDoubleTapped(object? sender, TappedEventArgs e)
-    {
-        if (sender is Control { DataContext: WorkflowPaletteItem item })
-        {
-            _viewModel.AddNode(item, new Point(100, 100));
-        }
+            _ = this.EnsurePopupOverlayLayerAsync();
+            Dispatcher.UIThread.Post(
+                () => Canvas.FitToContent(animate: false),
+                DispatcherPriority.Loaded
+            );
+        };
     }
 
     private void OnCanvasDragOver(object? sender, DragEventArgs e)
     {
-        if (e.DataTransfer.Contains(PaletteFormat))
+        if (e.DataTransfer.Contains(SuiteSourceDragFormats.Source))
         {
             e.DragEffects = DragDropEffects.Copy;
             e.Handled = true;
@@ -109,14 +70,87 @@ public partial class WorkflowEditorWindow : Window
 
     private void OnCanvasDrop(object? sender, DragEventArgs e)
     {
-        if (e.DataTransfer.TryGetValue(PaletteFormat) is { } item)
+        if (e.DataTransfer.TryGetValue(SuiteSourceDragFormats.Source) is { } data)
         {
-            _viewModel.AddNode(item, e.GetPosition(Canvas));
+            _viewModel.AddDroppedSource(data, e.GetPosition(Canvas));
             e.Handled = true;
         }
     }
 
+    private void OnContentChanged(object? sender, EventArgs e) =>
+        Dispatcher.UIThread.Post(
+            () => Canvas.FitToContent(animate: false),
+            DispatcherPriority.Loaded
+        );
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (
+            e.PropertyName is not nameof(WorkflowEditorViewModel.SelectedStep)
+            || _viewModel.SelectedStep is not { } step
+        )
+        {
+            return;
+        }
+
+        var node = _viewModel.Graph.FindNode(step.Step.Id.ToString());
+        if (node is not null)
+        {
+            Canvas.Select(new[] { node });
+            Canvas.ScrollIntoView(node);
+        }
+    }
+
+    public event EventHandler<WorkflowSuiteResult>? SuiteCreated;
+
+    private void OnCanvasSelectionChanged(object? sender, WorkflowSelectionChangedEventArgs e) =>
+        _viewModel.SetSelection(Canvas.SelectedNodes, Canvas.SelectedEdges);
+
+    private void OnCanvasGraphEdited(object? sender, WorkflowEditEventArgs e)
+    {
+        if (e.Kind == WorkflowEditKind.Move)
+        {
+            return;
+        }
+
+        _viewModel.SyncGraphEdits();
+    }
+
     private void OnAutoLayoutClick(object? sender, RoutedEventArgs e) => Canvas.ArrangeNodes();
+
+    private void OnToggleLeftPaneClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.IsLeftPaneCollapsed)
+        {
+            _viewModel.IsLeftPaneCollapsed = false;
+            MainEditorGrid.ColumnDefinitions[0].Width = new GridLength(_leftPaneWidth);
+            MainEditorGrid.ColumnDefinitions[1].Width = new GridLength(8);
+        }
+        else
+        {
+            _leftPaneWidth = Math.Max(220, MainEditorGrid.ColumnDefinitions[0].ActualWidth);
+            _viewModel.IsLeftPaneCollapsed = true;
+            MainEditorGrid.ColumnDefinitions[0].Width = new GridLength(0);
+            MainEditorGrid.ColumnDefinitions[1].Width = new GridLength(0);
+        }
+    }
+
+    private void OnToggleRightPaneClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.IsRightPaneCollapsed)
+        {
+            _viewModel.IsRightPaneCollapsed = false;
+            MainEditorGrid.ColumnDefinitions[4].Width = new GridLength(_rightPaneWidth);
+            MainEditorGrid.ColumnDefinitions[3].Width = new GridLength(8);
+        }
+        else
+        {
+            _rightPaneWidth = Math.Max(280, MainEditorGrid.ColumnDefinitions[4].ActualWidth);
+            _viewModel.IsRightPaneCollapsed = true;
+            MainEditorGrid.ColumnDefinitions[4].Width = new GridLength(0);
+            MainEditorGrid.ColumnDefinitions[3].Width = new GridLength(0);
+        }
+    }
 
     private void OnClearWorkflowClick(object? sender, RoutedEventArgs e)
     {
@@ -124,16 +158,41 @@ public partial class WorkflowEditorWindow : Window
         Canvas.Graph = _viewModel.Graph;
     }
 
-    private void OnCloseClick(object? sender, RoutedEventArgs e) => Close();
-
-    private void OnCreateWorkflowSuiteClick(object? sender, RoutedEventArgs e)
+    private void OnCloseClick(object? sender, RoutedEventArgs e)
     {
-        if (_viewModel.BuildSuite() is not { } result)
+        _viewModel.CancelRunCommand.Execute(null);
+        Close();
+    }
+
+    private void OnSaveClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.IsSuiteRunning || _viewModel.BuildSuite() is not { } result)
         {
             return;
         }
 
         SuiteCreated?.Invoke(this, result);
         Close();
+    }
+
+    private void OnMappingDialogOpened(object? sender, EventArgs e) =>
+        ApplyWideDialog(MappingDialog);
+
+    private void OnAssertionDialogOpened(object? sender, EventArgs e) =>
+        ApplyWideDialog(AssertionDialog);
+
+    private void OnConditionDialogOpened(object? sender, EventArgs e) =>
+        ApplyWideDialog(ConditionDialog);
+
+    private void ApplyWideDialog(Dialog dialog)
+    {
+        if (dialog.Surface is not { } surface)
+        {
+            return;
+        }
+
+        var width = Math.Max(560, Bounds.Width * 0.8);
+        surface.Width = width;
+        surface.MaxWidth = width;
     }
 }

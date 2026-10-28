@@ -1,7 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
+using TKCode.Arc.Primitives;
 
 namespace PostSharp.Services;
 
@@ -50,19 +52,33 @@ public static class UiScaleService
 
         if (!Hosts.TryGetValue(window, out var host))
         {
-            host = new LayoutTransformControl
+            host = window
+                .GetLogicalDescendants()
+                .OfType<LayoutTransformControl>()
+                .FirstOrDefault(control => control.Name == "ScaleHost");
+
+            if (host is null)
             {
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch,
-            };
-            window.Content = null;
-            host.Child = content;
-            window.Content = host;
+                host = new LayoutTransformControl
+                {
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch,
+                };
+
+                window.Content = null;
+                host.Child = content;
+                window.Content = host;
+            }
+
             Hosts[window] = host;
             window.Closed += (_, _) => Hosts.Remove(window);
         }
 
         host.LayoutTransform = new ScaleTransform(scale, scale);
+
+        // Arc Select / Tooltip surfaces are hosted in the overlay layer, outside the scaled content.
+        // ArcZoom carries the same factor to those surfaces so their anchors and sizes stay aligned.
+        ArcZoom.SetScale(window, scale);
     }
 
     private static double Normalize(double scale) =>

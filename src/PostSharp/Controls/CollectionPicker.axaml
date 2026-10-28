@@ -1,0 +1,180 @@
+<UserControl
+    x:Class="PostSharp.Controls.CollectionPicker"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+    xmlns:models="using:PostSharp.Models"
+    xmlns:vm="using:PostSharp.ViewModels"
+    x:DataType="vm:CollectionPickerViewModel"
+>
+    <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
+        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
+            <arc:SearchField
+                Placeholder="搜索"
+                Text="{Binding FilterText, Mode=TwoWay}"
+                ToolTip.Tip="搜索集合与接口"
+                AutomationProperties.Name="搜索集合与接口"
+            />
+            <arc:SegmentedControl
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                SelectedValue="{Binding Mode, Mode=TwoWay}"
+                AutomationProperties.Name="来源筛选"
+            >
+                <arc:SegmentedOption Value="全部" Label="全部" />
+                <arc:SegmentedOption Value="收藏" Label="收藏" />
+            </arc:SegmentedControl>
+            <arc:Button
+                Grid.Column="2"
+                Variant="Ghost"
+                Size="Small"
+                Width="30"
+                Padding="0"
+                Command="{Binding ToggleAllCollectionsCommand}"
+                ToolTip.Tip="全部展开/折叠"
+                AutomationProperties.Name="全部展开或折叠"
+            >
+                <arc:ArcGlyph
+                    Data="{x:Static arc:ArcIcons.ChevronsUpDown}"
+                    Size="14"
+                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                />
+            </arc:Button>
+            <arc:Button
+                Grid.Column="3"
+                Variant="Ghost"
+                Size="Small"
+                Width="30"
+                Padding="0"
+                Command="{Binding ClearSelectionCommand}"
+                ToolTip.Tip="清空来源选择"
+                AutomationProperties.Name="清空来源选择"
+            >
+                <arc:ArcGlyph
+                    Data="{x:Static arc:ArcIcons.Eraser}"
+                    Size="14"
+                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                />
+            </arc:Button>
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBlock
+                Text="{Binding SelectionSummary}"
+                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                VerticalAlignment="Center"
+            />
+            <arc:Switch
+                Grid.Column="1"
+                Content="接口"
+                IsChecked="{Binding ShowRequests, Mode=TwoWay}"
+                ToolTip.Tip="在集合树中显示或隐藏具体接口"
+                AutomationProperties.Name="显示接口"
+            />
+        </Grid>
+
+        <Border
+            Grid.Row="2"
+            Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+            BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+            BorderThickness="1"
+            CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+            Padding="4"
+        >
+            <arc:ScrollArea x:Name="SourceScroll">
+                <ItemsControl ItemsSource="{Binding Rows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:SuiteSourceCollection">
+                            <Border
+                                Background="{arc:ArcDesignTokenResource Surface}"
+                                CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
+                                Padding="7,5"
+                                Margin="0,0,0,3"
+                                Cursor="Hand"
+                                PointerPressed="OnRowPointerPressed"
+                                PointerMoved="OnRowPointerMoved"
+                            >
+                                <Grid
+                                    ColumnDefinitions="Auto,18,18,*,Auto"
+                                    ColumnSpacing="5"
+                                    Margin="{Binding Indent}"
+                                >
+                                    <arc:Checkbox
+                                        IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                        VerticalAlignment="Center"
+                                        ToolTip.Tip="{Binding SelectionTip}"
+                                        AutomationProperties.Name="{Binding Name}"
+                                    />
+                                    <arc:Button
+                                        Grid.Column="1"
+                                        Variant="Ghost"
+                                        Size="Small"
+                                        Width="18"
+                                        Height="18"
+                                        Padding="0"
+                                        Command="{Binding ToggleCommand}"
+                                        IsVisible="{Binding IsCollection}"
+                                        AutomationProperties.Name="展开或折叠"
+                                    >
+                                        <Panel>
+                                            <arc:ArcGlyph
+                                                Data="{x:Static arc:ArcIcons.ChevronRight}"
+                                                Size="12"
+                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                IsVisible="{Binding !IsExpanded}"
+                                            />
+                                            <arc:ArcGlyph
+                                                Data="{x:Static arc:ArcIcons.ChevronDown}"
+                                                Size="12"
+                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                IsVisible="{Binding IsExpanded}"
+                                            />
+                                        </Panel>
+                                    </arc:Button>
+                                    <Panel Grid.Column="2" VerticalAlignment="Center">
+                                        <arc:ArcGlyph
+                                            Data="{x:Static arc:ArcIcons.Folder}"
+                                            Size="13"
+                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                            IsVisible="{Binding IsCollection}"
+                                        />
+                                        <arc:ArcGlyph
+                                            Data="{x:Static arc:ArcIcons.FileText}"
+                                            Size="13"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            IsVisible="{Binding IsRequest}"
+                                        />
+                                    </Panel>
+                                    <StackPanel Grid.Column="3" Spacing="1">
+                                        <TextBlock
+                                            Text="{Binding Name}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                            TextTrimming="CharacterEllipsis"
+                                            ToolTip.Tip="{Binding Name}"
+                                        />
+                                        <TextBlock
+                                            Text="{Binding RequestCountLabel}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            TextTrimming="CharacterEllipsis"
+                                            ToolTip.Tip="{Binding RequestCountLabel}"
+                                        />
+                                    </StackPanel>
+                                    <arc:Badge
+                                        Grid.Column="4"
+                                        Content="{Binding KindLabel}"
+                                        Tone="Neutral"
+                                        Size="Small"
+                                        VerticalAlignment="Center"
+                                    />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </arc:ScrollArea>
+        </Border>
+    </Grid>
+</UserControl>

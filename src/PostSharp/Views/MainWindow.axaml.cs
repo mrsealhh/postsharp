@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using Avalonia;
@@ -26,6 +27,7 @@ public partial class MainWindow : Window
     private const double DefaultRequestPaneRatio = 0.5;
     private const double MinRequestPaneRatio = 0.25;
     private const double MaxRequestPaneRatio = 0.8;
+    private const string GitHubRepositoryUrl = "https://github.com/mrsealhh/postsharp";
 
     private MainWindowViewModel? _viewModel;
     private SettingsWindow? _settingsWindow;
@@ -87,19 +89,18 @@ public partial class MainWindow : Window
             RequestBodyTextarea.FrameHeight = Math.Clamp(available - 170, 80, 560);
             JsonRequestBodyViewer.MaxTreeHeight = Math.Clamp(available - 190, 80, 520);
         };
-        HistoryScrollArea.SizeChanged += (_, _) => UpdateHistoryWidth();
-        HistoryScrollArea.ScrollChanged += (_, _) =>
+        AuditScrollArea.ScrollChanged += (_, _) =>
         {
-            if (HistoryScrollArea.Offset.X != 0)
+            if (IsNearBottom(AuditScrollArea))
             {
-                HistoryScrollArea.Offset = new Vector(0, HistoryScrollArea.Offset.Y);
+                _viewModel?.AuditPage.LoadMore();
             }
         };
-        HistoryScrollArea.LayoutUpdated += (_, _) =>
+        CollectionScrollArea.ScrollChanged += (_, _) =>
         {
-            if (HistoryScrollArea.Offset.X != 0)
+            if (IsNearBottom(CollectionScrollArea))
             {
-                HistoryScrollArea.Offset = new Vector(0, HistoryScrollArea.Offset.Y);
+                _viewModel?.TreePage.LoadMore();
             }
         };
         DataContextChanged += OnDataContextChanged;
@@ -115,10 +116,10 @@ public partial class MainWindow : Window
         {
             this.EnablePopupOverlayLayer();
             ApplyTitleBarTheme();
-            Dispatcher.UIThread.Post(
-                () => HistoryScrollArea.ScrollToOffset(default),
-                DispatcherPriority.Loaded
-            );
+            foreach (var dialog in this.GetVisualDescendants().OfType<TKCode.Arc.Dialog>())
+            {
+                dialog.Opened += OnDialogOpened;
+            }
         };
         ActualThemeVariantChanged += (_, _) => ApplyTitleBarTheme();
     }
@@ -246,6 +247,21 @@ public partial class MainWindow : Window
 
     private void OnCloseWindowClick(object? sender, RoutedEventArgs e) => Close();
 
+    private void OnOpenGitHubClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(
+                new ProcessStartInfo { FileName = GitHubRepositoryUrl, UseShellExecute = true }
+            );
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "打开 GitHub 项目主页失败");
+            _viewModel?.ShowToast($"无法打开 GitHub 项目主页，请手动访问 {GitHubRepositoryUrl}");
+        }
+    }
+
     private void ToggleMaximize()
     {
         WindowState =
@@ -295,6 +311,14 @@ public partial class MainWindow : Window
         if (_viewModel is not null && sender is Control { DataContext: AuditEntry entry })
         {
             _viewModel.SelectedAuditEntry = entry;
+        }
+    }
+
+    private void OnHistoryRowClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel is not null && sender is Control { DataContext: HistoryEntry entry })
+        {
+            _viewModel.LoadHistory(entry);
         }
     }
 
@@ -421,56 +445,72 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnSuiteBuilderDialogOpened(object? sender, EventArgs e) =>
-        ApplyWideDialog(SuiteBuilderDialog);
+    private void OnSuiteEditorRequested(object? sender, RequestCollection? collection)
+    {
+        if (_viewModel is null)
+        {
+            Log.Warning("套件编辑器请求被忽略：主 ViewModel 为空");
+            return;
+        }
 
-    private void OnOpenWorkflowEditorClick(object? sender, RoutedEventArgs e)
+        OpenSuiteEditor(_viewModel.CreateSuiteEditorDraft(collection), null);
+    }
+
+    private void OnEditSuiteClick(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.SelectedSuite is not { } suite)
+        {
+            return;
+        }
+
+        OpenSuiteEditor(_viewModel.CreateSuiteDraftForEditing(suite), suite);
+    }
+
+    private void OpenSuiteEditor(TestSuite draft, TestSuite? existing)
     {
         if (_viewModel is null)
         {
             return;
         }
 
-        var editor = new WorkflowEditorWindow(_viewModel.CreateWorkflowEditorViewModel());
-        editor.SuiteCreated += (_, result) =>
+        try
         {
-            _viewModel.AddWorkflowSuite(result);
-            editor.Close();
-        };
-        editor.Show(this);
+            var editor = new WorkflowEditorWindow(
+                _viewModel.CreateWorkflowEditorViewModel(draft, existing)
+            );
+            editor.SuiteCreated += (_, result) =>
+                _viewModel.ApplySuiteEditorResult(result.Suite, existing);
+            _ = editor.ShowDialog(this);
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "打开套件编辑器失败");
+            _viewModel.ShowToast("套件编辑器打开失败，请查看日志");
+        }
     }
-
-    private void OnMappingDialogOpened(object? sender, EventArgs e) =>
-        ApplyWideDialog(MappingDialog);
-
-    private void OnAssertionDialogOpened(object? sender, EventArgs e) =>
-        ApplyWideDialog(AssertionDialog);
 
     private void OnImportDialogOpened(object? sender, EventArgs e) =>
-        ApplyImportDialog(ImportDialog);
+        ApplyDialogWidth(ImportDialog);
 
-    private void ApplyWideDialog(TKCode.Arc.Dialog dialog)
+    private void OnDialogOpened(object? sender, EventArgs e)
     {
-        if (dialog.Surface is not { } surface)
+        if (sender is TKCode.Arc.Dialog dialog)
         {
-            return;
+            ApplyDialogWidth(dialog);
         }
-
-        var width = Math.Clamp(Bounds.Width - 64, 680, 1180);
-        surface.Width = width;
-        surface.MaxWidth = width;
     }
 
-    private void ApplyImportDialog(TKCode.Arc.Dialog dialog)
+    private void ApplyDialogWidth(TKCode.Arc.Dialog dialog)
     {
-        if (dialog.Surface is not { } surface)
+        // Popups follow the main window instead of each using a different fixed width.
+        var width = Math.Max(420, Bounds.Width * 0.8);
+        dialog.Width = width;
+        dialog.MaxWidth = width;
+        if (dialog.Surface is { } surface)
         {
-            return;
+            surface.Width = width;
+            surface.MaxWidth = width;
         }
-
-        var width = Math.Clamp(Bounds.Width - 160, 720, 900);
-        surface.Width = width;
-        surface.MaxWidth = width;
     }
 
     private void OnOpenSettingsClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1587,14 +1627,18 @@ public partial class MainWindow : Window
         int size
     );
 
+    private static bool IsNearBottom(ScrollViewer area) =>
+        area.Extent.Height > area.Viewport.Height + 1
+        && area.Offset.Y + area.Viewport.Height >= area.Extent.Height - 80;
+
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         if (_viewModel is not null)
         {
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
-            _viewModel.History.CollectionChanged -= OnHistoryCollectionChanged;
             _viewModel.TreeNodes.CollectionChanged -= OnTreeNodesCollectionChanged;
+            _viewModel.SuiteEditorRequested -= OnSuiteEditorRequested;
         }
 
         _viewModel = DataContext as MainWindowViewModel;
@@ -1602,31 +1646,12 @@ public partial class MainWindow : Window
         {
             _viewModel.AppearanceChanged += OnAppearanceChanged;
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
-            _viewModel.History.CollectionChanged += OnHistoryCollectionChanged;
             _viewModel.TreeNodes.CollectionChanged += OnTreeNodesCollectionChanged;
+            _viewModel.SuiteEditorRequested += OnSuiteEditorRequested;
             ApplyAppearance();
             ApplyRequestResponseLayout();
             ApplyWorkspaceLayout(_viewModel.IsWorkspaceSideBySide);
         }
-    }
-
-    private void OnHistoryCollectionChanged(
-        object? sender,
-        System.Collections.Specialized.NotifyCollectionChangedEventArgs e
-    ) =>
-        Dispatcher.UIThread.Post(
-            () => HistoryScrollArea.ScrollToOffset(default),
-            DispatcherPriority.Background
-        );
-
-    private void OnHistoryRowTapped(object? sender, TappedEventArgs e)
-    {
-        if (sender is not Control { DataContext: HistoryEntry entry } || IsInsideButton(e.Source))
-        {
-            return;
-        }
-
-        entry.OpenCommand?.Execute(null);
     }
 
     private void OnTreeNodesCollectionChanged(
@@ -1642,8 +1667,8 @@ public partial class MainWindow : Window
             SaveRequestResponseRatio();
             _viewModel.AppearanceChanged -= OnAppearanceChanged;
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
-            _viewModel.History.CollectionChanged -= OnHistoryCollectionChanged;
             _viewModel.TreeNodes.CollectionChanged -= OnTreeNodesCollectionChanged;
+            _viewModel.SuiteEditorRequested -= OnSuiteEditorRequested;
             _viewModel.Shutdown();
             _viewModel = null;
         }
@@ -1708,21 +1733,6 @@ public partial class MainWindow : Window
         RequestTabWrap.IsVisible = _viewModel.IsWrapTabs;
     }
 
-    private void UpdateHistoryWidth()
-    {
-        var width = HistoryScrollArea.Bounds.Width;
-        if (width <= 0)
-        {
-            return;
-        }
-
-        // The scroll area measures its content with infinite width; pin the rows to the viewport so
-        // the name column can trim instead of pushing the status and time columns outside the panel.
-        var rowWidth = Math.Max(160, width - 14);
-        HistoryItems.Width = rowWidth;
-        HistoryScrollArea.Offset = new Vector(0, HistoryScrollArea.Offset.Y);
-    }
-
     private void ApplySidebarLayout()
     {
         if (_viewModel is null)
@@ -1730,19 +1740,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        UpdateHistoryWidth();
-
         var width = Math.Clamp(_viewModel.Settings.TreePaneWidth, MinSidebarWidth, MaxSidebarWidth);
         WorkspaceLayout.ColumnDefinitions[0].Width = new GridLength(width);
-
-        var collapsed = _viewModel.Settings.HistoryCollapsed;
-        SidebarLayout.RowDefinitions[2].Height = new GridLength(
-            collapsed ? 1 : 3,
-            GridUnitType.Star
-        );
-        SidebarLayout.RowDefinitions[4].Height = collapsed
-            ? new GridLength(0)
-            : new GridLength(2, GridUnitType.Star);
     }
 
     private void OnSidebarSplitterDragCompleted(object? sender, VectorEventArgs e)
@@ -1883,6 +1882,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        _viewModel.TreePage.EnsureIndex(index);
+
         // The new row may not be realized yet in the virtualizing panel. Scroll near its
         // estimated slot first, then bring the realized row into view on the next layout pass.
         var rowHeight = 30d;
@@ -1972,17 +1973,5 @@ public partial class MainWindow : Window
         }
 
         _viewModel.Settings.TreePaneWidth = width;
-    }
-
-    private void OnToggleHistoryClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (_viewModel is null)
-        {
-            return;
-        }
-
-        _viewModel.Settings.HistoryCollapsed = !_viewModel.Settings.HistoryCollapsed;
-        ApplySidebarLayout();
-        e.Handled = true;
     }
 }

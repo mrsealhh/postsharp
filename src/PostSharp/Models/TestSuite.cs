@@ -1,5 +1,7 @@
+using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using TKCode.Arc;
 
 namespace PostSharp.Models;
@@ -7,6 +9,8 @@ namespace PostSharp.Models;
 /// <summary>A saved automation suite: an ordered list of requests with optional assertions.</summary>
 public partial class TestSuite : ObservableObject
 {
+    public const int RunHistoryLimit = 20;
+
     public Guid Id { get; init; } = Guid.NewGuid();
 
     [ObservableProperty]
@@ -21,9 +25,20 @@ public partial class TestSuite : ObservableObject
     [ObservableProperty]
     private int _scheduleMinutes;
 
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private bool _isSelected;
+
+    /// <summary>Maximum steps running at the same time in workflow (DAG) mode; 0 means no extra limit.</summary>
+    public int MaxParallelism { get; set; } = 4;
+
     public bool StopOnError { get; set; } = true;
 
     public List<TestStep> Steps { get; } = new();
+
+    /// <summary>Most recent runs, newest first. Persisted with the suite for quick comparison.</summary>
+    [JsonIgnore]
+    public ObservableCollection<TestRunResult> Runs { get; } = new();
 
     /// <summary>Optional visual graph used to author the suite.</summary>
     public SuiteWorkflow? Workflow { get; set; }
@@ -50,8 +65,16 @@ public sealed class TestStep
 
     public int RetryDelayMs { get; set; } = 500;
 
-    /// <summary>Always, OnPreviousSuccess or OnPreviousFailure.</summary>
+    /// <summary>Always, OnPreviousSuccess, OnPreviousFailure or Expression.</summary>
     public string Condition { get; set; } = "Always";
+
+    /// <summary>Details used when <see cref="Condition"/> is Expression.</summary>
+    public SuiteCondition ConditionRules { get; } = new();
+
+    /// <summary>
+    /// Workflow mode: All waits for every incoming branch, Any starts once one branch is taken.
+    /// </summary>
+    public string JoinMode { get; set; } = "All";
 
     /// <summary>Steps with the same non-zero group may run concurrently.</summary>
     public int ParallelGroup { get; set; }
@@ -72,6 +95,7 @@ public sealed class TestStep
         && Assertions.Count == 0
         && RetryCount == 0
         && Condition == "Always"
+        && ConditionRules.IsEmpty
         && ParallelGroup == 0
             ? "仅检查网络成功"
             : string.Join(
@@ -83,6 +107,7 @@ public sealed class TestStep
                     Assertions.Count == 0 ? null : $"{Assertions.Count} 条断言",
                     RetryCount == 0 ? null : $"重试 {RetryCount} 次",
                     Condition == "Always" ? null : $"条件 {Condition}",
+                    ConditionRules.IsEmpty ? null : ConditionRules.Summary,
                     ParallelGroup == 0 ? null : $"并行组 {ParallelGroup}",
                 }.Where(value => value is not null)
             );
@@ -172,6 +197,12 @@ public sealed class TestStepResult
                 : ArcIcons.CircleX,
             Size = 12,
         };
+
+    [JsonIgnore]
+    public bool CanContinue => !Skipped && StepId != Guid.Empty;
+
+    [JsonIgnore]
+    public IRelayCommand? ContinueCommand { get; set; }
 }
 
 public sealed class TestAssertionResult
@@ -189,6 +220,8 @@ public sealed class TestAssertionResult
 
 public sealed class TestRunResult
 {
+    public Guid Id { get; set; } = Guid.NewGuid();
+
     public Guid SuiteId { get; set; }
 
     public string SuiteName { get; set; } = string.Empty;
@@ -211,7 +244,21 @@ public sealed class TestRunResult
     /// <summary>Steps that never ran because the run was stopped or cancelled.</summary>
     public int NotRun { get; set; }
 
+    /// <summary>Set when preflight rejected the run before any request was sent.</summary>
+    public string? Error { get; set; }
+
     public List<TestStepResult> Steps { get; set; } = new();
+
+    public List<SuiteRunNodeState> NodeStates { get; set; } = new();
+
+    public List<SuiteRunEdgeState> EdgeStates { get; set; } = new();
+
+    public bool HasFailures => Failed > 0;
+
+    public string WorkflowSummary =>
+        NodeStates.Count == 0
+            ? "按顺序执行"
+            : $"{NodeStates.Count} 个节点 · {EdgeStates.Count} 条连线（{EdgeStates.Count(edge => edge.Active)} 条激活）";
 
     /// <summary>Pass count, skipped count and how many steps never ran.</summary>
     public string Outcome =>
@@ -220,6 +267,56 @@ public sealed class TestRunResult
         + (NotRun > 0 ? $" · {NotRun} 步未运行" : string.Empty);
 
     public string Summary =>
-        (Cancelled ? "已取消 · " : string.Empty)
-        + $"{Outcome} · {Timestamp.LocalDateTime:HH:mm:ss}";
+        Error is not null
+            ? $"预检失败 · {Error}"
+            : (Cancelled ? "已取消 · " : string.Empty)
+                + $"{Outcome} · {Timestamp.LocalDateTime:HH:mm:ss}";
+
+    public override string ToString() => Summary;
+}
+
+/// <summary>Per-node state persisted with a run so history can be inspected after a restart.</summary>
+public sealed class SuiteRunNodeState
+{
+    public Guid StepId { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Pending, Running, Done, Failed, Skipped or NotRun.</summary>
+    public string State { get; set; } = "Pending";
+
+    public long ElapsedMs { get; set; }
+
+    public string? Detail { get; set; }
+
+    public string StateLabel =>
+        State switch
+        {
+            "Done" => "通过",
+            "Failed" => "失败",
+            "Skipped" => "跳过",
+            "NotRun" => "未运行",
+            "Running" => "运行中",
+            _ => "等待",
+        };
+
+    public BadgeTone StateTone =>
+        State switch
+        {
+            "Done" => BadgeTone.Success,
+            "Failed" => BadgeTone.Danger,
+            _ => BadgeTone.Neutral,
+        };
+
+    public string ElapsedText => ElapsedMs > 0 ? $"{ElapsedMs} ms" : string.Empty;
+}
+
+/// <summary>Final state of one dependency edge in a persisted run.</summary>
+public sealed class SuiteRunEdgeState
+{
+    public string SourceId { get; set; } = string.Empty;
+
+    public string TargetId { get; set; } = string.Empty;
+
+    public bool Active { get; set; }
 }

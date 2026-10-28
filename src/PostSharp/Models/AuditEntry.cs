@@ -1,11 +1,12 @@
 using System.Text.Json.Serialization;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TKCode.Arc;
 
 namespace PostSharp.Models;
 
 /// <summary>One request that was executed, whether from the UI or from an AI agent through MCP.</summary>
-public sealed class AuditEntry
+public sealed partial class AuditEntry : ObservableObject
 {
     /// <summary>
     /// AI transcript is a preview in the audit list; storing the full stream in every retained entry makes a
@@ -162,6 +163,13 @@ public sealed class AuditEntry
             >= 400 and < 500 => BadgeTone.Warning,
             _ => BadgeTone.Danger,
         };
+
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private bool _isSelected;
+
+    [JsonIgnore]
+    public IRelayCommand? DeleteCommand { get; set; }
 
     [JsonIgnore]
     public IRelayCommand? RestoreCommand { get; set; }

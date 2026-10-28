@@ -13,6 +13,9 @@
     MinWidth="680"
     MinHeight="560"
     WindowStartupLocation="CenterOwner"
+    ExtendClientAreaToDecorationsHint="True"
+    ExtendClientAreaTitleBarHeightHint="-1"
+    WindowDecorations="BorderOnly"
     Background="{arc:ArcDesignTokenResource Background}"
     FontFamily="{DynamicResource PostSharpBodyFont}"
 >
@@ -42,827 +45,949 @@
     </Window.Styles>
 
     <VisualLayerManager EnableOverlayLayer="True">
-        <Grid x:Name="SettingsRoot" Margin="20" RowDefinitions="Auto,*,Auto" RowSpacing="14">
-            <StackPanel Spacing="2">
-                <TextBlock
-                    Text="设置"
-                    FontSize="{arc:ArcDesignTokenResource TypeXL}"
-                    FontWeight="SemiBold"
-                    Foreground="{arc:ArcDesignTokenResource Foreground}"
-                />
-                <TextBlock
-                    Text="外观、日志和请求默认值；保存后立即生效，并在下次启动时重新读取。"
-                    FontSize="{arc:ArcDesignTokenResource TypeSM}"
-                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                    TextWrapping="Wrap"
-                />
-            </StackPanel>
-
-            <arc:ScrollArea Grid.Row="1">
-                <StackPanel x:Name="SettingsSections" Spacing="14" Margin="0,0,4,0">
-                    <Border Classes="settingsSection">
-                        <StackPanel Spacing="12">
-                            <TextBlock
-                                Text="外观"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                FontWeight="Medium"
-                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                            />
-                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
-                                <arc:Select
-                                    Label="主题"
-                                    Description="跟随系统会读取 Windows 当前主题，并在系统切换时同步。"
-                                    ItemsSource="{Binding ThemeOptions}"
-                                    SelectedItem="{Binding Draft.Theme, Mode=TwoWay}"
-                                    AutomationProperties.Name="主题"
-                                />
-                                <arc:Select
-                                    Grid.Column="1"
-                                    Label="界面字体"
-                                    Description="界面文字、按钮和菜单使用的字体。"
-                                    ItemsSource="{Binding FontOptions}"
-                                    SelectedItem="{Binding Draft.UiFont, Mode=TwoWay}"
-                                    AutomationProperties.Name="界面字体"
-                                />
-                            </Grid>
-                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
-                                <arc:Select
-                                    Label="界面缩放"
-                                    Description="放大或缩小整个界面；60% / 80% 可在一屏显示更多信息，120% / 150% 适合大屏阅读。"
-                                    ItemsSource="{Binding UiScaleOptions}"
-                                    SelectedItem="{Binding SelectedUiScale, Mode=TwoWay}"
-                                    AutomationProperties.Name="界面缩放"
-                                />
-                                <TextBlock
-                                    Grid.Column="1"
-                                    Text="保存设置后立即应用到主窗口和后续打开的窗口。小屏幕可选择 60% / 80% / 90%。"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                    TextWrapping="Wrap"
-                                    VerticalAlignment="Center"
-                                />
-                            </Grid>
-                            <StackPanel Spacing="6">
-                                <TextBlock
-                                    Text="界面布局"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    FontWeight="Medium"
-                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                />
-                                <arc:RadioCards
-                                    SelectedValue="{Binding Draft.UiLayout, Mode=TwoWay}"
-                                    MinColumnWidth="260"
-                                    AutomationProperties.Name="界面布局"
-                                >
-                                    <arc:RadioCardOption
-                                        Value="Modern"
-                                        Label="现代分隔"
-                                        Description="面板分隔更清晰，标签页为块状样式。"
-                                    />
-                                    <arc:RadioCardOption
-                                        Value="Compact"
-                                        Label="经典紧凑"
-                                        Description="收紧标题、边距和标签栏，显示更多有效信息。"
-                                    />
-                                </arc:RadioCards>
-                            </StackPanel>
-                            <StackPanel Spacing="6">
-                                <TextBlock
-                                    Text="标签栏溢出"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    FontWeight="Medium"
-                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                />
-                                <arc:RadioCards
-                                    SelectedValue="{Binding Draft.TabOverflow, Mode=TwoWay}"
-                                    MinColumnWidth="260"
-                                    AutomationProperties.Name="标签栏溢出"
-                                >
-                                    <arc:RadioCardOption
-                                        Value="Scroll"
-                                        Label="单行滚动"
-                                        Description="标签页超出一行时水平滚动，保持请求区域高度稳定。"
-                                    />
-                                    <arc:RadioCardOption
-                                        Value="Wrap"
-                                        Label="多行平铺"
-                                        Description="标签页超出一行时自动换行，所有标签始终可见。"
-                                    />
-                                </arc:RadioCards>
-                            </StackPanel>
-                            <Grid ColumnDefinitions="1*,2*" ColumnSpacing="12">
-                                <arc:Select
-                                    Label="渲染模式"
-                                    SelectedValue="{Binding Draft.RenderingMode, Mode=TwoWay}"
-                                    AutomationProperties.Name="渲染模式"
-                                >
-                                    <arc:SelectItem Content="软件（低内存）" Value="Software" />
-                                    <arc:SelectItem Content="自动（GPU）" Value="Auto" />
-                                </arc:Select>
-                                <TextBlock
-                                    Grid.Column="1"
-                                    Text="软件渲染使用 CPU 绘制，显著降低 GPU/原生内存；自动模式使用平台默认 GPU 渲染。修改后重启 PostSharp 生效。"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                    TextWrapping="Wrap"
-                                    VerticalAlignment="Center"
-                                />
-                            </Grid>
-                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
-                                <arc:Select
-                                    Label="代码字体"
-                                    Description="URL、请求体和响应文本使用的字体。"
-                                    ItemsSource="{Binding FontOptions}"
-                                    SelectedItem="{Binding Draft.CodeFont, Mode=TwoWay}"
-                                    AutomationProperties.Name="代码字体"
-                                />
-                                <arc:Select
-                                    Grid.Column="1"
-                                    Label="代码字号"
-                                    ItemsSource="{Binding CodeFontSizeOptions}"
-                                    SelectedItem="{Binding Draft.CodeFontSize, Mode=TwoWay}"
-                                    AutomationProperties.Name="代码字号"
-                                />
-                            </Grid>
-                            <Grid ColumnDefinitions="1.4*,1*" ColumnSpacing="12">
-                                <arc:Slider
-                                    Label="全局圆角"
-                                    Minimum="0"
-                                    Maximum="2"
-                                    SmallChange="0.1"
-                                    Value="{Binding Draft.CornerScale, Mode=TwoWay}"
-                                    IsValueVisible="True"
-                                    AutomationProperties.Name="全局圆角"
-                                />
-                                <TextBlock
-                                    Grid.Column="1"
-                                    Text="0 = 直角，1 = Arc 默认，2 = 双倍圆角。保存后立即应用到所有 Arc 控件。"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                    TextWrapping="Wrap"
-                                    VerticalAlignment="Center"
-                                />
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Classes="settingsSection">
-                        <StackPanel Spacing="12">
-                            <TextBlock
-                                Text="字体"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                FontWeight="Medium"
-                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+        <LayoutTransformControl x:Name="ScaleHost">
+            <Grid RowDefinitions="Auto,*">
+                <Border
+                    x:Name="TitleBar"
+                    Grid.Row="0"
+                    Background="{arc:ArcDesignTokenResource Surface}"
+                    BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+                    BorderThickness="0,0,0,1"
+                    Padding="16,10"
+                    PointerPressed="OnTitleBarPointerPressed"
+                >
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <StackPanel
+                            Orientation="Horizontal"
+                            Spacing="10"
+                            VerticalAlignment="Center"
+                        >
+                            <Image
+                                Width="32"
+                                Height="32"
+                                Source="avares://PostSharp/Assets/logo.png"
+                                Stretch="Uniform"
+                                RenderOptions.BitmapInterpolationMode="HighQuality"
+                                VerticalAlignment="Center"
                             />
                             <TextBlock
-                                Text="导入的字体文件会复制到应用字体库；也可以添加一个字体目录并原地扫描。加载后的字体族会出现在上方「界面字体」和「代码字体」选项中。"
+                                Text="设置"
+                                FontSize="{arc:ArcDesignTokenResource TypeLG}"
+                                FontWeight="SemiBold"
+                                Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                VerticalAlignment="Center"
+                            />
+                            <TextBlock
+                                Text="PostSharp"
                                 FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                 Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                TextWrapping="Wrap"
+                                VerticalAlignment="Center"
                             />
-                            <WrapPanel ItemSpacing="8" LineSpacing="8">
-                                <arc:Button
-                                    Variant="Secondary"
-                                    Size="Small"
-                                    Click="OnImportFontsClick"
-                                    IsEnabled="{Binding !IsFontsBusy}"
-                                    AutomationProperties.Name="导入字体文件"
-                                >
-                                    <controls:IconLabel
-                                        Icon="{x:Static arc:ArcIcons.Upload}"
-                                        Text="导入字体文件…"
-                                        IconSize="13"
-                                    />
-                                </arc:Button>
-                                <arc:Button
-                                    Variant="Secondary"
-                                    Size="Small"
-                                    Click="OnAddFontDirectoryClick"
-                                    IsEnabled="{Binding !IsFontsBusy}"
-                                    AutomationProperties.Name="添加字体目录"
-                                >
-                                    <controls:IconLabel
-                                        Icon="{x:Static arc:ArcIcons.Folder}"
-                                        Text="添加字体目录…"
-                                        IconSize="13"
-                                    />
-                                </arc:Button>
-                                <arc:Button
-                                    Variant="Ghost"
-                                    Size="Small"
-                                    Command="{Binding OpenFontDirectoryCommand}"
-                                    AutomationProperties.Name="打开字体库目录"
-                                >
-                                    <controls:IconLabel
-                                        Icon="{x:Static arc:ArcIcons.FolderOpen}"
-                                        Text="打开字体库"
-                                        IconSize="13"
-                                    />
-                                </arc:Button>
-                                <arc:Button
-                                    Variant="Ghost"
-                                    Size="Small"
-                                    Command="{Binding RefreshFontsCommand}"
-                                    IsEnabled="{Binding !IsFontsBusy}"
-                                    AutomationProperties.Name="重新扫描字体"
-                                >
-                                    <controls:IconLabel
-                                        Icon="{x:Static arc:ArcIcons.RefreshCw}"
-                                        Text="重新扫描"
-                                        IconSize="13"
-                                    />
-                                </arc:Button>
-                            </WrapPanel>
-                            <Grid>
-                                <TextBlock
-                                    IsVisible="{Binding !HasFontError}"
-                                    Text="{Binding FontStatusMessage}"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                    TextWrapping="Wrap"
-                                />
-                                <TextBlock
-                                    IsVisible="{Binding HasFontError}"
-                                    Text="{Binding FontStatusMessage}"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource Danger}"
-                                    TextWrapping="Wrap"
-                                />
-                            </Grid>
-
-                            <StackPanel Spacing="6">
-                                <TextBlock
-                                    Text="已加载的自定义字体"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    FontWeight="Medium"
+                        </StackPanel>
+                        <StackPanel
+                            Grid.Column="2"
+                            Orientation="Horizontal"
+                            Spacing="6"
+                            VerticalAlignment="Center"
+                        >
+                            <arc:Button
+                                Classes="windowControl"
+                                Variant="Ghost"
+                                Size="Small"
+                                Width="34"
+                                Height="32"
+                                Padding="0"
+                                Click="OnMinimizeWindowClick"
+                                ToolTip.Tip="最小化"
+                                AutomationProperties.Name="最小化"
+                            >
+                                <arc:ArcGlyph
+                                    Data="{x:Static arc:ArcIcons.Minus}"
+                                    Size="15"
                                     Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                 />
-                                <ItemsControl
-                                    ItemsSource="{Binding CustomFonts}"
-                                    IsVisible="{Binding HasCustomFonts}"
-                                >
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <WrapPanel ItemSpacing="6" LineSpacing="6" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="x:String">
-                                            <arc:Button
-                                                Content="{Binding}"
-                                                Variant="Secondary"
-                                                Size="Small"
-                                                Click="OnUseFontForAllClick"
-                                                ToolTip.Tip="同时设为界面和代码字体"
-                                                AutomationProperties.Name="同时设为界面和代码字体"
+                            </arc:Button>
+                            <arc:Button
+                                x:Name="WindowMaximizeButton"
+                                Classes="windowControl"
+                                Variant="Ghost"
+                                Size="Small"
+                                Width="34"
+                                Height="32"
+                                Padding="0"
+                                Click="OnToggleMaximizeWindowClick"
+                                ToolTip.Tip="最大化 / 还原"
+                                AutomationProperties.Name="最大化或还原"
+                            >
+                                <Panel>
+                                    <arc:ArcGlyph
+                                        x:Name="WindowMaximizeGlyph"
+                                        Data="{x:Static arc:ArcIcons.Square}"
+                                        Size="14"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <arc:ArcGlyph
+                                        x:Name="WindowRestoreGlyph"
+                                        Data="{x:Static arc:ArcIcons.Minimize2}"
+                                        Size="14"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                        IsVisible="False"
+                                    />
+                                </Panel>
+                            </arc:Button>
+                            <arc:Button
+                                Classes="windowClose"
+                                Variant="Ghost"
+                                Size="Small"
+                                Width="34"
+                                Height="32"
+                                Padding="0"
+                                Click="OnCloseWindowClick"
+                                ToolTip.Tip="关闭"
+                                AutomationProperties.Name="关闭"
+                            >
+                                <arc:ArcGlyph
+                                    Data="{x:Static arc:ArcIcons.X}"
+                                    Size="15"
+                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                />
+                            </arc:Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Grid
+                    x:Name="SettingsRoot"
+                    Grid.Row="1"
+                    Margin="20"
+                    RowDefinitions="Auto,*,Auto"
+                    RowSpacing="14"
+                >
+                    <StackPanel Spacing="2">
+                        <TextBlock
+                            Text="设置"
+                            FontSize="{arc:ArcDesignTokenResource TypeXL}"
+                            FontWeight="SemiBold"
+                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                        />
+                        <TextBlock
+                            Text="外观、日志和请求默认值；保存后立即生效，并在下次启动时重新读取。"
+                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                            TextWrapping="Wrap"
+                        />
+                    </StackPanel>
+
+                    <arc:ScrollArea Grid.Row="1">
+                        <StackPanel x:Name="SettingsSections" Spacing="14" Margin="0,0,4,0">
+                            <Border Classes="settingsSection">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
+                                        Text="外观"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        FontWeight="Medium"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                        <arc:Select
+                                            Label="主题"
+                                            Description="跟随系统会读取 Windows 当前主题，并在系统切换时同步。"
+                                            ItemsSource="{Binding ThemeOptions}"
+                                            SelectedItem="{Binding Draft.Theme, Mode=TwoWay}"
+                                            AutomationProperties.Name="主题"
+                                        />
+                                        <arc:Select
+                                            Grid.Column="1"
+                                            Label="界面字体"
+                                            Description="界面文字、按钮和菜单使用的字体。"
+                                            ItemsSource="{Binding FontOptions}"
+                                            SelectedItem="{Binding Draft.UiFont, Mode=TwoWay}"
+                                            AutomationProperties.Name="界面字体"
+                                        />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                        <arc:Select
+                                            Label="界面缩放"
+                                            Description="放大或缩小整个界面；60% / 80% 可在一屏显示更多信息，120% / 150% 适合大屏阅读。"
+                                            ItemsSource="{Binding UiScaleOptions}"
+                                            SelectedItem="{Binding SelectedUiScale, Mode=TwoWay}"
+                                            AutomationProperties.Name="界面缩放"
+                                        />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Text="保存设置后立即应用到主窗口和后续打开的窗口。小屏幕可选择 60% / 80% / 90%。"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            TextWrapping="Wrap"
+                                            VerticalAlignment="Center"
+                                        />
+                                    </Grid>
+                                    <StackPanel Spacing="6">
+                                        <TextBlock
+                                            Text="界面布局"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            FontWeight="Medium"
+                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                        />
+                                        <arc:RadioCards
+                                            SelectedValue="{Binding Draft.UiLayout, Mode=TwoWay}"
+                                            MinColumnWidth="260"
+                                            AutomationProperties.Name="界面布局"
+                                        >
+                                            <arc:RadioCardOption
+                                                Value="Modern"
+                                                Label="现代分隔"
+                                                Description="面板分隔更清晰，标签页为块状样式。"
                                             />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                                <TextBlock
-                                    Text="还没有加载自定义字体。可以导入 Maple Mono 等字体文件，或添加字体所在目录。"
-                                    IsVisible="{Binding !HasCustomFonts}"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                    TextWrapping="Wrap"
-                                />
-                            </StackPanel>
+                                            <arc:RadioCardOption
+                                                Value="Compact"
+                                                Label="经典紧凑"
+                                                Description="收紧标题、边距和标签栏，显示更多有效信息。"
+                                            />
+                                        </arc:RadioCards>
+                                    </StackPanel>
+                                    <StackPanel Spacing="6">
+                                        <TextBlock
+                                            Text="标签栏溢出"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            FontWeight="Medium"
+                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                        />
+                                        <arc:RadioCards
+                                            SelectedValue="{Binding Draft.TabOverflow, Mode=TwoWay}"
+                                            MinColumnWidth="260"
+                                            AutomationProperties.Name="标签栏溢出"
+                                        >
+                                            <arc:RadioCardOption
+                                                Value="Scroll"
+                                                Label="单行滚动"
+                                                Description="标签页超出一行时水平滚动，保持请求区域高度稳定。"
+                                            />
+                                            <arc:RadioCardOption
+                                                Value="Wrap"
+                                                Label="多行平铺"
+                                                Description="标签页超出一行时自动换行，所有标签始终可见。"
+                                            />
+                                        </arc:RadioCards>
+                                    </StackPanel>
+                                    <Grid ColumnDefinitions="1*,2*" ColumnSpacing="12">
+                                        <arc:Select
+                                            Label="渲染模式"
+                                            SelectedValue="{Binding Draft.RenderingMode, Mode=TwoWay}"
+                                            AutomationProperties.Name="渲染模式"
+                                        >
+                                            <arc:SelectItem
+                                                Content="软件（低内存）"
+                                                Value="Software"
+                                            />
+                                            <arc:SelectItem Content="自动（GPU）" Value="Auto" />
+                                        </arc:Select>
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Text="软件渲染使用 CPU 绘制，显著降低 GPU/原生内存；自动模式使用平台默认 GPU 渲染。修改后重启 PostSharp 生效。"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            TextWrapping="Wrap"
+                                            VerticalAlignment="Center"
+                                        />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                        <arc:Select
+                                            Label="代码字体"
+                                            Description="URL、请求体和响应文本使用的字体。"
+                                            ItemsSource="{Binding FontOptions}"
+                                            SelectedItem="{Binding Draft.CodeFont, Mode=TwoWay}"
+                                            AutomationProperties.Name="代码字体"
+                                        />
+                                        <arc:Select
+                                            Grid.Column="1"
+                                            Label="代码字号"
+                                            ItemsSource="{Binding CodeFontSizeOptions}"
+                                            SelectedItem="{Binding Draft.CodeFontSize, Mode=TwoWay}"
+                                            AutomationProperties.Name="代码字号"
+                                        />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="1.4*,1*" ColumnSpacing="12">
+                                        <arc:Slider
+                                            Label="全局圆角"
+                                            Minimum="0"
+                                            Maximum="2"
+                                            SmallChange="0.1"
+                                            Value="{Binding Draft.CornerScale, Mode=TwoWay}"
+                                            IsValueVisible="True"
+                                            AutomationProperties.Name="全局圆角"
+                                        />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Text="0 = 直角，1 = Arc 默认，2 = 双倍圆角。保存后立即应用到所有 Arc 控件。"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            TextWrapping="Wrap"
+                                            VerticalAlignment="Center"
+                                        />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
 
-                            <StackPanel Spacing="6">
-                                <TextBlock
-                                    Text="字体目录"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    FontWeight="Medium"
-                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                />
-                                <ItemsControl ItemsSource="{Binding FontDirectories}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="models:FontDirectoryItem">
-                                            <Grid
-                                                ColumnDefinitions="*,Auto"
-                                                ColumnSpacing="8"
-                                                Margin="0,0,0,6"
-                                            >
-                                                <StackPanel Spacing="1">
+                            <Border Classes="settingsSection">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
+                                        Text="字体"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        FontWeight="Medium"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <TextBlock
+                                        Text="导入的字体文件会复制到应用字体库；也可以添加一个字体目录并原地扫描。加载后的字体族会出现在上方「界面字体」和「代码字体」选项中。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
+                                    />
+                                    <WrapPanel ItemSpacing="8" LineSpacing="8">
+                                        <arc:Button
+                                            Variant="Secondary"
+                                            Size="Small"
+                                            Click="OnImportFontsClick"
+                                            IsEnabled="{Binding !IsFontsBusy}"
+                                            AutomationProperties.Name="导入字体文件"
+                                        >
+                                            <controls:IconLabel
+                                                Icon="{x:Static arc:ArcIcons.Upload}"
+                                                Text="导入字体文件…"
+                                                IconSize="13"
+                                            />
+                                        </arc:Button>
+                                        <arc:Button
+                                            Variant="Secondary"
+                                            Size="Small"
+                                            Click="OnAddFontDirectoryClick"
+                                            IsEnabled="{Binding !IsFontsBusy}"
+                                            AutomationProperties.Name="添加字体目录"
+                                        >
+                                            <controls:IconLabel
+                                                Icon="{x:Static arc:ArcIcons.Folder}"
+                                                Text="添加字体目录…"
+                                                IconSize="13"
+                                            />
+                                        </arc:Button>
+                                        <arc:Button
+                                            Variant="Ghost"
+                                            Size="Small"
+                                            Command="{Binding OpenFontDirectoryCommand}"
+                                            AutomationProperties.Name="打开字体库目录"
+                                        >
+                                            <controls:IconLabel
+                                                Icon="{x:Static arc:ArcIcons.FolderOpen}"
+                                                Text="打开字体库"
+                                                IconSize="13"
+                                            />
+                                        </arc:Button>
+                                        <arc:Button
+                                            Variant="Ghost"
+                                            Size="Small"
+                                            Command="{Binding RefreshFontsCommand}"
+                                            IsEnabled="{Binding !IsFontsBusy}"
+                                            AutomationProperties.Name="重新扫描字体"
+                                        >
+                                            <controls:IconLabel
+                                                Icon="{x:Static arc:ArcIcons.RefreshCw}"
+                                                Text="重新扫描"
+                                                IconSize="13"
+                                            />
+                                        </arc:Button>
+                                    </WrapPanel>
+                                    <Grid>
+                                        <TextBlock
+                                            IsVisible="{Binding !HasFontError}"
+                                            Text="{Binding FontStatusMessage}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            TextWrapping="Wrap"
+                                        />
+                                        <TextBlock
+                                            IsVisible="{Binding HasFontError}"
+                                            Text="{Binding FontStatusMessage}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource Danger}"
+                                            TextWrapping="Wrap"
+                                        />
+                                    </Grid>
+
+                                    <StackPanel Spacing="6">
+                                        <TextBlock
+                                            Text="已加载的自定义字体"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            FontWeight="Medium"
+                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                        />
+                                        <ItemsControl
+                                            ItemsSource="{Binding CustomFonts}"
+                                            IsVisible="{Binding HasCustomFonts}"
+                                        >
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel ItemSpacing="6" LineSpacing="6" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="x:String">
+                                                    <arc:Button
+                                                        Content="{Binding}"
+                                                        Variant="Secondary"
+                                                        Size="Small"
+                                                        Click="OnUseFontForAllClick"
+                                                        ToolTip.Tip="同时设为界面和代码字体"
+                                                        AutomationProperties.Name="同时设为界面和代码字体"
+                                                    />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock
+                                            Text="还没有加载自定义字体。可以导入 Maple Mono 等字体文件，或添加字体所在目录。"
+                                            IsVisible="{Binding !HasCustomFonts}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            TextWrapping="Wrap"
+                                        />
+                                    </StackPanel>
+
+                                    <StackPanel Spacing="6">
+                                        <TextBlock
+                                            Text="字体目录"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            FontWeight="Medium"
+                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                        />
+                                        <ItemsControl ItemsSource="{Binding FontDirectories}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="models:FontDirectoryItem">
+                                                    <Grid
+                                                        ColumnDefinitions="*,Auto"
+                                                        ColumnSpacing="8"
+                                                        Margin="0,0,0,6"
+                                                    >
+                                                        <StackPanel Spacing="1">
+                                                            <TextBlock
+                                                                Text="{Binding Label}"
+                                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                FontWeight="Medium"
+                                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                            />
+                                                            <SelectableTextBlock
+                                                                Text="{Binding Path}"
+                                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                TextWrapping="Wrap"
+                                                            />
+                                                        </StackPanel>
+                                                        <arc:Button
+                                                            Grid.Column="1"
+                                                            Content="移除"
+                                                            Variant="Ghost"
+                                                            Size="Small"
+                                                            VerticalAlignment="Center"
+                                                            IsVisible="{Binding !IsManaged}"
+                                                            Click="OnRemoveFontDirectoryClick"
+                                                            AutomationProperties.Name="移除字体目录"
+                                                        />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="settingsSection">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
+                                        Text="日志"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        FontWeight="Medium"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                        <arc:Input
+                                            Label="日志目录"
+                                            Text="{Binding Draft.LogDirectory, Mode=TwoWay}"
+                                            Description="按天滚动，文件名形如 postsharp-20261025.log，默认保留最近 30 个文件。"
+                                            AutomationProperties.Name="日志目录"
+                                        />
+                                        <arc:Button
+                                            Grid.Column="1"
+                                            Content="浏览…"
+                                            Variant="Secondary"
+                                            VerticalAlignment="Bottom"
+                                            Click="OnBrowseLogDirectoryClick"
+                                            AutomationProperties.Name="浏览日志目录"
+                                        />
+                                        <arc:Button
+                                            Grid.Column="2"
+                                            Content="打开目录"
+                                            Variant="Ghost"
+                                            VerticalAlignment="Bottom"
+                                            Command="{Binding OpenLogDirectoryCommand}"
+                                            AutomationProperties.Name="打开日志目录"
+                                        />
+                                    </Grid>
+                                    <StackPanel
+                                        Orientation="Horizontal"
+                                        Spacing="4"
+                                        HorizontalAlignment="Left"
+                                    >
+                                        <TextBlock
+                                            Text="默认目录："
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        />
+                                        <SelectableTextBlock
+                                            Text="{Binding DefaultLogDirectory}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        />
+                                    </StackPanel>
+                                    <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                        <arc:Select
+                                            Label="日志级别"
+                                            Description="低于所选级别的日志不会写入文件，更严重的日志始终保留。"
+                                            SelectedValue="{Binding Draft.LogLevel, Mode=TwoWay}"
+                                            AutomationProperties.Name="日志级别"
+                                        >
+                                            <arc:SelectItem Content="调试" Value="Debug" />
+                                            <arc:SelectItem Content="信息" Value="Information" />
+                                            <arc:SelectItem Content="警告" Value="Warning" />
+                                            <arc:SelectItem Content="错误" Value="Error" />
+                                        </arc:Select>
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Text="「调试」记录取消、回退等诊断信息；日常使用推荐「信息」，只保留启动、保存与请求概要。"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            TextWrapping="Wrap"
+                                            VerticalAlignment="Center"
+                                        />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="settingsSection">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
+                                        Text="请求"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        FontWeight="Medium"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                        <arc:Select
+                                            Label="请求超时"
+                                            Description="单位：秒"
+                                            ItemsSource="{Binding TimeoutOptions}"
+                                            SelectedItem="{Binding Draft.RequestTimeoutSeconds, Mode=TwoWay}"
+                                            AutomationProperties.Name="请求超时"
+                                        />
+                                        <arc:Select
+                                            Grid.Column="1"
+                                            Label="默认请求体"
+                                            SelectedValue="{Binding Draft.DefaultBodyMode, Mode=TwoWay}"
+                                            AutomationProperties.Name="默认请求体"
+                                        >
+                                            <arc:SelectItem Content="无" Value="None" />
+                                            <arc:SelectItem Content="JSON" Value="Json" />
+                                            <arc:SelectItem Content="文本" Value="Text" />
+                                            <arc:SelectItem Content="表单上传" Value="Multipart" />
+                                        </arc:Select>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                        <arc:Select
+                                            Label="大响应折叠阈值"
+                                            Description="单位：KB"
+                                            ItemsSource="{Binding LargeResponseThresholdOptions}"
+                                            SelectedItem="{Binding Draft.LargeResponseThresholdKb, Mode=TwoWay}"
+                                            AutomationProperties.Name="大响应折叠阈值"
+                                        />
+                                        <arc:NumberField
+                                            Grid.Column="1"
+                                            Label="审计最多保留"
+                                            Description="0 = 不限（默认）；设置后超出自动丢弃最早记录，套件执行仍正常写入审计"
+                                            Minimum="0"
+                                            Maximum="1000000"
+                                            Step="1"
+                                            Value="{Binding Draft.AuditLimit, Mode=TwoWay}"
+                                            AutomationProperties.Name="审计最多保留条数"
+                                        />
+                                    </Grid>
+                                    <arc:Switch
+                                        Content="自动格式化 JSON/XML 响应"
+                                        IsChecked="{Binding Draft.AutoFormatResponse, Mode=TwoWay}"
+                                    />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="settingsSection">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
+                                        Text="SSE 自定义解析"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        FontWeight="Medium"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <TextBlock
+                                        Text="用于非标准 SSE 响应。填写 JSON 路径后，将优先从每个 data 事件中提取对应字段；留空则使用内置的 OpenAI / Anthropic / Gemini / DashScope 自动识别。支持 data.token、items[0].id 这类路径。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
+                                    />
+                                    <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                        <arc:Input
+                                            Label="思考节点路径"
+                                            Text="{Binding Draft.SseThinkingPath, Mode=TwoWay}"
+                                            Placeholder="output.choices[0].message.reasoning_content"
+                                            AutomationProperties.Name="SSE 思考节点路径"
+                                        />
+                                        <arc:Input
+                                            Grid.Column="1"
+                                            Label="内容节点路径"
+                                            Text="{Binding Draft.SseContentPath, Mode=TwoWay}"
+                                            Placeholder="output.choices[0].message.content"
+                                            AutomationProperties.Name="SSE 内容节点路径"
+                                        />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="settingsSection">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
+                                        Text="存储"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        FontWeight="Medium"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <TextBlock
+                                        Text="默认使用项目目录 .postsharp 下的本地 SQLite；PostgreSQL、MySQL、SQL Server、MongoDB 等远程存储需要先安装对应插件。远程连接失败时，本地 SQLite 仍作为离线缓存。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
+                                    />
+                                    <TextBlock
+                                        Text="{Binding LocalDatabasePath}"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
+                                    />
+                                    <Border
+                                        Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                                        BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
+                                        BorderThickness="1"
+                                        CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                                        Padding="10"
+                                    >
+                                        <StackPanel Spacing="8">
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                                <StackPanel Spacing="2">
                                                     <TextBlock
-                                                        Text="{Binding Label}"
+                                                        Text="远程存储插件"
                                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                                         FontWeight="Medium"
                                                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                                     />
-                                                    <SelectableTextBlock
-                                                        Text="{Binding Path}"
+                                                    <TextBlock
+                                                        Text="{Binding StoragePluginSummary}"
                                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                                         TextWrapping="Wrap"
                                                     />
+                                                    <TextBlock
+                                                        Text="{Binding StoragePluginDirectory}"
+                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
+                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                        TextTrimming="CharacterEllipsis"
+                                                        ToolTip.Tip="{Binding StoragePluginDirectory}"
+                                                    />
                                                 </StackPanel>
                                                 <arc:Button
                                                     Grid.Column="1"
-                                                    Content="移除"
+                                                    Content="打开插件目录"
                                                     Variant="Ghost"
                                                     Size="Small"
-                                                    VerticalAlignment="Center"
-                                                    IsVisible="{Binding !IsManaged}"
-                                                    Click="OnRemoveFontDirectoryClick"
-                                                    AutomationProperties.Name="移除字体目录"
+                                                    Click="OnOpenStoragePluginFolderClick"
+                                                    AutomationProperties.Name="打开存储插件目录"
+                                                />
+                                                <arc:Button
+                                                    Grid.Column="2"
+                                                    Content="重新扫描"
+                                                    Variant="Secondary"
+                                                    Size="Small"
+                                                    Command="{Binding RescanStoragePluginsCommand}"
+                                                    IsEnabled="{Binding !IsStorageBusy}"
+                                                    AutomationProperties.Name="重新扫描存储插件"
                                                 />
                                             </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Classes="settingsSection">
-                        <StackPanel Spacing="12">
-                            <TextBlock
-                                Text="日志"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                FontWeight="Medium"
-                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                            />
-                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                                <arc:Input
-                                    Label="日志目录"
-                                    Text="{Binding Draft.LogDirectory, Mode=TwoWay}"
-                                    Description="按天滚动，文件名形如 postsharp-20261025.log，默认保留最近 30 个文件。"
-                                    AutomationProperties.Name="日志目录"
-                                />
-                                <arc:Button
-                                    Grid.Column="1"
-                                    Content="浏览…"
-                                    Variant="Secondary"
-                                    VerticalAlignment="Bottom"
-                                    Click="OnBrowseLogDirectoryClick"
-                                    AutomationProperties.Name="浏览日志目录"
-                                />
-                                <arc:Button
-                                    Grid.Column="2"
-                                    Content="打开目录"
-                                    Variant="Ghost"
-                                    VerticalAlignment="Bottom"
-                                    Command="{Binding OpenLogDirectoryCommand}"
-                                    AutomationProperties.Name="打开日志目录"
-                                />
-                            </Grid>
-                            <StackPanel
-                                Orientation="Horizontal"
-                                Spacing="4"
-                                HorizontalAlignment="Left"
-                            >
-                                <TextBlock
-                                    Text="默认目录："
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                />
-                                <SelectableTextBlock
-                                    Text="{Binding DefaultLogDirectory}"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                />
-                            </StackPanel>
-                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
-                                <arc:Select
-                                    Label="日志级别"
-                                    Description="低于所选级别的日志不会写入文件，更严重的日志始终保留。"
-                                    SelectedValue="{Binding Draft.LogLevel, Mode=TwoWay}"
-                                    AutomationProperties.Name="日志级别"
-                                >
-                                    <arc:SelectItem Content="调试" Value="Debug" />
-                                    <arc:SelectItem Content="信息" Value="Information" />
-                                    <arc:SelectItem Content="警告" Value="Warning" />
-                                    <arc:SelectItem Content="错误" Value="Error" />
-                                </arc:Select>
-                                <TextBlock
-                                    Grid.Column="1"
-                                    Text="「调试」记录取消、回退等诊断信息；日常使用推荐「信息」，只保留启动、保存与请求概要。"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                    TextWrapping="Wrap"
-                                    VerticalAlignment="Center"
-                                />
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Classes="settingsSection">
-                        <StackPanel Spacing="12">
-                            <TextBlock
-                                Text="请求"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                FontWeight="Medium"
-                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                            />
-                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
-                                <arc:Select
-                                    Label="请求超时"
-                                    Description="单位：秒"
-                                    ItemsSource="{Binding TimeoutOptions}"
-                                    SelectedItem="{Binding Draft.RequestTimeoutSeconds, Mode=TwoWay}"
-                                    AutomationProperties.Name="请求超时"
-                                />
-                                <arc:Select
-                                    Grid.Column="1"
-                                    Label="默认请求体"
-                                    SelectedValue="{Binding Draft.DefaultBodyMode, Mode=TwoWay}"
-                                    AutomationProperties.Name="默认请求体"
-                                >
-                                    <arc:SelectItem Content="无" Value="None" />
-                                    <arc:SelectItem Content="JSON" Value="Json" />
-                                    <arc:SelectItem Content="文本" Value="Text" />
-                                    <arc:SelectItem Content="表单上传" Value="Multipart" />
-                                </arc:Select>
-                            </Grid>
-                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
-                                <arc:Select
-                                    Label="大响应折叠阈值"
-                                    Description="单位：KB"
-                                    ItemsSource="{Binding LargeResponseThresholdOptions}"
-                                    SelectedItem="{Binding Draft.LargeResponseThresholdKb, Mode=TwoWay}"
-                                    AutomationProperties.Name="大响应折叠阈值"
-                                />
-                                <arc:NumberField
-                                    Grid.Column="1"
-                                    Label="审计最多保留"
-                                    Description="0 = 不限（默认）；设置后超出自动丢弃最早记录，套件执行仍正常写入审计"
-                                    Minimum="0"
-                                    Maximum="1000000"
-                                    Step="1"
-                                    Value="{Binding Draft.AuditLimit, Mode=TwoWay}"
-                                    AutomationProperties.Name="审计最多保留条数"
-                                />
-                            </Grid>
-                            <arc:Switch
-                                Content="自动格式化 JSON/XML 响应"
-                                IsChecked="{Binding Draft.AutoFormatResponse, Mode=TwoWay}"
-                            />
-                        </StackPanel>
-                    </Border>
-
-                    <Border Classes="settingsSection">
-                        <StackPanel Spacing="12">
-                            <TextBlock
-                                Text="SSE 自定义解析"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                FontWeight="Medium"
-                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                            />
-                            <TextBlock
-                                Text="用于非标准 SSE 响应。填写 JSON 路径后，将优先从每个 data 事件中提取对应字段；留空则使用内置的 OpenAI / Anthropic / Gemini / DashScope 自动识别。支持 data.token、items[0].id 这类路径。"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                TextWrapping="Wrap"
-                            />
-                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
-                                <arc:Input
-                                    Label="思考节点路径"
-                                    Text="{Binding Draft.SseThinkingPath, Mode=TwoWay}"
-                                    Placeholder="output.choices[0].message.reasoning_content"
-                                    AutomationProperties.Name="SSE 思考节点路径"
-                                />
-                                <arc:Input
-                                    Grid.Column="1"
-                                    Label="内容节点路径"
-                                    Text="{Binding Draft.SseContentPath, Mode=TwoWay}"
-                                    Placeholder="output.choices[0].message.content"
-                                    AutomationProperties.Name="SSE 内容节点路径"
-                                />
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Classes="settingsSection">
-                        <StackPanel Spacing="12">
-                            <TextBlock
-                                Text="存储"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                FontWeight="Medium"
-                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                            />
-                            <TextBlock
-                                Text="默认使用项目目录 .postsharp 下的本地 SQLite；PostgreSQL、MySQL、SQL Server、MongoDB 等远程存储需要先安装对应插件。远程连接失败时，本地 SQLite 仍作为离线缓存。"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                TextWrapping="Wrap"
-                            />
-                            <TextBlock
-                                Text="{Binding LocalDatabasePath}"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                TextWrapping="Wrap"
-                            />
-                            <Border
-                                Background="{arc:ArcDesignTokenResource SurfaceMuted}"
-                                BorderBrush="{arc:ArcDesignTokenResource BorderSubtle}"
-                                BorderThickness="1"
-                                CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
-                                Padding="10"
-                            >
-                                <StackPanel Spacing="8">
-                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                                        <StackPanel Spacing="2">
                                             <TextBlock
-                                                Text="远程存储插件"
+                                                Text="{Binding StoragePluginIssues}"
+                                                IsVisible="{Binding HasStoragePluginIssue}"
                                                 FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                FontWeight="Medium"
-                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                            />
-                                            <TextBlock
-                                                Text="{Binding StoragePluginSummary}"
-                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                Foreground="{arc:ArcDesignTokenResource Danger}"
                                                 TextWrapping="Wrap"
                                             />
-                                            <TextBlock
-                                                Text="{Binding StoragePluginDirectory}"
-                                                FontFamily="{DynamicResource PostSharpCodeFont}"
-                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                                TextTrimming="CharacterEllipsis"
-                                                ToolTip.Tip="{Binding StoragePluginDirectory}"
-                                            />
                                         </StackPanel>
-                                        <arc:Button
-                                            Grid.Column="1"
-                                            Content="打开插件目录"
-                                            Variant="Ghost"
-                                            Size="Small"
-                                            Click="OnOpenStoragePluginFolderClick"
-                                            AutomationProperties.Name="打开存储插件目录"
+                                    </Border>
+                                    <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                        <arc:Select
+                                            Label="存储配置"
+                                            ItemsSource="{Binding StorageProfiles}"
+                                            SelectedItem="{Binding SelectedStorageProfile, Mode=TwoWay}"
+                                            AutomationProperties.Name="存储配置"
                                         />
-                                        <arc:Button
-                                            Grid.Column="2"
-                                            Content="重新扫描"
-                                            Variant="Secondary"
-                                            Size="Small"
-                                            Command="{Binding RescanStoragePluginsCommand}"
-                                            IsEnabled="{Binding !IsStorageBusy}"
-                                            AutomationProperties.Name="重新扫描存储插件"
+                                        <arc:Select
+                                            Grid.Column="1"
+                                            Label="数据库类型"
+                                            ItemsSource="{Binding StorageProviderOptions}"
+                                            SelectedItem="{Binding SelectedStorageProvider, Mode=TwoWay}"
+                                            IsEnabled="{Binding IsStorageProfileEditable}"
+                                            AutomationProperties.Name="数据库类型"
+                                        />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="1*,2*" ColumnSpacing="12">
+                                        <arc:Input
+                                            Label="名称"
+                                            Text="{Binding SelectedStorageProfile.Name, Mode=TwoWay}"
+                                            IsEnabled="{Binding IsStorageProfileEditable}"
+                                            AutomationProperties.Name="存储配置名称"
+                                        />
+                                        <arc:Input
+                                            Grid.Column="1"
+                                            Label="连接串"
+                                            Text="{Binding SelectedStorageProfile.ConnectionString, Mode=TwoWay}"
+                                            IsEnabled="{Binding IsStorageProfileEditable}"
+                                            Placeholder="{Binding StorageConnectionPlaceholder}"
+                                            AutomationProperties.Name="存储连接串"
                                         />
                                     </Grid>
                                     <TextBlock
-                                        Text="{Binding StoragePluginIssues}"
-                                        IsVisible="{Binding HasStoragePluginIssue}"
+                                        Text="连接串格式由所选插件决定；MongoDB 可带数据库名（如 /postsharp），未填写时使用 postsharp。保存后新数据写入远程库，本地 SQLite 继续作为离线缓存。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
+                                    />
+                                    <WrapPanel ItemSpacing="8" LineSpacing="8">
+                                        <arc:Button
+                                            Content="新增远程库"
+                                            Variant="Secondary"
+                                            Size="Small"
+                                            Command="{Binding AddStorageProfileCommand}"
+                                            IsEnabled="{Binding CanAddStorageProfile}"
+                                            AutomationProperties.Name="新增远程库"
+                                        />
+                                        <arc:Button
+                                            Content="移除远程库"
+                                            Variant="Ghost"
+                                            Size="Small"
+                                            Command="{Binding RemoveStorageProfileCommand}"
+                                            IsEnabled="{Binding IsStorageProfileEditable}"
+                                            AutomationProperties.Name="移除远程库"
+                                        />
+                                        <arc:Button
+                                            Content="测试连接"
+                                            Variant="Secondary"
+                                            Size="Small"
+                                            Command="{Binding TestStorageCommand}"
+                                            IsEnabled="{Binding !IsStorageBusy}"
+                                            AutomationProperties.Name="测试存储连接"
+                                        />
+                                    </WrapPanel>
+                                    <Grid ColumnDefinitions="1*,1*,1*" ColumnSpacing="12">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock
+                                                Text="系统配置"
+                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                            />
+                                            <arc:Select
+                                                ItemsSource="{Binding StorageProfiles}"
+                                                SelectedItem="{Binding SettingsStorageProfile, Mode=TwoWay}"
+                                                AutomationProperties.Name="系统配置存储"
+                                            />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="4">
+                                            <TextBlock
+                                                Text="集合与接口记录"
+                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                            />
+                                            <arc:Select
+                                                ItemsSource="{Binding StorageProfiles}"
+                                                SelectedItem="{Binding WorkspaceStorageProfile, Mode=TwoWay}"
+                                                AutomationProperties.Name="集合与接口记录存储"
+                                            />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Spacing="4">
+                                            <TextBlock
+                                                Text="套件自动化"
+                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                            />
+                                            <arc:Select
+                                                ItemsSource="{Binding StorageProfiles}"
+                                                SelectedItem="{Binding SuitesStorageProfile, Mode=TwoWay}"
+                                                AutomationProperties.Name="套件自动化存储"
+                                            />
+                                        </StackPanel>
+                                    </Grid>
+                                    <WrapPanel ItemSpacing="8" LineSpacing="8">
+                                        <arc:Button
+                                            Content="同步到所选库"
+                                            Variant="Secondary"
+                                            Size="Small"
+                                            Command="{Binding SyncStorageCommand}"
+                                            IsEnabled="{Binding !IsStorageBusy}"
+                                            AutomationProperties.Name="同步存储数据"
+                                        />
+                                        <arc:Button
+                                            Content="切换并备份"
+                                            Variant="Secondary"
+                                            Size="Small"
+                                            Command="{Binding SwitchStorageCommand}"
+                                            IsEnabled="{Binding !IsStorageBusy}"
+                                            AutomationProperties.Name="切换存储"
+                                        />
+                                        <TextBlock
+                                            Text="切换会先备份本地数据库，重启 PostSharp 后使用新存储。"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            VerticalAlignment="Center"
+                                        />
+                                    </WrapPanel>
+                                    <TextBlock
+                                        IsVisible="{Binding !HasStorageError}"
+                                        Text="{Binding StorageStatusMessage}"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
+                                    />
+                                    <TextBlock
+                                        IsVisible="{Binding HasStorageError}"
+                                        Text="{Binding StorageStatusMessage}"
                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                         Foreground="{arc:ArcDesignTokenResource Danger}"
                                         TextWrapping="Wrap"
                                     />
                                 </StackPanel>
                             </Border>
-                            <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
-                                <arc:Select
-                                    Label="存储配置"
-                                    ItemsSource="{Binding StorageProfiles}"
-                                    SelectedItem="{Binding SelectedStorageProfile, Mode=TwoWay}"
-                                    AutomationProperties.Name="存储配置"
-                                />
-                                <arc:Select
-                                    Grid.Column="1"
-                                    Label="数据库类型"
-                                    ItemsSource="{Binding StorageProviderOptions}"
-                                    SelectedItem="{Binding SelectedStorageProvider, Mode=TwoWay}"
-                                    IsEnabled="{Binding IsStorageProfileEditable}"
-                                    AutomationProperties.Name="数据库类型"
-                                />
-                            </Grid>
-                            <Grid ColumnDefinitions="1*,2*" ColumnSpacing="12">
-                                <arc:Input
-                                    Label="名称"
-                                    Text="{Binding SelectedStorageProfile.Name, Mode=TwoWay}"
-                                    IsEnabled="{Binding IsStorageProfileEditable}"
-                                    AutomationProperties.Name="存储配置名称"
-                                />
-                                <arc:Input
-                                    Grid.Column="1"
-                                    Label="连接串"
-                                    Text="{Binding SelectedStorageProfile.ConnectionString, Mode=TwoWay}"
-                                    IsEnabled="{Binding IsStorageProfileEditable}"
-                                    Placeholder="{Binding StorageConnectionPlaceholder}"
-                                    AutomationProperties.Name="存储连接串"
-                                />
-                            </Grid>
-                            <TextBlock
-                                Text="连接串格式由所选插件决定；MongoDB 可带数据库名（如 /postsharp），未填写时使用 postsharp。保存后新数据写入远程库，本地 SQLite 继续作为离线缓存。"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                TextWrapping="Wrap"
-                            />
-                            <WrapPanel ItemSpacing="8" LineSpacing="8">
-                                <arc:Button
-                                    Content="新增远程库"
-                                    Variant="Secondary"
-                                    Size="Small"
-                                    Command="{Binding AddStorageProfileCommand}"
-                                    IsEnabled="{Binding CanAddStorageProfile}"
-                                    AutomationProperties.Name="新增远程库"
-                                />
-                                <arc:Button
-                                    Content="移除远程库"
-                                    Variant="Ghost"
-                                    Size="Small"
-                                    Command="{Binding RemoveStorageProfileCommand}"
-                                    IsEnabled="{Binding IsStorageProfileEditable}"
-                                    AutomationProperties.Name="移除远程库"
-                                />
-                                <arc:Button
-                                    Content="测试连接"
-                                    Variant="Secondary"
-                                    Size="Small"
-                                    Command="{Binding TestStorageCommand}"
-                                    IsEnabled="{Binding !IsStorageBusy}"
-                                    AutomationProperties.Name="测试存储连接"
-                                />
-                            </WrapPanel>
-                            <Grid ColumnDefinitions="1*,1*,1*" ColumnSpacing="12">
-                                <StackPanel Spacing="4">
-                                    <TextBlock
-                                        Text="系统配置"
-                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                    />
-                                    <arc:Select
-                                        ItemsSource="{Binding StorageProfiles}"
-                                        SelectedItem="{Binding SettingsStorageProfile, Mode=TwoWay}"
-                                        AutomationProperties.Name="系统配置存储"
-                                    />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Spacing="4">
-                                    <TextBlock
-                                        Text="集合与接口记录"
-                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                    />
-                                    <arc:Select
-                                        ItemsSource="{Binding StorageProfiles}"
-                                        SelectedItem="{Binding WorkspaceStorageProfile, Mode=TwoWay}"
-                                        AutomationProperties.Name="集合与接口记录存储"
-                                    />
-                                </StackPanel>
-                                <StackPanel Grid.Column="2" Spacing="4">
-                                    <TextBlock
-                                        Text="套件自动化"
-                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                    />
-                                    <arc:Select
-                                        ItemsSource="{Binding StorageProfiles}"
-                                        SelectedItem="{Binding SuitesStorageProfile, Mode=TwoWay}"
-                                        AutomationProperties.Name="套件自动化存储"
-                                    />
-                                </StackPanel>
-                            </Grid>
-                            <WrapPanel ItemSpacing="8" LineSpacing="8">
-                                <arc:Button
-                                    Content="同步到所选库"
-                                    Variant="Secondary"
-                                    Size="Small"
-                                    Command="{Binding SyncStorageCommand}"
-                                    IsEnabled="{Binding !IsStorageBusy}"
-                                    AutomationProperties.Name="同步存储数据"
-                                />
-                                <arc:Button
-                                    Content="切换并备份"
-                                    Variant="Secondary"
-                                    Size="Small"
-                                    Command="{Binding SwitchStorageCommand}"
-                                    IsEnabled="{Binding !IsStorageBusy}"
-                                    AutomationProperties.Name="切换存储"
-                                />
-                                <TextBlock
-                                    Text="切换会先备份本地数据库，重启 PostSharp 后使用新存储。"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                    VerticalAlignment="Center"
-                                />
-                            </WrapPanel>
-                            <TextBlock
-                                IsVisible="{Binding !HasStorageError}"
-                                Text="{Binding StorageStatusMessage}"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                TextWrapping="Wrap"
-                            />
-                            <TextBlock
-                                IsVisible="{Binding HasStorageError}"
-                                Text="{Binding StorageStatusMessage}"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource Danger}"
-                                TextWrapping="Wrap"
-                            />
-                        </StackPanel>
-                    </Border>
 
-                    <Border Classes="settingsSection">
-                        <StackPanel Spacing="10">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                <StackPanel Spacing="2">
+                            <Border Classes="settingsSection">
+                                <StackPanel Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock
+                                                Text="更新"
+                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                FontWeight="Medium"
+                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                            />
+                                            <TextBlock
+                                                Text="{Binding CurrentVersionText}"
+                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            />
+                                        </StackPanel>
+                                        <arc:Switch
+                                            Grid.Column="1"
+                                            Content="自动检查更新"
+                                            IsChecked="{Binding Draft.AutoCheckUpdates, Mode=TwoWay}"
+                                            AutomationProperties.Name="自动检查更新"
+                                        />
+                                    </Grid>
                                     <TextBlock
-                                        Text="更新"
+                                        Text="{Binding UpdateStatusMessage}"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                        TextWrapping="Wrap"
+                                    />
+                                    <arc:Button
+                                        HorizontalAlignment="Left"
+                                        Variant="Secondary"
+                                        Size="Small"
+                                        Content="{Binding CheckUpdateButtonText}"
+                                        Command="{Binding CheckForUpdatesCommand}"
+                                        IsEnabled="{Binding !IsCheckingUpdates}"
+                                        AutomationProperties.Name="检查更新"
+                                    />
+                                    <TextBlock
+                                        Text="更新包从 GitHub Releases 下载并校验 SHA256；下载完成后由你点击顶栏「安装更新」应用，失败时保留旧版本。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
+                                    />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="settingsSection">
+                                <StackPanel Spacing="6">
+                                    <TextBlock
+                                        Text="本地数据库"
                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                         FontWeight="Medium"
                                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                     />
-                                    <TextBlock
-                                        Text="{Binding CurrentVersionText}"
+                                    <SelectableTextBlock
+                                        Text="{Binding SettingsFilePath}"
                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
+                                    />
+                                    <TextBlock
+                                        Text="系统配置、集合与接口记录、套件自动化和审计保存在本地 SQLite；默认位于项目目录 .postsharp 下。远程数据库仅按上方分类绑定使用，连接串以当前 Windows 用户加密保存。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
                                     />
                                 </StackPanel>
-                                <arc:Switch
-                                    Grid.Column="1"
-                                    Content="自动检查更新"
-                                    IsChecked="{Binding Draft.AutoCheckUpdates, Mode=TwoWay}"
-                                    AutomationProperties.Name="自动检查更新"
-                                />
-                            </Grid>
+                            </Border>
+                        </StackPanel>
+                    </arc:ScrollArea>
+
+                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <Grid VerticalAlignment="Center">
                             <TextBlock
-                                Text="{Binding UpdateStatusMessage}"
+                                IsVisible="{Binding !HasError}"
+                                Text="{Binding StatusMessage}"
                                 FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                 TextWrapping="Wrap"
                             />
+                            <TextBlock
+                                IsVisible="{Binding HasError}"
+                                Text="{Binding StatusMessage}"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                Foreground="{arc:ArcDesignTokenResource Danger}"
+                                TextWrapping="Wrap"
+                            />
+                        </Grid>
+                        <StackPanel
+                            Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center"
+                        >
                             <arc:Button
-                                HorizontalAlignment="Left"
-                                Variant="Secondary"
-                                Size="Small"
-                                Content="{Binding CheckUpdateButtonText}"
-                                Command="{Binding CheckForUpdatesCommand}"
-                                IsEnabled="{Binding !IsCheckingUpdates}"
-                                AutomationProperties.Name="检查更新"
+                                Content="恢复默认"
+                                Variant="Ghost"
+                                Command="{Binding RestoreDefaultsCommand}"
                             />
-                            <TextBlock
-                                Text="更新包从 GitHub Releases 下载并校验 SHA256；下载完成后由你点击顶栏「安装更新」应用，失败时保留旧版本。"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                TextWrapping="Wrap"
+                            <arc:Button Content="关闭" Variant="Secondary" Click="OnCloseClick" />
+                            <arc:Button
+                                Content="保存设置"
+                                Variant="Primary"
+                                Command="{Binding SaveCommand}"
+                                AutomationProperties.Name="保存设置"
                             />
                         </StackPanel>
-                    </Border>
-
-                    <Border Classes="settingsSection">
-                        <StackPanel Spacing="6">
-                            <TextBlock
-                                Text="本地数据库"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                FontWeight="Medium"
-                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                            />
-                            <SelectableTextBlock
-                                Text="{Binding SettingsFilePath}"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                TextWrapping="Wrap"
-                            />
-                            <TextBlock
-                                Text="系统配置、集合与接口记录、套件自动化和审计保存在本地 SQLite；默认位于项目目录 .postsharp 下。远程数据库仅按上方分类绑定使用，连接串以当前 Windows 用户加密保存。"
-                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                TextWrapping="Wrap"
-                            />
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-            </arc:ScrollArea>
-
-            <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                <Grid VerticalAlignment="Center">
-                    <TextBlock
-                        IsVisible="{Binding !HasError}"
-                        Text="{Binding StatusMessage}"
-                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                        TextWrapping="Wrap"
-                    />
-                    <TextBlock
-                        IsVisible="{Binding HasError}"
-                        Text="{Binding StatusMessage}"
-                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                        Foreground="{arc:ArcDesignTokenResource Danger}"
-                        TextWrapping="Wrap"
-                    />
+                    </Grid>
                 </Grid>
-                <StackPanel
-                    Grid.Column="1"
-                    Orientation="Horizontal"
-                    Spacing="8"
-                    VerticalAlignment="Center"
-                >
-                    <arc:Button
-                        Content="恢复默认"
-                        Variant="Ghost"
-                        Command="{Binding RestoreDefaultsCommand}"
-                    />
-                    <arc:Button Content="关闭" Variant="Secondary" Click="OnCloseClick" />
-                    <arc:Button
-                        Content="保存设置"
-                        Variant="Primary"
-                        Command="{Binding SaveCommand}"
-                        AutomationProperties.Name="保存设置"
-                    />
-                </StackPanel>
             </Grid>
-        </Grid>
+        </LayoutTransformControl>
     </VisualLayerManager>
 </Window>
