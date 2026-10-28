@@ -56,6 +56,9 @@ PostSharp 的定位是：
 
 - **方法**：GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS。
 - **请求头**：键值表、常用头一键插入、重复头提示、环境变量。
+- **Cookie 管理**：顶栏 Cookie 按钮查看当前请求站点在本次运行中捕获的 Cookie，显示名称、值、作用域、过期时间和 Secure / HttpOnly 标记；支持刷新与清空当前站点。Cookie 只保存在进程内存，不写入工作区、审计或发布包。
+
+![Cookie 管理](docs/cookie-manager.png)
 - **请求体**：无 / JSON / 文本 / 表单上传。
   - JSON/XML 一键格式化，JSON 一键压缩。
   - 单行切换与单行预览，长文本不再占满编辑区。
@@ -80,7 +83,7 @@ PostSharp 的定位是：
   - SSE 响应自动选中「AI 聚合」标签，内容 / 思考过程 / 原始事件三视图。
 - **集合、历史、环境变量、自动保存**。
 - **集合回收站**：删除集合或请求（包括 AI 通过 MCP 删除）都会先移入集合回收站；恢复时回到原集合的原位置并保留 id，引用它的套件随之恢复，原位置已不存在时恢复到根目录；永久删除与清空都需二次确认；最多保留最近 200 项，更早的会自动永久删除。
-- **机密变量**：环境变量可点锁形图标设为机密，值在编辑框中隐藏；审计、MCP 返回与套件结果中以 `******` 显示。
+- **机密变量**：环境变量可点锁形图标设为机密，值在编辑框中隐藏；审计、MCP 返回与套件结果中以 `******` 显示。机密值在本机 SQLite 工作区中以 DPAPI（Windows）或 AES-GCM 本机密钥文件（Linux/macOS）加密保存，旧工作区的明文机密会在首次加载时自动迁移。
 - **数据文件保护**：工作区、审计、设置均先写临时文件再替换，并保留上一版 `.bak`；文件损坏时原文件移到旁边保留、自动改用备份，顶部提示条说明发生了什么和原文件位置。
 - **调用记录**：主界面历史列表与审计合并为管理层「审计」一个入口；支持来源筛选、分页加载、详情查看和打开原请求。
 - **OpenAPI 导入与同步**：从本地 JSON / YAML 文件或 URL 读取 OpenAPI 3.x / Swagger 2.0；按 `x-apifox-folder` 或第一个 tag 创建分组，支持安全方案占位头、多服务器选择、外部 `$ref` 自动下载。大文档不再限制操作数、外部引用数、字段数或示例大小；如果来源 URL 或 OpenAPI servers 带 IP / 域名，会自动创建并激活对应环境，`baseUrl` 直接指向该地址；URL 导入会记住来源、ETag / Last-Modified 与内容指纹，右键集合可「同步 OpenAPI」按 `METHOD + 路径` 增量合并：新增接口、更新文档与缺失参数、保留用户改过的名称/参数值/请求体、文档中删除的接口移入集合回收站；也可开启启动时自动同步。
@@ -529,7 +532,7 @@ Windows 默认: <项目目录>\.postsharp\
 - 系统配置、集合与接口记录、套件自动化分别保存为 SQLite 文档 `settings` / `workspace` / `suites`；审计和审计回收站保存在同一数据库的 `AuditEntries` 表。旧版 JSON 会在首次启动导入，原文件保留作兼容副本。
 - SQLite 使用 WAL、事务和参数化 SQL；保存失败会在顶部提示条显示原因，下次保存自动重试。
 - 设置窗口「存储」可为三个分类分别绑定本地 SQLite 或远程 PostgreSQL / MySQL / SQL Server / MongoDB；本地 SQLite 同时作为离线缓存。远程类型由 `plugins` 目录中的插件提供，默认四类随包发布；其它数据库按 `docs/storage-plugins.md` 实现。切换或同步会先备份本地数据库，切换后重启 PostSharp 使用新存储。远程连接失败或写入失败时自动回写会立即暂停，只写本地 SQLite；恢复连接后在设置中测试连接，或直接执行同步/切换。
-- 机密变量的值仍以明文保存在本机 SQLite 工作区文档中（发送请求需要原值），打码只作用于审计、MCP 返回与套件结果；授权配置跟着请求/集合走，令牌、刷新令牌、ID 令牌、客户端密钥（ClientSecret）、Basic 密码和 API Key 值均用 DPAPI 以当前用户为范围加密后写入工作区，换机器或换用户后需要重新登录。
+- 机密变量在内存中保留原值供发送请求和 MCP 解析使用，但写入本机 SQLite 工作区前会用 DPAPI（Windows）或 AES-GCM 本机密钥文件（Linux/macOS）加密；旧工作区的明文机密在首次加载时迁移，换机器或换用户后需要重新输入。授权配置跟着请求/集合走，令牌、刷新令牌、ID 令牌、客户端密钥（ClientSecret）、Basic 密码和 API Key 值使用同一套本机机密保护。
 - 旧工作区中明文的 ClientSecret 会在首次加载时迁移为加密字段；授权刷新遇到网络、超时或服务端临时错误时保留 refresh_token，只有明确失效才要求重新登录。
 - 服务器返回的状态文本和 Content-Type 也进入打码流程；集合回收站超过容量时会明确提示已永久删除最早的条目。
 - 日志为 UTF-8 文本，默认保留最近 30 个文件；修改设置中的日志目录或日志级别后立即生效，旧日志不会自动迁移。
@@ -758,10 +761,10 @@ docs/
 | 套件预检 | 缺失请求、环、悬空节点/连线、无效映射/条件/断言和环境变量会阻止保存或运行；编辑器按节点列出问题并支持定位，管理层持续展示提醒 |
 | 运行历史 | 每个套件持久化最近 20 次运行摘要、步骤结果、节点/连线快照；自动化页可切换历史，重启后保留 |
 | 失败重跑 | 失败运行可只重跑失败步骤及依赖；每个步骤结果提供「从此步继续」，自动补跑上游依赖 |
-| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；182 个测试全部通过 |
-| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、182 个测试通过 |
+| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；187 个测试全部通过 |
+| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、187 个测试通过 |
 | MCP DAG | `create_suite` / `update_suite` 接受 `workflow.nodes`、`workflow.edges`，支持边条件、All/Any 汇合和最大并行度；构建 0 警告/错误 |
-| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；182 个测试通过 |
+| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；187 个测试通过 |
 | MCP 单条清理 | 新增 `get_history`、`delete_history`、`delete_audit`，审计/历史单条移入回收站可恢复 |
 | MCP 后台运行 | 新增 `start_suite_run` / `get_suite_run_job` / `cancel_suite_run`；任务返回节点/连线实时进度和最终运行 id，退出应用后任务不保留 |
 | MCP 预检 | 新增 `validate_suite`，返回 `code`、`severity`、`stepId`、`stepName`、`message`、`hint`；后台任务预检失败也会带回结构化问题 |
@@ -832,7 +835,7 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：182 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：187 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
@@ -851,6 +854,9 @@ docs/
 | CLI 报告 | `suite run/rerun-failed/continue` 支持 `--junit`、`--markdown`、`--html`；`--version` 和帮助信息通过构建 |
 | CLI 打包 | Windows/Linux/macOS 发布脚本将 CLI 放入 `cli/`；Windows 包内 CLI `--version` 为 1.10.15 |
 | 跨平台构建 | Linux x64 / macOS arm64 自包含包构建通过，CLI 随包；Windows 包构建和测试通过 |
+| Cookie 管理 | 顶栏 Cookie 入口可打开；空状态、刷新、清空按钮可见；Cookie 容器读取与按站点清除单测通过 |
+| 机密变量落盘 | 机密环境变量在 Capture 后为 DPAPI/AES-GCM 密文，ToEnvironmentModel 可还原原值；旧明文读取保持兼容（单测） |
+| 机密落盘复测 | MCP `set_variable secret=true` 后停止应用，在 `postsharp.db`、WAL 与日志中搜索示例令牌均无明文；工作区只保留 `dpapi:v1:` 密文 |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
 | 树节点拖拽 | 请求上下拖动调整同级顺序；集合拖入集合或拖到边缘排序成功；循环/深度校验生效 |
 | 集合层级 | 集合最多五级；新建与拖拽路径均做深度校验 |
@@ -997,7 +1003,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：182 个 xUnit 测试。
+- 自测：187 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
@@ -1014,7 +1020,7 @@ master                 稳定可发布
 - Hoppscotch 支持 Collection JSON；环境文件、multipart 文件内容和脚本不会导入。
 - 字体设置主要覆盖窗口正文和代码视图；Arc 组件的内部令牌字体不保证全部跟随。
 - OpenAPI 导入会优先使用 `x-apifox-folder`，支持 securitySchemes 占位认证头、服务器选择和外部 `$ref` 自动下载；回调/Webhook 仍未实现。
-- Cookie 管理、代理、客户端证书、OAuth 2.0 之外的授权类型（隐式、客户端凭据、设备码）、Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
+- Cookie 仅支持当前进程内存中的查看和按站点清空，未做跨重启持久化、导入导出或按请求隔离；代理、客户端证书、OAuth 2.0 之外的授权类型（隐式、客户端凭据、设备码）、Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
 - 授权只支持请求与集合两级（含多级集合继承），没有工作区级或环境级默认授权；同一集合的授权由该集合对象持有，未单独覆盖的下级请求共用同一个令牌，刷新后同步生效。
 - 单点登录使用系统默认浏览器；复制请求会复制一份独立的授权与令牌，副本重新登录或刷新不会影响原请求；删除集合/请求时其授权配置一起移除。
 - MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。MCP 套件已支持任意 DAG、结构化预检、后台运行/进度轮询/取消、运行历史和失败重跑；后台任务只保存在当前进程内，应用退出后需通过运行历史查看已完成结果。

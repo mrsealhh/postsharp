@@ -40,6 +40,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="PostSharp.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
         <!--
             交互型工具更需要「别常驻空堆」：消费内存越高，GC 越积极归还已提交的段。
             实测同一工作区、同样的启动同步：7 比旧构建省 79MB，9 再省 30MB（352 → 273 → 243）。

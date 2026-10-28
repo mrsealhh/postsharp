@@ -524,6 +524,37 @@ public sealed class StorageCoordinator
     /// <summary>Drops cached backends so a freshly rescanned/replaced plugin is used on the next operation.</summary>
     public void InvalidateBackends() => _backends.Clear();
 
+    /// <summary>
+    /// Rewrites the local database after secret values are migrated or changed. A normal UPDATE leaves the
+    /// previous plaintext page in the WAL/free pages, so a checkpoint plus VACUUM is required before claiming
+    /// that a known secret is no longer present in the SQLite files.
+    /// </summary>
+    public bool CompactLocalDatabase()
+    {
+        try
+        {
+            using var connection = new SqliteConnection(
+                new SqliteConnectionStringBuilder
+                {
+                    DataSource = AppPaths.DatabaseFile,
+                    Mode = SqliteOpenMode.ReadWriteCreate,
+                    Cache = SqliteCacheMode.Shared,
+                }.ToString()
+            );
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                "PRAGMA busy_timeout=5000; PRAGMA wal_checkpoint(TRUNCATE); VACUUM;";
+            command.ExecuteNonQuery();
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "压缩本地数据库失败，旧机密可能仍留在 SQLite 空闲页");
+            return false;
+        }
+    }
+
     public string? BackupLocalDatabase()
     {
         try

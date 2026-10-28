@@ -34,9 +34,21 @@ public sealed class WorkspaceStore
                     document.Payload,
                     JsonOptions
                 );
-                return workspace is null
-                    ? new DataFileLoad<WorkspaceDto>(null, DataFileState.Unreadable, null)
-                    : new DataFileLoad<WorkspaceDto>(workspace, DataFileState.Loaded, null);
+                if (workspace is null)
+                {
+                    return new DataFileLoad<WorkspaceDto>(null, DataFileState.Unreadable, null);
+                }
+
+                if (ProtectLegacyEnvironmentSecrets(workspace))
+                {
+                    _storage.SaveDocument(
+                        StorageCategories.Workspace,
+                        JsonSerializer.Serialize(workspace, JsonOptions)
+                    );
+                    _storage.CompactLocalDatabase();
+                }
+
+                return new DataFileLoad<WorkspaceDto>(workspace, DataFileState.Loaded, null);
             }
             catch (Exception exception)
             {
@@ -52,10 +64,15 @@ public sealed class WorkspaceStore
         );
         if (load.Value is { } migrated)
         {
+            var migratedSecrets = ProtectLegacyEnvironmentSecrets(migrated);
             _storage.SaveDocument(
                 StorageCategories.Workspace,
                 JsonSerializer.Serialize(migrated, JsonOptions)
             );
+            if (migratedSecrets)
+            {
+                _storage.CompactLocalDatabase();
+            }
         }
 
         return load;
@@ -87,7 +104,7 @@ public sealed class WorkspaceStore
                 {
                     Id = environment.Id,
                     Name = environment.Name,
-                    Variables = ToRows(environment.Variables),
+                    Variables = ToRows(environment.Variables, protectSecrets: true),
                 })
                 .ToList(),
             History = history.Select(ToHistoryDto).ToList(),
@@ -96,6 +113,51 @@ public sealed class WorkspaceStore
             TrashedNodes = trashedNodes.Select(ToTrashedNodeDto).ToList(),
             ActiveEnvironmentId = activeEnvironmentId,
         };
+    }
+
+    public static EnvironmentModel ToEnvironmentModel(EnvironmentDto dto)
+    {
+        var environment = new EnvironmentModel
+        {
+            Id = dto.Id == Guid.Empty ? Guid.NewGuid() : dto.Id,
+            Name = dto.Name,
+        };
+
+        foreach (var row in dto.Variables)
+        {
+            var value =
+                row.IsSecret && row.Value.Length > 0
+                    ? EnvironmentSecretProtector.Unprotect(row.Value)
+                    : row.Value;
+            environment.Variables.AddRow(row.Key, value, row.IsEnabled, row.IsSecret);
+        }
+
+        environment.Variables.EnsureTrailingRow();
+        return environment;
+    }
+
+    internal static bool ProtectLegacyEnvironmentSecrets(WorkspaceDto workspace)
+    {
+        var changed = false;
+        foreach (var environment in workspace.Environments)
+        {
+            foreach (var row in environment.Variables)
+            {
+                if (
+                    !row.IsSecret
+                    || row.Value.Length == 0
+                    || EnvironmentSecretProtector.IsProtected(row.Value)
+                )
+                {
+                    continue;
+                }
+
+                row.Value = EnvironmentSecretProtector.Protect(row.Value);
+                changed = true;
+            }
+        }
+
+        return changed;
     }
 
     public static List<SuiteDto> CaptureSuites(IEnumerable<TestSuite> suites) =>
@@ -730,7 +792,7 @@ public sealed class WorkspaceStore
         };
     }
 
-    private static List<RowDto> ToRows(EditableRowCollection rows)
+    private static List<RowDto> ToRows(EditableRowCollection rows, bool protectSecrets = false)
     {
         return rows.Where(row =>
                 !string.IsNullOrWhiteSpace(row.Key) || !string.IsNullOrWhiteSpace(row.Value)
@@ -738,7 +800,13 @@ public sealed class WorkspaceStore
             .Select(row => new RowDto
             {
                 Key = row.Key,
-                Value = row.Value,
+                Value =
+                    protectSecrets
+                    && row.IsSecret
+                    && row.Value.Length > 0
+                    && !EnvironmentSecretProtector.IsProtected(row.Value)
+                        ? EnvironmentSecretProtector.Protect(row.Value)
+                        : row.Value,
                 IsEnabled = row.IsEnabled,
                 IsSecret = row.IsSecret,
             })
