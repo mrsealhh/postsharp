@@ -560,16 +560,18 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 ### P2：CLI / 无人值守
 
-- [ ] 新增 CLI 骨架，默认连接 `http://127.0.0.1:5199/mcp`，支持 `--json`、超时和退出码。
-- [ ] 第一批命令：`suite list/get/validate/run`。
-- [ ] 第二批命令：`suite history/rerun-failed/continue`、`audit list`。
+- [x] 新增 `src/PostSharp.Cli`，默认连接 `http://127.0.0.1:5199/mcp`，支持 `--json`、超时和退出码。
+- [x] 第一批命令：`suite list/get/validate/run`。
+- [x] 第二批命令：`suite runs/rerun-failed/continue`、`request send`、`audit list`。
 - [ ] JUnit XML / HTML 报告。
 - [ ] 以 `/postsharp:mcp ...` 形式包装 CLI，供 AI 客户端调用。
+- [ ] 将 CLI 产物纳入 Windows/Linux/macOS 发布包或独立 Release 资产。
 
 ## 11. 相关文件索引
 
 - 产品能力与已知限制：`README.md`「已知限制与路线图」。
 - 存储插件契约与自定义数据库：`docs/storage-plugins.md`。
+- CLI 使用说明：`docs/cli.md`；源码 `src/PostSharp.Cli`；打包脚本 `scripts/build-cli-release.ps1`。
 - 发布脚本：`scripts/build-release.ps1`。
 - 插件打包脚本：`scripts/build-storage-plugins.ps1`。
 - 存储契约：`src/PostSharp.Storage.Abstractions/StorageContracts.cs`。
