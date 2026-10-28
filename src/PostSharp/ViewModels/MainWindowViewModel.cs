@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -41,6 +42,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private const int MaxCollectionDepth = 5;
     private const string SideBySideLayout = "SideBySide";
     private const string StackedLayout = "Stacked";
+    private const string CliReleaseUrl =
+        "https://github.com/mrsealhh/postsharp/releases/tag/cli-v1.0.0";
+    private const string CliDocsUrl =
+        "https://github.com/mrsealhh/postsharp/blob/master/docs/cli.md";
 
     private static readonly JsonSerializerOptions MappingJsonOptions = new()
     {
@@ -1386,6 +1391,25 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         IsManagementOpen = false;
         IsMcpDialogOpen = true;
+    }
+
+    [RelayCommand]
+    private void OpenCliRelease() => OpenExternalUrl(CliReleaseUrl, "CLI 下载页");
+
+    [RelayCommand]
+    private void OpenCliDocs() => OpenExternalUrl(CliDocsUrl, "CLI 使用说明");
+
+    private void OpenExternalUrl(string url, string label)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "打开 {Label} 失败 {Url}", label, url);
+            ShowToast($"无法打开{label}，请手动访问 {url}");
+        }
     }
 
     public SettingsViewModel CreateSettingsViewModel() => new(Settings, _settingsStore);
