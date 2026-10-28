@@ -49,4 +49,18 @@ public sealed class AuthorizationProfileTests
 
         Assert.Equal("http://127.0.0.1:53682/callback", profile.RedirectUri);
     }
+
+    [Fact]
+    public void CustomSchemeRedirectCanUseManualCallback()
+    {
+        var profile = new AuthorizationProfile
+        {
+            DiscoveryUrl = "https://login.example.com/.well-known/openid-configuration",
+            ClientId = "desktop-client",
+            RedirectUri = "postsharp://auth/callback",
+        };
+
+        Assert.Null(profile.FindConfigurationProblem());
+        Assert.False(LoopbackRedirectListener.IsLoopbackRedirect(profile.RedirectUri));
+    }
 }

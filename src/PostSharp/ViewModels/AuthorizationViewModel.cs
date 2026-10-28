@@ -102,6 +102,9 @@ public sealed partial class AuthorizationViewModel : ObservableObject
             ? "登录会打开系统默认浏览器；授权完成后浏览器重定向到本机回环地址，PostSharp 接收授权码并换取令牌。"
             : "登录会打开系统默认浏览器；当前回调地址不是本机回环地址，请把浏览器地址栏里的完整回调地址粘贴到下方完成登录。";
 
+    public string RedirectHint =>
+        $"当前请求使用：{Profile.RedirectUri}。必须与 IdP 登记值完全一致；本机回环地址可自动回调，其他地址请手动粘贴回调链接。";
+
     partial void OnIsBusyChanged(bool value) => OnPropertyChanged(nameof(CanSignIn));
 
     partial void OnIsSigningInChanged(bool value)
@@ -362,6 +365,7 @@ public sealed partial class AuthorizationViewModel : ObservableObject
         if (e.PropertyName == nameof(AuthorizationProfile.RedirectUri))
         {
             OnPropertyChanged(nameof(LoginHint));
+            OnPropertyChanged(nameof(RedirectHint));
             OnPropertyChanged(nameof(IsManualCallbackAvailable));
             if (!IsBusy && !IsSigningIn)
             {

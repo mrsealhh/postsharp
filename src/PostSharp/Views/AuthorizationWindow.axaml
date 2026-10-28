@@ -211,7 +211,7 @@
                                         Label="重定向地址"
                                         Text="{Binding Profile.RedirectUri, Mode=TwoWay}"
                                         Placeholder="http://127.0.0.1:53682/callback"
-                                        Description="必须与授权服务器登记的地址完全一致；本机回环地址可自动回调，https 地址需手动粘贴回调链接。"
+                                        Description="{Binding RedirectHint}"
                                         AutomationProperties.Name="重定向地址"
                                     />
                                     <arc:Input
