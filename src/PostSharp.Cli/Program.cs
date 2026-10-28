@@ -37,6 +37,22 @@ internal static class Program
 
         try
         {
+            if (
+                options.Arguments.Count > 0
+                && string.Equals(
+                    options.Arguments[0],
+                    "mcp-stdio",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return await McpStdioBridge.RunAsync(
+                    options.Endpoint,
+                    options.Timeout,
+                    cancellation.Token
+                );
+            }
+
             using var client = new McpClient(options.Endpoint, options.ClientName, options.Timeout);
             await client.InitializeAsync(cancellation.Token);
             return await RunAsync(client, options, cancellation.Token);
@@ -480,6 +496,8 @@ internal static class Program
               suite continue <suiteId> <runId> <stepId>
               request send <requestId>
               audit list [--source UI|MCP] [--limit 数量]
+              mcp-stdio（把 stdin/stdout 的 MCP JSON-RPC 转发到 HTTP 端点）
+              mcp-stdio
 
             退出码：
               0 成功；1 套件/请求失败；2 参数或服务端错误；3 连接失败或取消。
@@ -607,6 +625,100 @@ internal sealed class CliConnectionException : Exception
         : base(message) { }
 }
 
+internal static class McpStdioBridge
+{
+    public static async Task<int> RunAsync(
+        Uri endpoint,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        TrySetUtf8Console();
+        using var client = new McpClient(endpoint, "PostSharp.Cli.Stdio", timeout);
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            string? line;
+            try
+            {
+                line = await Console.In.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            if (line is null)
+            {
+                break;
+            }
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            try
+            {
+                var response = await client
+                    .PostRawAsync(line, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(response))
+                {
+                    await Console.Out.WriteLineAsync(response).ConfigureAwait(false);
+                    await Console.Out.FlushAsync().ConfigureAwait(false);
+                }
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"MCP stdio 转发失败：{exception.Message}");
+                if (TryReadId(line) is { } id)
+                {
+                    var error = new JsonObject
+                    {
+                        ["jsonrpc"] = "2.0",
+                        ["id"] = id.DeepClone(),
+                        ["error"] = new JsonObject
+                        {
+                            ["code"] = -32603,
+                            ["message"] = exception.Message,
+                        },
+                    };
+                    await Console.Out.WriteLineAsync(error.ToJsonString()).ConfigureAwait(false);
+                    await Console.Out.FlushAsync().ConfigureAwait(false);
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    private static JsonNode? TryReadId(string line)
+    {
+        try
+        {
+            return JsonNode.Parse(line)?["id"]?.DeepClone();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static void TrySetUtf8Console()
+    {
+        try
+        {
+            var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+            Console.InputEncoding = encoding;
+            Console.OutputEncoding = encoding;
+        }
+        catch (IOException)
+        {
+            // Redirected consoles may not expose configurable encodings.
+        }
+    }
+}
+
 internal sealed class McpClient : IDisposable
 {
     private readonly HttpClient _http;
@@ -674,6 +786,47 @@ internal sealed class McpClient : IDisposable
     }
 
     public void Dispose() => _http.Dispose();
+
+    public async Task<string?> PostRawAsync(string payload, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint)
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+        };
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_timeout);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.SendAsync(request, timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new CliConnectionException("连接 PostSharp 超时，请确认应用正在运行。");
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new CliConnectionException(
+                $"无法连接 PostSharp：{exception.Message}。请先启动应用并确认 MCP 端口。"
+            );
+        }
+
+        using (response)
+        {
+            var text = await response
+                .Content.ReadAsStringAsync(timeout.Token)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new CliConnectionException(
+                    $"PostSharp 返回 HTTP {(int)response.StatusCode}：{text}"
+                );
+            }
+
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        }
+    }
 
     private async Task<JsonObject> SendAsync(
         string method,

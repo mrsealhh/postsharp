@@ -20,7 +20,23 @@ postsharp-cli suite rerun-failed <suiteId> <runId>
 postsharp-cli suite continue <suiteId> <runId> <stepId>
 postsharp-cli request send <requestId>
 postsharp-cli audit list --source MCP --limit 20
+postsharp-cli mcp-stdio
 ```
+
+`mcp-stdio` 把 stdin/stdout 的 MCP JSON-RPC 转发到 PostSharp HTTP MCP，适合只支持 stdio MCP 的 harness：
+
+```json
+{
+  "mcpServers": {
+    "postsharp": {
+      "command": "postsharp-cli",
+      "args": ["mcp-stdio"]
+    }
+  }
+}
+```
+
+Windows 可把 `command` 改为 `postsharp-cli.exe` 的绝对路径。桥接本身不启动 PostSharp，桌面端仍然需要运行。
 
 通用选项：
 
