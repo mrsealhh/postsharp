@@ -35,6 +35,7 @@ public partial class TextViewerWindow : Window
 
         Opened += (_, _) => ApplyTitleBarTheme();
         ActualThemeVariantChanged += (_, _) => ApplyTitleBarTheme();
+        Closed += (_, _) => HeapTrim.Request();
         UpdatePage();
     }
 

@@ -27,20 +27,22 @@ public sealed class LoopbackRedirectListener : IDisposable
         _ = AcceptLoopAsync(_shutdown.Token);
     }
 
+    public static bool IsLoopbackRedirect(string redirectUri) =>
+        Uri.TryCreate(redirectUri.Trim(), UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttp
+        && uri.IsLoopback
+        && uri.Port > 0;
+
     public static LoopbackRedirectListener Start(string redirectUri)
     {
-        if (
-            !Uri.TryCreate(redirectUri.Trim(), UriKind.Absolute, out var uri)
-            || uri.Scheme != Uri.UriSchemeHttp
-            || !uri.IsLoopback
-            || uri.Port <= 0
-        )
+        if (!IsLoopbackRedirect(redirectUri))
         {
             throw new OidcException(
                 "系统默认浏览器登录需要 http://127.0.0.1:端口/回调路径 形式的重定向地址。"
             );
         }
 
+        var uri = new Uri(redirectUri.Trim(), UriKind.Absolute);
         var listener = new TcpListener(IPAddress.Loopback, uri.Port);
         try
         {

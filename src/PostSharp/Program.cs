@@ -71,7 +71,10 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp()
     {
         var builder = AppBuilder.Configure<App>().UsePlatformDetect();
-        if (!string.Equals(_renderingMode, RenderingModes.Auto, StringComparison.Ordinal))
+        if (
+            OperatingSystem.IsWindows()
+            && !string.Equals(_renderingMode, RenderingModes.Auto, StringComparison.Ordinal)
+        )
         {
             builder = builder.With(
                 new Win32PlatformOptions { RenderingMode = [Win32RenderingMode.Software] }

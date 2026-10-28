@@ -211,24 +211,9 @@
                                         Label="重定向地址"
                                         Text="{Binding Profile.RedirectUri, Mode=TwoWay}"
                                         Placeholder="http://127.0.0.1:53682/callback"
-                                        Description="必须与授权服务器登记的地址完全一致；系统默认浏览器使用本机回调时必须是 http://127.0.0.1:端口/路径。"
+                                        Description="必须与授权服务器登记的地址完全一致；本机回环地址可自动回调，https 地址需手动粘贴回调链接。"
                                         AutomationProperties.Name="重定向地址"
                                     />
-                                    <arc:Select
-                                        Label="登录方式"
-                                        SelectedValue="{Binding Profile.BrowserMode, Mode=TwoWay}"
-                                        Description="系统默认浏览器通过本机回环地址接收授权码；应用内浏览器目前仅 Windows 可用。"
-                                        AutomationProperties.Name="登录方式"
-                                    >
-                                        <arc:SelectItem
-                                            Content="系统默认浏览器（推荐）"
-                                            Value="System"
-                                        />
-                                        <arc:SelectItem
-                                            Content="应用内浏览器（仅 Windows）"
-                                            Value="Embedded"
-                                        />
-                                    </arc:Select>
                                     <arc:Input
                                         Label="授权范围"
                                         Text="{Binding Profile.Scopes, Mode=TwoWay}"
@@ -283,6 +268,24 @@
                                             AutomationProperties.Name="退出登录"
                                         />
                                     </WrapPanel>
+                                    <StackPanel
+                                        Spacing="8"
+                                        IsVisible="{Binding IsManualCallbackAvailable}"
+                                    >
+                                        <arc:Input
+                                            Label="手动回调地址"
+                                            Text="{Binding ManualCallbackText, Mode=TwoWay}"
+                                            Placeholder="https://app.example.com/signin-oidc?code=...&amp;state=..."
+                                            Description="如果浏览器没有自动回到 PostSharp，复制地址栏里的完整地址粘贴到这里。"
+                                            AutomationProperties.Name="手动回调地址"
+                                        />
+                                        <arc:Button
+                                            Content="使用回调地址登录"
+                                            Variant="Secondary"
+                                            Click="OnManualCallbackClick"
+                                            AutomationProperties.Name="使用回调地址登录"
+                                        />
+                                    </StackPanel>
                                     <TextBlock
                                         Text="{Binding LoginHint}"
                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -344,13 +347,9 @@
                         <Panel>
                             <Border IsVisible="{Binding Auth.IsOAuth2}">
                                 <Panel>
-                                    <ContentControl
-                                        x:Name="BrowserHost"
-                                        IsVisible="{Binding IsSigningIn}"
-                                    />
                                     <Border
                                         Background="{arc:ArcDesignTokenResource Surface}"
-                                        IsVisible="{Binding IsSystemSignInVisible}"
+                                        IsVisible="{Binding IsSigningIn}"
                                     >
                                         <StackPanel
                                             VerticalAlignment="Center"

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PostSharp.Models;
+using PostSharp.Services;
 
 namespace PostSharp.Tests;
 
@@ -28,20 +29,17 @@ public sealed class AuthorizationProfileTests
     }
 
     [Fact]
-    public void SystemBrowserRequiresLoopbackHttpRedirect()
+    public void HttpsRedirectCanUseManualCallback()
     {
         var profile = new AuthorizationProfile
         {
-            BrowserMode = AuthorizationProfile.BrowserModeSystem,
             DiscoveryUrl = "https://login.example.com/.well-known/openid-configuration",
             ClientId = "desktop-client",
             RedirectUri = "https://app.example.com/signin-oidc",
         };
 
-        var problem = profile.FindConfigurationProblem();
-
-        Assert.NotNull(problem);
-        Assert.Contains("127.0.0.1", problem);
+        Assert.Null(profile.FindConfigurationProblem());
+        Assert.False(LoopbackRedirectListener.IsLoopbackRedirect(profile.RedirectUri));
     }
 
     [Fact]

@@ -48,6 +48,7 @@ public partial class WorkflowEditorWindow : Window
         {
             viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             viewModel.ContentChanged -= OnContentChanged;
+            HeapTrim.Request();
         };
         Opened += (_, _) =>
         {

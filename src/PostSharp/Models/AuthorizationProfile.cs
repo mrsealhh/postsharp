@@ -7,10 +7,6 @@ namespace PostSharp.Models;
 /// <summary>OIDC 授权码流程的配置，以及最近一次登录换回的令牌。</summary>
 public sealed partial class AuthorizationProfile : ObservableObject
 {
-    public const string BrowserModeSystem = "System";
-
-    public const string BrowserModeEmbedded = "Embedded";
-
     private string _accessToken = string.Empty;
     private string _accessTokenCipher = string.Empty;
     private string _refreshToken = string.Empty;
@@ -31,21 +27,6 @@ public sealed partial class AuthorizationProfile : ObservableObject
 
     [ObservableProperty]
     private string _scopes = "openid profile offline_access";
-
-    /// <summary>System opens the default browser; Embedded uses the platform WebView when available.</summary>
-    [ObservableProperty]
-    private string _browserMode = OperatingSystem.IsWindows()
-        ? BrowserModeEmbedded
-        : BrowserModeSystem;
-
-    [JsonIgnore]
-    public bool IsSystemBrowser =>
-        string.Equals(BrowserMode, BrowserModeSystem, StringComparison.OrdinalIgnoreCase);
-
-    [JsonIgnore]
-    public bool SupportsEmbeddedBrowser => OperatingSystem.IsWindows();
-
-    partial void OnBrowserModeChanged(string value) => OnPropertyChanged(nameof(IsSystemBrowser));
 
     [JsonIgnore]
     public string ClientSecret
@@ -203,7 +184,6 @@ public sealed partial class AuthorizationProfile : ObservableObject
             ClientId = ClientId,
             RedirectUri = RedirectUri,
             Scopes = Scopes,
-            BrowserMode = BrowserMode,
             ClientSecret = ClientSecret,
             TokenType = TokenType,
             SignedInAs = SignedInAs,
@@ -229,24 +209,6 @@ public sealed partial class AuthorizationProfile : ObservableObject
         if (!IsAcceptableAddress(RedirectUri))
         {
             return "重定向地址无效，请填写 https 或本机回环地址。";
-        }
-
-        if (
-            IsSystemBrowser
-            && (
-                !Uri.TryCreate(RedirectUri.Trim(), UriKind.Absolute, out var redirect)
-                || redirect.Scheme != Uri.UriSchemeHttp
-                || !redirect.IsLoopback
-                || redirect.Port <= 0
-            )
-        )
-        {
-            return "系统默认浏览器登录需要 http://127.0.0.1:端口/回调路径，例如 http://127.0.0.1:53682/callback。";
-        }
-
-        if (!SupportsEmbeddedBrowser && !IsSystemBrowser)
-        {
-            return "当前系统不支持应用内浏览器，请把登录方式改为系统默认浏览器。";
         }
 
         if (string.IsNullOrWhiteSpace(Scopes))

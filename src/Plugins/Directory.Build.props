@@ -1,0 +1,6 @@
+<Project>
+    <PropertyGroup>
+        <!-- Plugins are framework-dependent and copied into every desktop package. -->
+        <RuntimeIdentifiers>win-x64;linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    </PropertyGroup>
+</Project>

@@ -59,7 +59,7 @@ public sealed partial class AuthorizationViewModel : ObservableObject
 
     [ObservableProperty]
     private string _statusDetail =
-        "点击「登录」，在右侧浏览器完成授权；令牌会附加到使用这份配置的请求。";
+        "点击「登录」，在系统默认浏览器完成授权；令牌会附加到使用这份配置的请求。";
 
     [ObservableProperty]
     private BadgeTone _statusTone = BadgeTone.Neutral;
@@ -89,25 +89,25 @@ public sealed partial class AuthorizationViewModel : ObservableObject
     [ObservableProperty]
     private string _errorText = string.Empty;
 
+    [ObservableProperty]
+    private string _manualCallbackText = string.Empty;
+
     public bool CanSignIn => !IsBusy && !IsSigningIn;
 
-    public bool IsSystemBrowser => Profile.IsSystemBrowser;
-
-    public bool IsEmbeddedBrowser => !IsSystemBrowser;
-
-    public bool IsSystemSignInVisible => IsSigningIn && IsSystemBrowser;
+    public bool IsManualCallbackAvailable =>
+        IsSigningIn && !LoopbackRedirectListener.IsLoopbackRedirect(Profile.RedirectUri);
 
     public string LoginHint =>
-        IsSystemBrowser
+        LoopbackRedirectListener.IsLoopbackRedirect(Profile.RedirectUri)
             ? "登录会打开系统默认浏览器；授权完成后浏览器重定向到本机回环地址，PostSharp 接收授权码并换取令牌。"
-            : "登录会在右侧应用内浏览器完成；授权码通过重定向地址拦截，不会打开系统浏览器。";
+            : "登录会打开系统默认浏览器；当前回调地址不是本机回环地址，请把浏览器地址栏里的完整回调地址粘贴到下方完成登录。";
 
     partial void OnIsBusyChanged(bool value) => OnPropertyChanged(nameof(CanSignIn));
 
     partial void OnIsSigningInChanged(bool value)
     {
         OnPropertyChanged(nameof(CanSignIn));
-        OnPropertyChanged(nameof(IsSystemSignInVisible));
+        OnPropertyChanged(nameof(IsManualCallbackAvailable));
     }
 
     /// <summary>读取授权服务器配置并生成授权地址；配置或网络有问题时返回 null，并把原因写进错误区。</summary>
@@ -163,9 +163,9 @@ public sealed partial class AuthorizationViewModel : ObservableObject
 
         IsSigningIn = true;
         StatusTitle = "等待授权";
-        StatusDetail = IsSystemBrowser
-            ? "请在系统默认浏览器完成登录；成功后会自动回到 PostSharp 并换取令牌。"
-            : "请在右侧浏览器完成登录；成功后会自动换取令牌。";
+        StatusDetail = IsManualCallbackAvailable
+            ? "请在系统浏览器完成登录，然后把地址栏里的完整回调地址粘贴到下方完成登录。"
+            : "请在系统默认浏览器完成登录；成功后会自动回到 PostSharp 并换取令牌。";
         StatusTone = BadgeTone.Warning;
 
         return AuthorizationService.BuildAuthorizationUri(
@@ -310,14 +310,14 @@ public sealed partial class AuthorizationViewModel : ObservableObject
         StatusTone = BadgeTone.Neutral;
     }
 
-    /// <summary>内嵌浏览器没能打开授权页面（证书、连接或服务未启动）时调用。</summary>
+    /// <summary>系统浏览器或本机回调没有完成授权时调用。</summary>
     public void ReportBrowserFailure(string? detail = null)
     {
         ResetPending();
         IsSigningIn = false;
         SetError(
             detail
-                ?? "内嵌浏览器无法加载授权页面，请确认授权服务已启动、证书可信，然后重新点击「登录」。"
+                ?? "系统浏览器没有打开授权页面，请确认默认浏览器可用、授权服务已启动，然后重新点击「登录」。"
         );
     }
 
@@ -359,12 +359,10 @@ public sealed partial class AuthorizationViewModel : ObservableObject
 
     private void OnProfileChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(AuthorizationProfile.BrowserMode))
+        if (e.PropertyName == nameof(AuthorizationProfile.RedirectUri))
         {
-            OnPropertyChanged(nameof(IsSystemBrowser));
-            OnPropertyChanged(nameof(IsEmbeddedBrowser));
-            OnPropertyChanged(nameof(IsSystemSignInVisible));
             OnPropertyChanged(nameof(LoginHint));
+            OnPropertyChanged(nameof(IsManualCallbackAvailable));
             if (!IsBusy && !IsSigningIn)
             {
                 RefreshStatus();
@@ -438,10 +436,8 @@ public sealed partial class AuthorizationViewModel : ObservableObject
         StatusTitle = "尚未登录";
         StatusDetail = $"{LoginHint}{AttachDescription}";
         StatusTone = BadgeTone.Neutral;
-        BrowserPlaceholderTitle = "浏览器区域";
-        BrowserPlaceholderDetail = IsSystemBrowser
-            ? "点击「登录」后会打开系统默认浏览器；授权完成后会回到本窗口。"
-            : "点击「登录」后，这里会打开授权服务器的登录页；登录成功后自动回到本窗口。";
+        BrowserPlaceholderTitle = "系统浏览器登录";
+        BrowserPlaceholderDetail = "点击「登录」后会打开系统默认浏览器；授权完成后会回到本窗口。";
     }
 
     private void ResetPending()

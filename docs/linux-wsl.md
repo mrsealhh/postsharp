@@ -49,7 +49,6 @@ http://127.0.0.1:53682/callback
 
 ## 当前限制
 
-- 应用内 WebView 登录仅 Windows 支持；Linux 使用系统默认浏览器。
 - Linux 使用本机 AES-GCM 密钥文件保存机密；Windows 继续使用 DPAPI。
 - Linux 包不启用自动更新；请手动下载新包。
 - 正式签名、AppImage/deb 打包和完整 Linux 回归仍在后续跨平台工作中。

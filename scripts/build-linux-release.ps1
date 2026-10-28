@@ -4,6 +4,23 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Remove-PlatformFolders {
+    param(
+        [string]$Root,
+        [string]$Pattern
+    )
+
+    if (-not (Test-Path $Root)) {
+        return
+    }
+
+    Get-ChildItem $Root -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match $Pattern } |
+        Sort-Object { $_.FullName.Length } -Descending |
+        ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 $Version = $Version.Trim().TrimStart("v", "V")
 $root = Split-Path -Parent $PSScriptRoot
 $artifacts = Join-Path $root "artifacts"
@@ -27,7 +44,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Get-ChildItem $publish -Filter *.pdb -Recurse -Force | Remove-Item -Force
-Get-ChildItem $publish -Filter WebView2Loader.dll -Recurse -Force | Remove-Item -Force
+Remove-PlatformFolders (Join-Path $publish "plugins") "^(win|osx)"
 
 $runScript = @'
 #!/usr/bin/env bash

@@ -20,7 +20,6 @@
 
     <ItemGroup>
         <PackageReference Include="Avalonia" Version="12.1.4" />
-        <PackageReference Include="Avalonia.Controls.WebView" Version="12.1.1" />
         <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
         <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
         <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
@@ -28,12 +27,6 @@
         <PackageReference Include="TKCode.Arc.Fonts" Version="0.3.1-preview.3" />
         <PackageReference Include="TKCode.Arc.Themes.Corners" Version="0.3.1-preview.3" />
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-        <PackageReference
-            Include="Microsoft.Web.WebView2"
-            Version="1.0.3179.45"
-            GeneratePathProperty="true"
-            ExcludeAssets="all"
-        />
         <PackageReference Include="Serilog" Version="4.3.0" />
         <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
         <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.13" />
@@ -41,22 +34,17 @@
         <PackageReference Include="YamlDotNet" Version="16.3.0" />
     </ItemGroup>
 
-    <!--
-        Avalonia.Controls.WebView 在 Windows 上通过 P/Invoke 加载 WebView2Loader.dll。
-        这里只取 WebView2 包里的原生加载器（排除它的托管引用与构建目标，避免引入 WPF/WinForms 冲突）。
-    -->
-    <ItemGroup Condition="'$(RuntimeIdentifier)' == '' Or $(RuntimeIdentifier.StartsWith('win'))">
-        <None
-            Include="$(PkgMicrosoft_Web_WebView2)\runtimes\win-x64\native\WebView2Loader.dll"
-            Link="WebView2Loader.dll"
-            CopyToOutputDirectory="PreserveNewest"
-            Visible="False"
-        />
-    </ItemGroup>
-
     <ItemGroup>
         <Using Include="Serilog" />
         <Using Include="PostSharp.Storage.Abstractions" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!--
+            交互型工具更需要「别常驻空堆」：消费内存越高，GC 越积极归还已提交的段。
+            实测 committed 277MB 而存活对象只有 99MB，这块空段是任务管理器里最显眼的浪费。
+        -->
+        <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
     </ItemGroup>
 
     <ItemGroup>

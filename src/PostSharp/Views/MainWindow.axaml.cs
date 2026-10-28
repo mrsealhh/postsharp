@@ -532,7 +532,11 @@ public partial class MainWindow : Window
         window.Width = Math.Clamp(Bounds.Width - 120, window.MinWidth, 860);
         window.Height = Math.Clamp(Bounds.Height - 80, window.MinHeight, 900);
         _settingsWindow = window;
-        window.Closed += (_, _) => _settingsWindow = null;
+        window.Closed += (_, _) =>
+        {
+            _settingsWindow = null;
+            HeapTrim.Request();
+        };
         window.Show(this);
         window.Activate();
     }
@@ -660,6 +664,7 @@ public partial class MainWindow : Window
         {
             _authorizationWindow = null;
             _viewModel?.OnAuthorizationDialogClosed();
+            HeapTrim.Request();
         };
         window.Show(this);
         window.Activate();

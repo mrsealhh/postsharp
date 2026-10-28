@@ -7,10 +7,6 @@
       <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">permonitorv2</dpiAwareness>
     </windowsSettings>
   </application>
-  <!--
-    内嵌 WebView 通过 Avalonia 的 NativeControlHost 承载原生子窗口，
-    必须声明受支持的 Windows 版本，否则 Win32 会拒绝创建该子窗口。
-  -->
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
