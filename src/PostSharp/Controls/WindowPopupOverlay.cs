@@ -25,24 +25,43 @@ public static class WindowPopupOverlay
         /// </summary>
         public void EnablePopupOverlayLayer()
         {
-            var managers = window.GetVisualDescendants().OfType<VisualLayerManager>().ToList();
-
-            if (managers.Count == 0)
+            if (!window.TryEnablePopupOverlayLayer())
             {
                 Log.Warning("窗口没有 VisualLayerManager，Arc 弹层将无法使用窗口弹出层");
-                return;
+            }
+        }
+
+        /// <summary>模板可能晚于 Opened 创建；在窗口生命周期内重试直到弹出层可用。</summary>
+        public async Task EnsurePopupOverlayLayerAsync()
+        {
+            for (var attempt = 0; attempt < 10; attempt++)
+            {
+                window.ApplyTemplate();
+                if (window.TryEnablePopupOverlayLayer())
+                {
+                    return;
+                }
+
+                await Task.Delay(100);
             }
 
-            if (PopupOverlayLayerProperty is null)
+            Log.Warning("窗口没有 VisualLayerManager，Arc 弹层将无法使用窗口弹出层");
+        }
+
+        private bool TryEnablePopupOverlayLayer()
+        {
+            var managers = window.GetVisualDescendants().OfType<VisualLayerManager>().ToList();
+            if (managers.Count == 0 || PopupOverlayLayerProperty is null)
             {
-                Log.Warning("当前 Avalonia 版本没有 EnablePopupOverlayLayer，Arc 弹层可能无法打开");
-                return;
+                return false;
             }
 
             foreach (var manager in managers)
             {
                 PopupOverlayLayerProperty.SetValue(manager, true);
             }
+
+            return true;
         }
     }
 }

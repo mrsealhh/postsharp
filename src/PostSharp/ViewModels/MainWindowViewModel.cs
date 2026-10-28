@@ -32,7 +32,6 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private readonly HttpRequestService _http = new();
     private readonly AuthorizationService _authorizationService = new();
     private readonly MockApiServer _mockServer = new();
-    private readonly Dictionary<Guid, TestRunResult> _suiteResults = new();
     private readonly AuditScrubber _auditScrubber;
 
     private const int AuditPreviewLimit = 2000;
@@ -76,10 +75,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     };
     private readonly Dictionary<Guid, DateTimeOffset> _lastScheduledRuns = new();
     private bool _initializing = true;
-    private IReadOnlyList<SuiteStepOption> _mappingSourceOptions = Array.Empty<SuiteStepOption>();
 
     public MainWindowViewModel()
     {
+        AuditPage = new PagedCollection<AuditEntry>(VisibleAudit);
+        TreePage = new PagedCollection<TreeDisplayNode>(TreeNodes, 80);
         TreeTrash = new TreeTrashViewModel(Collections, OnTreeTrashChanged, ShowToast);
         _auditScrubber = new AuditScrubber(
             Audit,
@@ -148,7 +148,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Suites.Clear();
             foreach (var suiteDto in storedSuites)
             {
-                Suites.Add(WorkspaceStore.ToSuiteModel(suiteDto));
+                var suite = WorkspaceStore.ToSuiteModel(suiteDto);
+                WireSuiteRunCommands(suite);
+                Suites.Add(suite);
             }
         }
         else if (Suites.Count > 0)
@@ -184,13 +186,26 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         _mockServer.CustomHandler = new McpServer(new McpWorkspaceAdapter(this)).HandleHttpAsync;
 
-        History.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasHistory));
+        History.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasHistory));
+            OnPropertyChanged(nameof(HistoryCountText));
+        };
         RecycledHistory.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(HasRecycledHistory));
             OnPropertyChanged(nameof(RecycleBinLabel));
         };
-        Suites.CollectionChanged += (_, _) => OnPropertyChanged(nameof(SuiteCount));
+        Suites.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(SuiteCount));
+            OnPropertyChanged(nameof(HasSuites));
+        };
+        SelectedSuiteValidationIssues.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasSuiteValidationIssues));
+            OnPropertyChanged(nameof(SuiteValidationSummary));
+        };
         Audit.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(AuditCount));
@@ -221,6 +236,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         var loadedAudit = auditLoad.Value ?? new List<AuditEntry>();
         foreach (var entry in _auditLimit > 0 ? loadedAudit.Take(_auditLimit) : loadedAudit)
         {
+            WireAuditEntry(entry);
             Audit.Add(entry);
         }
 
@@ -260,6 +276,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public ObservableCollection<TreeDisplayNode> TreeNodes { get; } = new();
 
+    public PagedCollection<TreeDisplayNode> TreePage { get; }
+
     public ObservableCollection<EnvironmentModel> Environments { get; } = new();
 
     public ObservableCollection<HistoryEntry> History { get; } = new();
@@ -272,15 +290,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public ObservableCollection<AuditEntry> VisibleAudit { get; } = new();
 
+    public PagedCollection<AuditEntry> AuditPage { get; }
+
     public ObservableCollection<TestSuite> Suites { get; } = new();
-
-    public ObservableCollection<SuiteSourceCollection> SuiteSources { get; } = new();
-
-    public ObservableCollection<SuiteBuilderStep> SuiteBuilderSteps { get; } = new();
-
-    public ObservableCollection<InputMappingEditor> MappingEditors { get; } = new();
-
-    public ObservableCollection<AssertionEditor> AssertionEditors { get; } = new();
 
     public ObservableCollection<ResponseHeaderView> ResponseHeaders { get; } = new();
 
@@ -390,43 +402,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private TestSuite? _selectedSuite;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRerunSelectedRun))]
     private TestRunResult? _selectedSuiteResult;
+
+    public ObservableCollection<SuiteValidationIssue> SelectedSuiteValidationIssues { get; } =
+        new();
+
+    [ObservableProperty]
+    private bool _isSuiteValidationVisible;
 
     [ObservableProperty]
     private bool _isRunningSuite;
-
-    [ObservableProperty]
-    private bool _isSuiteBuilderOpen;
-
-    [ObservableProperty]
-    private string _suiteBuilderName = string.Empty;
-
-    [ObservableProperty]
-    private string _suiteScheduleMinutesText = "0";
-
-    [ObservableProperty]
-    private bool _suiteRunInParallel;
-
-    [ObservableProperty]
-    private bool _suiteStopOnError = true;
-
-    [ObservableProperty]
-    private bool _isMappingEditorOpen;
-
-    [ObservableProperty]
-    private SuiteBuilderStep? _mappingStep;
-
-    [ObservableProperty]
-    private string _mappingTitle = string.Empty;
-
-    [ObservableProperty]
-    private bool _isAssertionEditorOpen;
-
-    [ObservableProperty]
-    private SuiteBuilderStep? _assertionStep;
-
-    [ObservableProperty]
-    private string _assertionTitle = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowRequestBodyJsonViewer))]
@@ -475,6 +461,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [ObservableProperty]
     private bool _isHistoryTrashOpen;
+
+    [ObservableProperty]
+    private bool _isHistoryExpanded;
 
     [ObservableProperty]
     private bool _isHistoryPurgeConfirmOpen;
@@ -1673,9 +1662,6 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     public bool HasOpenDialog =>
         IsEnvironmentDialogOpen
         || IsMcpDialogOpen
-        || IsSuiteBuilderOpen
-        || IsMappingEditorOpen
-        || IsAssertionEditorOpen
         || IsRenameDialogOpen
         || IsDeleteDialogOpen
         || IsHistoryTrashConfirmOpen
@@ -1742,24 +1728,6 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (Import.IsImportDialogOpen)
         {
             Import.CloseImportDialogCommand.Execute(null);
-            return true;
-        }
-
-        if (IsMappingEditorOpen)
-        {
-            CancelMappingEditorCommand.Execute(null);
-            return true;
-        }
-
-        if (IsAssertionEditorOpen)
-        {
-            CancelAssertionEditorCommand.Execute(null);
-            return true;
-        }
-
-        if (IsSuiteBuilderOpen)
-        {
-            CancelSuiteBuilderCommand.Execute(null);
             return true;
         }
 
@@ -1840,6 +1808,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public bool HasHistory => History.Count > 0;
 
+    public string HistoryCountText => History.Count == 0 ? "最近记录" : $"最近 {History.Count} 条";
+
     public string TreeEmptyText =>
         TreeFilterMode == "收藏" ? "还没有收藏的集合或请求" : "没有匹配的请求";
 
@@ -1854,6 +1824,16 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public bool HasSelectedSuiteResult => SelectedSuiteResult is not null;
 
+    public bool CanRerunSelectedRun => SelectedSuiteResult?.HasFailures == true;
+
+    public bool HasSuiteValidationIssues => SelectedSuiteValidationIssues.Count > 0;
+
+    public string SuiteValidationSummary =>
+        !HasSuiteValidationIssues ? string.Empty
+        : SelectedSuiteValidationIssues.Any(issue => issue.IsError)
+            ? $"预检未通过：{SelectedSuiteValidationIssues.Count(issue => issue.IsError)} 个错误"
+        : $"预检通过：{SelectedSuiteValidationIssues.Count} 个提醒";
+
     public int AuditCount => Audit.Count;
 
     public bool HasAuditTrash => AuditTrash.Count > 0;
@@ -1862,6 +1842,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         AuditTrash.Count > 0 ? $"审计回收站 ({AuditTrash.Count})" : "审计回收站";
 
     public int SuiteCount => Suites.Count;
+
+    public bool HasSuites => Suites.Count > 0;
 
     public bool ShowJsonResponse =>
         HasResponse && IsJsonResponse && !IsLargeResponse && IsResponseJsonView;
@@ -2078,20 +2060,38 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         RefreshDerivedState();
     }
 
-    partial void OnSelectedAuditEntryChanged(AuditEntry? value) =>
+    partial void OnSelectedAuditEntryChanged(AuditEntry? value)
+    {
+        foreach (var entry in Audit)
+        {
+            entry.IsSelected = ReferenceEquals(entry, value);
+        }
+
         OnPropertyChanged(nameof(HasSelectedAuditEntry));
+    }
 
     partial void OnSelectedSuiteChanged(TestSuite? value)
     {
+        foreach (var suite in Suites)
+        {
+            suite.IsSelected = ReferenceEquals(suite, value);
+        }
+
+        ClearSuiteValidation();
+        if (value is not null)
+        {
+            WireSuiteRunCommands(value);
+        }
+
         OnPropertyChanged(nameof(HasSelectedSuite));
-        SelectedSuiteResult =
-            value is not null && _suiteResults.TryGetValue(value.Id, out var result)
-                ? result
-                : null;
+        SelectedSuiteResult = value?.Runs.FirstOrDefault();
     }
 
-    partial void OnSelectedSuiteResultChanged(TestRunResult? value) =>
+    partial void OnSelectedSuiteResultChanged(TestRunResult? value)
+    {
         OnPropertyChanged(nameof(HasSelectedSuiteResult));
+        OnPropertyChanged(nameof(CanRerunSelectedRun));
+    }
 
     partial void OnAuditFilterTextChanged(string value) => RefreshAuditView();
 
@@ -3498,6 +3498,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private void OpenHistoryTrash() => IsHistoryTrashOpen = true;
 
     [RelayCommand]
+    private void ToggleHistoryExpanded() => IsHistoryExpanded = !IsHistoryExpanded;
+
+    [RelayCommand]
     private void CloseHistoryTrash() => IsHistoryTrashOpen = false;
 
     private void RequestDeleteHistory(HistoryEntry entry)
@@ -3564,7 +3567,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         WireHistoryEntry(entry);
         History.Insert(0, entry);
-        while (History.Count > 40)
+        while (History.Count > 100)
         {
             History.RemoveAt(History.Count - 1);
         }
@@ -3632,6 +3635,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         entry.DeleteCommand = new RelayCommand(() => RequestDeleteHistory(entry));
     }
 
+    private void SelectHistoryEntry(HistoryEntry entry)
+    {
+        foreach (var candidate in History)
+        {
+            candidate.IsSelected = ReferenceEquals(candidate, entry);
+        }
+    }
+
     public void OpenRequest(RequestItem request)
     {
         var changed = !ReferenceEquals(Editing, request);
@@ -3678,6 +3689,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public void LoadHistory(HistoryEntry entry)
     {
+        SelectHistoryEntry(entry);
         Editing = entry.ToRequest();
         SelectedRequest = null;
         SelectedCollection = null;
@@ -3840,6 +3852,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             ),
         };
 
+        WireAuditEntry(entry);
         Audit.Insert(0, entry);
         if (_auditLimit > 0)
         {
@@ -3924,6 +3937,23 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [RelayCommand]
     private void CloseAuditTrash() => IsAuditTrashOpen = false;
 
+    private void DeleteAuditEntry(AuditEntry entry)
+    {
+        if (!Audit.Remove(entry))
+        {
+            return;
+        }
+
+        MoveAuditToTrash(entry);
+        if (ReferenceEquals(SelectedAuditEntry, entry))
+        {
+            SelectedAuditEntry = Audit.FirstOrDefault();
+        }
+
+        PersistAudit();
+        ShowToast("审计记录已移入回收站");
+    }
+
     private void MoveAuditToTrash(AuditEntry entry)
     {
         WireAuditTrashEntry(entry);
@@ -3934,8 +3964,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
     }
 
+    private void WireAuditEntry(AuditEntry entry)
+    {
+        entry.DeleteCommand = new RelayCommand(() => DeleteAuditEntry(entry));
+    }
+
     private void WireAuditTrashEntry(AuditEntry entry)
     {
+        entry.DeleteCommand = null;
         entry.RestoreCommand = new RelayCommand(() => RestoreAudit(entry));
         entry.PurgeCommand = new RelayCommand(() => RequestPurgeAudit(entry));
     }
@@ -3947,6 +3983,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return;
         }
 
+        WireAuditEntry(entry);
         Audit.Insert(0, entry);
         PersistAudit();
         ShowToast("审计记录已恢复");
@@ -4257,399 +4294,37 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         OpenRequest(request);
     }
 
-    public WorkflowEditorViewModel CreateWorkflowEditorViewModel() => new(Collections);
+    /// <summary>Raised when the suite editor should open; the window owns the editor window lifetime.</summary>
+    public event EventHandler<RequestCollection?>? SuiteEditorRequested;
 
-    public void AddWorkflowSuite(WorkflowSuiteResult result)
-    {
-        Suites.Add(result.Suite);
-        SelectedSuite = result.Suite;
-        SelectedSuiteResult = null;
-        IsSuiteBuilderOpen = false;
-        Persist();
-        ShowToast($"已创建工作流套件（{result.Suite.Steps.Count} 个步骤）");
-    }
-
-    [RelayCommand]
-    private void OpenSuiteBuilder() => OpenSuiteBuilderCore(SelectedCollection ?? Editing.Owner);
-
-    /// <summary>Opens the suite builder with a specific collection preselected (used by the tree context menu).</summary>
-    public void OpenSuiteBuilderForCollection(RequestCollection collection) =>
-        OpenSuiteBuilderCore(collection);
-
-    private void OpenSuiteBuilderCore(RequestCollection? defaultCollection)
-    {
-        SuiteSources.Clear();
-        SuiteBuilderSteps.Clear();
-        MappingEditors.Clear();
-        foreach (var collection in Collections.Where(collection => collection.Parent is null))
+    public WorkflowEditorViewModel CreateWorkflowEditorViewModel(
+        TestSuite? draft = null,
+        TestSuite? existing = null
+    ) =>
+        new(Collections, draft)
         {
-            AddSuiteSourceRows(collection, 0, defaultCollection);
-        }
-
-        foreach (var source in SuiteSources)
-        {
-            source.PropertyChanged += OnSuiteSourceChanged;
-        }
-
-        RebuildSuiteBuilderSteps();
-        SuiteBuilderName = $"组装套件 {Suites.Count + 1}";
-        SuiteScheduleMinutesText = "0";
-        SuiteRunInParallel = false;
-        SuiteStopOnError = true;
-        IsSuiteBuilderOpen = true;
-    }
-
-    private void AddSuiteSourceRows(
-        RequestCollection collection,
-        int depth,
-        RequestCollection? defaultCollection
-    )
-    {
-        var isSelected =
-            defaultCollection is null || ReferenceEquals(collection, defaultCollection);
-        SuiteSources.Add(
-            new SuiteSourceCollection
-            {
-                Collection = collection,
-                Depth = depth,
-                IsSelected = isSelected,
-            }
-        );
-
-        foreach (var child in collection.Children)
-        {
-            AddSuiteSourceRows(child, depth + 1, defaultCollection);
-        }
-    }
-
-    private void OnSuiteSourceChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(SuiteSourceCollection.IsSelected) && IsSuiteBuilderOpen)
-        {
-            RebuildSuiteBuilderSteps();
-        }
-    }
-
-    private void RebuildSuiteBuilderSteps()
-    {
-        var selectedRequests = SuiteSources
-            .Where(source => source.IsSelected)
-            .SelectMany(source => source.Collection.Requests)
-            .ToList();
-        var existing = SuiteBuilderSteps.ToDictionary(wrapper => wrapper.Step.RequestId);
-        var next = new List<SuiteBuilderStep>();
-
-        foreach (var request in selectedRequests)
-        {
-            if (!existing.TryGetValue(request.Id, out var wrapper))
-            {
-                wrapper = new SuiteBuilderStep
-                {
-                    Step = new TestStep
-                    {
-                        RequestId = request.Id,
-                        RequestName = request.Name,
-                        Method = request.Method,
-                        Url = request.Url,
-                        DelayMs = 200,
-                    },
-                    DelayText = "200",
-                };
-            }
-
-            wrapper.EditMappingsCommand = new RelayCommand(() => OpenMappingEditor(wrapper));
-            wrapper.EditAssertionsCommand = new RelayCommand(() => OpenAssertionEditor(wrapper));
-            next.Add(wrapper);
-        }
-
-        SuiteBuilderSteps.Clear();
-        foreach (var wrapper in next)
-        {
-            SuiteBuilderSteps.Add(wrapper);
-        }
-    }
-
-    [RelayCommand]
-    private void CancelSuiteBuilder()
-    {
-        IsSuiteBuilderOpen = false;
-        IsMappingEditorOpen = false;
-        IsAssertionEditorOpen = false;
-    }
-
-    [RelayCommand]
-    private void AddMappingRule()
-    {
-        var editor = CreateMappingEditor(new InputMapping());
-        MappingEditors.Add(editor);
-    }
-
-    private InputMappingEditor CreateMappingEditor(InputMapping source)
-    {
-        var editor = new InputMappingEditor
-        {
-            SourceOptions = _mappingSourceOptions,
-            SelectedSource = _mappingSourceOptions.FirstOrDefault(option =>
-                option.Id == source.SourceStepId
-            ),
-            SourcePath = source.SourcePath,
-            TargetKind = string.IsNullOrWhiteSpace(source.TargetKind) ? "Body" : source.TargetKind,
-            TargetPath = source.TargetPath,
-            Template = string.IsNullOrWhiteSpace(source.Template) ? "{value}" : source.Template,
+            SuiteRunner = RunSuiteDraftAsync,
+            ValidationEnvironment = ActiveEnvironment,
+            RunRecorder = existing is null
+                ? null
+                : result => RecordEditorRunAsync(existing, result),
         };
-        editor.RemoveCommand = new RelayCommand(() => MappingEditors.Remove(editor));
-        return editor;
-    }
 
-    private void OpenMappingEditor(SuiteBuilderStep step)
+    public TestSuite CreateSuiteEditorDraft(RequestCollection? defaultCollection)
     {
-        var index = SuiteBuilderSteps.IndexOf(step);
-        _mappingSourceOptions = SuiteBuilderSteps
-            .Take(Math.Max(0, index))
-            .Select(
-                (source, sourceIndex) =>
-                    new SuiteStepOption(source.Step.Id, $"{sourceIndex + 1}. {source.RequestName}")
-            )
-            .ToList();
-
-        MappingEditors.Clear();
-        foreach (var mapping in step.Step.InputMappings)
-        {
-            MappingEditors.Add(CreateMappingEditor(mapping));
-        }
-
-        if (MappingEditors.Count == 0)
-        {
-            MappingEditors.Add(CreateMappingEditor(new InputMapping()));
-        }
-
-        MappingStep = step;
-        MappingTitle = $"入参映射 · {step.RequestName}";
-        IsMappingEditorOpen = true;
-    }
-
-    [RelayCommand]
-    private void CancelMappingEditor() => IsMappingEditorOpen = false;
-
-    [RelayCommand]
-    private void SaveMappingEditor()
-    {
-        if (MappingStep is not { } step)
-        {
-            return;
-        }
-
-        foreach (var editor in MappingEditors)
-        {
-            if (editor.SelectedSource is null)
-            {
-                editor.Error = "请选择来源步骤";
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(editor.TargetPath))
-            {
-                editor.Error = "请填写目标字段";
-                return;
-            }
-        }
-
-        step.Step.InputMappings.Clear();
-        foreach (var editor in MappingEditors)
-        {
-            step.Step.InputMappings.Add(
-                new InputMapping
-                {
-                    SourceStepId = editor.SelectedSource?.Id ?? Guid.Empty,
-                    SourcePath = editor.SourcePath.Trim(),
-                    TargetKind = editor.TargetKind,
-                    TargetPath = editor.TargetPath.Trim(),
-                    Template = string.IsNullOrWhiteSpace(editor.Template)
-                        ? "{value}"
-                        : editor.Template,
-                }
-            );
-        }
-
-        step.RefreshMappingLabel();
-        IsMappingEditorOpen = false;
-    }
-
-    private AssertionEditor CreateAssertionEditor(TestAssertion source)
-    {
-        var editor = new AssertionEditor
-        {
-            Kind = string.IsNullOrWhiteSpace(source.Kind) ? "JSONPath" : source.Kind,
-            Path = source.Path,
-            Expected = source.Expected,
-        };
-        editor.RemoveCommand = new RelayCommand(() => AssertionEditors.Remove(editor));
-        return editor;
-    }
-
-    private void OpenAssertionEditor(SuiteBuilderStep step)
-    {
-        AssertionEditors.Clear();
-        foreach (var assertion in step.Step.Assertions)
-        {
-            AssertionEditors.Add(CreateAssertionEditor(assertion));
-        }
-
-        if (AssertionEditors.Count == 0)
-        {
-            AssertionEditors.Add(CreateAssertionEditor(new TestAssertion()));
-        }
-
-        AssertionStep = step;
-        AssertionTitle = $"断言 · {step.RequestName}";
-        IsAssertionEditorOpen = true;
-    }
-
-    [RelayCommand]
-    private void AddAssertionRule()
-    {
-        AssertionEditors.Add(CreateAssertionEditor(new TestAssertion()));
-    }
-
-    [RelayCommand]
-    private void CancelAssertionEditor() => IsAssertionEditorOpen = false;
-
-    [RelayCommand]
-    private void SaveAssertionEditor()
-    {
-        if (AssertionStep is not { } step)
-        {
-            return;
-        }
-
-        foreach (var editor in AssertionEditors)
-        {
-            if (string.IsNullOrWhiteSpace(editor.Path))
-            {
-                editor.Error = editor.Kind == "Header" ? "请填写响应头名称" : "请填写 JSONPath";
-                return;
-            }
-
-            if (string.IsNullOrWhiteSpace(editor.Expected))
-            {
-                editor.Error = "请填写期望值";
-                return;
-            }
-        }
-
-        step.Step.Assertions.Clear();
-        foreach (var editor in AssertionEditors)
-        {
-            step.Step.Assertions.Add(
-                new TestAssertion
-                {
-                    Kind = editor.Kind == "Header" ? "Header" : "JSONPath",
-                    Path = editor.Path.Trim(),
-                    Expected = editor.Expected.Trim(),
-                }
-            );
-        }
-
-        step.RefreshAssertionLabel();
-        IsAssertionEditorOpen = false;
-    }
-
-    [RelayCommand]
-    private void CreateSuiteFromSources()
-    {
-        var steps = new List<TestStep>();
-        var previousStepIds = new HashSet<Guid>();
-        foreach (var wrapper in SuiteBuilderSteps)
-        {
-            if (!int.TryParse(wrapper.DelayText, out var delay))
-            {
-                delay = 200;
-            }
-
-            if (!int.TryParse(wrapper.RetryCountText, out var retryCount))
-            {
-                retryCount = 0;
-            }
-
-            if (!int.TryParse(wrapper.RetryDelayText, out var retryDelay))
-            {
-                retryDelay = 500;
-            }
-
-            if (!int.TryParse(wrapper.ParallelGroupText, out var parallelGroup))
-            {
-                parallelGroup = 0;
-            }
-
-            foreach (var mapping in wrapper.Step.InputMappings)
-            {
-                if (!previousStepIds.Contains(mapping.SourceStepId))
-                {
-                    ShowToast($"步骤「{wrapper.RequestName}」的映射来源不在前序步骤中");
-                    return;
-                }
-            }
-
-            wrapper.Step.DelayMs = Math.Clamp(delay, 0, 60_000);
-            wrapper.Step.RetryCount = Math.Clamp(retryCount, 0, SuiteRetryPolicy.MaxRetries);
-            wrapper.Step.RetryDelayMs = Math.Clamp(retryDelay, 0, 60_000);
-            wrapper.Step.Condition = wrapper.Condition;
-            wrapper.Step.ParallelGroup = Math.Clamp(parallelGroup, 0, 9);
-            previousStepIds.Add(wrapper.Step.Id);
-            steps.Add(wrapper.Step);
-        }
-
-        if (steps.Count == 0)
-        {
-            ShowToast("请选择至少一个包含请求的集合");
-            return;
-        }
-
-        var name = SuiteBuilderName.Trim();
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            name = $"组装套件 {Suites.Count + 1}";
-        }
-
-        if (!int.TryParse(SuiteScheduleMinutesText, out var scheduleMinutes))
-        {
-            scheduleMinutes = 0;
-        }
-
         var suite = new TestSuite
         {
-            Name = name,
-            StopOnError = SuiteStopOnError,
-            ScheduleMinutes = Math.Clamp(scheduleMinutes, 0, 1440),
-            RunInParallel = SuiteRunInParallel,
+            Name = $"套件 {Suites.Count + 1}",
+            StopOnError = true,
+            ScheduleMinutes = 0,
+            MaxParallelism = 4,
         };
-
-        foreach (var step in steps)
+        if (defaultCollection is null)
         {
-            suite.Steps.Add(step);
+            return suite;
         }
 
-        Suites.Add(suite);
-        SelectedSuite = suite;
-        SelectedSuiteResult = null;
-        IsSuiteBuilderOpen = false;
-        Persist();
-        ShowToast($"已创建套件（{steps.Count} 个步骤）");
-    }
-
-    [RelayCommand]
-    private void CreateSuiteFromCollection()
-    {
-        var collection = SelectedCollection ?? Editing.Owner ?? Collections.FirstOrDefault();
-        if (collection is null || collection.Requests.Count == 0)
-        {
-            ShowToast("当前集合没有可加入套件的请求");
-            return;
-        }
-
-        var suite = new TestSuite { Name = $"{collection.Name} · 回归测试", StopOnError = true };
-
-        foreach (var request in collection.Requests)
+        foreach (var request in FlattenCollectionRequests(defaultCollection))
         {
             suite.Steps.Add(
                 new TestStep
@@ -4658,14 +4333,301 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                     RequestName = request.Name,
                     Method = request.Method,
                     Url = request.Url,
+                    DelayMs = 200,
                 }
             );
         }
 
-        Suites.Add(suite);
-        SelectedSuite = suite;
+        suite.Workflow = SuiteWorkflowFactory.CreateLinear(suite.Steps);
+        return suite;
+    }
+
+    public TestSuite CreateSuiteDraftForEditing(TestSuite suite) => CloneSuite(suite);
+
+    public void ApplySuiteEditorResult(TestSuite incoming, TestSuite? existing)
+    {
+        if (existing is null)
+        {
+            Suites.Add(incoming);
+            SelectedSuite = incoming;
+            SelectedSuiteResult = null;
+            Persist();
+            ShowToast($"已创建套件（{incoming.Steps.Count} 个步骤）");
+            return;
+        }
+
+        existing.Name = incoming.Name;
+        existing.StopOnError = incoming.StopOnError;
+        existing.RunInParallel = incoming.RunInParallel;
+        existing.ScheduleMinutes = incoming.ScheduleMinutes;
+        existing.MaxParallelism = incoming.MaxParallelism;
+        existing.Steps.Clear();
+        existing.Steps.AddRange(incoming.Steps);
+        existing.Workflow = incoming.Workflow;
+        foreach (var run in incoming.Runs)
+        {
+            if (existing.Runs.All(candidate => candidate.Id != run.Id))
+            {
+                existing.Runs.Insert(0, run);
+            }
+        }
+
+        while (existing.Runs.Count > TestSuite.RunHistoryLimit)
+        {
+            existing.Runs.RemoveAt(existing.Runs.Count - 1);
+        }
+
+        WireSuiteRunCommands(existing);
+        SelectedSuite = null;
+        SelectedSuite = existing;
         Persist();
-        ShowToast("已创建自动化套件");
+        ShowToast($"套件已更新（{existing.Steps.Count} 个步骤）");
+    }
+
+    [RelayCommand]
+    private void OpenSuiteBuilder() => SuiteEditorRequested?.Invoke(this, null);
+
+    /// <summary>Opens the suite editor with a specific collection preselected (used by the tree context menu).</summary>
+    public void OpenSuiteBuilderForCollection(RequestCollection collection)
+    {
+        if (collection.TotalRequestCount > 200)
+        {
+            ShowToast(
+                $"集合「{collection.Name}」包含 {collection.TotalRequestCount} 个请求，请先在左侧展开选择具体接口"
+            );
+            SuiteEditorRequested?.Invoke(this, null);
+            return;
+        }
+
+        SuiteEditorRequested?.Invoke(this, collection);
+    }
+
+    private static IReadOnlyList<RequestItem> FlattenCollectionRequests(
+        RequestCollection collection
+    )
+    {
+        var requests = new List<RequestItem>();
+        requests.AddRange(collection.Requests);
+        foreach (var child in collection.Children)
+        {
+            requests.AddRange(FlattenCollectionRequests(child));
+        }
+
+        return requests;
+    }
+
+    private static TestSuite CloneSuite(TestSuite source)
+    {
+        var clone = new TestSuite
+        {
+            Name = source.Name,
+            StopOnError = source.StopOnError,
+            RunInParallel = source.RunInParallel,
+            ScheduleMinutes = source.ScheduleMinutes,
+            MaxParallelism = source.MaxParallelism,
+            LastSummary = source.LastSummary,
+        };
+        foreach (var step in source.Steps)
+        {
+            var copy = new TestStep
+            {
+                Id = step.Id,
+                RequestId = step.RequestId,
+                RequestName = step.RequestName,
+                Method = step.Method,
+                Url = step.Url,
+                DelayMs = step.DelayMs,
+                RetryCount = step.RetryCount,
+                RetryDelayMs = step.RetryDelayMs,
+                Condition = step.Condition,
+                JoinMode = step.JoinMode,
+                ParallelGroup = step.ParallelGroup,
+                ExpectedStatus = step.ExpectedStatus,
+                BodyContains = step.BodyContains,
+            };
+            foreach (var rule in step.ConditionRules.Rules)
+            {
+                copy.ConditionRules.Rules.Add(
+                    new SuiteConditionRule
+                    {
+                        Source = rule.Source,
+                        Path = rule.Path,
+                        Operator = rule.Operator,
+                        Expected = rule.Expected,
+                    }
+                );
+            }
+
+            copy.ConditionRules.Mode = step.ConditionRules.Mode;
+            foreach (var mapping in step.InputMappings)
+            {
+                copy.InputMappings.Add(
+                    new InputMapping
+                    {
+                        SourceStepId = mapping.SourceStepId,
+                        SourcePath = mapping.SourcePath,
+                        TargetKind = mapping.TargetKind,
+                        TargetPath = mapping.TargetPath,
+                        Template = mapping.Template,
+                    }
+                );
+            }
+
+            foreach (var assertion in step.Assertions)
+            {
+                copy.Assertions.Add(
+                    new TestAssertion
+                    {
+                        Kind = assertion.Kind,
+                        Path = assertion.Path,
+                        Expected = assertion.Expected,
+                    }
+                );
+            }
+
+            clone.Steps.Add(copy);
+        }
+
+        if (source.Workflow is { } workflow)
+        {
+            clone.Workflow = new SuiteWorkflow();
+            foreach (var node in workflow.Nodes)
+            {
+                clone.Workflow.Nodes.Add(
+                    new SuiteWorkflowNode
+                    {
+                        Id = node.Id,
+                        StepId = node.StepId,
+                        Kind = node.Kind,
+                        CollectionId = node.CollectionId,
+                        RequestId = node.RequestId,
+                        X = node.X,
+                        Y = node.Y,
+                        JoinMode = node.JoinMode,
+                    }
+                );
+            }
+
+            foreach (var edge in workflow.Edges)
+            {
+                var copy = new SuiteWorkflowEdge
+                {
+                    SourceId = edge.SourceId,
+                    TargetId = edge.TargetId,
+                    Condition = edge.Condition,
+                };
+                copy.Rules.Mode = edge.Rules.Mode;
+                foreach (var rule in edge.Rules.Rules)
+                {
+                    copy.Rules.Rules.Add(
+                        new SuiteConditionRule
+                        {
+                            Source = rule.Source,
+                            Path = rule.Path,
+                            Operator = rule.Operator,
+                            Expected = rule.Expected,
+                        }
+                    );
+                }
+
+                clone.Workflow.Edges.Add(copy);
+            }
+        }
+
+        return clone;
+    }
+
+    private SuiteValidationResult ValidateSuite(TestSuite suite) =>
+        SuitePreflight.Validate(suite, Collections, ActiveEnvironment);
+
+    private void ShowSuiteValidation(SuiteValidationResult validation)
+    {
+        SelectedSuiteValidationIssues.Clear();
+        foreach (var issue in validation.Issues)
+        {
+            SelectedSuiteValidationIssues.Add(issue);
+        }
+
+        IsSuiteValidationVisible = validation.Issues.Count > 0;
+        OnPropertyChanged(nameof(SuiteValidationSummary));
+    }
+
+    private bool EnsureSuiteValid(TestSuite suite)
+    {
+        var validation = ValidateSuite(suite);
+        ShowSuiteValidation(validation);
+        if (!validation.HasErrors)
+        {
+            return true;
+        }
+
+        ShowToast($"{validation.Summary}，请先处理预检问题");
+        return false;
+    }
+
+    private void ClearSuiteValidation()
+    {
+        SelectedSuiteValidationIssues.Clear();
+        IsSuiteValidationVisible = false;
+    }
+
+    [RelayCommand]
+    private void DismissSuiteValidation() => IsSuiteValidationVisible = false;
+
+    private static TestRunResult PreflightFailure(
+        TestSuite suite,
+        SuiteValidationResult validation
+    ) =>
+        new()
+        {
+            SuiteId = suite.Id,
+            SuiteName = suite.Name,
+            Total = 0,
+            NotRun = suite.Steps.Count,
+            Stopped = true,
+            Error = validation.Summary,
+        };
+
+    private void WireSuiteRunCommands(TestSuite suite)
+    {
+        foreach (var run in suite.Runs)
+        {
+            foreach (var result in run.Steps)
+            {
+                result.ContinueCommand = new AsyncRelayCommand(() =>
+                    ContinueFromStepAsync(suite, result)
+                );
+            }
+        }
+    }
+
+    private Task RecordEditorRunAsync(TestSuite suite, TestRunResult result)
+    {
+        if (result.Error is not null)
+        {
+            return Task.CompletedTask;
+        }
+
+        result.SuiteId = suite.Id;
+        result.SuiteName = suite.Name;
+        if (suite.Runs.All(run => run.Id != result.Id))
+        {
+            suite.Runs.Insert(0, result);
+            while (suite.Runs.Count > TestSuite.RunHistoryLimit)
+            {
+                suite.Runs.RemoveAt(suite.Runs.Count - 1);
+            }
+        }
+
+        WireSuiteRunCommands(suite);
+        suite.LastSummary = result.Summary;
+        if (SelectedSuite?.Id == suite.Id)
+        {
+            SelectedSuiteResult = result;
+        }
+
+        Persist();
+        return Task.CompletedTask;
     }
 
     [RelayCommand]
@@ -4677,8 +4639,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         Suites.Remove(suite);
-        _suiteResults.Remove(suite.Id);
         SelectedSuite = Suites.FirstOrDefault();
+        ClearSuiteValidation();
         Persist();
         ShowToast("套件已删除");
     }
@@ -4687,6 +4649,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private async Task RunSelectedSuiteAsync()
     {
         if (SelectedSuite is not { } suite || IsRunningSuite)
+        {
+            return;
+        }
+
+        if (!EnsureSuiteValid(suite))
         {
             return;
         }
@@ -4717,6 +4684,89 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     }
 
     [RelayCommand]
+    private async Task RerunFailedAsync()
+    {
+        if (SelectedSuite is not { } suite || SelectedSuiteResult is not { } run || IsRunningSuite)
+        {
+            return;
+        }
+
+        var stepIds = SuiteRunPlanner.SelectFailedWithDependencies(suite, run);
+        if (stepIds.Count == 0)
+        {
+            ShowToast("本次运行没有失败步骤");
+            return;
+        }
+
+        await RunSuiteSubsetAsync(suite, stepIds, "重跑失败及依赖");
+    }
+
+    private async Task ContinueFromStepAsync(TestSuite suite, TestStepResult stepResult)
+    {
+        if (IsRunningSuite)
+        {
+            ShowToast("套件正在运行，请等待当前运行结束");
+            return;
+        }
+
+        var stepIds = SuiteRunPlanner.SelectFromStepWithDependencies(suite, stepResult.StepId);
+        if (stepIds.Count == 0)
+        {
+            ShowToast("该步骤已从套件中移除，无法继续运行");
+            return;
+        }
+
+        await RunSuiteSubsetAsync(suite, stepIds, $"从「{stepResult.Name}」继续");
+    }
+
+    private async Task RunSuiteSubsetAsync(
+        TestSuite owner,
+        IReadOnlySet<Guid> stepIds,
+        string actionLabel
+    )
+    {
+        var subset = SuiteRunPlanner.CreateSubset(owner, stepIds);
+        if (subset.Steps.Count == 0)
+        {
+            ShowToast("所选步骤已不存在，无法运行");
+            return;
+        }
+
+        if (!EnsureSuiteValid(subset))
+        {
+            return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _suiteCts = cancellation;
+        try
+        {
+            IsRunningSuite = true;
+            var result = await RunSuiteCoreAsync(
+                subset,
+                "UI",
+                "suite:retry",
+                null,
+                cancellation.Token,
+                forceWorkflow: true,
+                historySuite: owner
+            );
+            SelectedSuiteResult = result;
+            ShowToast(
+                result.Cancelled
+                    ? $"{actionLabel}已取消：{result.Outcome}"
+                    : $"{actionLabel}完成：{result.Outcome}"
+            );
+        }
+        finally
+        {
+            IsRunningSuite = false;
+            _suiteCts = null;
+            cancellation.Dispose();
+        }
+    }
+
+    [RelayCommand]
     private void CancelSuiteRun() => _suiteCts?.Cancel();
 
     public string RunSuiteButtonText => IsRunningSuite ? "运行中…" : "运行套件";
@@ -4735,8 +4785,40 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             var suite =
                 Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
                 ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            var validation = ValidateSuite(suite);
+            ShowSuiteValidation(validation);
+            if (validation.HasErrors)
+            {
+                throw new InvalidOperationException(
+                    $"{validation.Summary}，请先在桌面端修复套件。"
+                );
+            }
+
             return await RunSuiteCoreAsync(suite, "MCP", "run_suite", client, cancellationToken);
         });
+    }
+
+    public async Task<TestRunResult> RunSuiteDraftAsync(
+        TestSuite suite,
+        Action<SuiteWorkflowProgress>? progress,
+        CancellationToken cancellationToken
+    )
+    {
+        var validation = ValidateSuite(suite);
+        if (validation.HasErrors)
+        {
+            return PreflightFailure(suite, validation);
+        }
+
+        return await RunSuiteCoreAsync(
+            suite,
+            "UI",
+            "suite:editor",
+            null,
+            cancellationToken,
+            progress,
+            forceWorkflow: true
+        );
     }
 
     private async Task<TestRunResult> RunSuiteCoreAsync(
@@ -4744,28 +4826,61 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         string source,
         string tool,
         string? client,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action<SuiteWorkflowProgress>? progress = null,
+        bool forceWorkflow = false,
+        TestSuite? historySuite = null
     )
     {
+        var validation = ValidateSuite(suite);
+        if (validation.HasErrors)
+        {
+            return PreflightFailure(suite, validation);
+        }
+
         if (
-            suite.RunInParallel
+            suite.Workflow is { Nodes.Count: > 0 } workflow
+            && workflow.Nodes.Any(node => suite.Steps.Any(step => step.Id == node.StepId))
+        )
+        {
+            return await RunSuiteWorkflowAsync(
+                suite,
+                workflow,
+                source,
+                tool,
+                client,
+                cancellationToken,
+                progress,
+                historySuite
+            );
+        }
+
+        if (
+            !forceWorkflow
+            && suite.RunInParallel
             && suite.Steps.All(step => step.InputMappings.Count == 0 && step.Condition == "Always")
         )
         {
-            return await RunSuiteInParallelAsync(suite, source, tool, client, cancellationToken);
+            return await RunSuiteInParallelAsync(
+                suite,
+                source,
+                tool,
+                client,
+                cancellationToken,
+                historySuite
+            );
         }
 
         var steps = new List<TestStepResult>();
         var stopped = false;
         var cancelled = false;
         var stepResults = new Dictionary<Guid, HttpResult>();
-        var secrets = SecretMasker.CollectSecrets(Environments);
 
         for (var index = 0; index < suite.Steps.Count; index++)
         {
             var step = suite.Steps[index];
 
-            if (!ShouldRunStep(step, steps.LastOrDefault()))
+            if (!ShouldRunStep(step, steps.LastOrDefault(), stepResults, ActiveEnvironment))
             {
                 steps.Add(CreateSkippedStepResult(step));
                 continue;
@@ -4796,239 +4911,54 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 break;
             }
 
-            var request = Collections
-                .SelectMany(collection => collection.Requests)
-                .FirstOrDefault(candidate => candidate.Id == step.RequestId);
-
-            if (request is null)
+            var execution = await ExecuteSuiteStepAsync(
+                suite,
+                step,
+                stepResults,
+                applyMappings: true,
+                source,
+                tool,
+                client,
+                cancellationToken
+            );
+            if (execution.Result.StatusText == "已取消")
             {
-                steps.Add(
-                    new TestStepResult
-                    {
-                        StepId = step.Id,
-                        RequestId = step.RequestId,
-                        Name = step.RequestName,
-                        Method = step.Method,
-                        Url = step.Url,
-                        StatusText = "请求已删除",
-                        Error = "请求已删除",
-                        Passed = false,
-                    }
-                );
-
-                if (suite.StopOnError)
-                {
-                    stopped = true;
-                    break;
-                }
-
-                continue;
-            }
-
-            var effectiveRequest =
-                step.InputMappings.Count > 0 ? request.Clone(copyAuthorization: false) : request;
-            var mappingError =
-                step.InputMappings.Count > 0
-                    ? ApplyInputMappings(effectiveRequest, step, stepResults)
-                    : null;
-
-            if (mappingError is not null)
-            {
-                var failure = HttpRequestService.Failure(mappingError);
-                AddHistory(effectiveRequest, failure);
-                RecordAudit(effectiveRequest, null, failure, source, tool, client, secrets);
-                stepResults[step.Id] = failure;
-                steps.Add(
-                    new TestStepResult
-                    {
-                        StepId = step.Id,
-                        RequestId = request.Id,
-                        Name = request.Name,
-                        Method = request.Method,
-                        Url = request.Url,
-                        StatusText = "入参映射失败",
-                        Error = mappingError,
-                        Passed = false,
-                    }
-                );
-
-                if (suite.StopOnError)
-                {
-                    stopped = true;
-                    break;
-                }
-
-                continue;
-            }
-
-            ComposedRequest? stored = null;
-            HttpResult result = HttpRequestService.Failure("步骤未执行。");
-            var assertionResults = new List<TestAssertionResult>();
-            var attempts = 0;
-            var passed = false;
-            string? error = null;
-            var maxAttempts = SuiteRetryPolicy.MaxAttempts(step.RetryCount);
-
-            while (true)
-            {
-                attempts++;
-                try
-                {
-                    var auth = await ResolveAuthAsync(effectiveRequest, cancellationToken);
-                    var composed = RequestComposer.Compose(
-                        effectiveRequest,
-                        ActiveEnvironment,
-                        auth
-                    );
-                    stored = SecretMasker.MaskComposed(
-                        effectiveRequest,
-                        ActiveEnvironment,
-                        composed,
-                        secrets
-                    );
-                    result = await _http.SendAsync(
-                        composed,
-                        stored.Url,
-                        cancellationToken,
-                        effectiveRequest.TimeoutSeconds
-                    );
-                }
-                catch (Exception exception)
-                {
-                    Log.Error(
-                        exception,
-                        "套件步骤发送失败 {SuiteName} {StepName}",
-                        suite.Name,
-                        step.RequestName
-                    );
-                    result = HttpRequestService.Failure(exception.Message);
-                }
-
-                if (!result.HasResponse && cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-
-                // Checks see the masked response, so neither their outcome nor the 「实际」 values they report
-                // can be used to read a secret.
-                var checkedResult =
-                    step.Assertions.Count > 0 || !string.IsNullOrWhiteSpace(step.BodyContains)
-                        ? SecretMasker.MaskResult(result, secrets)
-                        : result;
-                var statusMatches = step.ExpectedStatus is null
-                    ? result.StatusCode is >= 200 and < 400
-                    : result.StatusCode == step.ExpectedStatus;
-                var bodyMatches =
-                    string.IsNullOrWhiteSpace(step.BodyContains)
-                    || checkedResult.Body.Contains(
-                        step.BodyContains,
-                        StringComparison.OrdinalIgnoreCase
-                    );
-                assertionResults = SuiteAssertionEvaluator
-                    .Evaluate(step.Assertions, checkedResult)
-                    .ToList();
-                var assertionsMatch = assertionResults.All(assertion => assertion.Passed);
-                passed = result.HasResponse && statusMatches && bodyMatches && assertionsMatch;
-                error = result.Error;
-                if (passed is false && error is null)
-                {
-                    error =
-                        !statusMatches
-                            ? $"期望状态 {step.ExpectedStatus?.ToString() ?? "2xx/3xx"}，实际 {result.StatusCode}"
-                        : !bodyMatches ? $"响应不包含 \"{step.BodyContains}\""
-                        : assertionResults.FirstOrDefault(assertion => !assertion.Passed)?.Detail;
-                }
-
-                if (!SuiteRetryPolicy.ShouldRetry(passed, attempts, step.RetryCount))
-                {
-                    break;
-                }
-
-                Log.Information(
-                    "套件步骤失败准备重试 {SuiteName} {StepName} {Attempt}/{MaxAttempts}",
-                    suite.Name,
-                    step.RequestName,
-                    attempts,
-                    maxAttempts
-                );
-                try
-                {
-                    await Task.Delay(SuiteRetryPolicy.Delay(step.RetryDelayMs), cancellationToken);
-                }
-                catch (OperationCanceledException exception)
-                {
-                    Log.Debug(
-                        exception,
-                        "套件重试等待被取消 {SuiteName} {StepName}",
-                        suite.Name,
-                        step.RequestName
-                    );
-                    stopped = true;
-                    break;
-                }
-            }
-
-            if (!result.HasResponse && cancellationToken.IsCancellationRequested)
-            {
-                // A step cut short by the cancel is not a failed assertion: keep it in the audit like a cancelled
-                // UI send, but leave it out of the step results and the pass/fail counts.
-                RecordAudit(effectiveRequest, stored, result, source, tool, client, secrets);
                 stopped = true;
                 cancelled = true;
                 break;
             }
 
-            stepResults[step.Id] = result;
-            AddHistory(effectiveRequest, result);
-            var audited = RecordAudit(
-                effectiveRequest,
-                stored,
-                result,
-                source,
-                tool,
-                client,
-                secrets
-            );
-
-            var stepResult = new TestStepResult
+            if (execution.Response is not null)
             {
-                StepId = step.Id,
-                RequestId = request.Id,
-                Name = request.Name,
-                Method = request.Method,
-                Url = audited.Url,
-                StatusCode = result.StatusCode,
-                StatusText = SecretMasker.MaskSecrets(result.ReasonPhrase, secrets),
-                ElapsedMs = result.ElapsedMs,
-                Attempts = attempts,
-                Passed = passed,
-                Error = error is null ? null : SecretMasker.MaskSecrets(error, secrets),
-                ResponsePreview = SecretMasker.MaskPreview(result.Body, 500, secrets),
-            };
-            stepResult.Assertions.AddRange(assertionResults);
-            steps.Add(stepResult);
+                stepResults[step.Id] = execution.Response;
+            }
 
-            if (!passed && suite.StopOnError)
+            steps.Add(execution.Result);
+            if (!execution.Result.Passed && suite.StopOnError)
             {
                 stopped = true;
                 break;
             }
         }
 
-        return CompleteSuiteRun(suite, steps, stopped, cancelled);
+        return CompleteSuiteRun(suite, steps, stopped, cancelled, historySuite);
     }
 
     private TestRunResult CompleteSuiteRun(
         TestSuite suite,
         List<TestStepResult> steps,
         bool stopped,
-        bool cancelled
+        bool cancelled,
+        TestSuite? historySuite = null,
+        IReadOnlyList<SuiteRunNodeState>? nodeStates = null,
+        IReadOnlyList<SuiteRunEdgeState>? edgeStates = null
     )
     {
+        var owner = historySuite ?? suite;
         var run = new TestRunResult
         {
-            SuiteId = suite.Id,
-            SuiteName = suite.Name,
+            SuiteId = owner.Id,
+            SuiteName = owner.Name,
             Total = steps.Count,
             Passed = steps.Count(step => step.Passed && !step.Skipped),
             Failed = steps.Count(step => !step.Passed && !step.Skipped),
@@ -5037,11 +4967,26 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Cancelled = cancelled,
             NotRun = suite.Steps.Count - steps.Count,
             Steps = steps,
+            NodeStates = nodeStates?.ToList() ?? new List<SuiteRunNodeState>(),
+            EdgeStates = edgeStates?.ToList() ?? new List<SuiteRunEdgeState>(),
         };
 
-        _suiteResults[suite.Id] = run;
-        suite.LastSummary = run.Summary;
-        if (SelectedSuite?.Id == suite.Id)
+        WireSuiteRunCommands(owner);
+        foreach (var result in run.Steps)
+        {
+            result.ContinueCommand = new AsyncRelayCommand(() =>
+                ContinueFromStepAsync(owner, result)
+            );
+        }
+
+        owner.Runs.Insert(0, run);
+        while (owner.Runs.Count > TestSuite.RunHistoryLimit)
+        {
+            owner.Runs.RemoveAt(owner.Runs.Count - 1);
+        }
+
+        owner.LastSummary = run.Summary;
+        if (SelectedSuite?.Id == owner.Id)
         {
             SelectedSuiteResult = run;
         }
@@ -5055,22 +5000,82 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         string source,
         string tool,
         string? client,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        TestSuite? historySuite = null
     )
     {
         Log.Warning("套件启用并行执行，步骤延迟和映射依赖将被忽略 {SuiteName}", suite.Name);
-        var tasks = suite
-            .Steps.Select(step =>
-                RunParallelStepAsync(suite, step, source, tool, client, cancellationToken)
+        var tasks = suite.Steps.Select(step =>
+            ExecuteSuiteStepAsync(
+                suite,
+                step,
+                null,
+                applyMappings: false,
+                source,
+                tool,
+                client,
+                cancellationToken
             )
-            .ToList();
-        var results = await Task.WhenAll(tasks);
-        return CompleteSuiteRun(suite, results.ToList(), false, false);
+        );
+        var outcomes = await Task.WhenAll(tasks);
+        var cancelled = outcomes.Any(outcome => outcome.Result.StatusText == "已取消");
+        return CompleteSuiteRun(
+            suite,
+            outcomes
+                .Where(outcome => outcome.Result.StatusText != "已取消")
+                .Select(outcome => outcome.Result)
+                .ToList(),
+            false,
+            cancelled,
+            historySuite
+        );
     }
 
-    private async Task<TestStepResult> RunParallelStepAsync(
+    private async Task<TestRunResult> RunSuiteWorkflowAsync(
+        TestSuite suite,
+        SuiteWorkflow workflow,
+        string source,
+        string tool,
+        string? client,
+        CancellationToken cancellationToken,
+        Action<SuiteWorkflowProgress>? progress = null,
+        TestSuite? historySuite = null
+    )
+    {
+        var outcome = await SuiteWorkflowScheduler.RunAsync(
+            suite,
+            workflow,
+            ActiveEnvironment,
+            (step, responses, token) =>
+                ExecuteSuiteStepAsync(
+                    suite,
+                    step,
+                    responses,
+                    applyMappings: true,
+                    source,
+                    tool,
+                    client,
+                    token
+                ),
+            cancellationToken,
+            progress
+        );
+        return CompleteSuiteRun(
+            suite,
+            outcome.Steps,
+            outcome.Stopped,
+            outcome.Cancelled,
+            historySuite,
+            outcome.NodeStates,
+            outcome.EdgeStates
+        );
+    }
+
+    private async Task<SuiteStepRunOutcome> ExecuteSuiteStepAsync(
         TestSuite suite,
         TestStep step,
+        IReadOnlyDictionary<Guid, HttpResult>? stepResults,
+        bool applyMappings,
         string source,
         string tool,
         string? client,
@@ -5082,20 +5087,68 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             .FirstOrDefault(candidate => candidate.Id == step.RequestId);
         if (request is null)
         {
-            return new TestStepResult
-            {
-                StepId = step.Id,
-                RequestId = step.RequestId,
-                Name = step.RequestName,
-                Method = step.Method,
-                Url = step.Url,
-                StatusText = "请求已删除",
-                Error = "请求已删除",
-                Passed = false,
-            };
+            return new SuiteStepRunOutcome(
+                new TestStepResult
+                {
+                    StepId = step.Id,
+                    RequestId = step.RequestId,
+                    Name = step.RequestName,
+                    Method = step.Method,
+                    Url = step.Url,
+                    StatusText = "请求已删除",
+                    Error = "请求已删除",
+                    Passed = false,
+                },
+                null
+            );
         }
 
         var secrets = SecretMasker.CollectSecrets(Environments);
+        var effectiveRequest =
+            applyMappings && step.InputMappings.Count > 0
+                ? request.Clone(copyAuthorization: false)
+                : request;
+
+        if (applyMappings && step.InputMappings.Count > 0 && stepResults is not null)
+        {
+            string? mappingError;
+            try
+            {
+                mappingError = ApplyInputMappings(effectiveRequest, step, stepResults);
+            }
+            catch (Exception exception)
+            {
+                Log.Error(
+                    exception,
+                    "套件入参映射失败 {SuiteName} {StepName}",
+                    suite.Name,
+                    step.RequestName
+                );
+                mappingError = $"入参映射失败：{exception.Message}";
+            }
+
+            if (mappingError is not null)
+            {
+                var failure = HttpRequestService.Failure(mappingError);
+                AddHistory(effectiveRequest, failure);
+                RecordAudit(effectiveRequest, null, failure, source, tool, client, secrets);
+                return new SuiteStepRunOutcome(
+                    new TestStepResult
+                    {
+                        StepId = step.Id,
+                        RequestId = request.Id,
+                        Name = request.Name,
+                        Method = request.Method,
+                        Url = request.Url,
+                        StatusText = "入参映射失败",
+                        Error = mappingError,
+                        Passed = false,
+                    },
+                    null
+                );
+            }
+        }
+
         ComposedRequest? composed = null;
         ComposedRequest? stored = null;
         HttpResult result = HttpRequestService.Failure("步骤未执行。");
@@ -5103,35 +5156,73 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         var passed = false;
         var assertionResults = new List<TestAssertionResult>();
         string? error = null;
-        var maxAttempts = SuiteRetryPolicy.MaxAttempts(step.RetryCount);
 
         while (true)
         {
             attempts++;
             try
             {
-                var auth = await ResolveAuthAsync(request, cancellationToken);
-                composed = RequestComposer.Compose(request, ActiveEnvironment, auth);
-                stored = SecretMasker.MaskComposed(request, ActiveEnvironment, composed, secrets);
+                var auth = await ResolveAuthAsync(effectiveRequest, cancellationToken);
+                composed = RequestComposer.Compose(effectiveRequest, ActiveEnvironment, auth);
+                stored = SecretMasker.MaskComposed(
+                    effectiveRequest,
+                    ActiveEnvironment,
+                    composed,
+                    secrets
+                );
                 result = await _http.SendAsync(
                     composed,
                     stored.Url,
                     cancellationToken,
-                    request.TimeoutSeconds
+                    effectiveRequest.TimeoutSeconds
                 );
             }
             catch (Exception exception)
             {
+                Log.Error(
+                    exception,
+                    "套件步骤发送失败 {SuiteName} {StepName}",
+                    suite.Name,
+                    step.RequestName
+                );
                 result = HttpRequestService.Failure(exception.Message);
             }
 
+            if (!result.HasResponse && cancellationToken.IsCancellationRequested)
+            {
+                RecordAudit(effectiveRequest, stored, result, source, tool, client, secrets);
+                return new SuiteStepRunOutcome(
+                    new TestStepResult
+                    {
+                        StepId = step.Id,
+                        RequestId = request.Id,
+                        Name = request.Name,
+                        Method = request.Method,
+                        Url = request.Url,
+                        StatusText = "已取消",
+                        Error = "套件已取消",
+                        Passed = false,
+                    },
+                    null
+                );
+            }
+
+            var checkedResult =
+                step.Assertions.Count > 0 || !string.IsNullOrWhiteSpace(step.BodyContains)
+                    ? SecretMasker.MaskResult(result, secrets)
+                    : result;
             var statusMatches = step.ExpectedStatus is null
                 ? result.StatusCode is >= 200 and < 400
                 : result.StatusCode == step.ExpectedStatus;
             var bodyMatches =
                 string.IsNullOrWhiteSpace(step.BodyContains)
-                || result.Body.Contains(step.BodyContains, StringComparison.OrdinalIgnoreCase);
-            assertionResults = SuiteAssertionEvaluator.Evaluate(step.Assertions, result).ToList();
+                || checkedResult.Body.Contains(
+                    step.BodyContains,
+                    StringComparison.OrdinalIgnoreCase
+                );
+            assertionResults = SuiteAssertionEvaluator
+                .Evaluate(step.Assertions, checkedResult)
+                .ToList();
             passed =
                 result.HasResponse
                 && statusMatches
@@ -5162,8 +5253,27 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             }
         }
 
-        AddHistory(request, result);
-        var audited = RecordAudit(request, stored, result, source, tool, client, secrets);
+        if (!result.HasResponse && cancellationToken.IsCancellationRequested)
+        {
+            RecordAudit(effectiveRequest, stored, result, source, tool, client, secrets);
+            return new SuiteStepRunOutcome(
+                new TestStepResult
+                {
+                    StepId = step.Id,
+                    RequestId = request.Id,
+                    Name = request.Name,
+                    Method = request.Method,
+                    Url = request.Url,
+                    StatusText = "已取消",
+                    Error = "套件已取消",
+                    Passed = false,
+                },
+                null
+            );
+        }
+
+        AddHistory(effectiveRequest, result);
+        var audited = RecordAudit(effectiveRequest, stored, result, source, tool, client, secrets);
         var stepResult = new TestStepResult
         {
             StepId = step.Id,
@@ -5180,17 +5290,37 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             ResponsePreview = SecretMasker.MaskPreview(result.Body, 500, secrets),
         };
         stepResult.Assertions.AddRange(assertionResults);
-        return stepResult;
+        return new SuiteStepRunOutcome(stepResult, result.HasResponse ? result : null);
     }
 
-    private static bool ShouldRunStep(TestStep step, TestStepResult? previous)
+    private static bool ShouldRunStep(
+        TestStep step,
+        TestStepResult? previous,
+        IReadOnlyDictionary<Guid, HttpResult> stepResults,
+        EnvironmentModel? environment
+    )
     {
-        return step.Condition switch
+        var matches = step.Condition switch
         {
             "OnPreviousSuccess" => previous is null || (previous.Passed && !previous.Skipped),
             "OnPreviousFailure" => previous is { } result && !result.Passed && !result.Skipped,
             _ => true,
         };
+        if (!matches || step.Condition != "Expression")
+        {
+            return matches;
+        }
+
+        var response =
+            previous is not null && stepResults.TryGetValue(previous.StepId, out var value)
+                ? value
+                : null;
+        return SuiteConditionEvaluator.Evaluate(
+            step.ConditionRules,
+            response,
+            previous,
+            environment
+        );
     }
 
     private static TestStepResult CreateSkippedStepResult(TestStep step)
@@ -6031,6 +6161,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             }
 
             _lastScheduledRuns[suite.Id] = now;
+            var validation = ValidateSuite(suite);
+            if (validation.HasErrors)
+            {
+                Log.Warning(
+                    "定时套件预检未通过，已跳过本次运行 {SuiteName} {Summary}",
+                    suite.Name,
+                    validation.Summary
+                );
+                continue;
+            }
+
             try
             {
                 IsRunningSuite = true;
@@ -6262,10 +6403,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         WireHistoryEntry(entry);
         History.Insert(0, entry);
-        while (History.Count > 40)
+        while (History.Count > 100)
         {
             History.RemoveAt(History.Count - 1);
         }
+
+        SelectHistoryEntry(entry);
     }
 
     private void SelectFirstRequestOrBlank()
@@ -6597,7 +6740,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Environments.Add(environment);
         }
 
-        foreach (var historyDto in workspace.History)
+        foreach (var historyDto in workspace.History.Take(100))
         {
             var entry = WorkspaceStore.ToHistory(historyDto);
             WireHistoryEntry(entry);
@@ -6614,67 +6757,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         foreach (var suiteDto in workspace.Suites)
         {
-            var suite = new TestSuite
-            {
-                Id = suiteDto.Id == Guid.Empty ? Guid.NewGuid() : suiteDto.Id,
-                Name = suiteDto.Name,
-                StopOnError = suiteDto.StopOnError,
-                RunInParallel = suiteDto.RunInParallel,
-                ScheduleMinutes = suiteDto.ScheduleMinutes,
-                LastSummary = string.IsNullOrWhiteSpace(suiteDto.LastSummary)
-                    ? "尚未运行"
-                    : suiteDto.LastSummary,
-            };
-
-            foreach (var stepDto in suiteDto.Steps)
-            {
-                var step = new TestStep
-                {
-                    Id = stepDto.Id == Guid.Empty ? Guid.NewGuid() : stepDto.Id,
-                    RequestId = stepDto.RequestId,
-                    RequestName = stepDto.RequestName,
-                    Method = stepDto.Method,
-                    Url = stepDto.Url,
-                    DelayMs = stepDto.DelayMs,
-                    RetryCount = stepDto.RetryCount,
-                    RetryDelayMs = stepDto.RetryDelayMs,
-                    Condition = string.IsNullOrWhiteSpace(stepDto.Condition)
-                        ? "Always"
-                        : stepDto.Condition,
-                    ParallelGroup = stepDto.ParallelGroup,
-                    ExpectedStatus = stepDto.ExpectedStatus,
-                    BodyContains = stepDto.BodyContains,
-                };
-
-                foreach (var mappingDto in stepDto.InputMappings)
-                {
-                    step.InputMappings.Add(
-                        new InputMapping
-                        {
-                            SourceStepId = mappingDto.SourceStepId,
-                            SourcePath = mappingDto.SourcePath,
-                            TargetKind = mappingDto.TargetKind,
-                            TargetPath = mappingDto.TargetPath,
-                            Template = mappingDto.Template,
-                        }
-                    );
-                }
-
-                foreach (var assertionDto in stepDto.Assertions)
-                {
-                    step.Assertions.Add(
-                        new TestAssertion
-                        {
-                            Kind = assertionDto.Kind,
-                            Path = assertionDto.Path,
-                            Expected = assertionDto.Expected,
-                        }
-                    );
-                }
-
-                suite.Steps.Add(step);
-            }
-
+            var suite = WorkspaceStore.ToSuiteModel(suiteDto);
+            WireSuiteRunCommands(suite);
             Suites.Add(suite);
         }
 

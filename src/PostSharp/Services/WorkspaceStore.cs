@@ -110,10 +110,16 @@ public sealed class WorkspaceStore
             StopOnError = suiteDto.StopOnError,
             RunInParallel = suiteDto.RunInParallel,
             ScheduleMinutes = suiteDto.ScheduleMinutes,
+            MaxParallelism = suiteDto.MaxParallelism,
             LastSummary = string.IsNullOrWhiteSpace(suiteDto.LastSummary)
                 ? "尚未运行"
                 : suiteDto.LastSummary,
         };
+
+        foreach (var runDto in suiteDto.Runs.Take(TestSuite.RunHistoryLimit))
+        {
+            suite.Runs.Add(ToRunModel(runDto));
+        }
 
         foreach (var stepDto in suiteDto.Steps)
         {
@@ -130,10 +136,13 @@ public sealed class WorkspaceStore
                 Condition = string.IsNullOrWhiteSpace(stepDto.Condition)
                     ? "Always"
                     : stepDto.Condition,
+                JoinMode = string.IsNullOrWhiteSpace(stepDto.JoinMode) ? "All" : stepDto.JoinMode,
                 ParallelGroup = stepDto.ParallelGroup,
                 ExpectedStatus = stepDto.ExpectedStatus,
                 BodyContains = stepDto.BodyContains,
             };
+
+            CopyCondition(stepDto.ConditionRules, step.ConditionRules);
 
             foreach (var mappingDto in stepDto.InputMappings)
             {
@@ -173,20 +182,29 @@ public sealed class WorkspaceStore
                     new SuiteWorkflowNode
                     {
                         Id = node.Id,
+                        StepId = node.StepId,
                         Kind = node.Kind,
                         CollectionId = node.CollectionId,
                         RequestId = node.RequestId,
                         X = node.X,
                         Y = node.Y,
+                        JoinMode = string.IsNullOrWhiteSpace(node.JoinMode) ? "All" : node.JoinMode,
                     }
                 );
             }
 
             foreach (var edge in workflow.Edges)
             {
-                suite.Workflow.Edges.Add(
-                    new SuiteWorkflowEdge { SourceId = edge.SourceId, TargetId = edge.TargetId }
-                );
+                var model = new SuiteWorkflowEdge
+                {
+                    SourceId = edge.SourceId,
+                    TargetId = edge.TargetId,
+                    Condition = string.IsNullOrWhiteSpace(edge.Condition)
+                        ? "Always"
+                        : edge.Condition,
+                };
+                CopyCondition(edge.Rules, model.Rules);
+                suite.Workflow.Edges.Add(model);
             }
         }
 
@@ -201,7 +219,9 @@ public sealed class WorkspaceStore
             StopOnError = suite.StopOnError,
             RunInParallel = suite.RunInParallel,
             ScheduleMinutes = suite.ScheduleMinutes,
+            MaxParallelism = suite.MaxParallelism,
             LastSummary = suite.LastSummary,
+            Runs = suite.Runs.Take(TestSuite.RunHistoryLimit).Select(ToRunDto).ToList(),
             Steps = suite
                 .Steps.Select(step => new SuiteStepDto
                 {
@@ -214,6 +234,8 @@ public sealed class WorkspaceStore
                     RetryCount = step.RetryCount,
                     RetryDelayMs = step.RetryDelayMs,
                     Condition = step.Condition,
+                    JoinMode = step.JoinMode,
+                    ConditionRules = CaptureCondition(step.ConditionRules),
                     ParallelGroup = step.ParallelGroup,
                     ExpectedStatus = step.ExpectedStatus,
                     BodyContains = step.BodyContains,
@@ -244,11 +266,13 @@ public sealed class WorkspaceStore
                         .Nodes.Select(node => new SuiteWorkflowNodeDto
                         {
                             Id = node.Id,
+                            StepId = node.StepId,
                             Kind = node.Kind,
                             CollectionId = node.CollectionId,
                             RequestId = node.RequestId,
                             X = node.X,
                             Y = node.Y,
+                            JoinMode = node.JoinMode,
                         })
                         .ToList(),
                     Edges = workflow
@@ -256,11 +280,182 @@ public sealed class WorkspaceStore
                         {
                             SourceId = edge.SourceId,
                             TargetId = edge.TargetId,
+                            Condition = edge.Condition,
+                            Rules = CaptureCondition(edge.Rules),
                         })
                         .ToList(),
                 }
                 : null,
         };
+
+    private static TestRunResult ToRunModel(SuiteRunDto dto)
+    {
+        var run = new TestRunResult
+        {
+            Id = dto.Id == Guid.Empty ? Guid.NewGuid() : dto.Id,
+            SuiteId = dto.SuiteId,
+            SuiteName = dto.SuiteName,
+            Timestamp = dto.Timestamp,
+            Total = dto.Total,
+            Passed = dto.Passed,
+            Failed = dto.Failed,
+            Skipped = dto.Skipped,
+            Stopped = dto.Stopped,
+            Cancelled = dto.Cancelled,
+            NotRun = dto.NotRun,
+            Error = dto.Error,
+            NodeStates = dto
+                .NodeStates.Select(state => new SuiteRunNodeState
+                {
+                    StepId = state.StepId,
+                    Name = state.Name,
+                    State = state.State,
+                    ElapsedMs = state.ElapsedMs,
+                    Detail = state.Detail,
+                })
+                .ToList(),
+            EdgeStates = dto
+                .EdgeStates.Select(state => new SuiteRunEdgeState
+                {
+                    SourceId = state.SourceId,
+                    TargetId = state.TargetId,
+                    Active = state.Active,
+                })
+                .ToList(),
+        };
+        foreach (var stepDto in dto.Steps)
+        {
+            var step = new TestStepResult
+            {
+                StepId = stepDto.StepId,
+                RequestId = stepDto.RequestId,
+                Name = stepDto.Name,
+                Method = stepDto.Method,
+                Url = stepDto.Url,
+                StatusCode = stepDto.StatusCode,
+                StatusText = stepDto.StatusText,
+                ElapsedMs = stepDto.ElapsedMs,
+                Attempts = stepDto.Attempts,
+                Passed = stepDto.Passed,
+                Skipped = stepDto.Skipped,
+                Error = stepDto.Error,
+                ResponsePreview = stepDto.ResponsePreview,
+            };
+            foreach (var assertion in stepDto.Assertions)
+            {
+                step.Assertions.Add(
+                    new TestAssertionResult
+                    {
+                        Label = assertion.Label,
+                        Passed = assertion.Passed,
+                        Detail = assertion.Detail,
+                    }
+                );
+            }
+
+            run.Steps.Add(step);
+        }
+
+        return run;
+    }
+
+    private static SuiteRunDto ToRunDto(TestRunResult run) =>
+        new()
+        {
+            Id = run.Id,
+            SuiteId = run.SuiteId,
+            SuiteName = run.SuiteName,
+            Timestamp = run.Timestamp,
+            Total = run.Total,
+            Passed = run.Passed,
+            Failed = run.Failed,
+            Skipped = run.Skipped,
+            Stopped = run.Stopped,
+            Cancelled = run.Cancelled,
+            NotRun = run.NotRun,
+            Error = run.Error,
+            Steps = run
+                .Steps.Select(step => new SuiteRunStepDto
+                {
+                    StepId = step.StepId,
+                    RequestId = step.RequestId,
+                    Name = step.Name,
+                    Method = step.Method,
+                    Url = step.Url,
+                    StatusCode = step.StatusCode,
+                    StatusText = step.StatusText,
+                    ElapsedMs = step.ElapsedMs,
+                    Attempts = step.Attempts,
+                    Passed = step.Passed,
+                    Skipped = step.Skipped,
+                    Error = step.Error,
+                    ResponsePreview = step.ResponsePreview,
+                    Assertions = step
+                        .Assertions.Select(assertion => new SuiteRunAssertionDto
+                        {
+                            Label = assertion.Label,
+                            Passed = assertion.Passed,
+                            Detail = assertion.Detail,
+                        })
+                        .ToList(),
+                })
+                .ToList(),
+            NodeStates = run
+                .NodeStates.Select(state => new SuiteRunNodeStateDto
+                {
+                    StepId = state.StepId,
+                    Name = state.Name,
+                    State = state.State,
+                    ElapsedMs = state.ElapsedMs,
+                    Detail = state.Detail,
+                })
+                .ToList(),
+            EdgeStates = run
+                .EdgeStates.Select(state => new SuiteRunEdgeStateDto
+                {
+                    SourceId = state.SourceId,
+                    TargetId = state.TargetId,
+                    Active = state.Active,
+                })
+                .ToList(),
+        };
+
+    private static SuiteConditionDto CaptureCondition(SuiteCondition condition) =>
+        new()
+        {
+            Mode = condition.Mode,
+            Rules = condition
+                .Rules.Select(rule => new SuiteConditionRuleDto
+                {
+                    Source = rule.Source,
+                    Path = rule.Path,
+                    Operator = rule.Operator,
+                    Expected = rule.Expected,
+                })
+                .ToList(),
+        };
+
+    private static void CopyCondition(SuiteConditionDto? source, SuiteCondition target)
+    {
+        if (source is null)
+        {
+            return;
+        }
+
+        target.Mode = string.IsNullOrWhiteSpace(source.Mode) ? "All" : source.Mode;
+        foreach (var rule in source.Rules)
+        {
+            target.Rules.Add(
+                new SuiteConditionRule
+                {
+                    Source = string.IsNullOrWhiteSpace(rule.Source) ? "StatusCode" : rule.Source,
+                    Path = rule.Path,
+                    Operator = string.IsNullOrWhiteSpace(rule.Operator) ? "Equals" : rule.Operator,
+                    Expected = rule.Expected,
+                }
+            );
+        }
+    }
 
     /// <summary>Builds a collection and its requests; parent links are set by the caller.</summary>
     public static RequestCollection ToCollectionModel(CollectionDto dto)
@@ -740,7 +935,11 @@ public sealed class SuiteDto
 
     public int ScheduleMinutes { get; set; }
 
+    public int MaxParallelism { get; set; } = 4;
+
     public string LastSummary { get; set; } = "尚未运行";
+
+    public List<SuiteRunDto> Runs { get; set; } = new();
 
     public List<SuiteStepDto> Steps { get; set; } = new();
 
@@ -758,7 +957,9 @@ public sealed class SuiteWorkflowNodeDto
 {
     public string Id { get; set; } = string.Empty;
 
-    public string Kind { get; set; } = "request";
+    public Guid StepId { get; set; }
+
+    public string Kind { get; set; } = "step";
 
     public Guid CollectionId { get; set; }
 
@@ -767,6 +968,8 @@ public sealed class SuiteWorkflowNodeDto
     public double X { get; set; }
 
     public double Y { get; set; }
+
+    public string JoinMode { get; set; } = "All";
 }
 
 public sealed class SuiteWorkflowEdgeDto
@@ -774,6 +977,123 @@ public sealed class SuiteWorkflowEdgeDto
     public string SourceId { get; set; } = string.Empty;
 
     public string TargetId { get; set; } = string.Empty;
+
+    public string Condition { get; set; } = "Always";
+
+    public SuiteConditionDto Rules { get; set; } = new();
+}
+
+public sealed class SuiteConditionDto
+{
+    public string Mode { get; set; } = "All";
+
+    public List<SuiteConditionRuleDto> Rules { get; set; } = new();
+}
+
+public sealed class SuiteRunDto
+{
+    public Guid Id { get; set; }
+
+    public Guid SuiteId { get; set; }
+
+    public string SuiteName { get; set; } = string.Empty;
+
+    public DateTimeOffset Timestamp { get; set; }
+
+    public int Total { get; set; }
+
+    public int Passed { get; set; }
+
+    public int Failed { get; set; }
+
+    public int Skipped { get; set; }
+
+    public bool Stopped { get; set; }
+
+    public bool Cancelled { get; set; }
+
+    public int NotRun { get; set; }
+
+    public string? Error { get; set; }
+
+    public List<SuiteRunStepDto> Steps { get; set; } = new();
+
+    public List<SuiteRunNodeStateDto> NodeStates { get; set; } = new();
+
+    public List<SuiteRunEdgeStateDto> EdgeStates { get; set; } = new();
+}
+
+public sealed class SuiteRunStepDto
+{
+    public Guid StepId { get; set; }
+
+    public Guid RequestId { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    public string Method { get; set; } = "GET";
+
+    public string Url { get; set; } = string.Empty;
+
+    public int StatusCode { get; set; }
+
+    public string StatusText { get; set; } = string.Empty;
+
+    public long ElapsedMs { get; set; }
+
+    public int Attempts { get; set; } = 1;
+
+    public bool Passed { get; set; }
+
+    public bool Skipped { get; set; }
+
+    public string? Error { get; set; }
+
+    public string ResponsePreview { get; set; } = string.Empty;
+
+    public List<SuiteRunAssertionDto> Assertions { get; set; } = new();
+}
+
+public sealed class SuiteRunAssertionDto
+{
+    public string Label { get; set; } = string.Empty;
+
+    public bool Passed { get; set; }
+
+    public string Detail { get; set; } = string.Empty;
+}
+
+public sealed class SuiteRunNodeStateDto
+{
+    public Guid StepId { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+
+    public string State { get; set; } = "Pending";
+
+    public long ElapsedMs { get; set; }
+
+    public string? Detail { get; set; }
+}
+
+public sealed class SuiteRunEdgeStateDto
+{
+    public string SourceId { get; set; } = string.Empty;
+
+    public string TargetId { get; set; } = string.Empty;
+
+    public bool Active { get; set; }
+}
+
+public sealed class SuiteConditionRuleDto
+{
+    public string Source { get; set; } = "StatusCode";
+
+    public string Path { get; set; } = string.Empty;
+
+    public string Operator { get; set; } = "Equals";
+
+    public string Expected { get; set; } = string.Empty;
 }
 
 public sealed class SuiteStepDto
@@ -795,6 +1115,10 @@ public sealed class SuiteStepDto
     public int RetryDelayMs { get; set; } = 500;
 
     public string Condition { get; set; } = "Always";
+
+    public string JoinMode { get; set; } = "All";
+
+    public SuiteConditionDto ConditionRules { get; set; } = new();
 
     public int ParallelGroup { get; set; }
 

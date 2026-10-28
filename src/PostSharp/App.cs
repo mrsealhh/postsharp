@@ -23,6 +23,12 @@ public partial class App : Application
                     Source = new Uri("avares://PostSharp/Styles/ToolTipStyles.axaml"),
                 }
             );
+            Styles.Add(
+                new StyleInclude(new Uri("avares://PostSharp/"))
+                {
+                    Source = new Uri("avares://PostSharp/Styles/SelectableRowStyles.axaml"),
+                }
+            );
 
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {

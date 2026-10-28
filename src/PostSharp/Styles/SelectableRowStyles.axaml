@@ -1,0 +1,55 @@
+<Styles
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+    xmlns:controls="using:PostSharp.Controls"
+>
+    <Style Selector="controls|SelectableRow">
+        <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
+        <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusControl}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border
+                    x:Name="RowBorder"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="{TemplateBinding CornerRadius}"
+                    Padding="{TemplateBinding Padding}"
+                    ClipToBounds="True"
+                >
+                    <Panel>
+                        <Border
+                            Background="{arc:ArcDesignTokenResource SurfaceRaised}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            IsVisible="{TemplateBinding IsSelected}"
+                        />
+                        <Border
+                            Width="3"
+                            HorizontalAlignment="Left"
+                            Background="{arc:ArcDesignTokenResource Accent}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            IsVisible="{TemplateBinding IsSelected}"
+                        />
+                        <ContentPresenter
+                            Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                        />
+                    </Panel>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+
+    <Style Selector="controls|SelectableRow:focus /template/ Border#RowBorder">
+        <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Accent}" />
+    </Style>
+</Styles>

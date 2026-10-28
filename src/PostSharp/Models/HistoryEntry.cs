@@ -1,9 +1,11 @@
+using System.Text.Json.Serialization;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TKCode.Arc;
 
 namespace PostSharp.Models;
 
-public sealed class HistoryEntry
+public sealed partial class HistoryEntry : ObservableObject
 {
     /// <summary>Request body snapshots are capped so 40 large requests cannot pin hundreds of megabytes.</summary>
     public const int BodyLimit = 256 * 1024;
@@ -40,6 +42,10 @@ public sealed class HistoryEntry
     public IRelayCommand? RestoreCommand { get; set; }
 
     public IRelayCommand? PurgeCommand { get; set; }
+
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private bool _isSelected;
 
     public string DisplayTime => Timestamp.LocalDateTime.ToString("HH:mm:ss");
 

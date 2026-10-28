@@ -769,6 +769,7 @@ public sealed class McpWorkspaceAdapter
             };
 
             suite.Steps.AddRange(BuildSuiteSteps(steps));
+            SuiteWorkflowFactory.EnsureLinear(suite);
             _viewModel.Suites.Add(suite);
             _viewModel.SelectedSuite = suite;
             _viewModel.NotifyWorkspaceChanged();
@@ -791,7 +792,7 @@ public sealed class McpWorkspaceAdapter
                 var collection =
                     _viewModel.Collections.FirstOrDefault(candidate => candidate.Id == collectionId)
                     ?? throw new KeyNotFoundException($"没有找到 id 为 {collectionId} 的集合。");
-                requests.AddRange(collection.Requests);
+                requests.AddRange(FlattenRequests(collection));
             }
 
             if (requests.Count == 0)
@@ -815,12 +816,29 @@ public sealed class McpWorkspaceAdapter
                 StopOnError = stopOnError,
             };
             suite.Steps.AddRange(BuildSuiteSteps(stepInputs));
+            SuiteWorkflowFactory.EnsureLinear(suite);
 
             _viewModel.Suites.Add(suite);
             _viewModel.SelectedSuite = suite;
             _viewModel.NotifyWorkspaceChanged();
             return suite;
         });
+    }
+
+    private static IEnumerable<RequestItem> FlattenRequests(RequestCollection collection)
+    {
+        foreach (var request in collection.Requests)
+        {
+            yield return request;
+        }
+
+        foreach (var child in collection.Children)
+        {
+            foreach (var request in FlattenRequests(child))
+            {
+                yield return request;
+            }
+        }
     }
 
     public async Task<TestSuite> UpdateSuiteAsync(
@@ -863,8 +881,14 @@ public sealed class McpWorkspaceAdapter
                 var rebuilt = BuildSuiteSteps(steps);
                 suite.Steps.Clear();
                 suite.Steps.AddRange(rebuilt);
+                // Replacing a linear MCP step list must rebuild the graph, otherwise old node ids
+                // would leave the suite failing preflight.
+                suite.Workflow = SuiteWorkflowFactory.CreateLinear(suite.Steps);
             }
-
+            else
+            {
+                SuiteWorkflowFactory.EnsureLinear(suite);
+            }
             _viewModel.SelectedSuite = suite;
             _viewModel.NotifyWorkspaceChanged();
             return suite;

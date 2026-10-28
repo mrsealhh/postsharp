@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using PostSharp.Controls;
 using PostSharp.Models;
 using PostSharp.Services;
@@ -21,6 +23,7 @@ public partial class SettingsWindow : Window
         DataContextChanged += (_, _) => ApplyCompactLayout();
         Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://PostSharp/Assets/logo-icon.png")));
         KeyDown += OnWindowKeyDown;
+        PropertyChanged += OnWindowPropertyChanged;
         Opened += (_, _) =>
         {
             this.EnablePopupOverlayLayer();
@@ -44,6 +47,80 @@ public partial class SettingsWindow : Window
             Close();
             e.Handled = true;
         }
+    }
+
+    private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == WindowStateProperty)
+        {
+            UpdateWindowStateVisuals();
+        }
+    }
+
+    private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(this);
+        if (!point.Properties.IsLeftButtonPressed || IsInteractiveTitleBarSource(e.Source))
+        {
+            return;
+        }
+
+        if (e.ClickCount == 2)
+        {
+            ToggleMaximize();
+            e.Handled = true;
+            return;
+        }
+
+        BeginMoveDrag(e);
+        e.Handled = true;
+    }
+
+    private bool IsInteractiveTitleBarSource(object? source)
+    {
+        for (
+            var current = source as Visual;
+            current is not null;
+            current = current.GetVisualParent()
+        )
+        {
+            if (ReferenceEquals(current, TitleBar))
+            {
+                return false;
+            }
+
+            if (
+                current is Button or TextBox or ComboBox or CheckBox or Slider
+                || current is Control { Focusable: true }
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void OnMinimizeWindowClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        WindowState = WindowState.Minimized;
+
+    private void OnToggleMaximizeWindowClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    ) => ToggleMaximize();
+
+    private void OnCloseWindowClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        Close();
+
+    private void ToggleMaximize() =>
+        WindowState =
+            WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    private void UpdateWindowStateVisuals()
+    {
+        var maximized = WindowState == WindowState.Maximized;
+        WindowMaximizeGlyph.IsVisible = !maximized;
+        WindowRestoreGlyph.IsVisible = maximized;
     }
 
     private void ApplyCompactLayout()

@@ -1,8 +1,8 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
-> 基线版本：v1.2.0（2026-10-27）
+> 基线版本：v1.10.9（2026-10-28）
 > 基线形态：当前发布 Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
-> 基线测试：159 个 xUnit 测试，`csharpier check .` 通过
+> 基线测试：172 个 xUnit 测试，`csharpier check .` 通过
 > 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
@@ -83,7 +83,7 @@
 - 导入导出：OpenAPI / Swagger、Postman、HAR、cURL、PowerShell、Insomnia V4、Hoppscotch、Postman Environment。
 - OpenAPI：离线接口文档、URL 同步、外部 `$ref`、多服务器、安全方案占位、调用代码导出。
 - 存储：本地 SQLite 兜底；远程 PostgreSQL / MySQL / SQL Server / MongoDB 默认插件；ClickHouse / Doris / StarRocks 可选插件；连接失败暂停远程回写。
-- 自动化：套件步骤、断言、重试、上下步条件、并行组、输入映射、定时运行。
+- 自动化：集合/接口混合编排、纯画布工作流、依赖 DAG、条件分支与 All/Any 汇合、断言、重试、输入映射、最大并行、定时运行、保存/运行前预检、最近 20 次运行历史、失败重跑与从节点继续，以及运行中节点/连线状态。
 - AI 接入：本地 MCP Streamable HTTP、工具调用、审计、历史、机密遮罩。
 - 界面：主题、界面缩放、紧凑布局、标签栏溢出、历史回收站、集合回收站、审计回收站。
 
@@ -94,7 +94,7 @@
 | 主工程 | `src/PostSharp`，单一桌面应用 |
 | 存储契约 | `src/PostSharp.Storage.Abstractions` |
 | 插件源码 | `src/Plugins/PostSharp.Storage.*` |
-| 测试 | `tests/PostSharp.Tests`，30 个测试文件，159 个用例 |
+| 测试 | `tests/PostSharp.Tests`，30 个测试文件，172 个用例 |
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
@@ -323,7 +323,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | P1-03 | 授权补全 | 仅 OAuth 2.0 授权码 + PKCE；无客户端凭据、设备码、隐式、工作区级/环境级默认授权 | 至少补客户端凭据和设备码；授权默认值层级明确；刷新并发只更新一次；令牌过期/撤销有清晰提示 | M/L |
 | P1-04 | 导入导出补全 | Apifox 原生格式未适配；Insomnia v5、Hoppscotch 环境、Postman 脚本/测试、HAR 响应体、部分认证不完整 | 有样本才实现，不无样本逆向；导入前预览统计；不支持的字段逐项提示；导出后可回导 | M/L |
 | P1-05 | Multipart 大文件 | 已支持多文件、64KB 流式、进度和取消；无断点续传、分片协议、超大文件预检 | 可配置分片/重试；磁盘空间与文件大小预检；取消后清理临时文件；断点恢复有明确限制 | M |
-| P1-06 | 套件与无人值守 | 有条件/并行/映射，但无复杂表达式、DAG、任意跳转、数据驱动；定时依赖应用常开；无 CLI | 增加表达式和 DAG；支持 CSV/JSON 数据驱动；提供 headless CLI/JUnit/HTML 报告；定时不依赖主窗口 | XL |
+| P1-06 | 套件与无人值守 | 已支持依赖 DAG、条件分支、All/Any 汇合、结构化条件表达式、最大并行和统一执行器；无循环/任意跳转、数据驱动、CLI；定时仍依赖应用常开 | 支持 CSV/JSON 数据驱动；提供 headless CLI/JUnit/HTML 报告；定时不依赖主窗口 | XL |
 | P1-07 | MCP 强化 | 仅回环、无令牌、无 SSE 通知；工具错误和取消语义不统一 | 本机 token 鉴权；工具 schema 校验；SSE 进度/取消；幂等键；审计关联 requestId；多客户端互不干扰 | M/L |
 | P1-08 | UI/UX 与可访问性 | 120%/150% 在 1400 宽窗口可能裁切；多显示器 DPI、焦点、键盘全覆盖仍需验证；深浅主题对比度未自动化 | 最小窗口和 150% 下无不可达控件；Tab 顺序/焦点框可见；图标有 AutomationProperties.Name；浅深色 WCAG AA；标签栏溢出可预测 | L |
 | P1-09 | 插件生态 | 只有开发指南；无 SDK 模板、契约版本、清单签名、兼容矩阵 | 提供插件模板和 CI 示例；契约版本可检查；官方/第三方插件矩阵；不兼容时只禁用插件 | M/L |
@@ -526,7 +526,34 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [ ] 是否提供可选诊断/使用统计；默认必须关闭并明确同意。
 - [ ] 是否把“AI 生成请求/断言”作为核心卖点，还是保持 MCP 工具工作台定位。
 
-## 10. 相关文件索引
+## 10. MCP 覆盖与 CLI 模式
+
+状态：当前 MCP 覆盖集合/请求 CRUD、发送、线性套件、审计/历史/回收站、设置和存储；**不是 UI 功能 1:1 映射**。详细审核见 `C:\Users\Administrator\Desktop\AICoding\postsharp\PostSharp-MCP覆盖审核与CLI计划-2026-10-28.md`。
+
+### P0：先补齐自动化回归闭环
+
+- [ ] `get_suite` / `create_suite` / `update_suite` 支持节点、连线、边条件、`joinMode`、`maxParallelism`，而不是只生成线性工作流。
+- [ ] `run_suite` 返回稳定 `runId`；新增运行进度、取消、运行历史和 `rerun_failed` / `continue_from_step`。
+- [ ] 预检结果以结构化错误返回（节点 id、错误码、修复建议）。
+- [ ] 增加审计/历史单条操作：`delete_audit`、`get_history`、`delete_history`，以及来源/状态/日期筛选。
+
+### P1：补齐高频能力
+
+- [ ] 设置：界面缩放、布局、标签溢出；字体导入/目录扫描/重载。
+- [ ] 请求：多文件上传、发送取消、SSE 增量/继续。
+- [ ] 授权：OAuth 登录状态/刷新、Cookie/代理/客户端证书。
+- [ ] 导出：按集合导出和更多格式。
+- [ ] 修复并验证 `update_suite` 替换步骤后重建工作流（本轮已修复代码，待加入回归测试）。
+
+### P2：CLI / 无人值守
+
+- [ ] 新增 CLI 骨架，默认连接 `http://127.0.0.1:5199/mcp`，支持 `--json`、超时和退出码。
+- [ ] 第一批命令：`suite list/get/validate/run`。
+- [ ] 第二批命令：`suite history/rerun-failed/continue`、`audit list`。
+- [ ] JUnit XML / HTML 报告。
+- [ ] 以 `/postsharp:mcp ...` 形式包装 CLI，供 AI 客户端调用。
+
+## 11. 相关文件索引
 
 - 产品能力与已知限制：`README.md`「已知限制与路线图」。
 - 存储插件契约与自定义数据库：`docs/storage-plugins.md`。
