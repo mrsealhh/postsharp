@@ -18,5 +18,6 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\PostSharp\PostSharp.csproj" />
+        <ProjectReference Include="..\..\src\PostSharp.Cli\PostSharp.Cli.csproj" />
     </ItemGroup>
 </Project>

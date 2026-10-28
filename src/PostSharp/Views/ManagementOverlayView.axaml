@@ -1456,9 +1456,15 @@
                                                     Foreground="{arc:ArcDesignTokenResource Foreground}"
                                                 />
                                                 <TextBlock
-                                                    Text="postsharp-cli 是独立命令行程序，不会启动第二个桌面端；它通过本机 MCP 调用当前正在运行的 PostSharp，适合终端、CI 和只支持 stdio 的 AI 客户端。下载解压后即可使用，运行前请保持桌面端开启。"
+                                                    Text="postsharp-cli 是独立命令行程序，不会启动第二个桌面端；它通过本机 MCP 调用当前正在运行的 PostSharp，适合终端、CI 和只支持 stdio 的 AI 客户端。支持 JUnit、Markdown 和 HTML 报告；运行前请保持桌面端开启。"
                                                     FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                                     Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                    TextWrapping="Wrap"
+                                                />
+                                                <TextBlock
+                                                    Text="{Binding CliLocationText}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                                     TextWrapping="Wrap"
                                                 />
                                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
@@ -1485,6 +1491,13 @@
                                                                 TextWrapping="Wrap"
                                                             />
                                                             <TextBlock
+                                                                Text="postsharp-cli suite run &lt;suiteId&gt; --html report.html"
+                                                                FontFamily="{DynamicResource PostSharpCodeFont}"
+                                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                                TextWrapping="Wrap"
+                                                            />
+                                                            <TextBlock
                                                                 Text="postsharp-cli audit list --source MCP --limit 20"
                                                                 FontFamily="{DynamicResource PostSharpCodeFont}"
                                                                 FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -1495,7 +1508,7 @@
                                                     </Border>
                                                     <arc:CopyButton
                                                         Grid.Column="1"
-                                                        Value="postsharp-cli suite list&#10;postsharp-cli suite run &lt;suiteId&gt; --json&#10;postsharp-cli audit list --source MCP --limit 20"
+                                                        Value="postsharp-cli suite list&#10;postsharp-cli suite run &lt;suiteId&gt; --json&#10;postsharp-cli suite run &lt;suiteId&gt; --html report.html&#10;postsharp-cli audit list --source MCP --limit 20"
                                                         Label="复制命令"
                                                         Variant="Plain"
                                                         VerticalAlignment="Top"
@@ -1519,6 +1532,13 @@
                                                         Variant="Plain"
                                                     />
                                                 </Grid>
+                                                <arc:CopyButton
+                                                    Value="{Binding CliExampleCommand}"
+                                                    Label="复制本机命令"
+                                                    Variant="Plain"
+                                                    HorizontalAlignment="Left"
+                                                    IsVisible="{Binding IsBundledCliAvailable}"
+                                                />
                                             </StackPanel>
                                             <StackPanel
                                                 Grid.Column="2"
@@ -1530,8 +1550,20 @@
                                                 <arc:Button
                                                     Variant="Secondary"
                                                     Size="Small"
+                                                    Command="{Binding OpenCliFolderCommand}"
+                                                    IsVisible="{Binding IsBundledCliAvailable}"
+                                                >
+                                                    <controls:IconLabel
+                                                        Icon="{x:Static arc:ArcIcons.FolderOpen}"
+                                                        Text="打开 CLI 目录"
+                                                        IconSize="13"
+                                                    />
+                                                </arc:Button>
+                                                <arc:Button
+                                                    Variant="Secondary"
+                                                    Size="Small"
                                                     Command="{Binding OpenCliReleaseCommand}"
-                                                    ToolTip.Tip="在 GitHub Releases 下载 postsharp-cli；桌面端需保持运行"
+                                                    ToolTip.Tip="下载最新桌面包（含 cli/）；桌面端需保持运行"
                                                 >
                                                     <controls:IconLabel
                                                         Icon="{x:Static arc:ArcIcons.ArrowDown}"

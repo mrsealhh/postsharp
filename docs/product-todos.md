@@ -2,7 +2,7 @@
 
 > 基线版本：v1.10.13（2026-10-28）
 > 基线形态：当前发布 Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
-> 基线测试：179 个 xUnit 测试，`csharpier check .` 通过
+> 基线测试：182 个 xUnit 测试，`csharpier check .` 通过
 > 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
@@ -94,7 +94,7 @@
 | 主工程 | `src/PostSharp`，单一桌面应用 |
 | 存储契约 | `src/PostSharp.Storage.Abstractions` |
 | 插件源码 | `src/Plugins/PostSharp.Storage.*` |
-| 测试 | `tests/PostSharp.Tests`，30 个测试文件，179 个用例 |
+| 测试 | `tests/PostSharp.Tests`，30 个测试文件，182 个用例 |
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
@@ -323,7 +323,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | P1-03 | 授权补全 | 仅 OAuth 2.0 授权码 + PKCE；无客户端凭据、设备码、隐式、工作区级/环境级默认授权 | 至少补客户端凭据和设备码；授权默认值层级明确；刷新并发只更新一次；令牌过期/撤销有清晰提示 | M/L |
 | P1-04 | 导入导出补全 | Apifox 原生格式未适配；Insomnia v5、Hoppscotch 环境、Postman 脚本/测试、HAR 响应体、部分认证不完整 | 有样本才实现，不无样本逆向；导入前预览统计；不支持的字段逐项提示；导出后可回导 | M/L |
 | P1-05 | Multipart 大文件 | 已支持多文件、64KB 流式、进度和取消；无断点续传、分片协议、超大文件预检 | 可配置分片/重试；磁盘空间与文件大小预检；取消后清理临时文件；断点恢复有明确限制 | M |
-| P1-06 | 套件与无人值守 | 已支持依赖 DAG、条件分支、All/Any 汇合、结构化条件表达式、最大并行和统一执行器；无循环/任意跳转、数据驱动、CLI；定时仍依赖应用常开 | 支持 CSV/JSON 数据驱动；提供 headless CLI/JUnit/HTML 报告；定时不依赖主窗口 | XL |
+| P1-06 | 套件与无人值守 | 已支持依赖 DAG、条件分支、All/Any 汇合、结构化条件表达式、最大并行和统一执行器；无循环/任意跳转、数据驱动；CLI 已支持 JUnit/Markdown/HTML 报告；定时仍依赖应用常开 | 支持 CSV/JSON 数据驱动；定时不依赖主窗口 | XL |
 | P1-07 | MCP 强化 | 仅回环、无令牌、无 SSE 通知；工具错误和取消语义不统一 | 本机 token 鉴权；工具 schema 校验；SSE 进度/取消；幂等键；审计关联 requestId；多客户端互不干扰 | M/L |
 | P1-08 | UI/UX 与可访问性 | 120%/150% 在 1400 宽窗口可能裁切；多显示器 DPI、焦点、键盘全覆盖仍需验证；深浅主题对比度未自动化 | 最小窗口和 150% 下无不可达控件；Tab 顺序/焦点框可见；图标有 AutomationProperties.Name；浅深色 WCAG AA；标签栏溢出可预测 | L |
 | P1-09 | 插件生态 | 只有开发指南；无 SDK 模板、契约版本、清单签名、兼容矩阵 | 提供插件模板和 CI 示例；契约版本可检查；官方/第三方插件矩阵；不兼容时只禁用插件 | M/L |
@@ -566,9 +566,10 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] `mcp-stdio` 桥接：兼容只支持 stdio MCP 的 harness。
 - [x] JUnit XML：`suite run/rerun-failed/continue --junit <文件>`。
 - [x] 桌面端「指南」页增加 CLI 说明、常用命令复制、MCP 地址复制和下载/说明入口。
-- [ ] HTML/Markdown 测试报告和 CI 样例。
+- [x] HTML/Markdown 测试报告。
+- [ ] CI 样例。
 - [ ] 以 `/postsharp:mcp ...` 形式包装 CLI，供 AI 客户端调用。
-- [ ] 将 CLI 产物纳入 Windows/Linux/macOS 发布包或独立 Release 资产。
+- [x] 将 CLI 产物纳入 Windows/Linux/macOS 发布包；独立 Release 资产继续保留。
 
 ## 11. 相关文件索引
 

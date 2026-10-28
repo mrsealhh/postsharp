@@ -4,7 +4,7 @@
 
 ## 桌面端入口
 
-应用内「指南 → 命令行 CLI」卡片提供常用命令复制、MCP 地址复制、下载 CLI 和查看说明入口。CLI 仍是独立进程，下载解压后运行，桌面端必须保持开启。
+应用内「指南 → 命令行 CLI」卡片提供常用命令复制、MCP 地址复制、下载 CLI 和查看说明入口。桌面安装包会附带 `cli/` 目录；CLI 仍是独立进程，桌面端必须保持开启。
 
 ## 前置条件
 
@@ -50,6 +50,9 @@ Windows 可把 `command` 改为 `postsharp-cli.exe` 的绝对路径。桥接本�
 --timeout 秒       单次请求超时，默认 30 秒
 --client 名称      写入 MCP clientInfo
 --junit 文件       suite run/rerun-failed/continue 完成后写 JUnit XML
+--markdown 文件    suite run/rerun-failed/continue 完成后写 Markdown 报告
+--html 文件        suite run/rerun-failed/continue 完成后写 HTML 报告
+--version          显示 CLI 版本
 ```
 
 退出码：
@@ -75,7 +78,15 @@ postsharp-cli suite validate 6a1d...
 
 # CI：运行并输出 JUnit
 postsharp-cli suite run 6a1d... --json --junit test-results/postsharp.xml
+
+# 同时输出 Markdown / HTML 报告
+postsharp-cli suite run 6a1d... --markdown reports/suite.md --html reports/suite.html
+
+# 查看版本
+postsharp-cli --version
 ```
+
+桌面安装包中的 CLI 位于安装目录的 `cli/` 下：Windows 为 `cli/postsharp-cli.exe`，Linux/macOS 为 `cli/postsharp-cli`（可运行 `cli/run.sh`）。
 
 `suite run` 使用 `start_suite_run`，随后轮询 `get_suite_run_job`；退出码根据最终状态返回。CLI 不开放删除、清空和切换存储等破坏性操作。
 
