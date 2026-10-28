@@ -30,6 +30,12 @@ internal static class Program
             return 0;
         }
 
+        if (options.ShowVersion)
+        {
+            Console.WriteLine($"postsharp-cli {CliOptions.CurrentVersion}");
+            return 0;
+        }
+
         using var cancellation = new CancellationTokenSource();
         Console.CancelKeyPress += (_, eventArgs) =>
         {
@@ -280,7 +286,7 @@ internal static class Program
                         new JsonObject { ["suiteId"] = suiteId, ["runId"] = completedRunId },
                         cancellationToken
                     );
-                    WriteJUnitFromText(runResult.Text, options);
+                    WriteReportsFromText(runResult.Text, options);
                 }
 
                 return status == "Completed" ? 0 : 1;
@@ -330,7 +336,7 @@ internal static class Program
             new JsonObject { ["suiteId"] = suiteId, ["runId"] = runId },
             cancellationToken
         );
-        WriteJUnitFromText(result.Text, options);
+        WriteReportsFromText(result.Text, options);
         return PrintRunResult(result.Text, options.Json);
     }
 
@@ -353,7 +359,7 @@ internal static class Program
             },
             cancellationToken
         );
-        WriteJUnitFromText(result.Text, options);
+        WriteReportsFromText(result.Text, options);
         return PrintRunResult(result.Text, options.Json);
     }
 
@@ -425,14 +431,22 @@ internal static class Program
         return 0;
     }
 
-    private static void WriteJUnitFromText(string text, CliOptions options)
+    private static void WriteReportsFromText(string text, CliOptions options)
     {
-        if (options.GetOption("--junit", null) is not { Length: > 0 } path)
+        if (options.GetOption("--junit", null) is { Length: > 0 } junitPath)
         {
-            return;
+            JUnitReport.Write(text, junitPath);
         }
 
-        JUnitReport.Write(text, path);
+        if (options.GetOption("--markdown", null) is { Length: > 0 } markdownPath)
+        {
+            SuiteReport.WriteMarkdown(text, markdownPath);
+        }
+
+        if (options.GetOption("--html", null) is { Length: > 0 } htmlPath)
+        {
+            SuiteReport.WriteHtml(text, htmlPath);
+        }
     }
 
     private static int PrintRunResult(string text, bool json)
@@ -521,16 +535,23 @@ internal static class Program
               suite continue <suiteId> <runId> <stepId>
               request send <requestId>
               audit list [--source UI|MCP] [--limit 数量]
-              suite run/rerun-failed/continue 支持 --junit <文件>
               mcp-stdio（把 stdin/stdout 的 MCP JSON-RPC 转发到 HTTP 端点）
-              mcp-stdio
+
+            报告：
+              suite run/rerun-failed/continue 支持 --junit <文件>
+              suite run/rerun-failed/continue 支持 --markdown <文件>
+              suite run/rerun-failed/continue 支持 --html <文件>
+
+            其他：
+              --version 显示 CLI 版本
+              --help, -h 显示此帮助
 
             退出码：
               0 成功；1 套件/请求失败；2 参数或服务端错误；3 连接失败或取消。
 
             示例：
               postsharp-cli suite list
-              postsharp-cli suite run <suiteId>
+              postsharp-cli suite run <suiteId> --json --html report.html
               postsharp-cli suite validate <suiteId> --json
               postsharp-cli audit list --source MCP --limit 20
             """
@@ -544,10 +565,14 @@ internal sealed record CliOptions(
     TimeSpan Timeout,
     string ClientName,
     bool ShowHelp,
+    bool ShowVersion,
     IReadOnlyList<string> Arguments,
     IReadOnlyDictionary<string, string> Options
 )
 {
+    public static string CurrentVersion =>
+        typeof(CliOptions).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+
     public static CliOptions Parse(IReadOnlyList<string> args)
     {
         var endpoint = new Uri("http://127.0.0.1:5199/mcp");
@@ -555,6 +580,7 @@ internal sealed record CliOptions(
         var timeout = TimeSpan.FromSeconds(30);
         var clientName = "PostSharp.Cli";
         var help = false;
+        var version = false;
         var arguments = new List<string>();
         var options = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -565,6 +591,9 @@ internal sealed record CliOptions(
             {
                 case "--help" or "-h":
                     help = true;
+                    break;
+                case "--version":
+                    version = true;
                     break;
                 case "--json":
                     json = true;
@@ -591,7 +620,7 @@ internal sealed record CliOptions(
                 case "--client":
                     clientName = ReadValue(args, ref index, argument);
                     break;
-                case "--limit" or "--source" or "--junit":
+                case "--limit" or "--source" or "--junit" or "--markdown" or "--html":
                     options[argument] = ReadValue(args, ref index, argument);
                     break;
                 default:
@@ -605,7 +634,16 @@ internal sealed record CliOptions(
             }
         }
 
-        return new CliOptions(endpoint, json, timeout, clientName, help, arguments, options);
+        return new CliOptions(
+            endpoint,
+            json,
+            timeout,
+            clientName,
+            help,
+            version,
+            arguments,
+            options
+        );
     }
 
     public string? GetOption(string name, string? fallback) =>

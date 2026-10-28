@@ -8,4 +8,7 @@
         <AssemblyName>postsharp-cli</AssemblyName>
         <InvariantGlobalization>false</InvariantGlobalization>
     </PropertyGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="PostSharp.Tests" />
+    </ItemGroup>
 </Project>

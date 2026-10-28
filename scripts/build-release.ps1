@@ -49,6 +49,18 @@ if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed."
 }
 
+$cliPublish = Join-Path $publish "cli"
+dotnet publish (Join-Path $root "src\PostSharp.Cli\PostSharp.Cli.csproj") `
+    -c Release `
+    -r win-x64 `
+    --self-contained false `
+    -p:Version=$Version `
+    -o $cliPublish
+
+if ($LASTEXITCODE -ne 0) {
+    throw "CLI publish failed."
+}
+
 # The application only enables updates when this marker is present.
 New-Item -ItemType File -Path (Join-Path $publish ".postsharp-update-enabled") -Force | Out-Null
 Get-ChildItem $publish -Filter *.pdb -Recurse -Force | Remove-Item -Force

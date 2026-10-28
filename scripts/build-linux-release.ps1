@@ -43,6 +43,27 @@ if ($LASTEXITCODE -ne 0) {
     throw "linux publish failed."
 }
 
+$cliPublish = Join-Path $publish "cli"
+dotnet publish (Join-Path $root "src\PostSharp.Cli\PostSharp.Cli.csproj") `
+    -c Release `
+    -r linux-x64 `
+    --self-contained true `
+    -p:Version=$Version `
+    -o $cliPublish
+
+if ($LASTEXITCODE -ne 0) {
+    throw "CLI publish failed."
+}
+
+$cliRunScript = @'
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+chmod +x postsharp-cli
+exec ./postsharp-cli "$@"
+'@
+Set-Content -Path (Join-Path $cliPublish "run.sh") -Value $cliRunScript -Encoding ascii -NoNewline
+
 Get-ChildItem $publish -Filter *.pdb -Recurse -Force | Remove-Item -Force
 Remove-PlatformFolders (Join-Path $publish "plugins") "^(win|osx)"
 
