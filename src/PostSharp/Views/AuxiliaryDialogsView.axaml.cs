@@ -22,8 +22,9 @@ public partial class AuxiliaryDialogsView : UserControl
 
     private void ApplyDialogWidth(Dialog dialog)
     {
-        // 弹窗宽度跟随主窗口，而不是各自写死一个宽度。
-        var width = Math.Max(420, Bounds.Width * 0.8);
+        // 懒加载时本控件可能还没完成布局，Bounds.Width 仍是 0；以主窗口宽度算 80%。
+        var hostWidth = TopLevel.GetTopLevel(this)?.Bounds.Width ?? Bounds.Width;
+        var width = Math.Max(420, hostWidth * 0.8);
         dialog.Width = width;
         dialog.MaxWidth = width;
         if (dialog.Surface is { } surface)
