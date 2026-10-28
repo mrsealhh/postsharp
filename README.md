@@ -876,6 +876,7 @@ docs/
 | macOS 预览包 | `scripts/build-osx-release.ps1` 生成 `osx-arm64` / `osx-x64` 自包含包；未签名、未公证；系统浏览器回调和 AES 密钥路径已编译，待 macOS 实机验证 |
 | OIDC 登录（历史） | 1.10.12 之前的内嵌 WebView2 验证记录；当前版本已移除 WebView2，统一使用系统默认浏览器 |
 | OIDC 系统浏览器 | 默认通过系统默认浏览器登录；本机 TCP 回环监听收到 `code`/`state` 后返回成功页，回调地址校验和取消路径已通过单测；真实 IdP 需按登记的 `http://127.0.0.1:端口/callback` 验收 |
+| OIDC 重定向兼容 | 应用始终把配置的 `redirect_uri` 原样发给 IdP；loopback 自动接收，https 或其他绝对地址显示「手动回调地址」输入，避免自行改值导致 `redirect_uri mismatch` |
 | 集合级授权 | 请求「账号列表（集合授权）」为「继承上级集合」，解析到集合的 OAuth 2.0 令牌；演示账号接口返回 `200 OK`，cURL 预览含 `Authorization: Bearer …` |
 | 请求级覆盖 | 同一集合内请求「账号列表（请求关闭认证）」显式设为「无认证」，发送返回 `401 Unauthorized`，证明请求级可以覆盖集合 |
 | 无全局默认 | 根集合「无认证验证」的请求未配置授权；即使集合授权已登录，发送仍返回 `401 Unauthorized`，不再有全局默认令牌 |

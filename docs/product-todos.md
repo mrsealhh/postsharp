@@ -1,6 +1,6 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
-> 基线版本：v1.10.12（2026-10-28）
+> 基线版本：v1.10.13（2026-10-28）
 > 基线形态：当前发布 Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
 > 基线测试：179 个 xUnit 测试，`csharpier check .` 通过
 > 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0
