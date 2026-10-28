@@ -45,6 +45,7 @@ Windows 可把 `command` 改为 `postsharp-cli.exe` 的绝对路径。桥接本�
 --json             输出原始 JSON；进度信息写 stderr
 --timeout 秒       单次请求超时，默认 30 秒
 --client 名称      写入 MCP clientInfo
+--junit 文件       suite run/rerun-failed/continue 完成后写 JUnit XML
 ```
 
 退出码：
@@ -67,6 +68,9 @@ postsharp-cli suite run 6a1d... --json
 
 # 只校验，不发送请求
 postsharp-cli suite validate 6a1d...
+
+# CI：运行并输出 JUnit
+postsharp-cli suite run 6a1d... --json --junit test-results/postsharp.xml
 ```
 
 `suite run` 使用 `start_suite_run`，随后轮询 `get_suite_run_job`；退出码根据最终状态返回。CLI 不开放删除、清空和切换存储等破坏性操作。

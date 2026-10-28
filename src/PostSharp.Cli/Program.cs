@@ -3,6 +3,8 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Xml;
+using System.Xml.Linq;
 
 namespace PostSharp.Cli;
 
@@ -270,6 +272,17 @@ internal static class Program
                     }
                 }
 
+                var completedRunId = ReadString(root, "runId");
+                if (completedRunId.Length > 0)
+                {
+                    var runResult = await client.CallToolAsync(
+                        "get_suite_run",
+                        new JsonObject { ["suiteId"] = suiteId, ["runId"] = completedRunId },
+                        cancellationToken
+                    );
+                    WriteJUnitFromText(runResult.Text, options);
+                }
+
                 return status == "Completed" ? 0 : 1;
             }
 
@@ -317,6 +330,7 @@ internal static class Program
             new JsonObject { ["suiteId"] = suiteId, ["runId"] = runId },
             cancellationToken
         );
+        WriteJUnitFromText(result.Text, options);
         return PrintRunResult(result.Text, options.Json);
     }
 
@@ -339,6 +353,7 @@ internal static class Program
             },
             cancellationToken
         );
+        WriteJUnitFromText(result.Text, options);
         return PrintRunResult(result.Text, options.Json);
     }
 
@@ -408,6 +423,16 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static void WriteJUnitFromText(string text, CliOptions options)
+    {
+        if (options.GetOption("--junit", null) is not { Length: > 0 } path)
+        {
+            return;
+        }
+
+        JUnitReport.Write(text, path);
     }
 
     private static int PrintRunResult(string text, bool json)
@@ -496,6 +521,7 @@ internal static class Program
               suite continue <suiteId> <runId> <stepId>
               request send <requestId>
               audit list [--source UI|MCP] [--limit 数量]
+              suite run/rerun-failed/continue 支持 --junit <文件>
               mcp-stdio（把 stdin/stdout 的 MCP JSON-RPC 转发到 HTTP 端点）
               mcp-stdio
 
@@ -565,7 +591,7 @@ internal sealed record CliOptions(
                 case "--client":
                     clientName = ReadValue(args, ref index, argument);
                     break;
-                case "--limit" or "--source":
+                case "--limit" or "--source" or "--junit":
                     options[argument] = ReadValue(args, ref index, argument);
                     break;
                 default:
@@ -908,6 +934,123 @@ internal sealed class McpClient : IDisposable
             return result;
         }
     }
+}
+
+internal static class JUnitReport
+{
+    public static void Write(string json, string path)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var suiteName = Text(root, "suiteName");
+        if (suiteName.Length == 0)
+        {
+            suiteName = Text(root, "name");
+        }
+
+        var steps =
+            root.TryGetProperty("steps", out var stepsNode)
+            && stepsNode.ValueKind == JsonValueKind.Array
+                ? stepsNode.EnumerateArray().ToList()
+                : new List<JsonElement>();
+        var failures = 0;
+        var skipped = 0;
+        var totalMs = 0L;
+        var cases = new List<XElement>();
+        foreach (var step in steps)
+        {
+            var name = Text(step, "name");
+            if (name.Length == 0)
+            {
+                name = "step";
+            }
+
+            var elapsedMs = Number(step, "elapsedMs");
+            totalMs += elapsedMs;
+            var testCase = new XElement(
+                "testcase",
+                new XAttribute("classname", "PostSharp"),
+                new XAttribute("name", name),
+                new XAttribute(
+                    "time",
+                    (elapsedMs / 1000d).ToString("0.000", CultureInfo.InvariantCulture)
+                )
+            );
+            if (Bool(step, "skipped"))
+            {
+                skipped++;
+                testCase.Add(new XElement("skipped"));
+            }
+            else if (!Bool(step, "passed"))
+            {
+                failures++;
+                var error = Text(step, "error");
+                var status = Number(step, "statusCode");
+                testCase.Add(
+                    new XElement(
+                        "failure",
+                        new XAttribute(
+                            "message",
+                            error.Length > 0
+                                ? error
+                                : $"HTTP {status.ToString(CultureInfo.InvariantCulture)}"
+                        ),
+                        error
+                    )
+                );
+            }
+
+            cases.Add(testCase);
+        }
+
+        var suite = new XElement(
+            "testsuite",
+            new XAttribute("name", suiteName.Length > 0 ? suiteName : "PostSharp Suite"),
+            new XAttribute("tests", cases.Count),
+            new XAttribute("failures", failures),
+            new XAttribute("errors", 0),
+            new XAttribute("skipped", skipped),
+            new XAttribute(
+                "time",
+                (totalMs / 1000d).ToString("0.000", CultureInfo.InvariantCulture)
+            ),
+            cases
+        );
+        var report = new XDocument(
+            new XDeclaration("1.0", "utf-8", null),
+            new XElement("testsuites", suite)
+        );
+        var fullPath = Path.GetFullPath(path);
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        using var writer = XmlWriter.Create(
+            fullPath,
+            new XmlWriterSettings
+            {
+                Indent = true,
+                Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            }
+        );
+        report.Save(writer);
+        Console.Error.WriteLine($"JUnit 报告：{fullPath}");
+    }
+
+    private static string Text(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? string.Empty
+            : string.Empty;
+
+    private static bool Bool(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
+
+    private static long Number(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+            ? value.GetInt64()
+            : 0;
 }
 
 internal sealed record ToolResult(string Text);

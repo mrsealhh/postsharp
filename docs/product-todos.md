@@ -564,7 +564,8 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] 第一批命令：`suite list/get/validate/run`。
 - [x] 第二批命令：`suite runs/rerun-failed/continue`、`request send`、`audit list`。
 - [x] `mcp-stdio` 桥接：兼容只支持 stdio MCP 的 harness。
-- [ ] JUnit XML / HTML 报告。
+- [x] JUnit XML：`suite run/rerun-failed/continue --junit <文件>`。
+- [ ] HTML/Markdown 测试报告和 CI 样例。
 - [ ] 以 `/postsharp:mcp ...` 形式包装 CLI，供 AI 客户端调用。
 - [ ] 将 CLI 产物纳入 Windows/Linux/macOS 发布包或独立 Release 资产。
 
