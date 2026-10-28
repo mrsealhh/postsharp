@@ -215,6 +215,20 @@
                                     </arc:Button>
                                     <arc:Button
                                         Variant="Secondary"
+                                        Width="38"
+                                        Padding="0"
+                                        Command="{Binding OpenCookieDialogCommand}"
+                                        ToolTip.Tip="Cookie 管理"
+                                        AutomationProperties.Name="Cookie 管理"
+                                    >
+                                        <arc:ArcGlyph
+                                            Data="{x:Static arc:ArcIcons.Cookie}"
+                                            Size="15"
+                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                        />
+                                    </arc:Button>
+                                    <arc:Button
+                                        Variant="Secondary"
                                         Command="{Binding OpenMcpFromGuideCommand}"
                                     >
                                         <controls:IconLabel

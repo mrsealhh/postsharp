@@ -358,17 +358,8 @@ public sealed class HttpRequestService
             Error: message
         );
 
-    private static HttpClient CreateClient()
-    {
-        var handler = new HttpClientHandler
-        {
-            AutomaticDecompression = DecompressionMethods.All,
-            AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 10,
-        };
-
-        return new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
-    }
+    private static HttpClient CreateClient() =>
+        new(SessionCookieJar.CreateHandler()) { Timeout = Timeout.InfiniteTimeSpan };
 
     private static string GuessContentType(string path)
     {

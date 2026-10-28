@@ -1278,6 +1278,7 @@ public sealed class McpWorkspaceAdapter
             if (secret == true)
             {
                 _viewModel.ScrubAuditSecrets();
+                StorageCoordinator.Current.CompactLocalDatabase();
             }
 
             return new McpEnvironmentInfo(

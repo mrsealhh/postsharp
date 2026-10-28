@@ -35,6 +35,10 @@ public static class LocalSecretProtector
         return ProtectWithAes(value, purpose);
     }
 
+    public static bool IsProtected(string value) =>
+        value.StartsWith(DpapiPrefix, StringComparison.Ordinal)
+        || value.StartsWith(AesPrefix, StringComparison.Ordinal);
+
     public static string Unprotect(string value, string purpose)
     {
         if (string.IsNullOrEmpty(value))

@@ -465,6 +465,7 @@ public partial class MainWindow : Window
         nameof(MainWindowViewModel.IsAuditTrashOpen),
         nameof(MainWindowViewModel.IsAuditPurgeConfirmOpen),
         nameof(MainWindowViewModel.IsMcpDialogOpen),
+        nameof(MainWindowViewModel.IsCookieDialogOpen),
     ];
 
     private void EnsureAuxiliaryDialogs()

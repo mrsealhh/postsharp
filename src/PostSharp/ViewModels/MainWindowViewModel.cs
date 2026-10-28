@@ -302,6 +302,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public ObservableCollection<ResponseHeaderView> ResponseHeaders { get; } = new();
 
+    public ObservableCollection<SessionCookie> SessionCookies { get; } = new();
+
     public ImportViewModel Import { get; }
 
     public IReadOnlyList<string> Methods { get; } =
@@ -391,6 +393,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [ObservableProperty]
     private bool _isMcpDialogOpen;
+
+    [ObservableProperty]
+    private bool _isCookieDialogOpen;
+
+    [ObservableProperty]
+    private string _cookieHostText = "尚未读取 Cookie";
+
+    [ObservableProperty]
+    private bool _hasCookies;
+
+    private Uri? _cookieUri;
 
     [ObservableProperty]
     private bool _isManagementOpen;
@@ -1725,6 +1738,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     public bool HasOpenDialog =>
         IsEnvironmentDialogOpen
         || IsMcpDialogOpen
+        || IsCookieDialogOpen
         || IsRenameDialogOpen
         || IsDeleteDialogOpen
         || IsHistoryTrashConfirmOpen
@@ -1845,6 +1859,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (IsMcpDialogOpen)
         {
             CloseMcpDialogCommand.Execute(null);
+            return true;
+        }
+
+        if (IsCookieDialogOpen)
+        {
+            CloseCookieDialogCommand.Execute(null);
             return true;
         }
 
@@ -3506,6 +3526,68 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private void OpenEnvironmentDialog() => IsEnvironmentDialogOpen = true;
 
     [RelayCommand]
+    private void OpenCookieDialog()
+    {
+        RefreshCookieState();
+        IsCookieDialogOpen = true;
+    }
+
+    [RelayCommand]
+    private void RefreshCookies() => RefreshCookieState();
+
+    [RelayCommand(CanExecute = nameof(CanClearCookies))]
+    private void ClearCookies()
+    {
+        if (_cookieUri is null || !HasCookies)
+        {
+            ShowToast("当前站点没有 Cookie");
+            return;
+        }
+
+        var host = _cookieUri.Host;
+        SessionCookieJar.Clear(_cookieUri);
+        RefreshCookieState();
+        ShowToast($"已清除 {host} 的 Cookie");
+    }
+
+    private bool CanClearCookies() => _cookieUri is not null && HasCookies;
+
+    private void RefreshCookieState()
+    {
+        SessionCookies.Clear();
+        _cookieUri = null;
+        try
+        {
+            var url = RequestComposer
+                .Compose(Editing, ActiveEnvironment, validateUploadFiles: false)
+                .Url;
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                _cookieUri = uri;
+                foreach (var cookie in SessionCookieJar.GetCookies(uri))
+                {
+                    SessionCookies.Add(cookie);
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "读取当前请求地址失败，无法刷新 Cookie");
+        }
+
+        HasCookies = SessionCookies.Count > 0;
+        CookieHostText =
+            _cookieUri is null ? "当前请求地址无法解析为绝对地址，无法读取 Cookie"
+            : HasCookies
+                ? $"{_cookieUri.GetLeftPart(UriPartial.Authority)} · {SessionCookies.Count} 个 Cookie"
+            : $"{_cookieUri.GetLeftPart(UriPartial.Authority)} · 当前站点没有 Cookie";
+        ClearCookiesCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand]
+    private void CloseCookieDialog() => IsCookieDialogOpen = false;
+
+    [RelayCommand]
     private void CloseMcpDialog() => IsMcpDialogOpen = false;
 
     [RelayCommand]
@@ -3514,6 +3596,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         IsEnvironmentDialogOpen = false;
         RefreshDerivedState();
         Persist();
+        if (
+            Environments.Any(environment =>
+                environment.Variables.Any(row => row.IsSecret && !string.IsNullOrEmpty(row.Value))
+            )
+        )
+        {
+            StorageCoordinator.Current.CompactLocalDatabase();
+        }
+
         ShowToast("环境变量已保存");
     }
 
@@ -7198,19 +7289,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         foreach (var environmentDto in workspace.Environments)
         {
-            var environment = new EnvironmentModel
-            {
-                Id = environmentDto.Id == Guid.Empty ? Guid.NewGuid() : environmentDto.Id,
-                Name = environmentDto.Name,
-            };
-
-            foreach (var row in environmentDto.Variables)
-            {
-                environment.Variables.AddRow(row.Key, row.Value, row.IsEnabled, row.IsSecret);
-            }
-
-            environment.Variables.EnsureTrailingRow();
-            Environments.Add(environment);
+            Environments.Add(WorkspaceStore.ToEnvironmentModel(environmentDto));
         }
 
         foreach (var historyDto in workspace.History.Take(100))
