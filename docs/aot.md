@@ -15,7 +15,7 @@ dotnet publish src/PostSharp/PostSharp.csproj -c Release -r win-x64 `
 powershell -ExecutionPolicy Bypass -File scripts/aot-smoke.ps1
 ```
 
-`-SkipPublish` 复用 `-PublishDirectory` 里已有的产物；`-RuntimeIdentifier` 可换成 Linux/macOS 目标。
+`-SkipPublish` 复用 `-PublishDirectory` 里已有的产物；不传 `-RuntimeIdentifier` 时按当前系统自动选择（`win-x64` / `linux-x64` / `osx-arm64` 等）。Linux/macOS 上用 PowerShell 7（`pwsh`）执行同一套脚本。
 
 ## 已验证
 
@@ -30,6 +30,32 @@ powershell -ExecutionPolicy Bypass -File scripts/aot-smoke.ps1
 | 持久化 | `update_settings` 写入后重启原生进程，设置仍然存在 |
 | 冒烟脚本 | 18 项检查通过，日志无 `[ERR]`、无反射序列化异常 |
 
+## 其他平台
+
+NativeAOT **不支持跨操作系统编译**，在 Windows 上执行 `-r linux-x64 -p:PublishAot=true` 会直接失败：
+
+```text
+error : Cross-OS native compilation is not supported.
+```
+
+因此 Linux / macOS 的 AOT 包必须在对应系统（或容器、CI runner）上构建和冒烟：
+
+| 平台 | 构建环境 | 命令 |
+| --- | --- | --- |
+| Linux x64 | .NET 10 SDK + `clang`、`zlib1g-dev`、`binutils`（Ubuntu/Debian：`sudo apt install -y clang zlib1g-dev binutils`）+ PowerShell 7 | `pwsh ./scripts/build-aot-release.ps1 -Version 1.10.23` |
+| macOS arm64 | macOS + Xcode Command Line Tools（`xcode-select --install`）+ PowerShell 7 | `pwsh ./scripts/build-aot-release.ps1 -Version 1.10.23 -RuntimeIdentifier osx-arm64` |
+| Windows x64 | VS 2022/2026 Build Tools（MSVC）+ .NET 10 SDK | `powershell -ExecutionPolicy Bypass -File scripts/build-aot-release.ps1 -Version 1.10.23` |
+
+构建后跑冒烟：
+
+```bash
+pwsh ./scripts/aot-smoke.ps1 -SkipPublish -PublishDirectory artifacts/PostSharp-1.10.23-aot-linux-x64
+```
+
+跨架构同样不支持（如 x64 主机直接产出 linux-arm64 / win-arm64 原生包），需要对应架构的工具链，或使用 `dotnet publish` 在目标架构机器上构建。
+
+**当前状态**：本机 WSL（`Microsoft-Windows-Subsystem-Linux`、`VirtualMachinePlatform`）未启用，也没有 Docker，所以这里只实际验证了 `win-x64`；Linux/macOS 的 AOT 构建与冒烟需要在目标环境执行。代码侧没有平台相关反射，跨平台风险主要来自 SkiaSharp / Avalonia / SQLite 原生库在目标系统的链接，建议在正式发布 Linux/macOS AOT 包前各跑一次冒烟。GitHub Actions（`ubuntu-latest` + `macos-latest`）可以自动化这一步，但仓库目前没有 CI，需要产品负责人确认后再加。
+
 ## 关键改动
 
 - 本地文档（设置、工作区、套件、审计、存储配置、待安装更新、OpenAPI 操作文档）全部改用 source-generated JSON（`DataJsonContext`），不再走反射序列化。
@@ -42,5 +68,5 @@ powershell -ExecutionPolicy Bypass -File scripts/aot-smoke.ps1
 
 - 进程内存储插件依赖 `AssemblyLoadContext` 和反射实例化，NativeAOT 下不可用：`StoragePluginRegistry.Refresh()` 直接返回提示并回退本地 SQLite，设置页仍显示远程配置但不能加载插件。需要远程存储时请使用 JIT 包。
 - `Google.Protobuf` 3.19.4 自身仍会给出 IL2104 / IL3053 告警；gRPC 一元调用在冒烟中可用，但复杂 `Any` / 自定义选项类型未验证。
-- AOT 产物不进入 `scripts/build-*-release.ps1` 的三平台主包：由 `scripts/build-aot-release.ps1` 单独产出 ZIP，随同版本 Release 发布。当前只在 Windows 上构建 `win-x64`；Linux/macOS 的 NativeAOT 需要对应平台工具链。产物未签名/公证。
+- AOT 产物不进入 `scripts/build-*-release.ps1` 的三平台主包：由 `scripts/build-aot-release.ps1` 单独产出 ZIP，随同版本 Release 发布。目前 Release 只上传 `win-x64` AOT 包；Linux/macOS 需在对应平台构建后再上传。产物未签名/公证。
 - 裁剪是 NativeAOT 默认行为，若后续新增反射式序列化或动态加载代码，`scripts/aot-smoke.ps1` 会在启动或工具调用阶段暴露问题，提交前应运行一次。

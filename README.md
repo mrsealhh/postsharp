@@ -230,6 +230,8 @@ powershell -ExecutionPolicy Bypass -File scripts/aot-smoke.ps1
 
 冒烟脚本会构建原生产物、启动进程，并通过 MCP 走完集合/环境/套件/历史/审计/发送/持久化重启检查。支持范围、已验证结果和限制见 [docs/aot.md](docs/aot.md)。
 
+NativeAOT 不支持跨操作系统编译（Windows 上构建 Linux 包会报 `Cross-OS native compilation is not supported`）：Linux/macOS 需在对应系统安装 SDK + clang / Xcode 后用 PowerShell 7 执行同一脚本，`-RuntimeIdentifier` 会按当前系统自动选择；跨架构（linux-arm64 / win-arm64）同样需要目标架构工具链。
+
 ### Apifox 迁移
 
 Apifox 的原生格式暂未直接解析；当前推荐三条官方导出路径，PostSharp 已经有对应导入器：

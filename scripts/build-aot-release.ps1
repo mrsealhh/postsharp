@@ -1,12 +1,31 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
-    [string]$RuntimeIdentifier = "win-x64",
+    [string]$RuntimeIdentifier = "",
     [switch]$KeepPlugins
 )
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "zip-directory.ps1")
+
+# Windows PowerShell 5.1 leaves $IsWindows undefined; PowerShell 7 sets it on every platform.
+$isWindowsHost = $true
+if ($null -ne $IsWindows) {
+    $isWindowsHost = $IsWindows
+}
+
+$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+if ([string]::IsNullOrWhiteSpace($RuntimeIdentifier)) {
+    if ($isWindowsHost) {
+        $RuntimeIdentifier = if ($architecture -eq "Arm64") { "win-arm64" } else { "win-x64" }
+    }
+    elseif ($IsMacOS) {
+        $RuntimeIdentifier = if ($architecture -eq "Arm64") { "osx-arm64" } else { "osx-x64" }
+    }
+    else {
+        $RuntimeIdentifier = if ($architecture -eq "Arm64") { "linux-arm64" } else { "linux-x64" }
+    }
+}
 
 $Version = $Version.Trim().TrimStart("v", "V")
 $root = Split-Path -Parent $PSScriptRoot
@@ -44,7 +63,7 @@ if (Test-Path $vswhere) {
     }
 }
 
-if ($vsDevCmd -and $RuntimeIdentifier -like "win*") {
+if ($vsDevCmd -and $isWindowsHost -and $RuntimeIdentifier -like "win*") {
     # NativeAOT needs the MSVC linker, which is not on PATH in a plain shell.
     $batchPath = Join-Path $env:TEMP "postsharp-aot-publish-$PID.cmd"
     $lines = @(
@@ -111,4 +130,4 @@ Set-Content -Path $checksum -Value "$hash  $zipName" -Encoding ascii
 
 Write-Host "Package: $zip"
 Write-Host "SHA256:  $checksum"
-Write-Host "Smoke:   powershell -ExecutionPolicy Bypass -File scripts/aot-smoke.ps1 -SkipPublish -PublishDirectory `"$publish`""
+Write-Host "Smoke:   pwsh -File scripts/aot-smoke.ps1 -SkipPublish -PublishDirectory `"$publish`""

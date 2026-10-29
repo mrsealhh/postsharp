@@ -1,16 +1,44 @@
 param(
-    [string]$RuntimeIdentifier = "win-x64",
+    [string]$RuntimeIdentifier = "",
     [switch]$SkipPublish,
     [int]$StartupTimeoutSeconds = 60,
-    [string]$PublishDirectory = "artifacts\aot-smoke"
+    [string]$PublishDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
 
+# Windows PowerShell 5.1 leaves $IsWindows undefined; PowerShell 7 sets it on every platform.
+$isWindowsHost = $true
+if ($null -ne $IsWindows) {
+    $isWindowsHost = $IsWindows
+}
+
+$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+if ([string]::IsNullOrWhiteSpace($RuntimeIdentifier)) {
+    if ($isWindowsHost) {
+        $RuntimeIdentifier = if ($architecture -eq "Arm64") { "win-arm64" } else { "win-x64" }
+    }
+    elseif ($IsMacOS) {
+        $RuntimeIdentifier = if ($architecture -eq "Arm64") { "osx-arm64" } else { "osx-x64" }
+    }
+    else {
+        $RuntimeIdentifier = if ($architecture -eq "Arm64") { "linux-arm64" } else { "linux-x64" }
+    }
+}
+
 $root = Split-Path -Parent $PSScriptRoot
-$project = Join-Path $root "src\PostSharp\PostSharp.csproj"
+$project = Join-Path $root "src/PostSharp/PostSharp.csproj"
+if ([string]::IsNullOrWhiteSpace($PublishDirectory)) {
+    $PublishDirectory = "artifacts/aot-smoke-$RuntimeIdentifier"
+}
+
 $publishPath = Join-Path $root $PublishDirectory
-$executable = Join-Path $publishPath "PostSharp.exe"
+$executableName = "PostSharp"
+if ($isWindowsHost) {
+    $executableName = "PostSharp.exe"
+}
+
+$executable = Join-Path $publishPath $executableName
 
 if (-not $SkipPublish) {
     if (Test-Path $publishPath) {
@@ -33,7 +61,7 @@ if ($running) {
     throw "Close the running PostSharp instance first: the single-instance guard would make this smoke drive the wrong process."
 }
 
-$dataDirectory = Join-Path $env:TEMP ("postsharp-aot-smoke-" + [Guid]::NewGuid().ToString("N"))
+$dataDirectory = Join-Path ([IO.Path]::GetTempPath()) ("postsharp-aot-smoke-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
 $env:POSTSHARP_DATA_DIR = $dataDirectory
 
