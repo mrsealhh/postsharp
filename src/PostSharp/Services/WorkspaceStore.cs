@@ -648,6 +648,9 @@ public sealed class WorkspaceStore
             FollowRedirects = dto.FollowRedirects,
             BodyMode = dto.BodyMode,
             Body = dto.Body,
+            GraphQlQuery = dto.GraphQlQuery,
+            GraphQlVariables = dto.GraphQlVariables,
+            GraphQlOperationName = dto.GraphQlOperationName,
             UploadFilePath = dto.UploadFiles.Count == 0 ? dto.UploadFilePath : string.Empty,
             UploadFieldName = string.IsNullOrWhiteSpace(dto.UploadFieldName)
                 ? "file"
@@ -717,6 +720,9 @@ public sealed class WorkspaceStore
             FollowRedirects = dto.FollowRedirects,
             BodyMode = dto.BodyMode,
             Body = HistoryEntry.LimitBody(dto.Body),
+            GraphQlQuery = dto.GraphQlQuery,
+            GraphQlVariables = dto.GraphQlVariables,
+            GraphQlOperationName = dto.GraphQlOperationName,
             StatusCode = dto.StatusCode,
             DurationMs = dto.DurationMs,
             Params = dto.Params.ToList(),
@@ -736,6 +742,9 @@ public sealed class WorkspaceStore
             FollowRedirects = entry.FollowRedirects,
             BodyMode = entry.BodyMode,
             Body = HistoryEntry.LimitBody(entry.Body),
+            GraphQlQuery = entry.GraphQlQuery,
+            GraphQlVariables = entry.GraphQlVariables,
+            GraphQlOperationName = entry.GraphQlOperationName,
             StatusCode = entry.StatusCode,
             DurationMs = entry.DurationMs,
             Params = entry.Params.ToList(),
@@ -755,6 +764,9 @@ public sealed class WorkspaceStore
             FollowRedirects = request.FollowRedirects,
             BodyMode = request.BodyMode,
             Body = request.Body,
+            GraphQlQuery = request.GraphQlQuery,
+            GraphQlVariables = request.GraphQlVariables,
+            GraphQlOperationName = request.GraphQlOperationName,
             UploadFilePath = request.UploadFilePath,
             UploadFieldName = request.UploadFieldName,
             UploadFiles = request
@@ -900,6 +912,12 @@ public sealed class RequestDto
 
     public string Body { get; set; } = string.Empty;
 
+    public string GraphQlQuery { get; set; } = string.Empty;
+
+    public string GraphQlVariables { get; set; } = "{}";
+
+    public string GraphQlOperationName { get; set; } = string.Empty;
+
     public string UploadFilePath { get; set; } = string.Empty;
 
     public string UploadFieldName { get; set; } = "file";
@@ -978,6 +996,12 @@ public sealed class HistoryDto
     public string BodyMode { get; set; } = "None";
 
     public string Body { get; set; } = string.Empty;
+
+    public string GraphQlQuery { get; set; } = string.Empty;
+
+    public string GraphQlVariables { get; set; } = "{}";
+
+    public string GraphQlOperationName { get; set; } = string.Empty;
 
     public int StatusCode { get; set; }
 

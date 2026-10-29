@@ -23,6 +23,12 @@ public sealed class ImportedRequest
 
     public required string Body { get; init; }
 
+    public string GraphQlQuery { get; init; } = string.Empty;
+
+    public string GraphQlVariables { get; init; } = "{}";
+
+    public string GraphQlOperationName { get; init; } = string.Empty;
+
     public int TimeoutSeconds { get; init; }
 
     public string UploadFilePath { get; init; } = string.Empty;

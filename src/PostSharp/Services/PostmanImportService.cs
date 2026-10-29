@@ -188,6 +188,9 @@ public static class PostmanImportService
             Url = parsedUrl.Url,
             BodyMode = body.Mode,
             Body = body.Body,
+            GraphQlQuery = body.GraphQlQuery,
+            GraphQlVariables = body.GraphQlVariables,
+            GraphQlOperationName = body.GraphQlOperationName,
             UploadFilePath = body.UploadFilePath,
             UploadFieldName = body.UploadFieldName,
         };
@@ -460,8 +463,28 @@ public static class PostmanImportService
             return BodyImport.Empty;
         }
 
-        context.Warnings.Add("GraphQL 请求体已转换为文本，Variables 未自动转换。");
-        return new BodyImport("Text", query, string.Empty, "file", []);
+        var variablesNode = graphql?["variables"];
+        var variables = variablesNode switch
+        {
+            JsonObject variablesObject => variablesObject.ToJsonString(),
+            JsonValue => GetText(variablesNode),
+            _ => "{}",
+        };
+        if (string.IsNullOrWhiteSpace(variables))
+        {
+            variables = "{}";
+        }
+
+        return new BodyImport(
+            "GraphQL",
+            string.Empty,
+            string.Empty,
+            "file",
+            [],
+            query,
+            variables,
+            GetText(graphql?["operationName"])
+        );
     }
 
     private static BodyImport ParseUnknownBody(string mode, ImportContext context)
@@ -852,7 +875,10 @@ public static class PostmanImportService
         string Body,
         string UploadFilePath,
         string UploadFieldName,
-        List<ImportedField> FormFields
+        List<ImportedField> FormFields,
+        string GraphQlQuery = "",
+        string GraphQlVariables = "{}",
+        string GraphQlOperationName = ""
     )
     {
         public static BodyImport Empty { get; } =

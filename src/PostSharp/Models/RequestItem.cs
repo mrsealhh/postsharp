@@ -91,6 +91,15 @@ public partial class RequestItem : ObservableObject
     private string _body = string.Empty;
 
     [ObservableProperty]
+    private string _graphQlQuery = string.Empty;
+
+    [ObservableProperty]
+    private string _graphQlVariables = "{}";
+
+    [ObservableProperty]
+    private string _graphQlOperationName = string.Empty;
+
+    [ObservableProperty]
     private string _uploadFilePath = string.Empty;
 
     [ObservableProperty]
@@ -191,6 +200,9 @@ public partial class RequestItem : ObservableObject
             FollowRedirects = FollowRedirects,
             BodyMode = BodyMode,
             Body = Body,
+            GraphQlQuery = GraphQlQuery,
+            GraphQlVariables = GraphQlVariables,
+            GraphQlOperationName = GraphQlOperationName,
             Owner = Owner,
             Auth = copyAuthorization ? Auth.Clone() : Auth,
         };

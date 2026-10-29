@@ -1601,6 +1601,10 @@
                                                             Label="文本"
                                                         />
                                                         <arc:SegmentedOption
+                                                            Value="GraphQL"
+                                                            Label="GraphQL"
+                                                        />
+                                                        <arc:SegmentedOption
                                                             Value="Multipart"
                                                             Label="表单上传"
                                                         />
@@ -1680,6 +1684,60 @@
                                                         SearchPlaceholder="搜索请求体键和值"
                                                         AutomationProperties.Name="JSON 请求体"
                                                     />
+
+                                                    <Grid
+                                                        IsVisible="{Binding IsGraphQlBody}"
+                                                        RowDefinitions="Auto,*"
+                                                        RowSpacing="8"
+                                                    >
+                                                        <Grid
+                                                            ColumnDefinitions="*,*"
+                                                            ColumnSpacing="8"
+                                                        >
+                                                            <arc:Input
+                                                                Label="Operation name（可选）"
+                                                                Text="{Binding Editing.GraphQlOperationName, Mode=TwoWay}"
+                                                                AutomationProperties.Name="GraphQL Operation name"
+                                                            />
+                                                            <TextBlock
+                                                                Grid.Column="1"
+                                                                Text="Variables 必须是 JSON 对象；Query 和 Variables 都可以使用 {{变量}}。"
+                                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                                TextWrapping="Wrap"
+                                                                VerticalAlignment="Center"
+                                                            />
+                                                        </Grid>
+                                                        <Grid
+                                                            Grid.Row="1"
+                                                            ColumnDefinitions="1.25*,*"
+                                                            ColumnSpacing="8"
+                                                        >
+                                                            <arc:Textarea
+                                                                Text="{Binding Editing.GraphQlQuery, Mode=TwoWay}"
+                                                                IsLabelVisible="False"
+                                                                IsResizable="False"
+                                                                FrameHeight="260"
+                                                                MinHeight="100"
+                                                                FontFamily="{DynamicResource PostSharpCodeFont}"
+                                                                FontSize="{DynamicResource PostSharpCodeFontSize}"
+                                                                Placeholder="query { viewer { id name } }"
+                                                                AutomationProperties.Name="GraphQL Query"
+                                                            />
+                                                            <arc:Textarea
+                                                                Grid.Column="1"
+                                                                Text="{Binding Editing.GraphQlVariables, Mode=TwoWay}"
+                                                                IsLabelVisible="False"
+                                                                IsResizable="False"
+                                                                FrameHeight="260"
+                                                                MinHeight="100"
+                                                                FontFamily="{DynamicResource PostSharpCodeFont}"
+                                                                FontSize="{DynamicResource PostSharpCodeFontSize}"
+                                                                Placeholder="{}{ &quot;id&quot;: 1 }"
+                                                                AutomationProperties.Name="GraphQL Variables"
+                                                            />
+                                                        </Grid>
+                                                    </Grid>
 
                                                     <Grid
                                                         IsVisible="{Binding IsMultipartBody}"
