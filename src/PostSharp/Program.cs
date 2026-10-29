@@ -1,11 +1,10 @@
 using System.Text;
-using AtomUI;
-using AtomUI.Desktop.Controls;
 using Avalonia;
 using PostSharp.Models;
 using PostSharp.Services;
 using TKCode.Arc;
 using TKCode.Arc.Fonts;
+using TKCode.Arc.Themes.Corners;
 
 namespace PostSharp;
 
@@ -105,11 +104,11 @@ internal static class Program
         return builder
             .WithInterFont()
             .WithArcFonts()
-            .UseAtomUI(builder =>
-            {
-                builder.UseDesktopControls();
-                builder.UseArc();
-                builder.UseArcWorkflow();
-            });
+            .UseArc(arc =>
+                arc.UseArcControls()
+                    .UseArcWorkflow()
+                    .UseArcCorners()
+                    .WithTheme(theme => theme.Appearance(ArcAppearance.System))
+            );
     }
 }

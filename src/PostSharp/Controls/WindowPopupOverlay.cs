@@ -7,7 +7,7 @@ namespace PostSharp.Controls;
 
 /// <summary>
 /// Arc 的弹层（Select、菜单、ToolTip）在窗口内渲染，依赖窗口自带的弹出层。
-/// AtomUI 的窗口模板不创建该层，Avalonia 的 VisualLayerManager 又默认关闭它，
+/// 窗口模板不一定创建该层，Avalonia 的 VisualLayerManager 又默认关闭它，
 /// 弹层拿不到原生 popup 时就会抛 "no overlay layer is found for the target control"。
 /// </summary>
 public static class WindowPopupOverlay

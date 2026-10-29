@@ -1,7 +1,7 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
 > 基线版本：v1.10.22（2026-10-29）
-> 基线形态：Windows x64 / Linux x64 / macOS arm64 三类 ZIP（含按平台裁剪的存储插件），CLI 独立发布；.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
+> 基线形态：Windows x64 / Linux x64 / macOS arm64 三类 ZIP（含按平台裁剪的存储插件），CLI 独立发布；.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.2-preview.1
 > 基线测试：222 个 xUnit 测试，`csharpier check .` 通过
 > 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.10.22
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
@@ -137,7 +137,7 @@
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
 | 平台 | Windows 10/11 x64 正式支持；Linux x64 / macOS arm64 预览包已进入构建验证，未签名/未公证 |
-| 版本锁定 | Avalonia 12.1.4、TKCode.Arc 0.3.1-preview.3、SDK 10.0.100，不随意升级 |
+| 版本锁定 | Avalonia 12.1.4、TKCode.Arc 0.3.2-preview.1、SDK 10.0.100，不随意升级 |
 
 ### 2.3 当前技术债与风险
 
@@ -155,6 +155,7 @@
 | MCP | 仅回环监听；已支持可选本机 token 和只读模式；无 SSE 通知、无细粒度工具权限；工具 70 个但以原子操作为主 | 本机其他进程可尝试调用（启用 token 后受控）；多客户端能力有限；AI 完成一个意图的调用次数偏多 |
 | 协议深度 | SOAP 仅浅层 WSDL；gRPC 仅一元+反射；WS/SIO/TCP 为单轮消息 | 复杂企业协议和常驻会话场景仍需补课，不能对外承诺“全协议” |
 | 包体与依赖 | 自包含包约 73 MB；新增 gRPC/Google.Protobuf 依赖 | 继续加协议会推高包体和启动成本，必须模块化 |
+| AOT / 裁剪 | Arc 0.3.2 已移除 AtomUI 并声明 AOT 安全；试编译可生成约 58 MB 原生 exe，但启动时在 `SuiteStore.Save` 因 System.Text.Json 反射序列化被禁用而失败；插件 AssemblyLoadContext 和部分 Avalonia 资源加载仍有 AOT 警告；正式包仍为 JIT 自包含 | 暂不能把 NativeAOT 作为正式发布形态；需 source-generated JSON、插件静态根和 AOT 启动/请求/持久化冒烟后再评估 |
 | 定时套件 | 依赖应用内 DispatcherTimer，应用关闭后不执行 | 不能作为无人值守回归服务 |
 | 可观测性 | Serilog 文件日志 + 数据提示条，无崩溃转储/诊断包 | 用户问题定位依赖手工收集 |
 | 国际化 | 界面和文案以中文为主 | 海外用户和英文文档扩展受限 |
@@ -170,6 +171,7 @@
 - [ ] 录制 → 回放 → 套件生成 → CI 报告 → 运行 diff 的完整链路。
 - [ ] 冷启动、空闲内存、包体、1 万条历史/审计和大响应的性能门禁。
 - [ ] gRPC 流式与 `.proto`/descriptor 导入；SOAP WS-Security/MTOM；常驻 WS/SIO 会话；MQTT 按客户立项。
+- [ ] NativeAOT/trimming 发布与启动冒烟；试编译已生成原生 exe，但启动时 System.Text.Json 反射序列化被禁用导致 `SuiteStore.Save` 失败；需 source-generated JSON 和插件静态根后再评估，正式包保持 JIT 自包含。
 
 ## 3. 优先级、规模与完成定义
 
@@ -374,7 +376,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | P1-10 | 性能与规模化 | 历史/审计/大树、10k 记录、大响应和长时间运行未做基准；软件渲染默认；冷启动/空闲内存无门禁 | 冷启动 < 1.5s、空闲内存 < 150MB；建立启动、内存、列表滚动、响应渲染基线；列表虚拟化；大数据集不卡顿；内存上限可诊断 | M |
 | P1-11 | 可维护性拆分 | `MainWindowViewModel`、`MainWindow.axaml` 过大；静态服务和 `async void` 增加测试难度 | 拆分请求编辑、历史、树、套件、OpenAPI、设置子 VM/控件；导入对话框独立 XAML；关键异步有取消和异常出口 | L |
 | P1-12 | 首次使用与文档 | 初始演示可用，但无首次引导、无“重置演示数据”、错误帮助入口；文档和截图容易过期 | 首次启动 3 步引导；可重置演示工作区；每条错误有下一步；README/截图由演示数据生成 | S/M |
-| P1-13 | 轻量化与分发 | 三平台自包含包约 73 MB；无 winget/scoop/brew；无框架依赖/精简包选项；启动与空闲内存无门禁 | 冷启动 < 1.5s、空闲内存 < 150MB、Windows 包 ≤ 75MB；提供便携包与包管理器清单；启动/内存纳入冒烟 | M |
+| P1-13 | 轻量化与分发 | 三平台自包含包约 73 MB；无 winget/scoop/brew；无框架依赖/精简包选项；启动与空闲内存无门禁；NativeAOT/裁剪未纳入发布流程 | 冷启动 < 1.5s、空闲内存 < 150MB、Windows 包 ≤ 75MB；提供便携包与包管理器清单；启动/内存纳入冒烟；AOT 仅作为实验通道，需先消除 JSON 反射和插件动态加载风险 | M |
 | P1-14 | MCP 意图层与会话 | 70 个工具以 CRUD/单次发送为主；长任务、流式会话、大内容、权限和幂等语义不统一 | 增加意图工具、会话 job、资源化大内容、token/只读权限、结构化错误和幂等键；单意图平均调用次数下降 | L |
 | P1-15 | 录制回放与回归闭环 | HAR 只能导入；无浏览器/代理录制、无回放、无“从流量生成套件”；运行 diff 缺失 | 录制 → 回放 → 生成套件 → CI 报告 → 运行 diff 全链路可演示；失败步骤可定位 | L/XL |
 | P1-16 | 场景模板与分享 | 无场景模板库、无可分享的 `.postsharp` 场景文件；新用户从零搭建 | 内置 8–10 个场景模板；一键导入/导出场景；模板可审计、可版本化 | M |
