@@ -889,6 +889,7 @@ docs/
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
 | Arc 0.3.2 | 升级 `TKCode.Arc` 到 `0.3.2-preview.1`，移除 AtomUI 传递依赖；启动改用 `UseArc(...)`，主题改用 `ArcTheme.Apply`；构建、222 个测试、主窗口启动和控件渲染通过 |
 | Arc 主题与弹层 | 浅色/深色启动正常；协议 Select 弹层、ToolTip 和主界面控件渲染正常 |
+| 1.10.23 发布 | 三平台 ZIP + NativeAOT ZIP 及各自 SHA256 已上传 GitHub Release（`v1.10.23`），全部下载地址返回 200；AOT 冒烟在最终产物目录复跑 18 项通过 |
 | NativeAOT | `PublishAot=true` 生成约 63 MB 原生 exe；全部本地文档与 MCP 结果改用 source-generated JSON，存储插件在 AOT 下自动回退本地 SQLite；`scripts/aot-smoke.ps1` 18 项检查通过（启动、70 个 MCP 工具、集合/环境/套件/历史/审计/发送/套件运行/设置重启持久化），日志无异常，自有代码 0 条 IL 告警 |
 | 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：228 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
@@ -915,7 +916,7 @@ docs/
 | 机密变量落盘 | 机密环境变量在 Capture 后为 DPAPI/AES-GCM 密文，ToEnvironmentModel 可还原原值；旧明文读取保持兼容（单测） |
 | 机密落盘复测 | MCP `set_variable secret=true` 后停止应用，在 `postsharp.db`、WAL 与日志中搜索示例令牌均无明文；工作区只保留 `dpapi:v1:` 密文 |
 | MCP 常驻 | 页面模式关闭窗口进程存活；后台模式关闭客户端后只剩一个 `--mcp-service` 进程，CLI 仍可用；再次打开客户端会停止服务并接管；重复启动第二个服务会因单实例锁退出 |
-| 发布体积 | 三平台均为自包含；删除插件 RID 和非目标平台 runtimes 后约 Windows 73 MB、Linux 72 MB、macOS 73 MB；CLI 独立发布 |
+| 发布体积 | 1.10.23 三平台自包含包：Windows 65.7 MB、Linux 65.3 MB、macOS 66.5 MB（移除 AtomUI 后比 1.10.22 小约 7 MB）；NativeAOT 包 33.1 MB；CLI 独立发布 |
 | 套件编排布局 | 右侧明细禁用横向滚动；汇合方式/并行组改为显式标签并单独换行，长说明不再撑宽左列 |
 | Postman 导出 | 集合右键「导出 Postman」直接生成 v2.1 Collection；选中集合导出后 JSON 结构、请求名和 URL 通过单测 |
 | GraphQL | Query、Variables、Operation name 自动组成 POST JSON；Variables 必须是 JSON 对象；Postman Collection 导出/导入往返通过单测 |
@@ -1089,7 +1090,7 @@ master                 稳定可发布
 ### 当前 MVP 限制
 
 - 存储插件在进程内加载，权限等同当前用户程序，不支持热卸载；替换同名插件后建议重启应用。
-- 正式发布包是自包含 JIT；NativeAOT 是已验证的可选通道（见 [docs/aot.md](docs/aot.md)）：本地文档和 MCP 结果已全部改为 source-generated JSON，设置通过显式转换器读写，`scripts/aot-smoke.ps1` 覆盖启动、MCP 工具、发送、套件和重启持久化。限制是 NativeAOT 下进程内存储插件不可用（依赖 `AssemblyLoadContext`，自动回退本地 SQLite），`Google.Protobuf` 依赖仍带 IL2104/IL3053 告警，AOT 产物暂不进入三平台发布包。
+- 正式发布包是自包含 JIT；NativeAOT 是已验证的可选通道（见 [docs/aot.md](docs/aot.md)）：本地文档和 MCP 结果已全部改为 source-generated JSON，设置通过显式转换器读写，`scripts/aot-smoke.ps1` 覆盖启动、MCP 工具、发送、套件和重启持久化。限制是 NativeAOT 下进程内存储插件不可用（依赖 `AssemblyLoadContext`，自动回退本地 SQLite），`Google.Protobuf` 依赖仍带 IL2104/IL3053 告警，AOT 产物不进入三平台主包，由 `scripts/build-aot-release.ps1` 生成 `PostSharp-aot-win-x64.zip` 随同版本 Release 发布。
 - OpenAPI 同步按 `METHOD + 路径` 匹配；导入不再限制操作数量，保留循环引用和网络超时保护。Webhook / callback 与运行时响应校验未实现。
 - SSE 取消后可用 `Last-Event-ID` 手动「继续」；自动重连和从任意断点恢复仍依赖服务端支持。
 - multipart 已支持多文件、64KB 流式上传、进度和取消；断点续传、分片上传协议和超大文件校验未实现。
