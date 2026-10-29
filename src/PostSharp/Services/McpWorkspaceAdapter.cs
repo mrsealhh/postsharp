@@ -173,7 +173,8 @@ public sealed record McpAuditSummary(
     long ElapsedMs,
     bool IsSuccess,
     bool IsSse,
-    int SseEventCount
+    int SseEventCount,
+    string Permission
 );
 
 public sealed record McpSendResult(
@@ -201,7 +202,7 @@ public sealed record McpSendResult(
     public const int BodyLimit = 30000;
 }
 
-public sealed record McpCallContext(string Tool, string? Client);
+public sealed record McpCallContext(string Tool, string? Client, string Permission = "ReadWrite");
 
 public sealed record McpSettingsInfo(
     string Theme,
@@ -221,7 +222,9 @@ public sealed record McpSettingsInfo(
     string SseContentPath,
     bool AutoCheckUpdates,
     bool KeepMcpResident,
-    string McpServiceMode
+    string McpServiceMode,
+    bool McpRequireToken,
+    bool McpReadOnly
 );
 
 public sealed record McpSettingsDraft(
@@ -786,7 +789,8 @@ public sealed class McpWorkspaceAdapter
                 "MCP",
                 context.Tool,
                 context.Client,
-                secrets
+                secrets,
+                context.Permission
             );
             return true;
         });
@@ -947,7 +951,8 @@ public sealed class McpWorkspaceAdapter
                         entry.ElapsedMs,
                         entry.IsSuccess,
                         entry.IsSse,
-                        entry.SseEventCount
+                        entry.SseEventCount,
+                        entry.Permission
                     ))
                     .ToList()
         );
@@ -1634,7 +1639,9 @@ public sealed class McpWorkspaceAdapter
                 settings.SseContentPath,
                 settings.AutoCheckUpdates,
                 settings.KeepMcpResident,
-                settings.McpServiceMode
+                settings.McpServiceMode,
+                settings.McpRequireToken,
+                settings.McpReadOnly
             );
         });
     }
@@ -2144,7 +2151,9 @@ public sealed class McpWorkspaceAdapter
             settings.SseContentPath,
             settings.AutoCheckUpdates,
             settings.KeepMcpResident,
-            settings.McpServiceMode
+            settings.McpServiceMode,
+            settings.McpRequireToken,
+            settings.McpReadOnly
         );
 
     private static McpStorageConfigInfo ToStorageInfo(StorageConfig config) =>
@@ -2190,7 +2199,8 @@ public sealed class McpWorkspaceAdapter
             entry.ElapsedMs,
             entry.IsSuccess,
             entry.IsSse,
-            entry.SseEventCount
+            entry.SseEventCount,
+            entry.Permission
         );
 
     private RequestItem? FindRequest(Guid id) =>

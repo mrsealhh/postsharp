@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -44,6 +45,36 @@ public partial class SettingsViewModel : ObservableObject
         SelectedStorageProfile = StorageProfiles.FirstOrDefault();
         _updateStatusMessage = InitialUpdateStatus();
         RefreshFontState();
+    }
+
+    public string McpTokenValue =>
+        string.IsNullOrWhiteSpace(Draft.McpTokenCipher)
+            ? string.Empty
+            : McpTokenService.Unprotect(Draft.McpTokenCipher);
+
+    [RelayCommand]
+    private void RegenerateMcpToken()
+    {
+        Draft.RegenerateMcpToken();
+        OnPropertyChanged(nameof(McpTokenValue));
+        StatusMessage = "已生成新的 MCP token，点击「保存设置」后生效。";
+    }
+
+    private void OnDraftPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AppSettings.McpRequireToken))
+        {
+            if (Draft.McpRequireToken && string.IsNullOrWhiteSpace(Draft.McpTokenCipher))
+            {
+                Draft.RegenerateMcpToken();
+            }
+
+            OnPropertyChanged(nameof(McpTokenValue));
+        }
+        else if (e.PropertyName == nameof(AppSettings.McpTokenCipher))
+        {
+            OnPropertyChanged(nameof(McpTokenValue));
+        }
     }
 
     private void RefreshStorageProviderOptions()
@@ -628,6 +659,10 @@ public partial class SettingsViewModel : ObservableObject
         Draft.HistoryCollapsed = defaults.HistoryCollapsed;
         Draft.AutoCheckUpdates = defaults.AutoCheckUpdates;
         Draft.McpServiceMode = defaults.McpServiceMode;
+        Draft.McpRequireToken = defaults.McpRequireToken;
+        Draft.McpReadOnly = defaults.McpReadOnly;
+        Draft.McpTokenCipher = defaults.McpTokenCipher;
+        OnPropertyChanged(nameof(McpTokenValue));
         _fontDirectoriesPreviewActive = true;
         FontService.Reload(Draft.FontDirectories);
         RefreshFontState();
@@ -1040,6 +1075,13 @@ public partial class SettingsViewModel : ObservableObject
         _current.HistoryCollapsed = Draft.HistoryCollapsed;
         _current.AutoCheckUpdates = Draft.AutoCheckUpdates;
         _current.McpServiceMode = Draft.McpServiceMode;
+        _current.McpRequireToken = Draft.McpRequireToken;
+        _current.McpReadOnly = Draft.McpReadOnly;
+        _current.McpTokenCipher = Draft.McpTokenCipher;
+        if (_current.McpRequireToken)
+        {
+            _current.GetMcpToken();
+        }
     }
 
     private static AppSettings Clone(AppSettings source)
@@ -1070,6 +1112,9 @@ public partial class SettingsViewModel : ObservableObject
             HistoryCollapsed = source.HistoryCollapsed,
             AutoCheckUpdates = source.AutoCheckUpdates,
             McpServiceMode = source.McpServiceMode,
+            McpRequireToken = source.McpRequireToken,
+            McpReadOnly = source.McpReadOnly,
+            McpTokenCipher = source.McpTokenCipher,
         };
     }
 

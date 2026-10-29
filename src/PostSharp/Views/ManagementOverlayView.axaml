@@ -337,7 +337,7 @@
                                                     />
                                                 </WrapPanel>
 
-                                                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
                                                     <StackPanel Spacing="2">
                                                         <TextBlock
                                                             Text="客户端"
@@ -357,6 +357,17 @@
                                                         />
                                                         <TextBlock
                                                             Text="{Binding SelectedAuditEntry.ToolLabel}"
+                                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                        />
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" Spacing="2">
+                                                        <TextBlock
+                                                            Text="权限"
+                                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                        />
+                                                        <TextBlock
+                                                            Text="{Binding SelectedAuditEntry.PermissionLabel}"
                                                             Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                                         />
                                                     </StackPanel>

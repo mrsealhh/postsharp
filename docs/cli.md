@@ -11,6 +11,7 @@
 1. PostSharp 桌面端已启动，并开启设置中的「关闭窗口后保持 MCP 后台常驻」。
 2. 默认 MCP 地址为 `http://127.0.0.1:5199/mcp`。
 3. 自包含 CLI 包不需要额外运行时。
+4. 如果设置中启用了「MCP 访问控制 → 要求本机 token」，需要加 `--token <token>` 或设置环境变量 `POSTSHARP_MCP_TOKEN`；只读模式下发送/修改类命令会被拒绝。
 
 ## 命令
 
@@ -40,12 +41,13 @@ postsharp-cli mcp-stdio
 }
 ```
 
-Windows 可把 `command` 改为 `postsharp-cli.exe` 的绝对路径。桥接本身不启动 PostSharp，桌面端仍然需要运行。
+Windows 可把 `command` 改为 `postsharp-cli.exe` 的绝对路径。桥接本身不启动 PostSharp，桌面端仍然需要运行；启用 token 时在 `args` 中加 `"--token", "<token>"`（或给桥接进程设置 `POSTSHARP_MCP_TOKEN`）。
 
 通用选项：
 
 ```text
 --endpoint URL     默认 http://127.0.0.1:5199/mcp
+--token TOKEN      MCP 访问控制要求的本机 token；也可用 POSTSHARP_MCP_TOKEN
 --json             输出原始 JSON；进度信息写 stderr
 --timeout 秒       单次请求超时，默认 30 秒
 --client 名称      写入 MCP clientInfo
@@ -81,6 +83,10 @@ postsharp-cli suite run 6a1d... --json --junit test-results/postsharp.xml
 
 # 同时输出 Markdown / HTML 报告
 postsharp-cli suite run 6a1d... --markdown reports/suite.md --html reports/suite.html
+
+# 启用 MCP token 后
+postsharp-cli --token <token> suite list --json
+$env:POSTSHARP_MCP_TOKEN = "<token>"; postsharp-cli suite run <suiteId> --junit result.xml
 
 # 查看版本
 postsharp-cli --version

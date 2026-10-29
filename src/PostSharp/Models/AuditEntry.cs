@@ -35,6 +35,9 @@ public sealed partial class AuditEntry : ObservableObject
 
     public string? Client { get; set; }
 
+    /// <summary>UI, MCP ReadWrite or MCP ReadOnly; older records default by source.</summary>
+    public string Permission { get; set; } = "UI";
+
     public Guid? RequestId { get; set; }
 
     public string RequestName { get; set; } = string.Empty;
@@ -91,7 +94,8 @@ public sealed partial class AuditEntry : ObservableObject
     public string SourceLabel => Source == "MCP" ? "AI · MCP" : "UI";
 
     [JsonIgnore]
-    public string SourceTooltip => Source == "MCP" ? "AI 通过 MCP 发起" : "界面手动发送";
+    public string SourceTooltip =>
+        Source == "MCP" ? $"AI 通过 MCP 发起 · 权限 {Permission}" : "界面手动发送";
 
     [JsonIgnore]
     public object SourceIcon =>
@@ -133,6 +137,9 @@ public sealed partial class AuditEntry : ObservableObject
 
     [JsonIgnore]
     public string ToolLabel => string.IsNullOrWhiteSpace(Tool) ? "—" : Tool;
+
+    [JsonIgnore]
+    public string PermissionLabel => string.IsNullOrWhiteSpace(Permission) ? "UI" : Permission;
 
     [JsonIgnore]
     public BadgeTone SourceTone => Source == "MCP" ? BadgeTone.Info : BadgeTone.Neutral;

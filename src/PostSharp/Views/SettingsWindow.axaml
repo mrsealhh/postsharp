@@ -653,6 +653,61 @@
                             <Border Classes="settingsSection">
                                 <StackPanel Spacing="12">
                                     <TextBlock
+                                        Text="MCP 访问控制"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        FontWeight="Medium"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <TextBlock
+                                        Text="启用 token 后，客户端必须在 Authorization: Bearer &lt;token&gt; 中携带；只读模式只暴露查看、描述、导出等工具，发送、修改和删除会被拒绝。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
+                                    />
+                                    <arc:Switch
+                                        Content="要求本机 token"
+                                        IsChecked="{Binding Draft.McpRequireToken, Mode=TwoWay}"
+                                        AutomationProperties.Name="MCP 要求 token"
+                                    />
+                                    <arc:Switch
+                                        Content="只读模式（禁止发送、修改、删除）"
+                                        IsChecked="{Binding Draft.McpReadOnly, Mode=TwoWay}"
+                                        AutomationProperties.Name="MCP 只读模式"
+                                    />
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                        <arc:Input
+                                            Label="MCP token"
+                                            Text="{Binding McpTokenValue}"
+                                            IsReadOnly="True"
+                                            FontFamily="{DynamicResource PostSharpCodeFont}"
+                                            AutomationProperties.Name="MCP token"
+                                        />
+                                        <arc:CopyButton
+                                            Grid.Column="1"
+                                            Value="{Binding McpTokenValue}"
+                                            Label="复制 token"
+                                            Variant="Plain"
+                                        />
+                                        <arc:Button
+                                            Grid.Column="2"
+                                            Content="生成 / 重置"
+                                            Variant="Secondary"
+                                            Command="{Binding RegenerateMcpTokenCommand}"
+                                            AutomationProperties.Name="生成或重置 MCP token"
+                                        />
+                                    </Grid>
+                                    <TextBlock
+                                        Text="token 使用本机 DPAPI/AES 加密保存；修改后需要同步更新客户端配置。只读模式与 token 可独立启用。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
+                                    />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="settingsSection">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
                                         Text="SSE 自定义解析"
                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                         FontWeight="Medium"

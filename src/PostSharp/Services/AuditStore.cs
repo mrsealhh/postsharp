@@ -131,6 +131,7 @@ public sealed class AuditStore
                         Source TEXT NOT NULL,
                         Tool TEXT,
                         Client TEXT,
+                        Permission TEXT,
                         RequestId TEXT,
                         RequestName TEXT NOT NULL,
                         Method TEXT NOT NULL,
@@ -163,6 +164,8 @@ public sealed class AuditStore
                     """;
                 command.ExecuteNonQuery();
             }
+
+            EnsureColumn(connection, "AuditEntries", "Permission", "TEXT");
 
             if (_importLegacy)
             {
@@ -290,6 +293,9 @@ public sealed class AuditStore
             Source = reader.GetString(reader.GetOrdinal("Source")),
             Tool = GetNullableString(reader, "Tool"),
             Client = GetNullableString(reader, "Client"),
+            Permission =
+                GetNullableString(reader, "Permission")
+                ?? (reader.GetString(reader.GetOrdinal("Source")) == "MCP" ? "ReadWrite" : "UI"),
             RequestId = requestId,
             RequestName = reader.GetString(reader.GetOrdinal("RequestName")),
             Method = reader.GetString(reader.GetOrdinal("Method")),
@@ -314,6 +320,31 @@ public sealed class AuditStore
         };
     }
 
+    private static void EnsureColumn(
+        SqliteConnection connection,
+        string table,
+        string column,
+        string definition
+    )
+    {
+        using (var check = connection.CreateCommand())
+        {
+            check.CommandText = $"PRAGMA table_info({table});";
+            using var reader = check.ExecuteReader();
+            while (reader.Read())
+            {
+                if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+        }
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition};";
+        alter.ExecuteNonQuery();
+    }
+
     private static string? GetNullableString(SqliteDataReader reader, string column)
     {
         var ordinal = reader.GetOrdinal(column);
@@ -331,12 +362,12 @@ public sealed class AuditStore
         command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO AuditEntries (
-                Id, Timestamp, Source, Tool, Client, RequestId, RequestName, Method, Url,
+                Id, Timestamp, Source, Tool, Client, Permission, RequestId, RequestName, Method, Url,
                 Environment, StatusCode, StatusText, ElapsedMs, SizeBytes, IsSuccess, Error,
                 Curl, RequestHeaders, RequestBodyPreview, ResponseHeaders, ResponseBodyPreview,
                 ResponseContentType, IsSse, SseEventCount, AiThinking, AiContent, IsTrashed
             ) VALUES (
-                $id, $timestamp, $source, $tool, $client, $requestId, $requestName, $method, $url,
+                $id, $timestamp, $source, $tool, $client, $permission, $requestId, $requestName, $method, $url,
                 $environment, $statusCode, $statusText, $elapsedMs, $sizeBytes, $isSuccess, $error,
                 $curl, $requestHeaders, $requestBodyPreview, $responseHeaders, $responseBodyPreview,
                 $responseContentType, $isSse, $sseEventCount, $aiThinking, $aiContent, $isTrashed
@@ -346,6 +377,7 @@ public sealed class AuditStore
                 Source = excluded.Source,
                 Tool = excluded.Tool,
                 Client = excluded.Client,
+                Permission = excluded.Permission,
                 RequestId = excluded.RequestId,
                 RequestName = excluded.RequestName,
                 Method = excluded.Method,
@@ -377,6 +409,7 @@ public sealed class AuditStore
         command.Parameters.AddWithValue("$source", entry.Source);
         command.Parameters.AddWithValue("$tool", (object?)entry.Tool ?? DBNull.Value);
         command.Parameters.AddWithValue("$client", (object?)entry.Client ?? DBNull.Value);
+        command.Parameters.AddWithValue("$permission", entry.Permission);
         command.Parameters.AddWithValue(
             "$requestId",
             entry.RequestId is { } requestId ? requestId.ToString("D") : DBNull.Value

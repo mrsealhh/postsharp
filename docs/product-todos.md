@@ -2,7 +2,7 @@
 
 > 基线版本：v1.10.21（2026-10-29）
 > 基线形态：Windows x64 / Linux x64 / macOS arm64 三类 ZIP（含按平台裁剪的存储插件），CLI 独立发布；.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
-> 基线测试：218 个 xUnit 测试，`csharpier check .` 通过
+> 基线测试：222 个 xUnit 测试，`csharpier check .` 通过
 > 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.10.21
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
@@ -132,7 +132,7 @@
 | 主工程 | `src/PostSharp`，单一桌面应用 |
 | 存储契约 | `src/PostSharp.Storage.Abstractions` |
 | 插件源码 | `src/Plugins/PostSharp.Storage.*` |
-| 测试 | `tests/PostSharp.Tests`，30 个测试文件，218 个用例 |
+| 测试 | `tests/PostSharp.Tests`，30 个测试文件，222 个用例 |
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
@@ -152,7 +152,7 @@
 | 远程存储 | 整份 JSON 文档读写，Revision 由调用方递增，缺少冲突检测 | 多机器/多人同时写入可能静默覆盖 |
 | OLAP | ClickHouse 仅完成连接/失败路径；Doris/StarRocks 无实例验证 | 发布支持矩阵存在未验证项 |
 | 插件 | 进程内 AssemblyLoadContext 加载，无热卸载、无签名校验 | 插件供应链和稳定性风险 |
-| MCP | 仅回环监听；无令牌鉴权；无 SSE 通知；工具 70 个但以原子操作为主 | 本机其他进程可尝试调用；多客户端能力有限；AI 完成一个意图的调用次数偏多 |
+| MCP | 仅回环监听；已支持可选本机 token 和只读模式；无 SSE 通知、无细粒度工具权限；工具 70 个但以原子操作为主 | 本机其他进程可尝试调用（启用 token 后受控）；多客户端能力有限；AI 完成一个意图的调用次数偏多 |
 | 协议深度 | SOAP 仅浅层 WSDL；gRPC 仅一元+反射；WS/SIO/TCP 为单轮消息 | 复杂企业协议和常驻会话场景仍需补课，不能对外承诺“全协议” |
 | 包体与依赖 | 自包含包约 73 MB；新增 gRPC/Google.Protobuf 依赖 | 继续加协议会推高包体和启动成本，必须模块化 |
 | 定时套件 | 依赖应用内 DispatcherTimer，应用关闭后不执行 | 不能作为无人值守回归服务 |
@@ -166,7 +166,7 @@
 - [ ] Windows 11、125% / 150% DPI、多显示器、小窗口下的完整布局验收。
 - [ ] 代码签名证书、安装器方案和更新回滚演练。
 - [ ] 真实 GitHub Actions 流水线（当前无 CI，按仓库约定需产品负责人确认后新增）。
-- [ ] MCP token/权限、意图工具、会话 job、资源和多客户端隔离。
+- [ ] MCP 意图工具、会话 job、资源化大内容、细粒度权限和多客户端隔离（token/只读已完成）。
 - [ ] 录制 → 回放 → 套件生成 → CI 报告 → 运行 diff 的完整链路。
 - [ ] 冷启动、空闲内存、包体、1 万条历史/审计和大响应的性能门禁。
 - [ ] gRPC 流式与 `.proto`/descriptor 导入；SOAP WS-Security/MTOM；常驻 WS/SIO 会话；MQTT 按客户立项。
@@ -314,7 +314,7 @@
 
 **问题**
 
-当前依赖本地构建、手工测试和手工发布；没有 PR 门禁、UI 自动化和真实数据库 CI。218 个测试主要覆盖服务层，主窗口布局和关键交互仍靠人工回归。
+当前依赖本地构建、手工测试和手工发布；没有 PR 门禁、UI 自动化和真实数据库 CI。222 个测试主要覆盖服务层，主窗口布局和关键交互仍靠人工回归。
 
 **范围**
 
@@ -368,7 +368,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | P1-04 | 导入导出补全 | Apifox 原生格式未适配；Insomnia v5、Hoppscotch 环境、Postman 脚本/测试、HAR 响应体、部分认证不完整 | 有样本才实现，不无样本逆向；导入前预览统计；不支持的字段逐项提示；导出后可回导 | M/L |
 | P1-05 | Multipart 大文件 | 已支持多文件、64KB 流式、进度和取消；无断点续传、分片协议、超大文件预检 | 可配置分片/重试；磁盘空间与文件大小预检；取消后清理临时文件；断点恢复有明确限制 | M |
 | P1-06 | 套件与无人值守 | 已支持依赖 DAG、条件分支、All/Any 汇合、结构化条件表达式、最大并行和统一执行器；无循环/任意跳转、数据驱动；CLI 已支持 JUnit/Markdown/HTML 报告；定时仍依赖应用常开 | 支持 CSV/JSON 数据驱动；定时不依赖主窗口 | XL |
-| P1-07 | MCP 强化 | 已支持页面托盘常驻和后台独立进程常驻、客户端切换和单实例，工具 70 个；仍仅回环、无令牌、无 SSE 通知；工具以原子 CRUD 为主，错误/取消/幂等语义不统一，后台进程不是注册系统服务 | 本机 token 与只读/写权限；注册 Windows 服务 / systemd / launchd 和开机自启；工具 schema 校验；SSE 进度/取消；幂等键；审计关联 requestId；多客户端互不干扰；意图工具与资源化大内容落地 | L |
+| P1-07 | MCP 强化 | 已支持页面托盘常驻和后台独立进程常驻、客户端切换和单实例，工具 70 个；已支持本机 token 和只读模式；仍仅回环、无 SSE 通知、无细粒度权限；工具以原子 CRUD 为主，错误/取消/幂等语义不统一，后台进程不是注册系统服务 | 细粒度权限；注册 Windows 服务 / systemd / launchd 和开机自启；工具 schema 校验；SSE 进度/取消；幂等键；审计关联 requestId；多客户端互不干扰；意图工具与资源化大内容落地 | L |
 | P1-08 | UI/UX 与可访问性 | 120%/150% 在 1400 宽窗口可能裁切；多显示器 DPI、焦点、键盘全覆盖仍需验证；深浅主题对比度未自动化 | 最小窗口和 150% 下无不可达控件；Tab 顺序/焦点框可见；图标有 AutomationProperties.Name；浅深色 WCAG AA；标签栏溢出可预测 | L |
 | P1-09 | 插件生态 | 只有开发指南；无 SDK 模板、契约版本、清单签名、兼容矩阵 | 提供插件模板和 CI 示例；契约版本可检查；官方/第三方插件矩阵；不兼容时只禁用插件 | M/L |
 | P1-10 | 性能与规模化 | 历史/审计/大树、10k 记录、大响应和长时间运行未做基准；软件渲染默认；冷启动/空闲内存无门禁 | 冷启动 < 1.5s、空闲内存 < 150MB；建立启动、内存、列表滚动、响应渲染基线；列表虚拟化；大数据集不卡顿；内存上限可诊断 | M |
@@ -544,7 +544,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 | 工作项 | 交付物 | 验收 |
 | --- | --- | --- |
-| MCP 安全与权限（P1-07） | 本机 token、只读/写工具分组、破坏性操作 dry-run/确认 | 未带 token 的写调用返回 401；只读模式不能发送/删除；审计记录客户端和权限 |
+| MCP 安全与权限（P1-07） | 已完成本机 token、只读/写工具分组；待细粒度权限、破坏性操作 dry-run/确认 | 未带 token 的写调用返回 401；只读模式不能发送/删除；审计记录客户端和权限 |
 | MCP 意图层（P1-14） | `verify_endpoint`、`generate_suite`、`export_report`、`diff_runs`、`explain_failure` | 一个意图只调用 1–2 次工具；返回结构化结论；失败可定位到步骤/断言 |
 | 长任务与会话 job | 统一 `start_*` / `get_*_job` / `cancel_*`；SSE 或轮询进度 | 所有耗时操作有 job id、进度、取消和终态；取消后资源释放 |
 | CI / GitHub Action（P1-06） | `postsharp-cli suite run --junit/--markdown/--html` 的 Action 模板、Docker 镜像 | 干净环境一条命令跑套件并产出报告；失败退出码稳定 |
@@ -552,7 +552,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | 首次体验（P1-12） | 首次 3 步引导、可重置演示工作区、MCP 配置一键复制、示例场景 | 新用户 5 分钟内完成第一次请求和第一次 AI 调用 |
 | 会话基础设施（P2-09 前置） | 会话模型、消息日志、连接/断开/发送/接收接口（先不追求完整 UI） | WebSocket 会话可通过 MCP 连接、发送、接收、关闭；有超时和取消 |
 
-**H1 退出条件**：上述验收全部通过；218+ 测试基线不下降；三平台包可启动；完成一次“AI 从 describe 到 send 到报告”的公开演示。
+**H1 退出条件**：上述验收全部通过；222+ 测试基线不下降；三平台包可启动；完成一次“AI 从 describe 到 send 到报告”的公开演示。
 
 #### H2（约 2–3 个版本，v1.12.x）：录制回放与回归
 
@@ -635,7 +635,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 - [ ] 阅读 `AGENTS.md`、`README.md`、`docs/storage-plugins.md` 和本文件。
 - [ ] 执行 `dotnet build src/PostSharp/PostSharp.csproj -c Debug`，确认 0 警告 0 错误。
-- [ ] 执行 `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj -c Debug`，确认 218 个基线用例通过。
+- [ ] 执行 `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj -c Debug`，确认 222 个基线用例通过。
 - [ ] 执行 `csharpier check .`。
 - [ ] 解压当前 Release 包，使用独立数据目录启动，确认首次为演示工作区。
 - [ ] 确认不会把 `.postsharp`、日志、Token、连接串或真实截图提交到仓库。
@@ -707,7 +707,8 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 ### 10.2 后续 MCP 主线（v1.11+）
 
-- [ ] 本机 token 鉴权，按工具分组只读/写权限；未授权请求返回 401/403。
+- [x] 本机 token 鉴权，按工具分组只读/写权限；未授权请求返回 401/403。
+- [ ] 细粒度工具权限、多客户端隔离和权限变更审计。
 - [ ] 意图工具：`verify_endpoint`、`generate_suite`、`diff_runs`、`explain_failure`、`export_report`。
 - [ ] 会话类工具：WebSocket/Socket.IO/TCP 的 connect/send/receive/close；gRPC streaming 的 job 化调用。
 - [ ] 大内容资源化：`postsharp://workspace`、`postsharp://runs/{id}`、`postsharp://audit/{id}` 等。

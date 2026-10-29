@@ -754,6 +754,31 @@
                 </Grid>
 
                 <TextBlock
+                    Text="{Binding McpAuthHint}"
+                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                />
+                <Grid
+                    IsVisible="{Binding McpRequireToken}"
+                    ColumnDefinitions="*,Auto"
+                    ColumnSpacing="8"
+                >
+                    <arc:Input
+                        Label="MCP token"
+                        Text="{Binding McpTokenValue}"
+                        IsReadOnly="True"
+                        FontFamily="{DynamicResource PostSharpCodeFont}"
+                        AutomationProperties.Name="MCP token"
+                    />
+                    <arc:CopyButton
+                        Grid.Column="1"
+                        Value="{Binding McpTokenValue}"
+                        Label="复制 token"
+                        Variant="Plain"
+                    />
+                </Grid>
+
+                <TextBlock
                     Text="已开放工具"
                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
                     FontWeight="Medium"
