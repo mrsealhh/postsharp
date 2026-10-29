@@ -407,7 +407,8 @@ public sealed class McpServer
                             OptionalString(arguments, "sseThinkingPath"),
                             OptionalString(arguments, "sseContentPath"),
                             OptionalBool(arguments, "autoCheckUpdates"),
-                            OptionalBool(arguments, "keepMcpResident")
+                            OptionalBool(arguments, "keepMcpResident"),
+                            OptionalString(arguments, "mcpServiceMode")
                         )
                     )
                     .ConfigureAwait(false),
@@ -1442,7 +1443,13 @@ public sealed class McpServer
                             "是否每 6 小时后台检查 GitHub Releases"
                         ),
                         ["keepMcpResident"] = BooleanSchema(
-                            "关闭主窗口后是否隐藏到系统托盘并保持 MCP 服务运行"
+                            "旧字段；true 等同页面常驻，false 等同不常驻"
+                        ),
+                        ["mcpServiceMode"] = EnumSchema(
+                            "MCP 常驻模式：Disabled、Page（托盘页面常驻）或 Background（后台独立服务）",
+                            McpServiceModes.Disabled,
+                            McpServiceModes.Page,
+                            McpServiceModes.Background
                         ),
                     }
                 )

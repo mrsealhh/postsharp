@@ -627,7 +627,7 @@ public partial class SettingsViewModel : ObservableObject
         Draft.TreePaneWidth = defaults.TreePaneWidth;
         Draft.HistoryCollapsed = defaults.HistoryCollapsed;
         Draft.AutoCheckUpdates = defaults.AutoCheckUpdates;
-        Draft.KeepMcpResident = defaults.KeepMcpResident;
+        Draft.McpServiceMode = defaults.McpServiceMode;
         _fontDirectoriesPreviewActive = true;
         FontService.Reload(Draft.FontDirectories);
         RefreshFontState();
@@ -1039,7 +1039,7 @@ public partial class SettingsViewModel : ObservableObject
         _current.TreePaneWidth = Draft.TreePaneWidth;
         _current.HistoryCollapsed = Draft.HistoryCollapsed;
         _current.AutoCheckUpdates = Draft.AutoCheckUpdates;
-        _current.KeepMcpResident = Draft.KeepMcpResident;
+        _current.McpServiceMode = Draft.McpServiceMode;
     }
 
     private static AppSettings Clone(AppSettings source)
@@ -1069,7 +1069,7 @@ public partial class SettingsViewModel : ObservableObject
             RequestPaneRatio = source.RequestPaneRatio,
             HistoryCollapsed = source.HistoryCollapsed,
             AutoCheckUpdates = source.AutoCheckUpdates,
-            KeepMcpResident = source.KeepMcpResident,
+            McpServiceMode = source.McpServiceMode,
         };
     }
 

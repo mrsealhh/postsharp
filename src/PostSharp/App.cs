@@ -1,10 +1,12 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using PostSharp.Models;
 using PostSharp.Services;
 using PostSharp.ViewModels;
 using PostSharp.Views;
@@ -13,15 +15,28 @@ namespace PostSharp;
 
 public partial class App : Application
 {
+    public static bool IsMcpService { get; set; }
+
     private MainWindowViewModel? _viewModel;
     private MainWindow? _mainWindow;
     private TrayIcon? _trayIcon;
+    private TrayIcon? _serviceTrayIcon;
     private IClassicDesktopStyleApplicationLifetime? _desktop;
+    private DispatcherTimer? _serviceStopTimer;
     private bool _allowExit;
+    private bool _startBackgroundServiceOnExit;
+    private bool _serviceShutdownRequested;
 
     public override async void OnFrameworkInitializationCompleted()
     {
         Dispatcher.UIThread.UnhandledException += OnUiUnhandledException;
+        if (IsMcpService)
+        {
+            await InitializeMcpServiceAsync();
+            base.OnFrameworkInitializationCompleted();
+            return;
+        }
+
         try
         {
             Styles.Add(
@@ -41,6 +56,7 @@ public partial class App : Application
             {
                 _desktop = desktop;
                 desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                desktop.Exit += OnDesktopExit;
                 _viewModel = new MainWindowViewModel();
                 UiScaleService.SetScale(_viewModel.Settings.UiScale);
                 await ThemeService.ApplyAsync(
@@ -85,10 +101,13 @@ public partial class App : Application
 
         var menu = new NativeMenu();
         var show = new NativeMenuItem("打开 PostSharp");
-        show.Click += (_, _) => ShowMainWindow();
+        show.Click += (_, _) => ShowMainWindow(maximize: false);
+        var maximize = new NativeMenuItem("最大化打开");
+        maximize.Click += (_, _) => ShowMainWindow(maximize: true);
         var exit = new NativeMenuItem("退出 PostSharp");
         exit.Click += (_, _) => ExitApplication();
         menu.Items.Add(show);
+        menu.Items.Add(maximize);
         menu.Items.Add(new NativeMenuItemSeparator());
         menu.Items.Add(exit);
 
@@ -99,9 +118,9 @@ public partial class App : Application
             ),
             ToolTipText = "PostSharp · MCP 后台常驻",
             Menu = menu,
-            IsVisible = _viewModel.Settings.KeepMcpResident,
+            IsVisible = _viewModel.Settings.McpServiceMode != McpServiceModes.Disabled,
         };
-        _trayIcon.Clicked += (_, _) => ShowMainWindow();
+        _trayIcon.Clicked += (_, _) => ShowMainWindow(maximize: false);
         TrayIcon.SetIcons(this, new TrayIcons { _trayIcon });
     }
 
@@ -112,7 +131,8 @@ public partial class App : Application
             return;
         }
 
-        if (_viewModel?.Settings.KeepMcpResident == true)
+        var mode = _viewModel?.Settings.McpServiceMode ?? McpServiceModes.Disabled;
+        if (mode == McpServiceModes.Page)
         {
             e.Cancel = true;
             _mainWindow?.Hide();
@@ -121,10 +141,11 @@ public partial class App : Application
                 _trayIcon.IsVisible = true;
             }
 
-            Log.Information("主窗口已隐藏，MCP 后台服务继续运行");
+            Log.Information("主窗口已隐藏，MCP 页面常驻服务继续运行");
             return;
         }
 
+        _startBackgroundServiceOnExit = mode == McpServiceModes.Background;
         _allowExit = true;
         if (_trayIcon is not null)
         {
@@ -134,21 +155,75 @@ public partial class App : Application
         _desktop?.Shutdown();
     }
 
+    private void OnDesktopExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
+    {
+        _serviceStopTimer?.Stop();
+        if (IsMcpService)
+        {
+            if (!_serviceShutdownRequested)
+            {
+                _viewModel?.Shutdown();
+            }
+
+            McpBackgroundService.Cleanup();
+        }
+        else if (_startBackgroundServiceOnExit)
+        {
+            McpBackgroundService.Start();
+        }
+    }
+
+    private async Task InitializeMcpServiceAsync()
+    {
+        _desktop = ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+        if (_desktop is null)
+        {
+            Log.Warning("MCP 后台服务没有桌面生命周期，直接退出");
+            return;
+        }
+
+        _desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        _desktop.Exit += OnDesktopExit;
+        // The desktop process may still be releasing port 5199 and SQLite when it starts us.
+        await Task.Delay(800);
+        _viewModel = new MainWindowViewModel();
+        McpBackgroundService.MarkRunning();
+        CreateServiceTrayIcon();
+        _serviceStopTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _serviceStopTimer.Tick += (_, _) =>
+        {
+            if (!McpBackgroundService.IsStopRequested())
+            {
+                return;
+            }
+
+            _serviceStopTimer?.Stop();
+            _serviceShutdownRequested = true;
+            _allowExit = true;
+            Log.Information("收到停止标记，MCP 后台服务退出");
+            _viewModel?.Shutdown();
+            _desktop?.Shutdown();
+        };
+        _serviceStopTimer.Start();
+        Log.Information("MCP 后台服务已启动 {DataRoot}", AppPaths.Root);
+    }
+
     private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName != nameof(Models.AppSettings.KeepMcpResident) || _trayIcon is null)
+        if (e.PropertyName != nameof(Models.AppSettings.McpServiceMode) || _trayIcon is null)
         {
             return;
         }
 
-        _trayIcon.IsVisible = _viewModel?.Settings.KeepMcpResident == true;
-        if (_viewModel?.Settings.KeepMcpResident == false && _mainWindow?.IsVisible == false)
+        var mode = _viewModel?.Settings.McpServiceMode ?? McpServiceModes.Disabled;
+        _trayIcon.IsVisible = mode != McpServiceModes.Disabled;
+        if (mode != McpServiceModes.Page && _mainWindow?.IsVisible == false)
         {
-            ShowMainWindow();
+            ShowMainWindow(maximize: false);
         }
     }
 
-    private void ShowMainWindow()
+    private void ShowMainWindow(bool maximize)
     {
         if (_mainWindow is not { } window)
         {
@@ -158,11 +233,7 @@ public partial class App : Application
         Dispatcher.UIThread.Post(() =>
         {
             window.Show();
-            if (window.WindowState == WindowState.Minimized)
-            {
-                window.WindowState = WindowState.Normal;
-            }
-
+            window.WindowState = maximize ? WindowState.Maximized : WindowState.Normal;
             window.Activate();
         });
     }
@@ -170,11 +241,78 @@ public partial class App : Application
     private void ExitApplication()
     {
         _allowExit = true;
+        _startBackgroundServiceOnExit = false;
         if (_trayIcon is not null)
         {
             _trayIcon.IsVisible = false;
         }
 
+        _desktop?.Shutdown();
+    }
+
+    private void CreateServiceTrayIcon()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var menu = new NativeMenu();
+        var open = new NativeMenuItem("打开 PostSharp 客户端");
+        open.Click += (_, _) => LaunchClient();
+        var exit = new NativeMenuItem("退出 MCP 后台服务");
+        exit.Click += (_, _) => StopMcpService();
+        menu.Items.Add(open);
+        menu.Items.Add(new NativeMenuItemSeparator());
+        menu.Items.Add(exit);
+
+        _serviceTrayIcon = new TrayIcon
+        {
+            Icon = new WindowIcon(
+                AssetLoader.Open(new Uri("avares://PostSharp/Assets/logo-icon.png"))
+            ),
+            ToolTipText = "PostSharp · MCP 后台独立服务",
+            Menu = menu,
+            IsVisible = true,
+        };
+        TrayIcon.SetIcons(this, new TrayIcons { _serviceTrayIcon });
+    }
+
+    private void LaunchClient()
+    {
+        try
+        {
+            var executable = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(executable))
+            {
+                return;
+            }
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = executable,
+                WorkingDirectory = Environment.CurrentDirectory,
+                UseShellExecute = true,
+            };
+            startInfo.Environment["POSTSHARP_DATA_DIR"] = AppPaths.Root;
+            Process.Start(startInfo);
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "从 MCP 后台服务打开客户端失败");
+        }
+    }
+
+    private void StopMcpService()
+    {
+        _serviceShutdownRequested = true;
+        _allowExit = true;
+        if (_serviceTrayIcon is not null)
+        {
+            _serviceTrayIcon.IsVisible = false;
+        }
+
+        _viewModel?.Shutdown();
         _desktop?.Shutdown();
     }
 

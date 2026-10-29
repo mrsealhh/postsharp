@@ -93,9 +93,9 @@ CLI 从独立的 `cli-v1.1.0` Release 下载：Windows 解压后运行 `postshar
 ## 构建
 
 ```powershell
-dotnet publish src/PostSharp.Cli/PostSharp.Cli.csproj -c Release -r win-x64 --self-contained false
+.\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier win-x64 -SelfContained
 ```
 
-Linux/macOS 将 RID 换成 `linux-x64`、`osx-arm64` 或 `osx-x64`。
+Linux/macOS 将 RID 换成 `linux-x64` 或 `osx-arm64`。发布包默认自包含，不需要预装 .NET。
 
 CLI 不启动桌面窗口，也不直接操作工作区文件；它只调用 PostSharp 的 MCP 工具，因此审计仍会记录 CLI 的客户端名和工具名。

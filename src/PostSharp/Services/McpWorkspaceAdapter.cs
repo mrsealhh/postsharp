@@ -204,7 +204,8 @@ public sealed record McpSettingsInfo(
     string SseThinkingPath,
     string SseContentPath,
     bool AutoCheckUpdates,
-    bool KeepMcpResident
+    bool KeepMcpResident,
+    string McpServiceMode
 );
 
 public sealed record McpSettingsDraft(
@@ -224,7 +225,8 @@ public sealed record McpSettingsDraft(
     string? SseThinkingPath,
     string? SseContentPath,
     bool? AutoCheckUpdates,
-    bool? KeepMcpResident
+    bool? KeepMcpResident,
+    string? McpServiceMode
 );
 
 public sealed record McpStorageProfileInfo(
@@ -1477,7 +1479,8 @@ public sealed class McpWorkspaceAdapter
                 settings.SseThinkingPath,
                 settings.SseContentPath,
                 settings.AutoCheckUpdates,
-                settings.KeepMcpResident
+                settings.KeepMcpResident,
+                settings.McpServiceMode
             );
         });
     }
@@ -1562,7 +1565,14 @@ public sealed class McpWorkspaceAdapter
                 settings.AutoCheckUpdates = autoCheckUpdates;
             }
 
-            if (draft.KeepMcpResident is { } keepMcpResident)
+            if (
+                draft.McpServiceMode is { } mcpServiceMode
+                && McpServiceModes.IsKnown(mcpServiceMode)
+            )
+            {
+                settings.McpServiceMode = mcpServiceMode;
+            }
+            else if (draft.KeepMcpResident is { } keepMcpResident)
             {
                 settings.KeepMcpResident = keepMcpResident;
             }
@@ -1979,7 +1989,8 @@ public sealed class McpWorkspaceAdapter
             settings.SseThinkingPath,
             settings.SseContentPath,
             settings.AutoCheckUpdates,
-            settings.KeepMcpResident
+            settings.KeepMcpResident,
+            settings.McpServiceMode
         );
 
     private static McpStorageConfigInfo ToStorageInfo(StorageConfig config) =>
