@@ -50,22 +50,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed."
 }
 
-$cliPublish = Join-Path $publish "cli"
-dotnet publish (Join-Path $root "src\PostSharp.Cli\PostSharp.Cli.csproj") `
-    -c Release `
-    -r win-x64 `
-    --self-contained false `
-    -p:Version=$Version `
-    -o $cliPublish
-
-if ($LASTEXITCODE -ne 0) {
-    throw "CLI publish failed."
-}
-
+# CLI is a separate download; the desktop package intentionally has no cli/ directory.
 # The application only enables updates when this marker is present.
 New-Item -ItemType File -Path (Join-Path $publish ".postsharp-update-enabled") -Force | Out-Null
 Get-ChildItem $publish -Filter *.pdb -Recurse -Force | Remove-Item -Force
-Remove-PlatformFolders (Join-Path $publish "plugins") "^(linux|osx)"
+Remove-PlatformFolders (Join-Path $publish "plugins") "^(win|linux|osx)-"
+Remove-PlatformFolders (Join-Path $publish "plugins") "^(linux|osx)$"
 
 if (Test-Path $zip) {
     Remove-Item $zip -Force

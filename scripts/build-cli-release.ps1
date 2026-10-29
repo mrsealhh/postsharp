@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "zip-directory.ps1")
 $Version = $Version.Trim().TrimStart("v", "V")
 $root = Split-Path -Parent $PSScriptRoot
 $artifacts = Join-Path $root "artifacts"
@@ -31,21 +32,18 @@ if ($LASTEXITCODE -ne 0) {
 
 Get-ChildItem $publish -Filter *.pdb -Recurse -Force | Remove-Item -Force
 
-$runScript = @'
+if ($RuntimeIdentifier -notlike 'win*') {
+    $runScript = @'
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
 chmod +x postsharp-cli
 exec ./postsharp-cli "$@"
 '@
-Set-Content -Path (Join-Path $publish "run.sh") -Value $runScript -Encoding ascii -NoNewline
-
-if (Test-Path $zip) {
-    Remove-Item $zip -Force
+    Set-PortableUnixScript -Path (Join-Path $publish "run.sh") -Content $runScript
 }
 
-$files = Get-ChildItem $publish -Force | Select-Object -ExpandProperty FullName
-Compress-Archive -Path $files -DestinationPath $zip -Force
+New-PortableZip -SourceDirectory $publish -DestinationPath $zip
 
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -Path $checksum -Value "$hash  PostSharp.Cli-$RuntimeIdentifier.zip" -Encoding ascii

@@ -627,6 +627,28 @@
                             <Border Classes="settingsSection">
                                 <StackPanel Spacing="12">
                                     <TextBlock
+                                        Text="MCP 后台常驻"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        FontWeight="Medium"
+                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                    />
+                                    <TextBlock
+                                        Text="开启后，关闭主窗口只会隐藏到系统托盘，MCP 端点和当前工作区继续运行，AI 客户端与 CLI 可以直接调用。需要完全退出时，使用托盘菜单「退出 PostSharp」。"
+                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                        TextWrapping="Wrap"
+                                    />
+                                    <arc:Switch
+                                        Content="关闭窗口后保持 MCP 后台常驻"
+                                        IsChecked="{Binding Draft.KeepMcpResident, Mode=TwoWay}"
+                                        AutomationProperties.Name="关闭窗口后保持 MCP 后台常驻"
+                                    />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="settingsSection">
+                                <StackPanel Spacing="12">
+                                    <TextBlock
                                         Text="SSE 自定义解析"
                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                         FontWeight="Medium"

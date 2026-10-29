@@ -16,6 +16,10 @@ bash run.sh
 POSTSHARP_DATA_DIR="$HOME/.local/share/postsharp" bash run.sh
 ```
 
+## 签名与校验
+
+当前 Linux x64 包是未签名预览包，请使用 Release 页面的 SHA256 校验文件确认完整性。Linux 没有 macOS Gatekeeper 同等的“未公证”拦截；后续可补 AppImage/deb 和 GPG/minisign 签名。
+
 ## WSL 依赖
 
 需要 WSL2 + WSLg（Windows 11，或安装了 WSLg 的 Windows 10），并确保有 X11/Wayland 运行库：

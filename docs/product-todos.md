@@ -1,9 +1,9 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
-> 基线版本：v1.10.17（2026-10-29）
-> 基线形态：Windows x64 / Linux x64 / macOS arm64 三类自包含 ZIP，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
-> 基线测试：192 个 xUnit 测试，`csharpier check .` 通过
-> 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.10.17
+> 基线版本：v1.10.18（2026-10-29）
+> 基线形态：Windows x64 / Linux x64 / macOS arm64 三类 ZIP（含按平台裁剪的存储插件），CLI 独立发布；.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
+> 基线测试：193 个 xUnit 测试，`csharpier check .` 通过
+> 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.10.18
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
 
@@ -94,7 +94,7 @@
 | 主工程 | `src/PostSharp`，单一桌面应用 |
 | 存储契约 | `src/PostSharp.Storage.Abstractions` |
 | 插件源码 | `src/Plugins/PostSharp.Storage.*` |
-| 测试 | `tests/PostSharp.Tests`，30 个测试文件，192 个用例 |
+| 测试 | `tests/PostSharp.Tests`，30 个测试文件，193 个用例 |
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
@@ -324,7 +324,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | P1-04 | 导入导出补全 | Apifox 原生格式未适配；Insomnia v5、Hoppscotch 环境、Postman 脚本/测试、HAR 响应体、部分认证不完整 | 有样本才实现，不无样本逆向；导入前预览统计；不支持的字段逐项提示；导出后可回导 | M/L |
 | P1-05 | Multipart 大文件 | 已支持多文件、64KB 流式、进度和取消；无断点续传、分片协议、超大文件预检 | 可配置分片/重试；磁盘空间与文件大小预检；取消后清理临时文件；断点恢复有明确限制 | M |
 | P1-06 | 套件与无人值守 | 已支持依赖 DAG、条件分支、All/Any 汇合、结构化条件表达式、最大并行和统一执行器；无循环/任意跳转、数据驱动；CLI 已支持 JUnit/Markdown/HTML 报告；定时仍依赖应用常开 | 支持 CSV/JSON 数据驱动；定时不依赖主窗口 | XL |
-| P1-07 | MCP 强化 | 仅回环、无令牌、无 SSE 通知；工具错误和取消语义不统一 | 本机 token 鉴权；工具 schema 校验；SSE 进度/取消；幂等键；审计关联 requestId；多客户端互不干扰 | M/L |
+| P1-07 | MCP 强化 | 已支持关闭窗口后托盘常驻，MCP 可继续服务；仍仅回环、无令牌、无 SSE 通知；工具错误和取消语义不统一，常驻不是独立系统服务 | 本机 token 鉴权；独立 Windows 服务 / systemd / launchd；工具 schema 校验；SSE 进度/取消；幂等键；审计关联 requestId；多客户端互不干扰 | M/L |
 | P1-08 | UI/UX 与可访问性 | 120%/150% 在 1400 宽窗口可能裁切；多显示器 DPI、焦点、键盘全覆盖仍需验证；深浅主题对比度未自动化 | 最小窗口和 150% 下无不可达控件；Tab 顺序/焦点框可见；图标有 AutomationProperties.Name；浅深色 WCAG AA；标签栏溢出可预测 | L |
 | P1-09 | 插件生态 | 只有开发指南；无 SDK 模板、契约版本、清单签名、兼容矩阵 | 提供插件模板和 CI 示例；契约版本可检查；官方/第三方插件矩阵；不兼容时只禁用插件 | M/L |
 | P1-10 | 性能与规模化 | 历史/审计/大树、10k 记录、大响应和长时间运行未做基准；软件渲染默认 | 建立启动、内存、列表滚动、响应渲染基线；列表虚拟化；大数据集不卡顿；内存上限可诊断 | M |
@@ -353,7 +353,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [ ] 当前 Windows 版本继续按 P0/P1 迭代，不被跨平台工作阻塞。
 - [x] Linux x64 构建环境可用；macOS 签名/公证环境后续准备。
 
-**当前进度（2026-10-28）**
+**当前进度（2026-10-29）**
 
 - [x] 系统默认浏览器 + 本机 TCP 回环回调整合为唯一授权方式，不再引用 WebView2 或任何第三方浏览器引擎。
 - [x] 包引用中删除 `Avalonia.Controls.WebView` 与 `Microsoft.Web.WebView2`。
@@ -364,6 +364,9 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] Linux/macOS 包不启用 Windows 自动更新标记。
 - [x] 发布流程从 1.10.17 起同时上传 Windows / Linux x64 / macOS arm64 三类 ZIP 和 SHA256。
 - [x] 跨平台 ZIP 统一 `/` 路径、LF 启动脚本和 Unix 可执行位，避免 Windows 压缩后在 Linux/macOS 解压失败。
+- [x] 打包时删除插件 RID 目录和非目标平台 `runtimes`，三平台 ZIP 体积从 45/262/400 MB 降到约 37/72/73 MB。
+- [x] CLI 改为独立跨平台包，桌面安装包不再附带 `cli/`。
+- [x] MCP 可随桌面进程托盘常驻，关闭主窗口后 AI / CLI 仍可调用；真正系统服务化仍在后续。
 - [ ] libsecret/Secret Service、macOS Keychain、AppImage/deb、签名安装器和三平台 CI 仍待完成。
 
 **目标平台**
@@ -571,7 +574,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] HTML/Markdown 测试报告。
 - [ ] CI 样例。
 - [ ] 以 `/postsharp:mcp ...` 形式包装 CLI，供 AI 客户端调用。
-- [x] 将 CLI 产物纳入 Windows/Linux/macOS 发布包；独立 Release 资产继续保留。
+- [x] CLI 改为独立 `PostSharp.Cli-*.zip` 发布；Windows/Linux/macOS 桌面包不再包含 `cli/`。
 
 ## 11. 相关文件索引
 

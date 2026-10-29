@@ -372,7 +372,11 @@
                                     FontWeight="Medium"
                                     Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                 />
-                                <arc:ScrollArea Grid.Row="1">
+                                <arc:ScrollArea
+                                    Grid.Row="1"
+                                    HorizontalScrollBarVisibility="Disabled"
+                                    HorizontalContentAlignment="Stretch"
+                                >
                                     <StackPanel Spacing="10">
                                         <StackPanel
                                             IsVisible="{Binding IsNodeSelected}"
@@ -472,10 +476,13 @@
                                                     IconSize="13"
                                                 />
                                             </arc:Button>
-                                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                            <Grid
+                                                ColumnDefinitions="*,*"
+                                                ColumnSpacing="8"
+                                                HorizontalAlignment="Stretch"
+                                            >
                                                 <arc:Select
                                                     Label="汇合方式"
-                                                    Margin="0 0 8 0"
                                                     ItemsSource="{Binding JoinModeChoices}"
                                                     SelectedItem="{Binding SelectedJoinModeChoice, Mode=TwoWay}"
                                                     Description="全部上游完成后汇合；任一上游到达即开始"

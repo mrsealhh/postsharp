@@ -14,10 +14,22 @@ bash run.command
 
 ```bash
 chmod +x PostSharp run.command
+xattr -dr com.apple.quarantine .
 ./PostSharp
 ```
 
 需要安装 .NET 10 时，自包含包不需要额外运行时；如果使用框架依赖包，请先安装对应 .NET SDK/运行时。
+
+## 签名与公证
+
+当前包未签名、未公证，`xattr` 只是去掉下载隔离属性，不等于通过 Gatekeeper。要彻底消除 macOS 的「无法验证开发者 / 已损坏」提示，需要：
+
+1. Apple Developer Program 账号和 Developer ID Application 证书；
+2. 在 macOS 构建机上对 `PostSharp` 及随包 dylib 执行 `codesign --options runtime`；
+3. 使用 `xcrun notarytool submit --wait` 提交公证，成功后 `xcrun stapler staple`；
+4. 发布公证后的 `.dmg` / `.zip`，并保留 SHA256 校验。
+
+这些步骤依赖 Apple 账号、证书私钥和 macOS 公证环境，当前 Windows 构建流程无法代替。未完成前请把本包当作未签名预览包使用。
 
 ## OIDC / OAuth 2.0
 
