@@ -12,6 +12,7 @@ namespace PostSharp;
 internal static class Program
 {
     private const string SingleInstanceMutexName = "PostSharp.SingleInstance";
+    private const string ServiceInstanceMutexName = "PostSharp.McpService";
     private static string _renderingMode = RenderingModes.Software;
 
     [STAThread]
@@ -31,12 +32,32 @@ internal static class Program
             );
         }
 
-        using var singleInstance = SingleInstanceGuard.Acquire(SingleInstanceMutexName);
+        var isMcpService = args.Any(argument =>
+            string.Equals(
+                argument,
+                McpBackgroundService.Argument,
+                StringComparison.OrdinalIgnoreCase
+            )
+        );
+        App.IsMcpService = isMcpService;
+
+        using var singleInstance = SingleInstanceGuard.Acquire(
+            isMcpService ? ServiceInstanceMutexName : SingleInstanceMutexName
+        );
         if (!singleInstance.IsAcquired)
         {
             Log.Information("已有 PostSharp 实例运行，本次启动直接退出");
             AppLog.Shutdown();
             return;
+        }
+
+        if (isMcpService)
+        {
+            McpBackgroundService.MarkRunning();
+        }
+        else if (!McpBackgroundService.StopAndWait())
+        {
+            Log.Warning("启动桌面端前无法停止旧的 MCP 后台服务，继续启动");
         }
 
         AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>

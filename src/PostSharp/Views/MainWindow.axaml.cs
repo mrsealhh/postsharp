@@ -1003,7 +1003,18 @@ public partial class MainWindow : Window
     private async void OnExportPostmanClick(
         object? sender,
         Avalonia.Interactivity.RoutedEventArgs e
+    ) => await ExportPostmanAsync();
+
+    private async void OnTreeMenuExportPostmanClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
     )
+    {
+        HideTreeMenu();
+        await ExportPostmanAsync();
+    }
+
+    private async Task ExportPostmanAsync()
     {
         if (_viewModel is null)
         {

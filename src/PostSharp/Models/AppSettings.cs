@@ -30,6 +30,23 @@ public static class TabOverflows
     public static string Label(string overflow) => overflow == Wrap ? "多行平铺" : "单行滚动";
 }
 
+public static class McpServiceModes
+{
+    public const string Disabled = "Disabled";
+    public const string Page = "Page";
+    public const string Background = "Background";
+
+    public static bool IsKnown(string value) => value is Disabled or Page or Background;
+
+    public static string Label(string value) =>
+        value switch
+        {
+            Background => "后台独立服务",
+            Disabled => "不常驻",
+            _ => "页面常驻",
+        };
+}
+
 public partial class AppSettings : ObservableObject
 {
     [ObservableProperty]
@@ -116,7 +133,29 @@ public partial class AppSettings : ObservableObject
     [ObservableProperty]
     private bool _autoCheckUpdates = true;
 
-    /// <summary>Closing the main window hides it to the tray and keeps the local MCP endpoint alive.</summary>
+    /// <summary>
+    /// How the local MCP endpoint stays alive after the window closes: disabled, tray/page resident,
+    /// or a separate background service process.
+    /// </summary>
     [ObservableProperty]
-    private bool _keepMcpResident = true;
+    [NotifyPropertyChangedFor(nameof(KeepMcpResident))]
+    private string _mcpServiceMode = McpServiceModes.Page;
+
+    /// <summary>Compatibility alias for older settings and MCP callers; Background maps to enabled.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool KeepMcpResident
+    {
+        get => McpServiceMode != McpServiceModes.Disabled;
+        set
+        {
+            if (!value)
+            {
+                McpServiceMode = McpServiceModes.Disabled;
+            }
+            else if (McpServiceMode == McpServiceModes.Disabled)
+            {
+                McpServiceMode = McpServiceModes.Page;
+            }
+        }
+    }
 }

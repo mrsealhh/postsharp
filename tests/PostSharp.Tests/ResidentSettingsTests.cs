@@ -7,14 +7,18 @@ namespace PostSharp.Tests;
 public sealed class ResidentSettingsTests
 {
     [Fact]
-    public void KeepMcpResidentDefaultsToTrueAndRoundTrips()
+    public void McpServiceModeDefaultsToPageAndRoundTrips()
     {
+        Assert.Equal(McpServiceModes.Page, new AppSettings().McpServiceMode);
         Assert.True(new AppSettings().KeepMcpResident);
 
-        var json = JsonSerializer.Serialize(new AppSettings { KeepMcpResident = false });
+        var json = JsonSerializer.Serialize(
+            new AppSettings { McpServiceMode = McpServiceModes.Background }
+        );
         var restored = JsonSerializer.Deserialize<AppSettings>(json);
 
         Assert.NotNull(restored);
-        Assert.False(restored.KeepMcpResident);
+        Assert.Equal(McpServiceModes.Background, restored.McpServiceMode);
+        Assert.True(restored.KeepMcpResident);
     }
 }

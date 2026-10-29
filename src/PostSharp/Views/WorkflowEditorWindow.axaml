@@ -478,21 +478,46 @@
                                             </arc:Button>
                                             <Grid
                                                 ColumnDefinitions="*,*"
+                                                RowDefinitions="Auto,Auto"
                                                 ColumnSpacing="8"
+                                                RowSpacing="4"
                                                 HorizontalAlignment="Stretch"
                                             >
-                                                <arc:Select
-                                                    Label="汇合方式"
-                                                    ItemsSource="{Binding JoinModeChoices}"
-                                                    SelectedItem="{Binding SelectedJoinModeChoice, Mode=TwoWay}"
-                                                    Description="全部上游完成后汇合；任一上游到达即开始"
-                                                    AutomationProperties.Name="分支汇合方式"
-                                                />
-                                                <arc:Input
-                                                    Grid.Column="1"
-                                                    Label="并行组"
-                                                    Text="{Binding SelectedStep.ParallelGroupText, Mode=TwoWay}"
-                                                    AutomationProperties.Name="并行组"
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock
+                                                        Text="汇合方式"
+                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                    />
+                                                    <arc:Select
+                                                        MinWidth="0"
+                                                        HorizontalAlignment="Stretch"
+                                                        ItemsSource="{Binding JoinModeChoices}"
+                                                        SelectedItem="{Binding SelectedJoinModeChoice, Mode=TwoWay}"
+                                                        AutomationProperties.Name="分支汇合方式"
+                                                    />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Spacing="4">
+                                                    <TextBlock
+                                                        Text="并行组"
+                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                    />
+                                                    <arc:Input
+                                                        IsLabelVisible="False"
+                                                        MinWidth="0"
+                                                        HorizontalAlignment="Stretch"
+                                                        Text="{Binding SelectedStep.ParallelGroupText, Mode=TwoWay}"
+                                                        AutomationProperties.Name="并行组"
+                                                    />
+                                                </StackPanel>
+                                                <TextBlock
+                                                    Grid.Row="1"
+                                                    Grid.ColumnSpan="2"
+                                                    Text="全部上游完成后才汇合；任一上游到达即开始。"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                    TextWrapping="Wrap"
                                                 />
                                             </Grid>
 

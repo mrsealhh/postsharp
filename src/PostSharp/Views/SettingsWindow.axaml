@@ -633,16 +633,20 @@
                                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                     />
                                     <TextBlock
-                                        Text="开启后，关闭主窗口只会隐藏到系统托盘，MCP 端点和当前工作区继续运行，AI 客户端与 CLI 可以直接调用。需要完全退出时，使用托盘菜单「退出 PostSharp」。"
+                                        Text="页面常驻：关闭窗口后隐藏到系统托盘，由当前页面进程继续提供 MCP。后台独立服务：关闭窗口后启动独立后台进程，客户端可完全退出；再次打开客户端会接管并停止后台服务。任何时刻只允许一个 MCP 服务实例。"
                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                         TextWrapping="Wrap"
                                     />
-                                    <arc:Switch
-                                        Content="关闭窗口后保持 MCP 后台常驻"
-                                        IsChecked="{Binding Draft.KeepMcpResident, Mode=TwoWay}"
-                                        AutomationProperties.Name="关闭窗口后保持 MCP 后台常驻"
-                                    />
+                                    <arc:Select
+                                        Label="服务模式"
+                                        SelectedValue="{Binding Draft.McpServiceMode, Mode=TwoWay}"
+                                        AutomationProperties.Name="MCP 服务模式"
+                                    >
+                                        <arc:SelectItem Content="不常驻" Value="Disabled" />
+                                        <arc:SelectItem Content="页面常驻（托盘）" Value="Page" />
+                                        <arc:SelectItem Content="后台独立服务" Value="Background" />
+                                    </arc:Select>
                                 </StackPanel>
                             </Border>
 

@@ -42,7 +42,7 @@ if ($LASTEXITCODE -ne 0) {
 dotnet publish (Join-Path $root "src\PostSharp\PostSharp.csproj") `
     -c Release `
     -r win-x64 `
-    --self-contained false `
+    --self-contained true `
     -p:Version=$Version `
     -o $publish
 
