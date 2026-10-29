@@ -314,6 +314,12 @@ public static partial class SecretMasker
                     }
                 )
                 .ToList(),
+            ProtocolOptions = request.ProtocolOptions is null
+                ? null
+                : request.ProtocolOptions with
+                {
+                    Payload = MaskSecrets(request.ProtocolOptions.Payload, secrets),
+                },
         };
     }
 

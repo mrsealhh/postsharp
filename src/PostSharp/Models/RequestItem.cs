@@ -69,6 +69,10 @@ public partial class RequestItem : ObservableObject
     [ObservableProperty]
     private string _name = "新建请求";
 
+    /// <summary>HTTP, WebSocket, SocketIO or TCP.</summary>
+    [ObservableProperty]
+    private string _protocol = RequestProtocol.Http;
+
     [ObservableProperty]
     private string _method = "GET";
 
@@ -98,6 +102,35 @@ public partial class RequestItem : ObservableObject
 
     [ObservableProperty]
     private string _graphQlOperationName = string.Empty;
+
+    /// <summary>Payload sent once the WebSocket, Socket.IO or TCP connection is open.</summary>
+    [ObservableProperty]
+    private string _messageBody = string.Empty;
+
+    /// <summary>Text or Hex; Hex sends the payload as raw bytes (WebSocket binary frame for WebSocket).</summary>
+    [ObservableProperty]
+    private string _messageFormat = "Text";
+
+    /// <summary>How long to keep collecting frames after the payload is sent, in milliseconds.</summary>
+    [ObservableProperty]
+    private int _waitMilliseconds = 3000;
+
+    [ObservableProperty]
+    private string _socketIoEvent = "message";
+
+    [ObservableProperty]
+    private string _socketIoNamespace = "/";
+
+    [ObservableProperty]
+    private string _socketIoPath = "/socket.io";
+
+    /// <summary>None, LF or CRLF; appended to text payloads sent over TCP.</summary>
+    [ObservableProperty]
+    private string _tcpTerminator = "None";
+
+    /// <summary>Wraps the TCP connection in TLS; a tls:// URL implies it as well.</summary>
+    [ObservableProperty]
+    private bool _tcpUseTls;
 
     [ObservableProperty]
     private string _uploadFilePath = string.Empty;
@@ -194,6 +227,7 @@ public partial class RequestItem : ObservableObject
         var clone = new RequestItem
         {
             Name = Name,
+            Protocol = Protocol,
             Method = Method,
             Url = Url,
             TimeoutSeconds = TimeoutSeconds,
@@ -203,6 +237,14 @@ public partial class RequestItem : ObservableObject
             GraphQlQuery = GraphQlQuery,
             GraphQlVariables = GraphQlVariables,
             GraphQlOperationName = GraphQlOperationName,
+            MessageBody = MessageBody,
+            MessageFormat = MessageFormat,
+            WaitMilliseconds = WaitMilliseconds,
+            SocketIoEvent = SocketIoEvent,
+            SocketIoNamespace = SocketIoNamespace,
+            SocketIoPath = SocketIoPath,
+            TcpTerminator = TcpTerminator,
+            TcpUseTls = TcpUseTls,
             Owner = Owner,
             Auth = copyAuthorization ? Auth.Clone() : Auth,
         };

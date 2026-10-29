@@ -1135,31 +1135,45 @@
                                 <Grid
                                     Grid.Row="1"
                                     Grid.ColumnSpan="3"
-                                    ColumnDefinitions="Auto,*,Auto,Auto"
+                                    ColumnDefinitions="Auto,Auto,*,Auto,Auto"
                                     Margin="0,0,0,12"
                                 >
                                     <arc:Select
                                         Grid.Column="0"
-                                        Width="130"
-                                        MinWidth="120"
+                                        Width="144"
+                                        MinWidth="132"
                                         HorizontalAlignment="Left"
                                         Margin="0,0,10,0"
+                                        ItemsSource="{Binding Protocols}"
+                                        SelectedItem="{Binding Editing.Protocol, Mode=TwoWay}"
+                                        Placeholder="协议"
+                                        ToolTip.Tip="HTTP 发送 REST 请求；WebSocket / Socket.IO / TCP 建立连接后发送一条消息并收集回复"
+                                        AutomationProperties.Name="请求协议"
+                                    />
+                                    <arc:Select
+                                        Grid.Column="1"
+                                        Width="116"
+                                        MinWidth="108"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,0,10,0"
+                                        IsEnabled="{Binding IsHttpProtocol}"
                                         ItemsSource="{Binding Methods}"
                                         SelectedItem="{Binding Editing.Method, Mode=TwoWay}"
                                         Placeholder="方法"
+                                        ToolTip.Tip="WebSocket、Socket.IO 和 TCP 不使用 HTTP 方法"
                                         AutomationProperties.Name="请求方法"
                                     />
                                     <arc:Input
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         Margin="0,0,10,0"
-                                        Placeholder="https://api.example.com/users"
+                                        Placeholder="{Binding UrlPlaceholder}"
                                         IsLabelVisible="False"
                                         Text="{Binding Editing.Url, Mode=TwoWay}"
                                         FontFamily="{DynamicResource PostSharpCodeFont}"
                                         AutomationProperties.Name="请求地址"
                                     />
                                     <StackPanel
-                                        Grid.Column="2"
+                                        Grid.Column="3"
                                         Orientation="Horizontal"
                                         Spacing="6"
                                         Margin="0,0,8,0"
@@ -1190,25 +1204,26 @@
                                         />
                                         <arc:Switch
                                             IsChecked="{Binding Editing.FollowRedirects, Mode=TwoWay}"
+                                            IsEnabled="{Binding IsHttpProtocol}"
                                             ToolTip.Tip="跟随 3xx 重定向（最多 10 次）；关闭后直接显示 3xx 响应"
                                             AutomationProperties.Name="跟随重定向"
                                         />
                                     </StackPanel>
                                     <StackPanel
-                                        Grid.Column="3"
+                                        Grid.Column="4"
                                         Orientation="Horizontal"
                                         Spacing="8"
                                     >
                                         <arc:Button
                                             Variant="Primary"
                                             IsDefault="True"
-                                            MinWidth="88"
+                                            MinWidth="96"
                                             IsLoading="{Binding Editing.IsSending}"
                                             Command="{Binding SendCommand}"
                                         >
                                             <controls:IconLabel
                                                 Icon="{x:Static arc:ArcIcons.SendHorizontal}"
-                                                Text="发送"
+                                                Text="{Binding SendButtonLabel}"
                                             />
                                         </arc:Button>
                                         <arc:Button
@@ -1577,13 +1592,17 @@
                                             </arc:ScrollArea>
                                         </arc:TabItem>
 
-                                        <arc:TabItem Header="请求体">
+                                        <arc:TabItem Header="{Binding RequestBodyTabHeader}">
                                             <Grid
                                                 RowDefinitions="Auto,*"
                                                 Margin="0,6,0,0"
                                                 RowSpacing="10"
                                             >
-                                                <WrapPanel ItemSpacing="12" LineSpacing="8">
+                                                <WrapPanel
+                                                    IsVisible="{Binding IsHttpProtocol}"
+                                                    ItemSpacing="12"
+                                                    LineSpacing="8"
+                                                >
                                                     <arc:SegmentedControl
                                                         SelectedValue="{Binding Editing.BodyMode, Mode=TwoWay}"
                                                         AutomationProperties.Name="请求体格式"
@@ -1644,7 +1663,10 @@
                                                     />
                                                 </WrapPanel>
 
-                                                <Grid Grid.Row="1">
+                                                <Grid
+                                                    Grid.Row="1"
+                                                    IsVisible="{Binding IsHttpProtocol}"
+                                                >
                                                     <Grid
                                                         IsVisible="{Binding ShowRequestBodyEditor}"
                                                         RowDefinitions="Auto,*"
@@ -1890,10 +1912,159 @@
                                                         </Grid>
                                                     </Grid>
                                                 </Grid>
+
+                                                <Grid
+                                                    Grid.Row="0"
+                                                    Grid.RowSpan="2"
+                                                    IsVisible="{Binding IsProtocolRequest}"
+                                                    RowDefinitions="Auto,Auto,Auto,*"
+                                                    RowSpacing="10"
+                                                >
+                                                    <WrapPanel ItemSpacing="12" LineSpacing="8">
+                                                        <arc:SegmentedControl
+                                                            IsVisible="{Binding !IsSocketIoProtocol}"
+                                                            SelectedValue="{Binding Editing.MessageFormat, Mode=TwoWay}"
+                                                            AutomationProperties.Name="消息格式"
+                                                        >
+                                                            <arc:SegmentedOption
+                                                                Value="Text"
+                                                                Label="文本"
+                                                            />
+                                                            <arc:SegmentedOption
+                                                                Value="Hex"
+                                                                Label="Hex 字节"
+                                                            />
+                                                        </arc:SegmentedControl>
+                                                        <StackPanel
+                                                            Orientation="Horizontal"
+                                                            Spacing="8"
+                                                            IsVisible="{Binding IsSocketIoProtocol}"
+                                                        >
+                                                            <arc:Input
+                                                                Width="150"
+                                                                Label="事件名"
+                                                                Text="{Binding Editing.SocketIoEvent, Mode=TwoWay}"
+                                                                AutomationProperties.Name="Socket.IO 事件名"
+                                                            />
+                                                            <arc:Input
+                                                                Width="130"
+                                                                Label="命名空间"
+                                                                Text="{Binding Editing.SocketIoNamespace, Mode=TwoWay}"
+                                                                AutomationProperties.Name="Socket.IO 命名空间"
+                                                            />
+                                                            <arc:Input
+                                                                Width="140"
+                                                                Label="路径"
+                                                                Text="{Binding Editing.SocketIoPath, Mode=TwoWay}"
+                                                                AutomationProperties.Name="Socket.IO 路径"
+                                                            />
+                                                        </StackPanel>
+                                                        <StackPanel
+                                                            Orientation="Horizontal"
+                                                            Spacing="8"
+                                                            IsVisible="{Binding IsTcpProtocol}"
+                                                        >
+                                                            <arc:SegmentedControl
+                                                                SelectedValue="{Binding Editing.TcpTerminator, Mode=TwoWay}"
+                                                                AutomationProperties.Name="TCP 结束符"
+                                                            >
+                                                                <arc:SegmentedOption
+                                                                    Value="None"
+                                                                    Label="无结束符"
+                                                                />
+                                                                <arc:SegmentedOption
+                                                                    Value="LF"
+                                                                    Label="LF"
+                                                                />
+                                                                <arc:SegmentedOption
+                                                                    Value="CRLF"
+                                                                    Label="CRLF"
+                                                                />
+                                                            </arc:SegmentedControl>
+                                                            <arc:Switch
+                                                                Content="TLS"
+                                                                IsChecked="{Binding Editing.TcpUseTls, Mode=TwoWay}"
+                                                                ToolTip.Tip="使用 TLS 加密连接；tls:// 与 tcps:// 地址也会自动启用"
+                                                                AutomationProperties.Name="TCP TLS"
+                                                            />
+                                                        </StackPanel>
+                                                        <StackPanel
+                                                            Orientation="Horizontal"
+                                                            Spacing="6"
+                                                            VerticalAlignment="Center"
+                                                        >
+                                                            <TextBlock
+                                                                Text="等待回复"
+                                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                                VerticalAlignment="Center"
+                                                            />
+                                                            <arc:NumberField
+                                                                Width="150"
+                                                                IsLabelVisible="False"
+                                                                Minimum="100"
+                                                                Maximum="60000"
+                                                                Step="500"
+                                                                SuffixFormatter="{x:Static controls:TimeoutFormatting.MillisecondsFormatter}"
+                                                                Value="{Binding Editing.WaitMilliseconds, Mode=TwoWay}"
+                                                                ToolTip.Tip="发送后继续收集回复的时间窗口，单位毫秒"
+                                                                AutomationProperties.Name="等待回复毫秒"
+                                                            />
+                                                        </StackPanel>
+                                                    </WrapPanel>
+
+                                                    <TextBlock
+                                                        Grid.Row="1"
+                                                        IsVisible="{Binding IsWebSocketProtocol}"
+                                                        Text="http/https 会自动转换成 ws/wss；请求头里的 Sec-WebSocket-Protocol 会作为子协议；发送一条消息后收集回复，等待窗口结束自动断开。"
+                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                        TextWrapping="Wrap"
+                                                    />
+                                                    <TextBlock
+                                                        Grid.Row="1"
+                                                        IsVisible="{Binding IsSocketIoProtocol}"
+                                                        Text="使用 Engine.IO v4 的 WebSocket 传输（EIO=4）：自动握手、连接命名空间、发送一个事件并收集事件回执；事件负载按 JSON 解析，解析失败时按字符串发送。"
+                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                        TextWrapping="Wrap"
+                                                    />
+                                                    <TextBlock
+                                                        Grid.Row="1"
+                                                        IsVisible="{Binding IsTcpProtocol}"
+                                                        Text="支持 host:port、tcp:// 和 tls://；文本消息可自动追加 LF/CRLF，Hex 模式按原始字节发送，收到二进制数据时显示十六进制。"
+                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                        TextWrapping="Wrap"
+                                                    />
+
+                                                    <TextBlock
+                                                        Grid.Row="2"
+                                                        Text="发送内容"
+                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                    />
+                                                    <arc:Textarea
+                                                        Grid.Row="3"
+                                                        Text="{Binding Editing.MessageBody, Mode=TwoWay}"
+                                                        IsLabelVisible="False"
+                                                        IsResizable="False"
+                                                        MinHeight="120"
+                                                        Margin="0,0,0,8"
+                                                        ClipToBounds="True"
+                                                        FontFamily="{DynamicResource PostSharpCodeFont}"
+                                                        FontSize="{DynamicResource PostSharpCodeFontSize}"
+                                                        Placeholder="Hello from PostSharp"
+                                                        AutomationProperties.Name="协议消息内容"
+                                                    />
+                                                </Grid>
                                             </Grid>
                                         </arc:TabItem>
 
-                                        <arc:TabItem Header="cURL">
+                                        <arc:TabItem
+                                            Header="cURL"
+                                            IsVisible="{Binding IsHttpProtocol}"
+                                        >
                                             <Grid
                                                 RowDefinitions="Auto,*"
                                                 Margin="0,6,0,0"
@@ -1949,7 +2120,7 @@
 
                                         <arc:TabItem
                                             Header="接口文档"
-                                            IsVisible="{Binding HasOpenApiDoc}"
+                                            IsVisible="{Binding ShowOpenApiDocTab}"
                                         >
                                             <Grid
                                                 RowDefinitions="Auto,*"
@@ -2008,7 +2179,10 @@
                                             </Grid>
                                         </arc:TabItem>
 
-                                        <arc:TabItem Header="调用代码">
+                                        <arc:TabItem
+                                            Header="调用代码"
+                                            IsVisible="{Binding IsHttpProtocol}"
+                                        >
                                             <Grid
                                                 RowDefinitions="Auto,*"
                                                 Margin="0,6,0,0"

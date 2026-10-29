@@ -31,7 +31,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private readonly SuiteStore _suiteStore = new();
     private readonly AuditStore _auditStore = new();
     private readonly SettingsStore _settingsStore = new();
-    private readonly HttpRequestService _http = new();
+    private readonly RequestSendService _requests = new();
     private readonly AuthorizationService _authorizationService = new();
     private readonly MockApiServer _mockServer = new();
     private readonly AuditScrubber _auditScrubber;
@@ -108,10 +108,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         );
         Settings.PropertyChanged += OnSettingsChanged;
         IsWorkspaceSideBySide = Settings.WorkspaceLayout != StackedLayout;
-        _http.TimeoutSeconds = Settings.RequestTimeoutSeconds;
-        _http.AutoFormatResponse = Settings.AutoFormatResponse;
-        _http.SseThinkingPath = Settings.SseThinkingPath;
-        _http.SseContentPath = Settings.SseContentPath;
+        _requests.TimeoutSeconds = Settings.RequestTimeoutSeconds;
+        _requests.AutoFormatResponse = Settings.AutoFormatResponse;
+        _requests.SseThinkingPath = Settings.SseThinkingPath;
+        _requests.SseContentPath = Settings.SseContentPath;
         _auditLimit = Math.Max(0, Settings.AuditLimit);
         _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
 
@@ -1644,10 +1644,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
     {
-        _http.TimeoutSeconds = Math.Clamp(Settings.RequestTimeoutSeconds, 5, 600);
-        _http.AutoFormatResponse = Settings.AutoFormatResponse;
-        _http.SseThinkingPath = Settings.SseThinkingPath;
-        _http.SseContentPath = Settings.SseContentPath;
+        _requests.TimeoutSeconds = Math.Clamp(Settings.RequestTimeoutSeconds, 5, 600);
+        _requests.AutoFormatResponse = Settings.AutoFormatResponse;
+        _requests.SseThinkingPath = Settings.SseThinkingPath;
+        _requests.SseContentPath = Settings.SseContentPath;
         _largeResponseThreshold = Math.Max(8, Settings.LargeResponseThresholdKb) * 1024;
         _auditLimit = Math.Max(0, Settings.AuditLimit);
 
@@ -1955,13 +1955,55 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         return Math.Clamp(longest * 12.0, 600, 80000);
     }
 
-    public bool IsMultipartBody => Editing.BodyMode == "Multipart";
+    public IReadOnlyList<string> Protocols => RequestProtocol.All;
 
-    public bool IsJsonBody => Editing.BodyMode == "Json";
+    public bool IsHttpProtocol => RequestProtocol.IsHttp(Editing.Protocol);
 
-    public bool IsGraphQlBody => Editing.BodyMode == "GraphQL";
+    public bool IsWebSocketProtocol =>
+        string.Equals(
+            RequestProtocol.Normalize(Editing.Protocol),
+            RequestProtocol.WebSocket,
+            StringComparison.Ordinal
+        );
 
-    public bool IsTextBody => !IsMultipartBody && !IsGraphQlBody;
+    public bool IsSocketIoProtocol =>
+        string.Equals(
+            RequestProtocol.Normalize(Editing.Protocol),
+            RequestProtocol.SocketIo,
+            StringComparison.Ordinal
+        );
+
+    public bool IsTcpProtocol =>
+        string.Equals(
+            RequestProtocol.Normalize(Editing.Protocol),
+            RequestProtocol.Tcp,
+            StringComparison.Ordinal
+        );
+
+    public bool IsProtocolRequest => !IsHttpProtocol;
+
+    public bool ShowOpenApiDocTab => IsHttpProtocol && HasOpenApiDoc;
+
+    public bool IsMessageFormatHex =>
+        string.Equals(Editing.MessageFormat, "Hex", StringComparison.OrdinalIgnoreCase);
+
+    public string RequestBodyTabHeader => IsHttpProtocol ? "请求体" : "消息";
+
+    public string SendButtonLabel => IsHttpProtocol ? "发送" : "连接并发送";
+
+    public string UrlPlaceholder =>
+        IsWebSocketProtocol ? "wss://example.com/socket"
+        : IsSocketIoProtocol ? "http://localhost:3000"
+        : IsTcpProtocol ? "tcp://127.0.0.1:9000"
+        : "https://api.example.com/users";
+
+    public bool IsMultipartBody => IsHttpProtocol && Editing.BodyMode == "Multipart";
+
+    public bool IsJsonBody => IsHttpProtocol && Editing.BodyMode == "Json";
+
+    public bool IsGraphQlBody => IsHttpProtocol && Editing.BodyMode == "GraphQL";
+
+    public bool IsTextBody => !IsMultipartBody && !IsGraphQlBody && IsHttpProtocol;
 
     public bool ShowRequestBodyJsonViewer => IsJsonBody && IsRequestBodyJsonView;
 
@@ -2027,9 +2069,32 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         OnPropertyChanged(nameof(EditorHint));
         BindEditingTracking();
         OnPropertyChanged(nameof(EditingAuth));
+        NotifyProtocolState();
+        RefreshRequestTabOptions();
         RefreshAuthState();
         RefreshOpenApiDocState();
         RefreshCodePreview();
+        RefreshDerivedState();
+    }
+
+    private void NotifyProtocolState()
+    {
+        OnPropertyChanged(nameof(IsHttpProtocol));
+        OnPropertyChanged(nameof(IsWebSocketProtocol));
+        OnPropertyChanged(nameof(IsSocketIoProtocol));
+        OnPropertyChanged(nameof(IsTcpProtocol));
+        OnPropertyChanged(nameof(IsProtocolRequest));
+        OnPropertyChanged(nameof(ShowOpenApiDocTab));
+        OnPropertyChanged(nameof(IsMessageFormatHex));
+        OnPropertyChanged(nameof(RequestBodyTabHeader));
+        OnPropertyChanged(nameof(SendButtonLabel));
+        OnPropertyChanged(nameof(UrlPlaceholder));
+        OnPropertyChanged(nameof(IsMultipartBody));
+        OnPropertyChanged(nameof(IsJsonBody));
+        OnPropertyChanged(nameof(IsGraphQlBody));
+        OnPropertyChanged(nameof(IsTextBody));
+        OnPropertyChanged(nameof(ShowRequestBodyJsonViewer));
+        OnPropertyChanged(nameof(ShowRequestBodyEditor));
     }
 
     partial void OnSelectedCodeLanguageChanged(CodeLanguageOption value)
@@ -2039,7 +2104,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         RefreshCodePreview();
     }
 
-    partial void OnHasOpenApiDocChanged(bool value) => RefreshRequestTabOptions();
+    partial void OnHasOpenApiDocChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowOpenApiDocTab));
+        RefreshRequestTabOptions();
+    }
 
     partial void OnRequestTabIndexChanged(int value)
     {
@@ -2059,17 +2128,21 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         RequestTabOptions.Add(new RequestTabOption(0, "参数"));
         RequestTabOptions.Add(new RequestTabOption(1, "请求头"));
         RequestTabOptions.Add(new RequestTabOption(2, "授权"));
-        RequestTabOptions.Add(new RequestTabOption(3, "请求体"));
-        RequestTabOptions.Add(new RequestTabOption(4, "cURL"));
-        if (HasOpenApiDoc)
+        RequestTabOptions.Add(new RequestTabOption(3, RequestBodyTabHeader));
+        if (IsHttpProtocol)
         {
-            RequestTabOptions.Add(new RequestTabOption(5, "接口文档"));
+            RequestTabOptions.Add(new RequestTabOption(4, "cURL"));
+            if (ShowOpenApiDocTab)
+            {
+                RequestTabOptions.Add(new RequestTabOption(5, "接口文档"));
+            }
+
+            RequestTabOptions.Add(new RequestTabOption(6, "调用代码"));
         }
 
-        RequestTabOptions.Add(new RequestTabOption(6, "调用代码"));
         RequestTabIndex =
             RequestTabOptions.FirstOrDefault(option => option.Index == current)?.Index
-            ?? RequestTabOptions[0].Index;
+            ?? (IsHttpProtocol ? 0 : 3);
         foreach (var option in RequestTabOptions)
         {
             option.IsSelected = option.Index == RequestTabIndex;
@@ -2300,7 +2373,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                         ApplyUploadProgress(progress);
                     }
                 });
-                result = await _http.SendAsync(
+                result = await _requests.SendAsync(
                     composed,
                     stored.Url,
                     cancellation.Token,
@@ -2399,7 +2472,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 SecretMasker.MaskRequest(composed, SecretMasker.CollectAllSecrets(Environments))
             );
             var logUrl = stored.Url;
-            var result = await _http.SendAsync(
+            var result = await _requests.SendAsync(
                 composed,
                 logUrl,
                 cancellation.Token,
@@ -3881,6 +3954,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     private static string BuildMultipartPreview(RequestItem request)
     {
+        if (!RequestProtocol.IsHttp(request.Protocol))
+        {
+            return request.MessageBody;
+        }
+
         if (!string.Equals(request.BodyMode, "Multipart", StringComparison.OrdinalIgnoreCase))
         {
             return request.Body;
@@ -3952,7 +4030,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             SizeBytes = result.SizeBytes,
             IsSuccess = result.HasResponse && result.StatusCode < 400,
             Error = result.Error is null ? null : SecretMasker.MaskSecrets(result.Error, secrets),
-            Curl = stored is null ? null : AuditEntry.LimitCurl(RequestComposer.BuildCurl(stored)),
+            Curl =
+                stored is null || stored.ProtocolOptions is not null
+                    ? null
+                    : AuditEntry.LimitCurl(RequestComposer.BuildCurl(stored)),
             RequestHeaders = Truncate(requestHeaders, AuditPreviewLimit),
             RequestBodyPreview = Truncate(
                 stored?.Body ?? SecretMasker.MaskSecrets(BuildMultipartPreview(request), secrets),
@@ -5692,7 +5773,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                     composed,
                     secrets
                 );
-                result = await _http.SendAsync(
+                result = await _requests.SendAsync(
                     composed,
                     stored.Url,
                     cancellationToken,
@@ -6471,6 +6552,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return;
         }
 
+        if (e.PropertyName == nameof(RequestItem.Protocol))
+        {
+            NotifyProtocolState();
+            RefreshRequestTabOptions();
+            RefreshDerivedState();
+            return;
+        }
+
         if (
             e.PropertyName
             is nameof(RequestItem.Url)
@@ -6480,6 +6569,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 or nameof(RequestItem.GraphQlQuery)
                 or nameof(RequestItem.GraphQlVariables)
                 or nameof(RequestItem.GraphQlOperationName)
+                or nameof(RequestItem.MessageBody)
+                or nameof(RequestItem.MessageFormat)
                 or nameof(RequestItem.UploadFilePath)
                 or nameof(RequestItem.UploadFieldName)
         )
@@ -6567,8 +6658,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     private void RefreshDerivedState()
     {
-        var body = IsGraphQlBody
-            ? Editing.GraphQlQuery ?? string.Empty
+        var body =
+            IsProtocolRequest ? Editing.MessageBody ?? string.Empty
+            : IsGraphQlBody ? Editing.GraphQlQuery ?? string.Empty
             : Editing.Body ?? string.Empty;
         BodyPreview = string.IsNullOrWhiteSpace(body)
             ? "请求体为空"
@@ -6580,12 +6672,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 260
             );
 
-        OnPropertyChanged(nameof(IsMultipartBody));
-        OnPropertyChanged(nameof(IsJsonBody));
-        OnPropertyChanged(nameof(IsGraphQlBody));
-        OnPropertyChanged(nameof(IsTextBody));
-        OnPropertyChanged(nameof(ShowRequestBodyJsonViewer));
-        OnPropertyChanged(nameof(ShowRequestBodyEditor));
+        NotifyProtocolState();
         OnPropertyChanged(nameof(HasUploadFile));
 
         var duplicates = Editing
@@ -6848,7 +6935,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             ? BadgeTone.Warning
             : result.StatusCode switch
             {
-                >= 200 and < 300 => BadgeTone.Success,
+                >= 100 and < 300 => BadgeTone.Success,
                 >= 300 and < 400 => BadgeTone.Info,
                 >= 400 and < 500 => BadgeTone.Warning,
                 _ => BadgeTone.Danger,
@@ -6906,6 +6993,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         var entry = new HistoryEntry
         {
             Name = request.Name,
+            Protocol = RequestProtocol.Normalize(request.Protocol),
             Method = request.Method,
             Url = SecretMasker.MaskSecrets(request.Url, secrets),
             TimeoutSeconds = request.TimeoutSeconds,
@@ -6919,6 +7007,16 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 SecretMasker.MaskSecrets(request.GraphQlVariables, secrets)
             ),
             GraphQlOperationName = request.GraphQlOperationName,
+            MessageBody = HistoryEntry.LimitBody(
+                SecretMasker.MaskSecrets(request.MessageBody, secrets)
+            ),
+            MessageFormat = request.MessageFormat,
+            WaitMilliseconds = request.WaitMilliseconds,
+            SocketIoEvent = request.SocketIoEvent,
+            SocketIoNamespace = request.SocketIoNamespace,
+            SocketIoPath = request.SocketIoPath,
+            TcpTerminator = request.TcpTerminator,
+            TcpUseTls = request.TcpUseTls,
             StatusCode = result.StatusCode,
             DurationMs = result.ElapsedMs,
             Params = request

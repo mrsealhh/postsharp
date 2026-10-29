@@ -642,6 +642,7 @@ public sealed class WorkspaceStore
         {
             Id = dto.Id == Guid.Empty ? Guid.NewGuid() : dto.Id,
             Name = dto.Name,
+            Protocol = RequestProtocol.Normalize(dto.Protocol),
             Method = string.IsNullOrWhiteSpace(dto.Method) ? "GET" : dto.Method,
             Url = dto.Url,
             TimeoutSeconds = dto.TimeoutSeconds,
@@ -651,6 +652,24 @@ public sealed class WorkspaceStore
             GraphQlQuery = dto.GraphQlQuery,
             GraphQlVariables = dto.GraphQlVariables,
             GraphQlOperationName = dto.GraphQlOperationName,
+            MessageBody = dto.MessageBody,
+            MessageFormat = string.IsNullOrWhiteSpace(dto.MessageFormat)
+                ? "Text"
+                : dto.MessageFormat,
+            WaitMilliseconds = dto.WaitMilliseconds <= 0 ? 3000 : dto.WaitMilliseconds,
+            SocketIoEvent = string.IsNullOrWhiteSpace(dto.SocketIoEvent)
+                ? "message"
+                : dto.SocketIoEvent,
+            SocketIoNamespace = string.IsNullOrWhiteSpace(dto.SocketIoNamespace)
+                ? "/"
+                : dto.SocketIoNamespace,
+            SocketIoPath = string.IsNullOrWhiteSpace(dto.SocketIoPath)
+                ? "/socket.io"
+                : dto.SocketIoPath,
+            TcpTerminator = string.IsNullOrWhiteSpace(dto.TcpTerminator)
+                ? "None"
+                : dto.TcpTerminator,
+            TcpUseTls = dto.TcpUseTls,
             UploadFilePath = dto.UploadFiles.Count == 0 ? dto.UploadFilePath : string.Empty,
             UploadFieldName = string.IsNullOrWhiteSpace(dto.UploadFieldName)
                 ? "file"
@@ -714,6 +733,7 @@ public sealed class WorkspaceStore
         {
             Timestamp = dto.Timestamp,
             Name = dto.Name,
+            Protocol = RequestProtocol.Normalize(dto.Protocol),
             Method = dto.Method,
             Url = dto.Url,
             TimeoutSeconds = dto.TimeoutSeconds,
@@ -723,6 +743,14 @@ public sealed class WorkspaceStore
             GraphQlQuery = dto.GraphQlQuery,
             GraphQlVariables = dto.GraphQlVariables,
             GraphQlOperationName = dto.GraphQlOperationName,
+            MessageBody = HistoryEntry.LimitBody(dto.MessageBody),
+            MessageFormat = dto.MessageFormat,
+            WaitMilliseconds = dto.WaitMilliseconds,
+            SocketIoEvent = dto.SocketIoEvent,
+            SocketIoNamespace = dto.SocketIoNamespace,
+            SocketIoPath = dto.SocketIoPath,
+            TcpTerminator = dto.TcpTerminator,
+            TcpUseTls = dto.TcpUseTls,
             StatusCode = dto.StatusCode,
             DurationMs = dto.DurationMs,
             Params = dto.Params.ToList(),
@@ -736,6 +764,7 @@ public sealed class WorkspaceStore
         {
             Timestamp = entry.Timestamp,
             Name = entry.Name,
+            Protocol = entry.Protocol,
             Method = entry.Method,
             Url = entry.Url,
             TimeoutSeconds = entry.TimeoutSeconds,
@@ -745,6 +774,14 @@ public sealed class WorkspaceStore
             GraphQlQuery = entry.GraphQlQuery,
             GraphQlVariables = entry.GraphQlVariables,
             GraphQlOperationName = entry.GraphQlOperationName,
+            MessageBody = HistoryEntry.LimitBody(entry.MessageBody),
+            MessageFormat = entry.MessageFormat,
+            WaitMilliseconds = entry.WaitMilliseconds,
+            SocketIoEvent = entry.SocketIoEvent,
+            SocketIoNamespace = entry.SocketIoNamespace,
+            SocketIoPath = entry.SocketIoPath,
+            TcpTerminator = entry.TcpTerminator,
+            TcpUseTls = entry.TcpUseTls,
             StatusCode = entry.StatusCode,
             DurationMs = entry.DurationMs,
             Params = entry.Params.ToList(),
@@ -758,6 +795,7 @@ public sealed class WorkspaceStore
         {
             Id = request.Id,
             Name = request.Name,
+            Protocol = request.Protocol,
             Method = request.Method,
             Url = request.Url,
             TimeoutSeconds = request.TimeoutSeconds,
@@ -767,6 +805,14 @@ public sealed class WorkspaceStore
             GraphQlQuery = request.GraphQlQuery,
             GraphQlVariables = request.GraphQlVariables,
             GraphQlOperationName = request.GraphQlOperationName,
+            MessageBody = request.MessageBody,
+            MessageFormat = request.MessageFormat,
+            WaitMilliseconds = request.WaitMilliseconds,
+            SocketIoEvent = request.SocketIoEvent,
+            SocketIoNamespace = request.SocketIoNamespace,
+            SocketIoPath = request.SocketIoPath,
+            TcpTerminator = request.TcpTerminator,
+            TcpUseTls = request.TcpUseTls,
             UploadFilePath = request.UploadFilePath,
             UploadFieldName = request.UploadFieldName,
             UploadFiles = request
@@ -900,6 +946,8 @@ public sealed class RequestDto
 
     public string Name { get; set; } = string.Empty;
 
+    public string Protocol { get; set; } = RequestProtocol.Http;
+
     public string Method { get; set; } = "GET";
 
     public string Url { get; set; } = string.Empty;
@@ -917,6 +965,22 @@ public sealed class RequestDto
     public string GraphQlVariables { get; set; } = "{}";
 
     public string GraphQlOperationName { get; set; } = string.Empty;
+
+    public string MessageBody { get; set; } = string.Empty;
+
+    public string MessageFormat { get; set; } = "Text";
+
+    public int WaitMilliseconds { get; set; } = 3000;
+
+    public string SocketIoEvent { get; set; } = "message";
+
+    public string SocketIoNamespace { get; set; } = "/";
+
+    public string SocketIoPath { get; set; } = "/socket.io";
+
+    public string TcpTerminator { get; set; } = "None";
+
+    public bool TcpUseTls { get; set; }
 
     public string UploadFilePath { get; set; } = string.Empty;
 
@@ -985,6 +1049,8 @@ public sealed class HistoryDto
 
     public string Name { get; set; } = string.Empty;
 
+    public string Protocol { get; set; } = RequestProtocol.Http;
+
     public string Method { get; set; } = "GET";
 
     public string Url { get; set; } = string.Empty;
@@ -1002,6 +1068,22 @@ public sealed class HistoryDto
     public string GraphQlVariables { get; set; } = "{}";
 
     public string GraphQlOperationName { get; set; } = string.Empty;
+
+    public string MessageBody { get; set; } = string.Empty;
+
+    public string MessageFormat { get; set; } = "Text";
+
+    public int WaitMilliseconds { get; set; } = 3000;
+
+    public string SocketIoEvent { get; set; } = "message";
+
+    public string SocketIoNamespace { get; set; } = "/";
+
+    public string SocketIoPath { get; set; } = "/socket.io";
+
+    public string TcpTerminator { get; set; } = "None";
+
+    public bool TcpUseTls { get; set; }
 
     public int StatusCode { get; set; }
 
