@@ -1,18 +1,9 @@
-using System.Text.Encodings.Web;
-using System.Text.Json;
 using PostSharp.Models;
 
 namespace PostSharp.Services;
 
 public sealed class WorkspaceStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     private readonly StorageCoordinator _storage = StorageCoordinator.Current;
 
     public string FilePath { get; }
@@ -30,10 +21,7 @@ public sealed class WorkspaceStore
         {
             try
             {
-                var workspace = JsonSerializer.Deserialize<WorkspaceDto>(
-                    document.Payload,
-                    JsonOptions
-                );
+                var workspace = DataJson.Deserialize<WorkspaceDto>(document.Payload);
                 if (workspace is null)
                 {
                     return new DataFileLoad<WorkspaceDto>(null, DataFileState.Unreadable, null);
@@ -43,7 +31,7 @@ public sealed class WorkspaceStore
                 {
                     _storage.SaveDocument(
                         StorageCategories.Workspace,
-                        JsonSerializer.Serialize(workspace, JsonOptions)
+                        DataJson.Serialize(workspace)
                     );
                     _storage.CompactLocalDatabase();
                 }
@@ -58,17 +46,11 @@ public sealed class WorkspaceStore
         }
 
         // One-time migration from the old JSON layout.
-        var load = DataFile.Load(
-            FilePath,
-            text => JsonSerializer.Deserialize<WorkspaceDto>(text, JsonOptions)
-        );
+        var load = DataFile.Load(FilePath, text => DataJson.Deserialize<WorkspaceDto>(text));
         if (load.Value is { } migrated)
         {
             var migratedSecrets = ProtectLegacyEnvironmentSecrets(migrated);
-            _storage.SaveDocument(
-                StorageCategories.Workspace,
-                JsonSerializer.Serialize(migrated, JsonOptions)
-            );
+            _storage.SaveDocument(StorageCategories.Workspace, DataJson.Serialize(migrated));
             if (migratedSecrets)
             {
                 _storage.CompactLocalDatabase();
@@ -80,10 +62,7 @@ public sealed class WorkspaceStore
 
     /// <summary>Never throws: a failed autosave must not break the request being sent.</summary>
     public SaveResult Save(WorkspaceDto workspace) =>
-        _storage.SaveDocument(
-            StorageCategories.Workspace,
-            JsonSerializer.Serialize(workspace, JsonOptions)
-        );
+        _storage.SaveDocument(StorageCategories.Workspace, DataJson.Serialize(workspace));
 
     public static WorkspaceDto Capture(
         IEnumerable<RequestCollection> collections,

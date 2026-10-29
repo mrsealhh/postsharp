@@ -52,12 +52,6 @@ public static class UpdateService
 
     private static readonly HttpClient Client = CreateClient();
     private static readonly SemaphoreSlim Gate = new(1, 1);
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        WriteIndented = true,
-    };
-
     public static event EventHandler? PendingChanged;
 
     public static Version CurrentVersion =>
@@ -379,7 +373,7 @@ public static class UpdateService
                 Sha256 = actual,
                 ReleaseUrl = release.ReleaseUrl,
             };
-            var json = JsonSerializer.Serialize(pending, JsonOptions);
+            var json = DataJson.Serialize(pending);
             File.WriteAllText(PendingFilePath, json, new UTF8Encoding(false));
             PendingChanged?.Invoke(null, EventArgs.Empty);
         }
@@ -496,10 +490,7 @@ public static class UpdateService
                 return null;
             }
 
-            return JsonSerializer.Deserialize<PendingUpdate>(
-                File.ReadAllText(PendingFilePath),
-                JsonOptions
-            );
+            return DataJson.Deserialize<PendingUpdate>(File.ReadAllText(PendingFilePath));
         }
         catch (Exception exception)
         {

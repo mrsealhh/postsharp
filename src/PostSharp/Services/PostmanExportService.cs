@@ -31,7 +31,7 @@ public static class PostmanExportService
         var items = new JsonArray();
         foreach (var collection in collections)
         {
-            items.Add(ToFolder(collection));
+            items.Add((JsonNode)ToFolder(collection));
         }
 
         root["item"] = items;
@@ -69,12 +69,12 @@ public static class PostmanExportService
         var items = new JsonArray();
         foreach (var child in collection.Children)
         {
-            items.Add(ToFolder(child));
+            items.Add((JsonNode)ToFolder(child));
         }
 
         foreach (var request in collection.Requests)
         {
-            items.Add(ToRequest(request));
+            items.Add((JsonNode)ToRequest(request));
         }
 
         root["item"] = items;
@@ -90,12 +90,12 @@ public static class PostmanExportService
         var items = new JsonArray();
         foreach (var child in collection.Children)
         {
-            items.Add(ToFolder(child));
+            items.Add((JsonNode)ToFolder(child));
         }
 
         foreach (var request in collection.Requests)
         {
-            items.Add(ToRequest(request));
+            items.Add((JsonNode)ToRequest(request));
         }
 
         folder["item"] = items;
@@ -142,7 +142,7 @@ public static class PostmanExportService
                 header["disabled"] = true;
             }
 
-            headers.Add(header);
+            headers.Add((JsonNode)header);
         }
 
         return headers;
@@ -232,7 +232,7 @@ public static class PostmanExportService
                 field["disabled"] = true;
             }
 
-            formData.Add(field);
+            formData.Add((JsonNode)field);
         }
 
         if (request.UploadFiles.Count > 0)
@@ -240,28 +240,30 @@ public static class PostmanExportService
             foreach (var file in request.UploadFiles)
             {
                 formData.Add(
-                    new JsonObject
-                    {
-                        ["key"] = string.IsNullOrWhiteSpace(file.FieldName)
-                            ? "file"
-                            : file.FieldName,
-                        ["type"] = "file",
-                        ["src"] = file.FilePath,
-                    }
+                    (JsonNode)
+                        new JsonObject
+                        {
+                            ["key"] = string.IsNullOrWhiteSpace(file.FieldName)
+                                ? "file"
+                                : file.FieldName,
+                            ["type"] = "file",
+                            ["src"] = file.FilePath,
+                        }
                 );
             }
         }
         else if (!string.IsNullOrWhiteSpace(request.UploadFilePath))
         {
             formData.Add(
-                new JsonObject
-                {
-                    ["key"] = string.IsNullOrWhiteSpace(request.UploadFieldName)
-                        ? "file"
-                        : request.UploadFieldName,
-                    ["type"] = "file",
-                    ["src"] = request.UploadFilePath,
-                }
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["key"] = string.IsNullOrWhiteSpace(request.UploadFieldName)
+                            ? "file"
+                            : request.UploadFieldName,
+                        ["type"] = "file",
+                        ["src"] = request.UploadFilePath,
+                    }
             );
         }
 

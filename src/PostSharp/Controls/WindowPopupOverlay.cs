@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -23,6 +24,11 @@ public static class WindowPopupOverlay
         /// <summary>
         /// 在窗口打开后调用：打开该窗口的弹出层，让 Arc 弹层留在窗口内部渲染。
         /// </summary>
+        [DynamicDependency(
+            DynamicallyAccessedMemberTypes.PublicProperties
+                | DynamicallyAccessedMemberTypes.NonPublicProperties,
+            typeof(VisualLayerManager)
+        )]
         public void EnablePopupOverlayLayer()
         {
             if (!window.TryEnablePopupOverlayLayer())

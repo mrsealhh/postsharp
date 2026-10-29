@@ -1,18 +1,9 @@
-using System.Text.Encodings.Web;
-using System.Text.Json;
 using PostSharp.Models;
 
 namespace PostSharp.Services;
 
 public sealed class SettingsStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     private static AppSettings? _loaded;
 
     private readonly StorageCoordinator _storage = StorageCoordinator.Current;
@@ -50,10 +41,7 @@ public sealed class SettingsStore
         {
             try
             {
-                var documentSettings = JsonSerializer.Deserialize<AppSettings>(
-                    document.Payload,
-                    JsonOptions
-                );
+                var documentSettings = DataJson.Deserialize<AppSettings>(document.Payload);
                 load = documentSettings is null
                     ? new DataFileLoad<AppSettings>(null, DataFileState.Unreadable, null)
                     : new DataFileLoad<AppSettings>(documentSettings, DataFileState.Loaded, null);
@@ -71,16 +59,10 @@ public sealed class SettingsStore
         else
         {
             // One-time migration from the old JSON layout.
-            load = DataFile.Load(
-                FilePath,
-                text => JsonSerializer.Deserialize<AppSettings>(text, JsonOptions)
-            );
+            load = DataFile.Load(FilePath, text => DataJson.Deserialize<AppSettings>(text));
             if (load.Value is { } migrated)
             {
-                _storage.SaveDocument(
-                    StorageCategories.Settings,
-                    JsonSerializer.Serialize(migrated, JsonOptions)
-                );
+                _storage.SaveDocument(StorageCategories.Settings, DataJson.Serialize(migrated));
             }
         }
 
@@ -100,8 +82,5 @@ public sealed class SettingsStore
     }
 
     public SaveResult Save(AppSettings settings) =>
-        _storage.SaveDocument(
-            StorageCategories.Settings,
-            JsonSerializer.Serialize(settings, JsonOptions)
-        );
+        _storage.SaveDocument(StorageCategories.Settings, DataJson.Serialize(settings));
 }

@@ -47,6 +47,7 @@ public static class McpServiceModes
         };
 }
 
+[System.Text.Json.Serialization.JsonConverter(typeof(AppSettingsJsonConverter))]
 public partial class AppSettings : ObservableObject
 {
     [ObservableProperty]

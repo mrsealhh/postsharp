@@ -26,13 +26,13 @@ public static class SocketIoProtocolCodec
         var name = NormalizeNamespace(socketIoNamespace);
         var prefix = name == "/" ? "42" : $"42{name},";
         var name_ = string.IsNullOrWhiteSpace(eventName) ? "message" : eventName.Trim();
-        var values = new JsonArray { name_ };
+        var values = new List<JsonNode?> { JsonValue.Create(name_) };
         if (!string.IsNullOrWhiteSpace(payload))
         {
             values.Add(ParsePayload(payload));
         }
 
-        return prefix + values.ToJsonString();
+        return prefix + new JsonArray(values.ToArray()).ToJsonString();
     }
 
     public static SocketIoPacket Parse(string packet)

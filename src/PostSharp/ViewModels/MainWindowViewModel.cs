@@ -48,17 +48,6 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private const string CliDocsUrl =
         "https://github.com/mrsealhh/postsharp/blob/master/docs/cli.md";
 
-    private static readonly JsonSerializerOptions MappingJsonOptions = new()
-    {
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
-    private static readonly JsonSerializerOptions CompactJsonOptions = new()
-    {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     private int _auditLimit;
     private int _largeResponseThreshold = 64 * 1024;
 
@@ -2127,7 +2116,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return new JsonObject
             {
                 ["mcpServers"] = new JsonObject { ["postsharp"] = server },
-            }.ToJsonString(MappingJsonOptions);
+            }.ToJsonString(DataJson.NodeOptions);
         }
     }
 
@@ -6183,7 +6172,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 var path = mapping.TargetPath.Trim();
                 if (path is "" or "$")
                 {
-                    request.Body = valueNode.ToJsonString(MappingJsonOptions);
+                    request.Body = valueNode.ToJsonString(DataJson.NodeOptions);
                 }
                 else
                 {
@@ -6198,7 +6187,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                         return error;
                     }
 
-                    request.Body = body.ToJsonString(MappingJsonOptions);
+                    request.Body = body.ToJsonString(DataJson.NodeOptions);
                 }
 
                 if (string.Equals(request.BodyMode, "None", StringComparison.OrdinalIgnoreCase))
@@ -6400,7 +6389,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return text ?? string.Empty;
         }
 
-        return node.ToJsonString(MappingJsonOptions);
+        return node.ToJsonString(DataJson.NodeOptions);
     }
 
     [RelayCommand]
@@ -6419,14 +6408,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             if (trimmed[0] is '{' or '[')
             {
                 using var document = System.Text.Json.JsonDocument.Parse(body);
-                Editing.Body = System.Text.Json.JsonSerializer.Serialize(
-                    document.RootElement,
-                    new JsonSerializerOptions
-                    {
-                        WriteIndented = true,
-                        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-                    }
-                );
+                Editing.Body = DataJson.Format(document.RootElement, true, true);
                 ShowToast("JSON 已格式化");
             }
             else if (trimmed[0] == '<')
@@ -6460,10 +6442,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         try
         {
             using var document = System.Text.Json.JsonDocument.Parse(body);
-            Editing.Body = System.Text.Json.JsonSerializer.Serialize(
-                document.RootElement,
-                new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }
-            );
+            Editing.Body = DataJson.Format(document.RootElement, false, true);
             ShowToast("JSON 已压缩为单行");
         }
         catch (Exception exception)
@@ -6546,10 +6525,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         try
         {
             using var document = JsonDocument.Parse(FullResponseBody);
-            var text = JsonSerializer.Serialize(
-                document.RootElement,
-                indented ? MappingJsonOptions : CompactJsonOptions
-            );
+            var text = DataJson.Format(document.RootElement, indented, true);
             ResponseBody = text;
             FullResponseBody = text;
             ResponseClipboardText = text;

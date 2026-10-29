@@ -14,17 +14,6 @@ public sealed record SseTextFormatResult(string Text, string Kind);
 /// </summary>
 public static class SseTextFormatter
 {
-    private static readonly JsonSerializerOptions IndentedJsonOptions = new()
-    {
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
-    private static readonly JsonSerializerOptions CompactJsonOptions = new()
-    {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     public static SseTextFormatResult Apply(string text, bool compact)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -38,10 +27,7 @@ public static class SseTextFormatter
             try
             {
                 using var document = JsonDocument.Parse(text);
-                var json = JsonSerializer.Serialize(
-                    document.RootElement,
-                    compact ? CompactJsonOptions : IndentedJsonOptions
-                );
+                var json = DataJson.Format(document.RootElement, !compact, true);
                 return new SseTextFormatResult(json, "JSON");
             }
             catch (JsonException)

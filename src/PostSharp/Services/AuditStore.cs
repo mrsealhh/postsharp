@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using PostSharp.Models;
 
@@ -11,12 +10,6 @@ namespace PostSharp.Services;
 /// </summary>
 public sealed class AuditStore
 {
-    private static readonly JsonSerializerOptions LegacyJsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     private static readonly object InitializationLock = new();
     private static readonly HashSet<string> Initialized = new(StringComparer.OrdinalIgnoreCase);
     private readonly bool _importLegacy;
@@ -244,10 +237,7 @@ public sealed class AuditStore
                 return [];
             }
 
-            return JsonSerializer.Deserialize<List<AuditEntry>>(
-                    File.ReadAllText(path),
-                    LegacyJsonOptions
-                ) ?? [];
+            return DataJson.Deserialize<List<AuditEntry>>(File.ReadAllText(path)) ?? [];
         }
         catch (Exception exception)
         {
