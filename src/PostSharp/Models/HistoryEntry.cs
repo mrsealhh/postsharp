@@ -17,6 +17,8 @@ public sealed partial class HistoryEntry : ObservableObject
 
     public string Name { get; init; } = string.Empty;
 
+    public string Protocol { get; init; } = RequestProtocol.Http;
+
     public string Method { get; init; } = "GET";
 
     public string Url { get; init; } = string.Empty;
@@ -34,6 +36,22 @@ public sealed partial class HistoryEntry : ObservableObject
     public string GraphQlVariables { get; init; } = "{}";
 
     public string GraphQlOperationName { get; init; } = string.Empty;
+
+    public string MessageBody { get; init; } = string.Empty;
+
+    public string MessageFormat { get; init; } = "Text";
+
+    public int WaitMilliseconds { get; init; } = 3000;
+
+    public string SocketIoEvent { get; init; } = "message";
+
+    public string SocketIoNamespace { get; init; } = "/";
+
+    public string SocketIoPath { get; init; } = "/socket.io";
+
+    public string TcpTerminator { get; init; } = "None";
+
+    public bool TcpUseTls { get; init; }
 
     public List<RowSnapshot> Params { get; init; } = new();
 
@@ -64,7 +82,7 @@ public sealed partial class HistoryEntry : ObservableObject
     public BadgeTone StatusTone =>
         StatusCode switch
         {
-            >= 200 and < 300 => BadgeTone.Success,
+            >= 100 and < 300 => BadgeTone.Success,
             >= 300 and < 400 => BadgeTone.Info,
             >= 400 and < 500 => BadgeTone.Warning,
             _ => BadgeTone.Danger,
@@ -75,7 +93,7 @@ public sealed partial class HistoryEntry : ObservableObject
         {
             Data = StatusCode switch
             {
-                >= 200 and < 300 => ArcIcons.CircleCheck,
+                >= 100 and < 300 => ArcIcons.CircleCheck,
                 >= 300 and < 400 => ArcIcons.Info,
                 >= 400 and < 500 => ArcIcons.TriangleAlert,
                 _ => ArcIcons.CircleX,
@@ -92,6 +110,7 @@ public sealed partial class HistoryEntry : ObservableObject
         var request = new RequestItem
         {
             Name = string.IsNullOrWhiteSpace(Name) ? "历史请求" : $"{Name}（历史）",
+            Protocol = RequestProtocol.Normalize(Protocol),
             Method = Method,
             Url = Url,
             TimeoutSeconds = TimeoutSeconds,
@@ -101,6 +120,14 @@ public sealed partial class HistoryEntry : ObservableObject
             GraphQlQuery = GraphQlQuery,
             GraphQlVariables = GraphQlVariables,
             GraphQlOperationName = GraphQlOperationName,
+            MessageBody = MessageBody,
+            MessageFormat = MessageFormat,
+            WaitMilliseconds = WaitMilliseconds,
+            SocketIoEvent = SocketIoEvent,
+            SocketIoNamespace = SocketIoNamespace,
+            SocketIoPath = SocketIoPath,
+            TcpTerminator = TcpTerminator,
+            TcpUseTls = TcpUseTls,
         };
 
         foreach (var row in Params)

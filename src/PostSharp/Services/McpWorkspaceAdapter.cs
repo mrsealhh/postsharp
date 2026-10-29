@@ -51,7 +51,16 @@ public sealed record McpRequestInfo(
     string UploadFilePath,
     string UploadFieldName,
     int TimeoutSeconds,
-    McpAuthInfo Auth
+    McpAuthInfo Auth,
+    string Protocol,
+    string MessageBody,
+    string MessageFormat,
+    int WaitMilliseconds,
+    string SocketIoEvent,
+    string SocketIoNamespace,
+    string SocketIoPath,
+    string TcpTerminator,
+    bool TcpUseTls
 );
 
 public sealed record McpCollectionInfo(
@@ -316,7 +325,16 @@ public sealed record McpRequestDraft(
     bool? IsFavorite,
     int? Position,
     int? TimeoutSeconds,
-    McpAuthInput? Auth
+    McpAuthInput? Auth,
+    string? Protocol,
+    string? MessageBody,
+    string? MessageFormat,
+    int? WaitMilliseconds,
+    string? SocketIoEvent,
+    string? SocketIoNamespace,
+    string? SocketIoPath,
+    string? TcpTerminator,
+    bool? TcpUseTls
 );
 
 /// <summary>
@@ -327,7 +345,7 @@ public sealed record McpRequestDraft(
 public sealed class McpWorkspaceAdapter
 {
     private readonly MainWindowViewModel _viewModel;
-    private readonly HttpRequestService _http = new();
+    private readonly RequestSendService _requests = new();
 
     public McpWorkspaceAdapter(MainWindowViewModel viewModel) => _viewModel = viewModel;
 
@@ -435,10 +453,25 @@ public sealed class McpWorkspaceAdapter
             var request = new RequestItem
             {
                 Name = string.IsNullOrWhiteSpace(draft.Name) ? "MCP 请求" : draft.Name.Trim(),
+                Protocol = RequestProtocol.Normalize(draft.Protocol),
                 Method = NormalizeMethod(draft.Method),
                 Url = draft.Url ?? string.Empty,
                 BodyMode = NormalizeBodyMode(draft.BodyMode),
                 Body = draft.Body ?? string.Empty,
+                MessageBody = draft.MessageBody ?? string.Empty,
+                MessageFormat = NormalizeMessageFormat(draft.MessageFormat),
+                WaitMilliseconds = Math.Clamp(draft.WaitMilliseconds ?? 3000, 100, 60000),
+                SocketIoEvent = string.IsNullOrWhiteSpace(draft.SocketIoEvent)
+                    ? "message"
+                    : draft.SocketIoEvent.Trim(),
+                SocketIoNamespace = string.IsNullOrWhiteSpace(draft.SocketIoNamespace)
+                    ? "/"
+                    : draft.SocketIoNamespace.Trim(),
+                SocketIoPath = string.IsNullOrWhiteSpace(draft.SocketIoPath)
+                    ? "/socket.io"
+                    : draft.SocketIoPath.Trim(),
+                TcpTerminator = NormalizeTcpTerminator(draft.TcpTerminator),
+                TcpUseTls = draft.TcpUseTls ?? false,
                 UploadFilePath = draft.UploadFilePath ?? string.Empty,
                 UploadFieldName = string.IsNullOrWhiteSpace(draft.UploadFieldName)
                     ? "file"
@@ -491,6 +524,11 @@ public sealed class McpWorkspaceAdapter
                 request.Url = draft.Url;
             }
 
+            if (!string.IsNullOrWhiteSpace(draft.Protocol))
+            {
+                request.Protocol = RequestProtocol.Normalize(draft.Protocol);
+            }
+
             if (!string.IsNullOrWhiteSpace(draft.BodyMode))
             {
                 request.BodyMode = NormalizeBodyMode(draft.BodyMode);
@@ -499,6 +537,46 @@ public sealed class McpWorkspaceAdapter
             if (draft.Body is not null)
             {
                 request.Body = draft.Body;
+            }
+
+            if (draft.MessageBody is not null)
+            {
+                request.MessageBody = draft.MessageBody;
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.MessageFormat))
+            {
+                request.MessageFormat = NormalizeMessageFormat(draft.MessageFormat);
+            }
+
+            if (draft.WaitMilliseconds is { } waitMilliseconds)
+            {
+                request.WaitMilliseconds = Math.Clamp(waitMilliseconds, 100, 60000);
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.SocketIoEvent))
+            {
+                request.SocketIoEvent = draft.SocketIoEvent.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.SocketIoNamespace))
+            {
+                request.SocketIoNamespace = draft.SocketIoNamespace.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.SocketIoPath))
+            {
+                request.SocketIoPath = draft.SocketIoPath.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.TcpTerminator))
+            {
+                request.TcpTerminator = NormalizeTcpTerminator(draft.TcpTerminator);
+            }
+
+            if (draft.TcpUseTls is { } tcpUseTls)
+            {
+                request.TcpUseTls = tcpUseTls;
             }
 
             if (draft.Params is not null)
@@ -610,7 +688,7 @@ public sealed class McpWorkspaceAdapter
                 composed,
                 secrets
             );
-            result = await _http.SendAsync(
+            result = await _requests.SendAsync(
                 composed,
                 stored.Url,
                 cancellationToken,
@@ -2071,7 +2149,16 @@ public sealed class McpWorkspaceAdapter
             request.UploadFilePath,
             request.UploadFieldName,
             request.TimeoutSeconds,
-            ToAuthInfo(request.Auth)
+            ToAuthInfo(request.Auth),
+            RequestProtocol.Normalize(request.Protocol),
+            request.MessageBody,
+            request.MessageFormat,
+            request.WaitMilliseconds,
+            request.SocketIoEvent,
+            request.SocketIoNamespace,
+            request.SocketIoPath,
+            request.TcpTerminator,
+            request.TcpUseTls
         );
 
     private static void ApplyAuth(RequestAuth auth, McpAuthInput input)
@@ -2232,6 +2319,17 @@ public sealed class McpWorkspaceAdapter
             _ => "None",
         };
     }
+
+    private static string NormalizeMessageFormat(string? format) =>
+        string.Equals(format?.Trim(), "Hex", StringComparison.OrdinalIgnoreCase) ? "Hex" : "Text";
+
+    private static string NormalizeTcpTerminator(string? terminator) =>
+        terminator?.Trim().ToUpperInvariant() switch
+        {
+            "LF" => "LF",
+            "CRLF" => "CRLF",
+            _ => "None",
+        };
 
     private sealed record SendSnapshot(
         RequestItem Request,

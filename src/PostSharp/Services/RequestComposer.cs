@@ -17,10 +17,24 @@ public sealed record ComposedRequest(
     string? UploadFilePath = null,
     string? UploadFieldName = null,
     IReadOnlyList<ComposedUploadFile>? UploadFiles = null,
-    bool FollowRedirects = true
+    bool FollowRedirects = true,
+    ProtocolSendOptions? ProtocolOptions = null
 );
 
 public sealed record ComposedUploadFile(string FieldName, string FilePath);
+
+/// <summary>Resolved settings for WebSocket, Socket.IO and TCP requests.</summary>
+public sealed record ProtocolSendOptions(
+    string Protocol,
+    string Payload,
+    string Format = "Text",
+    int WaitMilliseconds = 3000,
+    string EventName = "message",
+    string Namespace = "/",
+    string Path = "/socket.io",
+    string Terminator = "None",
+    bool UseTls = false
+);
 
 public static class RequestComposer
 {
@@ -39,7 +53,15 @@ public static class RequestComposer
             ? "GET"
             : request.Method.Trim().ToUpperInvariant();
 
-        var url = BuildUrl(request, environment);
+        var protocol = RequestProtocol.Normalize(request.Protocol);
+        var protocolOptions =
+            protocol == RequestProtocol.Http
+                ? null
+                : BuildProtocolOptions(request, environment, protocol);
+
+        var url = protocolOptions is null
+            ? BuildUrl(request, environment)
+            : BuildProtocolUrl(request, environment);
         var headers = request
             .Headers.ActiveRows.Select(row => new KeyValuePair<string, string>(
                 row.Key.Trim(),
@@ -69,17 +91,27 @@ public static class RequestComposer
         }
 
         var bodyMode = request.BodyMode ?? "None";
-        var isMultipart = string.Equals(bodyMode, "Multipart", StringComparison.OrdinalIgnoreCase);
-        var isGraphQl = string.Equals(bodyMode, "GraphQL", StringComparison.OrdinalIgnoreCase);
+        var isMultipart =
+            protocolOptions is null
+            && string.Equals(bodyMode, "Multipart", StringComparison.OrdinalIgnoreCase);
+        var isGraphQl =
+            protocolOptions is null
+            && string.Equals(bodyMode, "GraphQL", StringComparison.OrdinalIgnoreCase);
         if (isGraphQl)
         {
             method = "POST";
         }
 
         var hasBody =
-            !isMultipart && !string.Equals(bodyMode, "None", StringComparison.OrdinalIgnoreCase);
+            protocolOptions is null
+            && !isMultipart
+            && !string.Equals(bodyMode, "None", StringComparison.OrdinalIgnoreCase);
         string? body;
-        if (isGraphQl)
+        if (protocolOptions is not null)
+        {
+            body = null;
+        }
+        else if (isGraphQl)
         {
             body = BuildGraphQlBody(request, environment);
         }
@@ -178,7 +210,51 @@ public static class RequestComposer
             uploadFilePath,
             uploadFieldName,
             uploadFiles,
-            request.FollowRedirects
+            request.FollowRedirects,
+            protocolOptions
+        );
+    }
+
+    private static ProtocolSendOptions BuildProtocolOptions(
+        RequestItem request,
+        EnvironmentModel? environment,
+        string protocol
+    )
+    {
+        var format = string.Equals(request.MessageFormat, "Hex", StringComparison.OrdinalIgnoreCase)
+            ? "Hex"
+            : "Text";
+        var waitMilliseconds = Math.Clamp(
+            request.WaitMilliseconds <= 0 ? 3000 : request.WaitMilliseconds,
+            100,
+            60000
+        );
+        var terminator = request.TcpTerminator?.Trim().ToUpperInvariant() switch
+        {
+            "LF" => "LF",
+            "CRLF" => "CRLF",
+            _ => "None",
+        };
+        var eventName = string.IsNullOrWhiteSpace(request.SocketIoEvent)
+            ? "message"
+            : request.SocketIoEvent.Trim();
+        var socketIoNamespace = string.IsNullOrWhiteSpace(request.SocketIoNamespace)
+            ? "/"
+            : request.SocketIoNamespace.Trim();
+        var socketIoPath = string.IsNullOrWhiteSpace(request.SocketIoPath)
+            ? "/socket.io"
+            : request.SocketIoPath.Trim();
+
+        return new ProtocolSendOptions(
+            protocol,
+            VariableResolver.Resolve(request.MessageBody, environment),
+            format,
+            waitMilliseconds,
+            VariableResolver.Resolve(eventName, environment),
+            VariableResolver.Resolve(socketIoNamespace, environment),
+            VariableResolver.Resolve(socketIoPath, environment),
+            terminator,
+            request.TcpUseTls
         );
     }
 
@@ -580,6 +656,24 @@ public static class RequestComposer
         }
 
         return payload.ToJsonString();
+    }
+
+    /// <summary>Protocol URLs are not HTTP URLs: keep the scheme and only append enabled query rows.</summary>
+    private static string BuildProtocolUrl(RequestItem request, EnvironmentModel? environment)
+    {
+        var url = VariableResolver.Resolve(request.Url, environment).Trim();
+        var additions = request
+            .Params.ActiveRows.Select(row =>
+                $"{Uri.EscapeDataString(row.Key.Trim())}={Uri.EscapeDataString(VariableResolver.Resolve(row.Value, environment))}"
+            )
+            .ToList();
+        if (additions.Count == 0)
+        {
+            return url;
+        }
+
+        var separator = url.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return url + separator + string.Join("&", additions);
     }
 
     private static string BuildUrl(RequestItem request, EnvironmentModel? environment)

@@ -999,7 +999,7 @@ public sealed class McpServer
             ),
             Tool(
                 "create_request",
-                "在集合中新建请求，可设置查询参数、请求头、JSON/Text/Multipart 请求体、上传文件和排序",
+                "在集合中新建请求，可设置查询参数、请求头、JSON/Text/Multipart 请求体、上传文件、WebSocket / Socket.IO / TCP 协议字段和排序",
                 ObjectSchema(
                     new JsonObject
                     {
@@ -1036,6 +1036,32 @@ public sealed class McpServer
                             0,
                             3600
                         ),
+                        ["protocol"] = EnumSchema(
+                            "协议，默认 HTTP",
+                            "HTTP",
+                            "WebSocket",
+                            "Socket.IO",
+                            "TCP"
+                        ),
+                        ["messageBody"] = StringSchema(
+                            "WebSocket / Socket.IO / TCP 发送的消息内容"
+                        ),
+                        ["messageFormat"] = EnumSchema("消息格式，默认 Text", "Text", "Hex"),
+                        ["waitMilliseconds"] = IntegerSchema(
+                            "发送后收集回复的等待窗口毫秒，默认 3000",
+                            100,
+                            60000
+                        ),
+                        ["socketIoEvent"] = StringSchema("Socket.IO 事件名，默认 message"),
+                        ["socketIoNamespace"] = StringSchema("Socket.IO 命名空间，默认 /"),
+                        ["socketIoPath"] = StringSchema("Socket.IO 路径，默认 /socket.io"),
+                        ["tcpTerminator"] = EnumSchema(
+                            "TCP 文本消息结束符，默认 None",
+                            "None",
+                            "LF",
+                            "CRLF"
+                        ),
+                        ["tcpUseTls"] = BooleanSchema("TCP 使用 TLS"),
                         ["auth"] = AuthSchema("请求级授权；敏感值只在写入时使用"),
                     },
                     "url"
@@ -1081,6 +1107,25 @@ public sealed class McpServer
                             0,
                             3600
                         ),
+                        ["protocol"] = EnumSchema(
+                            "协议，省略时保持原值",
+                            "HTTP",
+                            "WebSocket",
+                            "Socket.IO",
+                            "TCP"
+                        ),
+                        ["messageBody"] = StringSchema("WebSocket / Socket.IO / TCP 消息内容"),
+                        ["messageFormat"] = EnumSchema("消息格式", "Text", "Hex"),
+                        ["waitMilliseconds"] = IntegerSchema(
+                            "发送后收集回复的等待窗口毫秒",
+                            100,
+                            60000
+                        ),
+                        ["socketIoEvent"] = StringSchema("Socket.IO 事件名"),
+                        ["socketIoNamespace"] = StringSchema("Socket.IO 命名空间"),
+                        ["socketIoPath"] = StringSchema("Socket.IO 路径"),
+                        ["tcpTerminator"] = EnumSchema("TCP 文本消息结束符", "None", "LF", "CRLF"),
+                        ["tcpUseTls"] = BooleanSchema("TCP 使用 TLS"),
                         ["auth"] = AuthSchema("请求级授权；省略时保持原配置"),
                     },
                     "id"
@@ -2012,7 +2057,16 @@ public sealed class McpServer
             OptionalBool(arguments, "favorite"),
             OptionalInt(arguments, "position"),
             OptionalInt(arguments, "timeoutSeconds"),
-            ReadAuth(arguments)
+            ReadAuth(arguments),
+            OptionalString(arguments, "protocol"),
+            OptionalString(arguments, "messageBody"),
+            OptionalString(arguments, "messageFormat"),
+            OptionalInt(arguments, "waitMilliseconds"),
+            OptionalString(arguments, "socketIoEvent"),
+            OptionalString(arguments, "socketIoNamespace"),
+            OptionalString(arguments, "socketIoPath"),
+            OptionalString(arguments, "tcpTerminator"),
+            OptionalBool(arguments, "tcpUseTls")
         );
 
     private static McpAuthInput? ReadAuth(JsonObject arguments)

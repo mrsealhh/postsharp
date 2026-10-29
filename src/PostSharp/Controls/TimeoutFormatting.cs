@@ -5,4 +5,6 @@ public static class TimeoutFormatting
 {
     public static Func<decimal, string> SuffixFormatter { get; } =
         value => value > 0 ? "秒" : "秒 · 全局";
+
+    public static Func<decimal, string> MillisecondsFormatter { get; } = _ => "毫秒";
 }
