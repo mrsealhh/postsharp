@@ -1033,9 +1033,9 @@ master                 稳定可发布
 发布新版本（从 1.10.17 起同时发布三类 ZIP）：
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.10.21
-.\scripts\build-linux-release.ps1 -Version 1.10.21
-.\scripts\build-osx-release.ps1 -Version 1.10.21 -RuntimeIdentifier osx-arm64
+.\scripts\build-release.ps1 -Version 1.10.22
+.\scripts\build-linux-release.ps1 -Version 1.10.22
+.\scripts\build-osx-release.ps1 -Version 1.10.22 -RuntimeIdentifier osx-arm64
 # CLI 独立发布，不进入上面三个桌面包
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier win-x64 -SelfContained
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier linux-x64 -SelfContained
