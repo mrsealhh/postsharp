@@ -293,6 +293,23 @@ http://127.0.0.1:5199/mcp
 
 支持 Streamable HTTP 的 MCP 客户端（Cursor、Claude Code、Cline 等）可以直接添加。服务实现 JSON-RPC 2.0，支持 `initialize`、`notifications/initialized`、`ping`、`tools/list`、`tools/call`。
 
+设置 →「MCP 访问控制」可启用本机 token 和只读模式。启用 token 后，客户端需要带请求头：
+
+```json
+{
+  "mcpServers": {
+    "postsharp": {
+      "url": "http://127.0.0.1:5199/mcp",
+      "headers": {
+        "Authorization": "Bearer <MCP token>"
+      }
+    }
+  }
+}
+```
+
+只读模式只暴露查看、描述、导出类工具，发送、修改和删除会返回 403；token 缺失或错误返回 401。CLI 使用 `--token` 或环境变量 `POSTSHARP_MCP_TOKEN`。token 使用本机 DPAPI/AES 加密保存，可在设置中生成或重置。
+
 设置页的「MCP 后台常驻」提供三种模式：
 
 - **页面常驻（默认）**：关闭主窗口隐藏到系统托盘，由当前页面进程继续提供 MCP；托盘菜单提供「打开」「最大化」「退出」。
@@ -382,8 +399,8 @@ http://127.0.0.1:5199/mcp
 - 删除类工具（`delete_collection` / `delete_request`）只移入集合回收站，用户可在界面恢复。
 - 机密变量的值不会以明文返回给 AI：`list_environments`、`get_curl`、`send_request`、`run_suite` 与审计中均为 `******`；`send_request` 返回的 `Set-Cookie` 等凭据响应头与审计一样按名称打码；`set_variable` 传回 `******` 或省略 `value` 都不会覆盖真实值；AI 只能把变量设为机密，不能取消机密（只能在界面中取消）。
 - 打码防止 AI **读到**机密值，但不阻止 AI **使用**它：AI 仍可新建一个发往任意地址、带 `{{token}}` 的请求并发送。只把 MCP 交给可信的客户端，并在审计中复查 AI 发起的请求。
-- 当前无 MCP 令牌鉴权，不要改成 `0.0.0.0` 或直接暴露公网。
-- 所有 AI 发送都会进入审计，包含客户端名称和工具名。
+- 默认只监听本机；如启用 token，未带 token 的请求返回 401。只读模式会隐藏并拒绝发送/修改/删除。不要把端点改成 `0.0.0.0` 或直接暴露公网。
+- 所有 AI 发送都会进入审计，包含客户端名称、工具名和权限（UI / ReadWrite / ReadOnly）。
 
 ### SOAP / gRPC 的 AI 驱动示例
 
@@ -787,10 +804,10 @@ docs/
 | 套件预检 | 缺失请求、环、悬空节点/连线、无效映射/条件/断言和环境变量会阻止保存或运行；编辑器按节点列出问题并支持定位，管理层持续展示提醒 |
 | 运行历史 | 每个套件持久化最近 20 次运行摘要、步骤结果、节点/连线快照；自动化页可切换历史，重启后保留 |
 | 失败重跑 | 失败运行可只重跑失败步骤及依赖；每个步骤结果提供「从此步继续」，自动补跑上游依赖 |
-| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；218 个测试全部通过 |
-| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、218 个测试通过 |
+| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；222 个测试全部通过 |
+| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、222 个测试通过 |
 | MCP DAG | `create_suite` / `update_suite` 接受 `workflow.nodes`、`workflow.edges`，支持边条件、All/Any 汇合和最大并行度；构建 0 警告/错误 |
-| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；218 个测试通过 |
+| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；222 个测试通过 |
 | MCP 单条清理 | 新增 `get_history`、`delete_history`、`delete_audit`，审计/历史单条移入回收站可恢复 |
 | MCP 后台运行 | 新增 `start_suite_run` / `get_suite_run_job` / `cancel_suite_run`；任务返回节点/连线实时进度和最终运行 id，退出应用后任务不保留 |
 | MCP 预检 | 新增 `validate_suite`，返回 `code`、`severity`、`stepId`、`stepName`、`message`、`hint`；后台任务预检失败也会带回结构化问题 |
@@ -861,7 +878,7 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：218 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：222 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
@@ -869,6 +886,7 @@ docs/
 | 存储配置 | 设置窗口「存储」显示本地 SQLite 路径、数据库类型、连接串、三个分类绑定、测试连接、同步和切换按钮；新增远程库后字段可编辑 |
 | 项目数据目录 | 首次启动把旧 `%APPDATA%\PostSharp` 的 settings/workspace/audit/postsharp.db 复制到项目 `.postsharp`，本地文档表看到 settings/workspace/suites 三类 |
 | MCP 语义工具 | `tools/list` 返回 70 个工具；实测 `get_settings`、`update_settings`、`check_updates`、`get_storage_config`、`test_storage_profile`、`switch_storage`、集合授权、环境 CRUD、导出工作区均返回结果 |
+| MCP 访问控制 | 启用 token 后无 token/错误 token 返回 401，正确 Bearer 返回 200；只读模式 `tools/list` 只剩 21 个读工具，`send_request` 返回 403；审计记录 `permission=ReadWrite`；CLI `--token` 调用成功 |
 | 远程存储错误 | 用不可达 PostgreSQL / MongoDB 配置测试连接，返回 `success=false` 和面向用户的失败原因，未阻塞本地 SQLite |
 | 自动更新入口 | 顶栏「更新」按钮和设置窗口「检查更新」均可主动触发；下载完成后按钮变为「安装」，由用户点击后才应用；版本标签解析、包名/校验文件和开发目录禁用逻辑通过单测 |
 | 发送 loading | 慢响应发送中切换到创建订单，发送按钮不显示其他请求的 loading；两个请求均完成并写入历史 |
@@ -1051,7 +1069,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：218 个 xUnit 测试。
+- 自测：222 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
@@ -1075,7 +1093,7 @@ master                 稳定可发布
 - MQTT / WebSocket 之外的实时消息协议（Socket.IO 轮询回退、MQTT、SOAP WS-*）仍按需求立项。
 - 授权只支持请求与集合两级（含多级集合继承），没有工作区级或环境级默认授权；同一集合的授权由该集合对象持有，未单独覆盖的下级请求共用同一个令牌，刷新后同步生效。
 - 单点登录使用系统默认浏览器；复制请求会复制一份独立的授权与令牌，副本重新登录或刷新不会影响原请求；删除集合/请求时其授权配置一起移除。
-- MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。后台独立服务是一个隐藏的同程序进程，不是注册为 Windows 服务 / systemd / launchd，也不支持开机自启；服务进程异常退出后端点会停止。MCP 套件已支持任意 DAG、结构化预检、后台运行/进度轮询/取消、运行历史和失败重跑；后台任务只保存在当前进程内，应用退出后需通过运行历史查看已完成结果。
+- MCP 仅本地回环并拒绝网页来源；已支持可选本机 token 和只读模式，但仍无 OAuth、SSE 通知和按工具细粒度权限。后台独立服务是一个隐藏的同程序进程，不是注册为 Windows 服务 / systemd / launchd，也不支持开机自启；服务进程异常退出后端点会停止。MCP 套件已支持任意 DAG、结构化预检、后台运行/进度轮询/取消、运行历史和失败重跑；后台任务只保存在当前进程内，应用退出后需通过运行历史查看已完成结果。
 - CLI 不再随桌面安装包分发，需要从独立 `cli-v1.1.0` Release 下载；CLI 调用时要求桌面端正在运行或保持 MCP 托盘常驻。
 - Windows 尚未 Authenticode 签名；Linux/macOS 预览包未签名，macOS 未公证，Gatekeeper 可能需要手动允许或执行 `xattr -dr com.apple.quarantine`。真正的签名/公证需要证书、Apple 账号和对应构建环境。
 - 删除环境仍为直接删除，尚未进入回收站。
@@ -1094,7 +1112,7 @@ master                 稳定可发布
 6. OAuth 补全：设备码、隐式和密码模式，以及工作区/环境级默认授权。
 7. 上传断点续传；gRPC 流式 / .proto 导入、SOAP WS-Security / MTOM、MQTT 等按需求立项。
 8. 发布可信链：Windows Authenticode、macOS Developer ID 签名 + 公证 + stapling、Linux 安装包与 GPG/minisign 校验。
-9. MCP 系统服务化：注册 Windows 服务 / systemd / launchd、开机自启，加上本机 token 鉴权和多客户端隔离。
+9. MCP 系统服务化：注册 Windows 服务 / systemd / launchd、开机自启，以及多客户端隔离和更细粒度的工具权限。
 
 ## 许可证
 

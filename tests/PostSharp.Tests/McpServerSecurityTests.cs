@@ -32,6 +32,55 @@ public sealed class McpServerSecurityTests
     }
 
     [Fact]
+    public async Task RequiresBearerTokenWhenEnabled()
+    {
+        _server.Policy = new McpAccessPolicy(true, "test-token", false);
+
+        var missing = await SendAsync("POST", Ping, null, "127.0.0.1:5199");
+        Assert.Equal(401, missing.StatusCode);
+        Assert.True(HasHeader(missing, "WWW-Authenticate"));
+
+        var invalid = await SendAsync("POST", Ping, null, "127.0.0.1:5199", "wrong-token");
+        Assert.Equal(401, invalid.StatusCode);
+
+        var accepted = await SendAsync("POST", Ping, null, "127.0.0.1:5199", "test-token");
+        Assert.Equal(200, accepted.StatusCode);
+    }
+
+    [Fact]
+    public async Task ReadOnlyHidesAndRejectsWriteTools()
+    {
+        _server.Policy = new McpAccessPolicy(false, string.Empty, true);
+
+        var list = await SendAsync(
+            "POST",
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            null,
+            "127.0.0.1:5199"
+        );
+        using var document = JsonDocument.Parse(list.Body);
+        var names = document
+            .RootElement.GetProperty("result")
+            .GetProperty("tools")
+            .EnumerateArray()
+            .Select(tool => tool.GetProperty("name").GetString())
+            .ToList();
+        Assert.Contains("get_request", names);
+        Assert.Contains("list_collections", names);
+        Assert.DoesNotContain("send_request", names);
+        Assert.DoesNotContain("create_request", names);
+
+        var blocked = await SendAsync(
+            "POST",
+            """{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"send_request","arguments":{"id":"00000000-0000-0000-0000-000000000000"}}}""",
+            null,
+            "127.0.0.1:5199"
+        );
+        Assert.Equal(403, blocked.StatusCode);
+        Assert.Contains("只读模式", blocked.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ListsSemanticSettingsAndStorageTools()
     {
         var response = await SendAsync(
@@ -82,7 +131,8 @@ public sealed class McpServerSecurityTests
         string method,
         string body,
         string? origin,
-        string host
+        string host,
+        string? token = null
     )
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -92,6 +142,11 @@ public sealed class McpServerSecurityTests
         if (origin is not null)
         {
             headers["Origin"] = origin;
+        }
+
+        if (token is not null)
+        {
+            headers["Authorization"] = $"Bearer {token}";
         }
 
         var response = await _server.HandleHttpAsync(

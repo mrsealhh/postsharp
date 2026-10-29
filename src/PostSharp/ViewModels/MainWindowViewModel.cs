@@ -34,6 +34,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private readonly RequestSendService _requests = new();
     private readonly AuthorizationService _authorizationService = new();
     private readonly MockApiServer _mockServer = new();
+    private McpServer? _mcpServer;
     private readonly AuditScrubber _auditScrubber;
 
     private const int AuditPreviewLimit = 2000;
@@ -191,7 +192,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             ? $"Mock 服务运行中 · {_mockServer.BaseUrl}"
             : "Mock 服务未启动";
 
-        _mockServer.CustomHandler = new McpServer(new McpWorkspaceAdapter(this)).HandleHttpAsync;
+        _mcpServer = new McpServer(new McpWorkspaceAdapter(this)) { Policy = BuildMcpPolicy() };
+        _mockServer.CustomHandler = _mcpServer.HandleHttpAsync;
 
         History.CollectionChanged += (_, _) =>
         {
@@ -1644,6 +1646,26 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     private void OnSettingsChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (
+            e.PropertyName
+            is null
+                or nameof(AppSettings.McpRequireToken)
+                or nameof(AppSettings.McpReadOnly)
+                or nameof(AppSettings.McpTokenCipher)
+        )
+        {
+            if (_mcpServer is not null)
+            {
+                _mcpServer.Policy = BuildMcpPolicy();
+            }
+
+            OnPropertyChanged(nameof(McpRequireToken));
+            OnPropertyChanged(nameof(McpReadOnly));
+            OnPropertyChanged(nameof(McpTokenValue));
+            OnPropertyChanged(nameof(McpAuthHint));
+            OnPropertyChanged(nameof(McpClientConfig));
+        }
+
         _requests.TimeoutSeconds = Math.Clamp(Settings.RequestTimeoutSeconds, 5, 600);
         _requests.AutoFormatResponse = Settings.AutoFormatResponse;
         _requests.SseThinkingPath = Settings.SseThinkingPath;
@@ -2075,18 +2097,49 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     public string McpEndpoint =>
         _mockServer.IsRunning ? $"{_mockServer.BaseUrl}/mcp" : "MCP 服务未启动";
 
-    public string McpClientConfig =>
-        $$"""
+    public bool McpRequireToken => Settings.McpRequireToken;
+
+    public bool McpReadOnly => Settings.McpReadOnly;
+
+    public string McpTokenValue => Settings.McpRequireToken ? Settings.GetMcpToken() : string.Empty;
+
+    public string McpAuthHint =>
+        Settings.McpRequireToken
+            ? (Settings.McpReadOnly ? "Token 鉴权 · 只读" : "Token 鉴权 · 读写")
+            : (Settings.McpReadOnly ? "仅本机 · 只读" : "仅本机 · 读写");
+
+    public string McpClientConfig
+    {
+        get
+        {
+            var endpoint = _mockServer.IsRunning
+                ? $"{_mockServer.BaseUrl}/mcp"
+                : "http://127.0.0.1:5199/mcp";
+            var server = new JsonObject { ["url"] = endpoint };
+            if (Settings.McpRequireToken)
             {
-              "mcpServers": {
-                "postsharp": {
-                  "url": "{{(
-                _mockServer.IsRunning ? _mockServer.BaseUrl : "http://127.0.0.1:5199"
-            )}}/mcp"
-                }
-              }
+                server["headers"] = new JsonObject
+                {
+                    ["Authorization"] = $"Bearer {Settings.GetMcpToken()}",
+                };
             }
-            """;
+
+            return new JsonObject
+            {
+                ["mcpServers"] = new JsonObject { ["postsharp"] = server },
+            }.ToJsonString(MappingJsonOptions);
+        }
+    }
+
+    private McpAccessPolicy BuildMcpPolicy()
+    {
+        var requireToken = Settings.McpRequireToken;
+        return new McpAccessPolicy(
+            requireToken,
+            requireToken ? Settings.GetMcpToken() : string.Empty,
+            Settings.McpReadOnly
+        );
+    }
 
     public string McpToolSummary =>
         "集合/请求：list_collections、create_collection、update_collection、move_collection、delete_collection、"
@@ -2097,7 +2150,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         + "审计/回收站：list_audit、get_audit、clear_audit、list_audit_trash、restore_audit、purge_audit、empty_audit_trash、"
         + "list_collection_trash、restore_collection_trash、purge_collection_trash、empty_collection_trash；"
         + "设置/存储：get_settings、update_settings、check_updates、get_storage_config、upsert_storage_profile、delete_storage_profile、set_storage_binding、test_storage_profile、sync_storage、switch_storage；"
-        + "导入导出：import_content、export_workspace、send_request、run_sequence、get_curl。";
+        + "导入导出：import_content、export_workspace、send_request、run_sequence、get_curl；"
+        + "协议：soap_describe、grpc_describe（SOAP / gRPC 一元调用走 send_request）。";
 
     public string EditorHint =>
         IsCollectionSelected ? "已选中集合 · 「授权」标签页正在配置集合授权"
@@ -3986,11 +4040,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         string source,
         string? tool,
         string? client,
-        IReadOnlyList<string> secrets
+        IReadOnlyList<string> secrets,
+        string? permission = null
     )
     {
         AddHistory(request, result);
-        RecordAudit(request, stored, result, source, tool, client, secrets);
+        RecordAudit(request, stored, result, source, tool, client, secrets, permission);
         Persist();
     }
 
@@ -4040,7 +4095,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         string source,
         string? tool,
         string? client,
-        IReadOnlyList<string> secrets
+        IReadOnlyList<string> secrets,
+        string? permission = null
     )
     {
         // The audit file and MCP readers must never see credentials, so everything stored is masked first.
@@ -4067,6 +4123,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Source = source,
             Tool = tool,
             Client = client,
+            Permission = permission ?? (source == "MCP" ? "ReadWrite" : "UI"),
             RequestId = request.Id,
             RequestName = request.Name,
             Method = stored?.Method ?? request.Method,

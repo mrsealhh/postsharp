@@ -56,12 +56,18 @@ internal static class Program
             {
                 return await McpStdioBridge.RunAsync(
                     options.Endpoint,
+                    options.Token,
                     options.Timeout,
                     cancellation.Token
                 );
             }
 
-            using var client = new McpClient(options.Endpoint, options.ClientName, options.Timeout);
+            using var client = new McpClient(
+                options.Endpoint,
+                options.ClientName,
+                options.Timeout,
+                options.Token
+            );
             await client.InitializeAsync(cancellation.Token);
             return await RunAsync(client, options, cancellation.Token);
         }
@@ -523,7 +529,7 @@ internal static class Program
             PostSharp CLI（要求 PostSharp 正在运行）
 
             用法：
-              postsharp-cli [--endpoint URL] [--json] [--timeout 秒] [--client 名称] <命令>
+              postsharp-cli [--endpoint URL] [--token TOKEN] [--json] [--timeout 秒] [--client 名称] <命令>
 
             命令：
               suite list
@@ -543,6 +549,7 @@ internal static class Program
               suite run/rerun-failed/continue 支持 --html <文件>
 
             其他：
+              --token <token> MCP token；也可用环境变量 POSTSHARP_MCP_TOKEN
               --version 显示 CLI 版本
               --help, -h 显示此帮助
 
@@ -554,6 +561,7 @@ internal static class Program
               postsharp-cli suite run <suiteId> --json --html report.html
               postsharp-cli suite validate <suiteId> --json
               postsharp-cli audit list --source MCP --limit 20
+              $env:POSTSHARP_MCP_TOKEN='...'; postsharp-cli suite list
             """
         );
     }
@@ -561,6 +569,7 @@ internal static class Program
 
 internal sealed record CliOptions(
     Uri Endpoint,
+    string? Token,
     bool Json,
     TimeSpan Timeout,
     string ClientName,
@@ -576,6 +585,7 @@ internal sealed record CliOptions(
     public static CliOptions Parse(IReadOnlyList<string> args)
     {
         var endpoint = new Uri("http://127.0.0.1:5199/mcp");
+        var token = Environment.GetEnvironmentVariable("POSTSHARP_MCP_TOKEN");
         var json = false;
         var timeout = TimeSpan.FromSeconds(30);
         var clientName = "PostSharp.Cli";
@@ -600,6 +610,9 @@ internal sealed record CliOptions(
                     break;
                 case "--endpoint":
                     endpoint = ParseEndpoint(ReadValue(args, ref index, argument));
+                    break;
+                case "--token":
+                    token = ReadValue(args, ref index, argument);
                     break;
                 case "--timeout":
                     if (
@@ -636,6 +649,7 @@ internal sealed record CliOptions(
 
         return new CliOptions(
             endpoint,
+            token,
             json,
             timeout,
             clientName,
@@ -693,12 +707,13 @@ internal static class McpStdioBridge
 {
     public static async Task<int> RunAsync(
         Uri endpoint,
+        string? token,
         TimeSpan timeout,
         CancellationToken cancellationToken
     )
     {
         TrySetUtf8Console();
-        using var client = new McpClient(endpoint, "PostSharp.Cli.Stdio", timeout);
+        using var client = new McpClient(endpoint, "PostSharp.Cli.Stdio", timeout, token);
         while (!cancellationToken.IsCancellationRequested)
         {
             string? line;
@@ -791,12 +806,20 @@ internal sealed class McpClient : IDisposable
     private readonly TimeSpan _timeout;
     private int _nextId;
 
-    public McpClient(Uri endpoint, string clientName, TimeSpan timeout)
+    public McpClient(Uri endpoint, string clientName, TimeSpan timeout, string? token = null)
     {
         _endpoint = endpoint;
         _clientName = clientName;
         _timeout = timeout;
         _http = new HttpClient { Timeout = timeout };
+        if (!string.IsNullOrWhiteSpace(token))
+        {
+            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                token.Trim()
+            );
+        }
+
         _http.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json")
         );

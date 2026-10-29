@@ -158,4 +158,29 @@ public partial class AppSettings : ObservableObject
             }
         }
     }
+
+    /// <summary>Requires a local bearer token on every MCP POST; loopback and Origin checks still apply.</summary>
+    [ObservableProperty]
+    private bool _mcpRequireToken;
+
+    /// <summary>Hides mutation and send tools from MCP clients; only read-only tools are listed and callable.</summary>
+    [ObservableProperty]
+    private bool _mcpReadOnly;
+
+    /// <summary>DPAPI/AES protected MCP token; empty until the user enables token auth.</summary>
+    [ObservableProperty]
+    private string _mcpTokenCipher = string.Empty;
+
+    public string GetMcpToken()
+    {
+        var token = McpTokenService.Unprotect(McpTokenCipher);
+        return string.IsNullOrEmpty(token) ? RegenerateMcpToken() : token;
+    }
+
+    public string RegenerateMcpToken()
+    {
+        var token = McpTokenService.Generate();
+        McpTokenCipher = McpTokenService.Protect(token);
+        return token;
+    }
 }

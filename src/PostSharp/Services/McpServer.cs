@@ -28,6 +28,9 @@ public sealed class McpServer
 
     public McpServer(McpWorkspaceAdapter workspace) => _workspace = workspace;
 
+    /// <summary>Immutable policy snapshot; replaced atomically when settings change.</summary>
+    public McpAccessPolicy Policy { get; set; } = McpAccessPolicy.Local;
+
     public async Task<RawHttpResponse?> HandleHttpAsync(
         string method,
         string target,
@@ -68,6 +71,33 @@ public sealed class McpServer
         if (method == "OPTIONS")
         {
             return new RawHttpResponse(204, "No Content", "application/json", string.Empty, cors);
+        }
+
+        var policy = Policy;
+        if (policy.RequireToken && !HasValidToken(headers, policy.Token))
+        {
+            Log.Warning("MCP 请求缺少有效 token");
+            var unauthorizedHeaders = new Dictionary<string, string>(
+                cors,
+                StringComparer.OrdinalIgnoreCase
+            )
+            {
+                ["WWW-Authenticate"] = "Bearer realm=\"PostSharp\"",
+            };
+            return new RawHttpResponse(
+                401,
+                "Unauthorized",
+                "application/json",
+                JsonSerializer.Serialize(
+                    Error(
+                        null,
+                        -32001,
+                        "MCP 需要本机 token。请在客户端配置 Authorization: Bearer <token>。"
+                    ),
+                    JsonOptions
+                ),
+                unauthorizedHeaders
+            );
         }
 
         if (method != "POST")
@@ -112,13 +142,32 @@ public sealed class McpServer
             );
         }
 
+        if (policy.ReadOnly && TryFindBlockedTool(root, out var blockedTool))
+        {
+            return new RawHttpResponse(
+                403,
+                "Forbidden",
+                "application/json",
+                JsonSerializer.Serialize(
+                    Error(
+                        null,
+                        -32003,
+                        $"只读模式不允许调用 {blockedTool}；请在设置中关闭「只读模式」或改用查看类工具。"
+                    ),
+                    JsonOptions
+                ),
+                cors
+            );
+        }
+
         JsonNode? response;
         if (root is JsonArray batch)
         {
             var responses = new JsonArray();
             foreach (var item in batch)
             {
-                var one = await HandleMessageAsync(item, cancellationToken).ConfigureAwait(false);
+                var one = await HandleMessageAsync(item, policy, cancellationToken)
+                    .ConfigureAwait(false);
                 if (one is not null)
                 {
                     responses.Add(one);
@@ -130,7 +179,8 @@ public sealed class McpServer
         }
         else
         {
-            response = await HandleMessageAsync(root, cancellationToken).ConfigureAwait(false);
+            response = await HandleMessageAsync(root, policy, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (response is null)
@@ -148,6 +198,92 @@ public sealed class McpServer
                 ["Mcp-Session-Id"] = "postsharp-local",
                 ["Cache-Control"] = "no-store",
             }
+        );
+    }
+
+    private static bool HasValidToken(IReadOnlyDictionary<string, string> headers, string expected)
+    {
+        if (string.IsNullOrEmpty(expected))
+        {
+            return false;
+        }
+
+        var authorization = HeaderValue(headers, "Authorization");
+        var provided =
+            authorization?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true
+                ? authorization[7..].Trim()
+                : null;
+        provided ??= HeaderValue(headers, "X-PostSharp-Token");
+        return provided is not null && McpTokenService.FixedEquals(expected, provided);
+    }
+
+    private static string? HeaderValue(IReadOnlyDictionary<string, string> headers, string name)
+    {
+        foreach (var pair in headers)
+        {
+            if (pair.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                return pair.Value;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryFindBlockedTool(JsonNode? root, out string? blockedTool)
+    {
+        blockedTool = null;
+        if (root is JsonArray batch)
+        {
+            foreach (var item in batch)
+            {
+                if (TryFindBlockedTool(item, out blockedTool))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if (root is not JsonObject message)
+        {
+            return false;
+        }
+
+        var method = message["method"]?.GetValue<string>();
+        if (!string.Equals(method, "tools/call", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var tool = message["params"]?["name"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(tool) || McpToolAccess.IsReadOnly(tool.Trim()))
+        {
+            return false;
+        }
+
+        blockedTool = tool.Trim();
+        return true;
+    }
+
+    private static JsonArray BuildToolsForPolicy(McpAccessPolicy policy)
+    {
+        var tools = BuildTools();
+        if (!policy.ReadOnly)
+        {
+            return tools;
+        }
+
+        return new JsonArray(
+            tools
+                .Where(tool =>
+                    tool is JsonObject item
+                    && item["name"]?.GetValue<string>() is { } name
+                    && McpToolAccess.IsReadOnly(name)
+                )
+                .Select(tool => tool?.DeepClone())
+                .ToArray()
         );
     }
 
@@ -195,14 +331,15 @@ public sealed class McpServer
         headers["Access-Control-Allow-Origin"] = origin;
         headers["Access-Control-Allow-Methods"] = "POST, OPTIONS";
         headers["Access-Control-Allow-Headers"] =
-            "Content-Type, Accept, Authorization, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID";
-        headers["Access-Control-Expose-Headers"] = "Mcp-Session-Id";
+            "Content-Type, Accept, Authorization, X-PostSharp-Token, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID";
+        headers["Access-Control-Expose-Headers"] = "Mcp-Session-Id, WWW-Authenticate";
         headers["Vary"] = "Origin";
         return headers;
     }
 
     private async Task<JsonNode?> HandleMessageAsync(
         JsonNode? node,
+        McpAccessPolicy policy,
         CancellationToken cancellationToken
     )
     {
@@ -275,10 +412,10 @@ public sealed class McpServer
                     return Result(id, new JsonObject());
 
                 case "tools/list":
-                    return Result(id, new JsonObject { ["tools"] = BuildTools() });
+                    return Result(id, new JsonObject { ["tools"] = BuildToolsForPolicy(policy) });
 
                 case "tools/call":
-                    return await CallToolAsync(id, message, cancellationToken)
+                    return await CallToolAsync(id, message, policy, cancellationToken)
                         .ConfigureAwait(false);
 
                 default:
@@ -295,6 +432,7 @@ public sealed class McpServer
     private async Task<JsonNode?> CallToolAsync(
         JsonNode? id,
         JsonObject message,
+        McpAccessPolicy policy,
         CancellationToken cancellationToken
     )
     {
@@ -305,6 +443,15 @@ public sealed class McpServer
         if (string.IsNullOrWhiteSpace(name))
         {
             return Error(id, -32602, "tools/call 缺少工具名。");
+        }
+
+        if (policy.ReadOnly && !McpToolAccess.IsReadOnly(name.Trim()))
+        {
+            return Error(
+                id,
+                -32003,
+                $"只读模式不允许调用 {name.Trim()}。请在设置中关闭「只读模式」后重试。"
+            );
         }
 
         try
@@ -473,9 +620,9 @@ public sealed class McpServer
                         cancellationToken
                     )
                     .ConfigureAwait(false),
-                "send_request" => await SendToolAsync(arguments, cancellationToken)
+                "send_request" => await SendToolAsync(arguments, policy, cancellationToken)
                     .ConfigureAwait(false),
-                "run_sequence" => await RunSequenceToolAsync(arguments, cancellationToken)
+                "run_sequence" => await RunSequenceToolAsync(arguments, policy, cancellationToken)
                     .ConfigureAwait(false),
                 "get_curl" => new
                 {
@@ -536,14 +683,14 @@ public sealed class McpServer
                 "run_suite" => await _workspace
                     .RunSuiteAsync(
                         RequireGuid(arguments, "id"),
-                        new McpCallContext("run_suite", _clientName),
+                        new McpCallContext("run_suite", _clientName, policy.PermissionLabel),
                         cancellationToken
                     )
                     .ConfigureAwait(false),
                 "start_suite_run" => await _workspace
                     .StartSuiteRunAsync(
                         RequireGuid(arguments, "id"),
-                        new McpCallContext("start_suite_run", _clientName)
+                        new McpCallContext("start_suite_run", _clientName, policy.PermissionLabel)
                     )
                     .ConfigureAwait(false),
                 "get_suite_run_job" => await _workspace
@@ -568,7 +715,11 @@ public sealed class McpServer
                     .RerunFailedSuiteAsync(
                         RequireGuid(arguments, "suiteId"),
                         RequireGuid(arguments, "runId"),
-                        new McpCallContext("rerun_failed_suite", _clientName),
+                        new McpCallContext(
+                            "rerun_failed_suite",
+                            _clientName,
+                            policy.PermissionLabel
+                        ),
                         cancellationToken
                     )
                     .ConfigureAwait(false),
@@ -577,7 +728,11 @@ public sealed class McpServer
                         RequireGuid(arguments, "suiteId"),
                         RequireGuid(arguments, "runId"),
                         RequireGuid(arguments, "stepId"),
-                        new McpCallContext("continue_suite_from_step", _clientName),
+                        new McpCallContext(
+                            "continue_suite_from_step",
+                            _clientName,
+                            policy.PermissionLabel
+                        ),
                         cancellationToken
                     )
                     .ConfigureAwait(false),
@@ -722,6 +877,7 @@ public sealed class McpServer
 
     private async Task<object> SendToolAsync(
         JsonObject arguments,
+        McpAccessPolicy policy,
         CancellationToken cancellationToken
     )
     {
@@ -729,7 +885,7 @@ public sealed class McpServer
             .SendAsync(
                 RequireGuid(arguments, "id"),
                 OptionalGuid(arguments, "environmentId"),
-                new McpCallContext("send_request", _clientName),
+                new McpCallContext("send_request", _clientName, policy.PermissionLabel),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -759,6 +915,7 @@ public sealed class McpServer
 
     private async Task<object> RunSequenceToolAsync(
         JsonObject arguments,
+        McpAccessPolicy policy,
         CancellationToken cancellationToken
     )
     {
@@ -772,7 +929,7 @@ public sealed class McpServer
             .RunSequenceAsync(
                 ids,
                 OptionalBool(arguments, "stopOnError") ?? true,
-                new McpCallContext("run_sequence", _clientName),
+                new McpCallContext("run_sequence", _clientName, policy.PermissionLabel),
                 cancellationToken
             )
             .ConfigureAwait(false);

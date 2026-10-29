@@ -21,6 +21,8 @@ public sealed class AuditStoreTests
                 StatusCode = 200,
                 StatusText = "OK",
                 ResponseBodyPreview = "ok",
+                Source = "MCP",
+                Permission = "ReadWrite",
             };
             var trash = new AuditEntry
             {
@@ -41,6 +43,7 @@ public sealed class AuditStoreTests
             Assert.Single(loaded.Value!);
             Assert.Single(loadedTrash.Value!);
             Assert.Equal("登录", loaded.Value![0].RequestName);
+            Assert.Equal("ReadWrite", loaded.Value[0].Permission);
             Assert.Equal("旧请求", loadedTrash.Value![0].RequestName);
             Assert.NotEqual(loaded.Value[0].Id, loadedTrash.Value[0].Id);
         }
