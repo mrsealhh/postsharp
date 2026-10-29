@@ -1,9 +1,9 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
-> 基线版本：v1.10.13（2026-10-28）
-> 基线形态：当前发布 Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
+> 基线版本：v1.10.17（2026-10-29）
+> 基线形态：Windows x64 / Linux x64 / macOS arm64 三类自包含 ZIP，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
 > 基线测试：192 个 xUnit 测试，`csharpier check .` 通过
-> 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0
+> 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.10.17
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
 
