@@ -53,6 +53,18 @@ public sealed partial class HistoryEntry : ObservableObject
 
     public bool TcpUseTls { get; init; }
 
+    public string SoapVersion { get; init; } = "1.1";
+
+    public string SoapAction { get; init; } = string.Empty;
+
+    public string GrpcService { get; init; } = string.Empty;
+
+    public string GrpcMethod { get; init; } = string.Empty;
+
+    public bool GrpcUseTls { get; init; } = true;
+
+    public int GrpcDeadlineSeconds { get; init; }
+
     public List<RowSnapshot> Params { get; init; } = new();
 
     public List<RowSnapshot> Headers { get; init; } = new();
@@ -107,11 +119,17 @@ public sealed partial class HistoryEntry : ObservableObject
 
     public RequestItem ToRequest()
     {
+        var protocol = RequestProtocol.Normalize(Protocol);
+        var method =
+            protocol == RequestProtocol.Soap
+            && string.Equals(Method, "GET", StringComparison.OrdinalIgnoreCase)
+                ? "POST"
+                : Method;
         var request = new RequestItem
         {
             Name = string.IsNullOrWhiteSpace(Name) ? "历史请求" : $"{Name}（历史）",
-            Protocol = RequestProtocol.Normalize(Protocol),
-            Method = Method,
+            Protocol = protocol,
+            Method = method,
             Url = Url,
             TimeoutSeconds = TimeoutSeconds,
             FollowRedirects = FollowRedirects,
@@ -128,6 +146,12 @@ public sealed partial class HistoryEntry : ObservableObject
             SocketIoPath = SocketIoPath,
             TcpTerminator = TcpTerminator,
             TcpUseTls = TcpUseTls,
+            SoapVersion = SoapVersion,
+            SoapAction = SoapAction,
+            GrpcService = GrpcService,
+            GrpcMethod = GrpcMethod,
+            GrpcUseTls = GrpcUseTls,
+            GrpcDeadlineSeconds = GrpcDeadlineSeconds,
         };
 
         foreach (var row in Params)

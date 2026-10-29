@@ -638,12 +638,22 @@ public sealed class WorkspaceStore
 
     public static RequestItem ToModel(RequestDto dto)
     {
+        var protocol = RequestProtocol.Normalize(dto.Protocol);
+        var method = string.IsNullOrWhiteSpace(dto.Method) ? "GET" : dto.Method;
+        if (
+            protocol == RequestProtocol.Soap
+            && string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            method = "POST";
+        }
+
         var request = new RequestItem
         {
             Id = dto.Id == Guid.Empty ? Guid.NewGuid() : dto.Id,
             Name = dto.Name,
-            Protocol = RequestProtocol.Normalize(dto.Protocol),
-            Method = string.IsNullOrWhiteSpace(dto.Method) ? "GET" : dto.Method,
+            Protocol = protocol,
+            Method = method,
             Url = dto.Url,
             TimeoutSeconds = dto.TimeoutSeconds,
             FollowRedirects = dto.FollowRedirects,
@@ -670,6 +680,14 @@ public sealed class WorkspaceStore
                 ? "None"
                 : dto.TcpTerminator,
             TcpUseTls = dto.TcpUseTls,
+            SoapVersion = string.Equals(dto.SoapVersion, "1.2", StringComparison.Ordinal)
+                ? "1.2"
+                : "1.1",
+            SoapAction = dto.SoapAction,
+            GrpcService = dto.GrpcService,
+            GrpcMethod = dto.GrpcMethod,
+            GrpcUseTls = dto.GrpcUseTls,
+            GrpcDeadlineSeconds = dto.GrpcDeadlineSeconds,
             UploadFilePath = dto.UploadFiles.Count == 0 ? dto.UploadFilePath : string.Empty,
             UploadFieldName = string.IsNullOrWhiteSpace(dto.UploadFieldName)
                 ? "file"
@@ -751,6 +769,12 @@ public sealed class WorkspaceStore
             SocketIoPath = dto.SocketIoPath,
             TcpTerminator = dto.TcpTerminator,
             TcpUseTls = dto.TcpUseTls,
+            SoapVersion = dto.SoapVersion,
+            SoapAction = dto.SoapAction,
+            GrpcService = dto.GrpcService,
+            GrpcMethod = dto.GrpcMethod,
+            GrpcUseTls = dto.GrpcUseTls,
+            GrpcDeadlineSeconds = dto.GrpcDeadlineSeconds,
             StatusCode = dto.StatusCode,
             DurationMs = dto.DurationMs,
             Params = dto.Params.ToList(),
@@ -782,6 +806,12 @@ public sealed class WorkspaceStore
             SocketIoPath = entry.SocketIoPath,
             TcpTerminator = entry.TcpTerminator,
             TcpUseTls = entry.TcpUseTls,
+            SoapVersion = entry.SoapVersion,
+            SoapAction = entry.SoapAction,
+            GrpcService = entry.GrpcService,
+            GrpcMethod = entry.GrpcMethod,
+            GrpcUseTls = entry.GrpcUseTls,
+            GrpcDeadlineSeconds = entry.GrpcDeadlineSeconds,
             StatusCode = entry.StatusCode,
             DurationMs = entry.DurationMs,
             Params = entry.Params.ToList(),
@@ -813,6 +843,12 @@ public sealed class WorkspaceStore
             SocketIoPath = request.SocketIoPath,
             TcpTerminator = request.TcpTerminator,
             TcpUseTls = request.TcpUseTls,
+            SoapVersion = request.SoapVersion,
+            SoapAction = request.SoapAction,
+            GrpcService = request.GrpcService,
+            GrpcMethod = request.GrpcMethod,
+            GrpcUseTls = request.GrpcUseTls,
+            GrpcDeadlineSeconds = request.GrpcDeadlineSeconds,
             UploadFilePath = request.UploadFilePath,
             UploadFieldName = request.UploadFieldName,
             UploadFiles = request
@@ -982,6 +1018,18 @@ public sealed class RequestDto
 
     public bool TcpUseTls { get; set; }
 
+    public string SoapVersion { get; set; } = "1.1";
+
+    public string SoapAction { get; set; } = string.Empty;
+
+    public string GrpcService { get; set; } = string.Empty;
+
+    public string GrpcMethod { get; set; } = string.Empty;
+
+    public bool GrpcUseTls { get; set; } = true;
+
+    public int GrpcDeadlineSeconds { get; set; }
+
     public string UploadFilePath { get; set; } = string.Empty;
 
     public string UploadFieldName { get; set; } = "file";
@@ -1084,6 +1132,18 @@ public sealed class HistoryDto
     public string TcpTerminator { get; set; } = "None";
 
     public bool TcpUseTls { get; set; }
+
+    public string SoapVersion { get; set; } = "1.1";
+
+    public string SoapAction { get; set; } = string.Empty;
+
+    public string GrpcService { get; set; } = string.Empty;
+
+    public string GrpcMethod { get; set; } = string.Empty;
+
+    public bool GrpcUseTls { get; set; } = true;
+
+    public int GrpcDeadlineSeconds { get; set; }
 
     public int StatusCode { get; set; }
 

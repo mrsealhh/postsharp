@@ -43,6 +43,13 @@ public sealed class RequestSendService
         string? lastEventId = null
     )
     {
+        if (composed.GrpcOptions is { } grpcOptions)
+        {
+            return await GrpcProtocolClient
+                .SendAsync(composed, grpcOptions, cancellationToken, timeoutSeconds)
+                .ConfigureAwait(false);
+        }
+
         if (
             composed.ProtocolOptions is { } options
             && !string.Equals(
@@ -57,7 +64,7 @@ public sealed class RequestSendService
                 .ConfigureAwait(false);
         }
 
-        return await _http
+        var result = await _http
             .SendAsync(
                 composed,
                 logUrl,
@@ -68,5 +75,6 @@ public sealed class RequestSendService
                 lastEventId
             )
             .ConfigureAwait(false);
+        return composed.SoapOptions is null ? result : SoapProtocolService.AnnotateFault(result);
     }
 }

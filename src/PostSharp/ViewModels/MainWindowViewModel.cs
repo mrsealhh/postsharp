@@ -1980,21 +1980,62 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             StringComparison.Ordinal
         );
 
+    public bool IsSoapProtocol =>
+        string.Equals(
+            RequestProtocol.Normalize(Editing.Protocol),
+            RequestProtocol.Soap,
+            StringComparison.Ordinal
+        );
+
+    public bool IsGrpcProtocol =>
+        string.Equals(
+            RequestProtocol.Normalize(Editing.Protocol),
+            RequestProtocol.Grpc,
+            StringComparison.Ordinal
+        );
+
     public bool IsProtocolRequest => !IsHttpProtocol;
 
-    public bool ShowOpenApiDocTab => IsHttpProtocol && HasOpenApiDoc;
+    /// <summary>SOAP reuses the HTTP transport, cURL preview and call-code tabs.</summary>
+    public bool IsHttpLikeProtocol => IsHttpProtocol || IsSoapProtocol;
+
+    public bool ShowOpenApiDocTab => IsHttpLikeProtocol && HasOpenApiDoc;
+
+    public bool ShowMessageFormatSelector => IsWebSocketProtocol || IsTcpProtocol;
+
+    public bool ShowProtocolWaitWindow =>
+        IsWebSocketProtocol || IsSocketIoProtocol || IsTcpProtocol;
 
     public bool IsMessageFormatHex =>
         string.Equals(Editing.MessageFormat, "Hex", StringComparison.OrdinalIgnoreCase);
 
-    public string RequestBodyTabHeader => IsHttpProtocol ? "请求体" : "消息";
+    public string RequestBodyTabHeader =>
+        IsSoapProtocol ? "SOAP"
+        : IsGrpcProtocol ? "gRPC"
+        : IsHttpProtocol ? "请求体"
+        : "消息";
 
-    public string SendButtonLabel => IsHttpProtocol ? "发送" : "连接并发送";
+    public string SendButtonLabel =>
+        IsGrpcProtocol ? "调用"
+        : IsHttpProtocol || IsSoapProtocol ? "发送"
+        : "连接并发送";
+
+    public string ProtocolPayloadLabel =>
+        IsSoapProtocol ? "SOAP Body / Envelope"
+        : IsGrpcProtocol ? "请求 JSON"
+        : "发送内容";
+
+    public string ProtocolPayloadPlaceholder =>
+        IsSoapProtocol ? "<GetUser xmlns=\"urn:example\"><id>1</id></GetUser>"
+        : IsGrpcProtocol ? "{ \"name\": \"PostSharp\" }"
+        : "Hello from PostSharp";
 
     public string UrlPlaceholder =>
         IsWebSocketProtocol ? "wss://example.com/socket"
         : IsSocketIoProtocol ? "http://localhost:3000"
         : IsTcpProtocol ? "tcp://127.0.0.1:9000"
+        : IsSoapProtocol ? "https://example.com/Service.asmx"
+        : IsGrpcProtocol ? "https://localhost:5001"
         : "https://api.example.com/users";
 
     public bool IsMultipartBody => IsHttpProtocol && Editing.BodyMode == "Multipart";
@@ -2083,11 +2124,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         OnPropertyChanged(nameof(IsWebSocketProtocol));
         OnPropertyChanged(nameof(IsSocketIoProtocol));
         OnPropertyChanged(nameof(IsTcpProtocol));
+        OnPropertyChanged(nameof(IsSoapProtocol));
+        OnPropertyChanged(nameof(IsGrpcProtocol));
         OnPropertyChanged(nameof(IsProtocolRequest));
+        OnPropertyChanged(nameof(IsHttpLikeProtocol));
         OnPropertyChanged(nameof(ShowOpenApiDocTab));
+        OnPropertyChanged(nameof(ShowMessageFormatSelector));
+        OnPropertyChanged(nameof(ShowProtocolWaitWindow));
         OnPropertyChanged(nameof(IsMessageFormatHex));
         OnPropertyChanged(nameof(RequestBodyTabHeader));
         OnPropertyChanged(nameof(SendButtonLabel));
+        OnPropertyChanged(nameof(ProtocolPayloadLabel));
+        OnPropertyChanged(nameof(ProtocolPayloadPlaceholder));
         OnPropertyChanged(nameof(UrlPlaceholder));
         OnPropertyChanged(nameof(IsMultipartBody));
         OnPropertyChanged(nameof(IsJsonBody));
@@ -2129,7 +2177,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         RequestTabOptions.Add(new RequestTabOption(1, "请求头"));
         RequestTabOptions.Add(new RequestTabOption(2, "授权"));
         RequestTabOptions.Add(new RequestTabOption(3, RequestBodyTabHeader));
-        if (IsHttpProtocol)
+        if (IsHttpLikeProtocol)
         {
             RequestTabOptions.Add(new RequestTabOption(4, "cURL"));
             if (ShowOpenApiDocTab)
@@ -2142,7 +2190,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         RequestTabIndex =
             RequestTabOptions.FirstOrDefault(option => option.Index == current)?.Index
-            ?? (IsHttpProtocol ? 0 : 3);
+            ?? (IsHttpLikeProtocol ? 0 : 3);
         foreach (var option in RequestTabOptions)
         {
             option.IsSelected = option.Index == RequestTabIndex;
@@ -4031,7 +4079,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             IsSuccess = result.HasResponse && result.StatusCode < 400,
             Error = result.Error is null ? null : SecretMasker.MaskSecrets(result.Error, secrets),
             Curl =
-                stored is null || stored.ProtocolOptions is not null
+                stored is null
+                || stored.ProtocolOptions is not null
+                || stored.GrpcOptions is not null
                     ? null
                     : AuditEntry.LimitCurl(RequestComposer.BuildCurl(stored)),
             RequestHeaders = Truncate(requestHeaders, AuditPreviewLimit),
@@ -7017,6 +7067,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             SocketIoPath = request.SocketIoPath,
             TcpTerminator = request.TcpTerminator,
             TcpUseTls = request.TcpUseTls,
+            SoapVersion = request.SoapVersion,
+            SoapAction = request.SoapAction,
+            GrpcService = request.GrpcService,
+            GrpcMethod = request.GrpcMethod,
+            GrpcUseTls = request.GrpcUseTls,
+            GrpcDeadlineSeconds = request.GrpcDeadlineSeconds,
             StatusCode = result.StatusCode,
             DurationMs = result.ElapsedMs,
             Params = request

@@ -320,6 +320,19 @@ public static partial class SecretMasker
                 {
                     Payload = MaskSecrets(request.ProtocolOptions.Payload, secrets),
                 },
+            SoapOptions = request.SoapOptions is null
+                ? null
+                : request.SoapOptions with
+                {
+                    Envelope = MaskSecrets(request.SoapOptions.Envelope, secrets),
+                    Action = MaskSecrets(request.SoapOptions.Action, secrets),
+                },
+            GrpcOptions = request.GrpcOptions is null
+                ? null
+                : request.GrpcOptions with
+                {
+                    RequestJson = MaskSecrets(request.GrpcOptions.RequestJson, secrets),
+                },
         };
     }
 

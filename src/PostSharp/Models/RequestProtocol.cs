@@ -11,7 +11,11 @@ public static class RequestProtocol
 
     public const string Tcp = "TCP";
 
-    public static IReadOnlyList<string> All { get; } = [Http, WebSocket, SocketIo, Tcp];
+    public const string Soap = "SOAP";
+
+    public const string Grpc = "gRPC";
+
+    public static IReadOnlyList<string> All { get; } = [Http, WebSocket, SocketIo, Tcp, Soap, Grpc];
 
     /// <summary>Normalizes persisted values, including older workspaces that never stored a protocol.</summary>
     public static string Normalize(string? protocol)
@@ -27,6 +31,8 @@ public static class RequestProtocol
             "websocket" or "ws" or "wss" => WebSocket,
             "socket.io" or "socketio" or "socket-io" => SocketIo,
             "tcp" or "tcps" or "tls" => Tcp,
+            "soap" or "soap11" or "soap12" => Soap,
+            "grpc" or "grpcs" => Grpc,
             _ => Http,
         };
     }

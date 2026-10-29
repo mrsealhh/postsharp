@@ -18,10 +18,24 @@ public sealed record ComposedRequest(
     string? UploadFieldName = null,
     IReadOnlyList<ComposedUploadFile>? UploadFiles = null,
     bool FollowRedirects = true,
-    ProtocolSendOptions? ProtocolOptions = null
+    ProtocolSendOptions? ProtocolOptions = null,
+    SoapSendOptions? SoapOptions = null,
+    GrpcSendOptions? GrpcOptions = null
 );
 
 public sealed record ComposedUploadFile(string FieldName, string FilePath);
+
+/// <summary>Resolved SOAP version, action and envelope.</summary>
+public sealed record SoapSendOptions(string Version, string Action, string Envelope);
+
+/// <summary>Resolved unary gRPC target and JSON request.</summary>
+public sealed record GrpcSendOptions(
+    string Service,
+    string Method,
+    string RequestJson,
+    int DeadlineSeconds,
+    bool UseTls
+);
 
 /// <summary>Resolved settings for WebSocket, Socket.IO and TCP requests.</summary>
 public sealed record ProtocolSendOptions(
@@ -54,12 +68,18 @@ public static class RequestComposer
             : request.Method.Trim().ToUpperInvariant();
 
         var protocol = RequestProtocol.Normalize(request.Protocol);
-        var protocolOptions =
-            protocol == RequestProtocol.Http
-                ? null
-                : BuildProtocolOptions(request, environment, protocol);
+        var protocolOptions = protocol
+            is RequestProtocol.WebSocket
+                or RequestProtocol.SocketIo
+                or RequestProtocol.Tcp
+            ? BuildProtocolOptions(request, environment, protocol)
+            : null;
+        var soapOptions =
+            protocol == RequestProtocol.Soap ? BuildSoapOptions(request, environment) : null;
+        var grpcOptions =
+            protocol == RequestProtocol.Grpc ? BuildGrpcOptions(request, environment) : null;
 
-        var url = protocolOptions is null
+        var url = protocol is RequestProtocol.Http or RequestProtocol.Soap
             ? BuildUrl(request, environment)
             : BuildProtocolUrl(request, environment);
         var headers = request
@@ -90,26 +110,29 @@ public static class RequestComposer
             url = AppendQuery(url, query.Key, VariableResolver.Resolve(query.Value, environment));
         }
 
+        var isHttp = protocol == RequestProtocol.Http;
         var bodyMode = request.BodyMode ?? "None";
         var isMultipart =
-            protocolOptions is null
-            && string.Equals(bodyMode, "Multipart", StringComparison.OrdinalIgnoreCase);
+            isHttp && string.Equals(bodyMode, "Multipart", StringComparison.OrdinalIgnoreCase);
         var isGraphQl =
-            protocolOptions is null
-            && string.Equals(bodyMode, "GraphQL", StringComparison.OrdinalIgnoreCase);
-        if (isGraphQl)
+            isHttp && string.Equals(bodyMode, "GraphQL", StringComparison.OrdinalIgnoreCase);
+        if (isGraphQl || soapOptions is not null)
         {
             method = "POST";
         }
 
         var hasBody =
-            protocolOptions is null
+            isHttp
             && !isMultipart
             && !string.Equals(bodyMode, "None", StringComparison.OrdinalIgnoreCase);
         string? body;
-        if (protocolOptions is not null)
+        if (grpcOptions is not null || protocolOptions is not null)
         {
             body = null;
+        }
+        else if (soapOptions is not null)
+        {
+            body = soapOptions.Envelope;
         }
         else if (isGraphQl)
         {
@@ -129,8 +152,28 @@ public static class RequestComposer
             pair.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)
         );
 
+        if (
+            soapOptions is { Version: "1.1" }
+            && !string.IsNullOrWhiteSpace(soapOptions.Action)
+            && !headers.Any(pair =>
+                pair.Key.Equals("SOAPAction", StringComparison.OrdinalIgnoreCase)
+            )
+        )
+        {
+            headers.Add(
+                new KeyValuePair<string, string>("SOAPAction", $"\"{soapOptions.Action}\"")
+            );
+        }
+
         string? contentType = null;
-        if (body is not null && !hasUserContentType)
+        if (soapOptions is not null && !hasUserContentType)
+        {
+            contentType =
+                soapOptions.Version == "1.1" ? "text/xml"
+                : string.IsNullOrWhiteSpace(soapOptions.Action) ? "application/soap+xml"
+                : $"application/soap+xml; action=\"{soapOptions.Action}\"";
+        }
+        else if (body is not null && !hasUserContentType)
         {
             contentType =
                 isGraphQl || string.Equals(bodyMode, "Json", StringComparison.OrdinalIgnoreCase)
@@ -211,8 +254,46 @@ public static class RequestComposer
             uploadFieldName,
             uploadFiles,
             request.FollowRedirects,
-            protocolOptions
+            protocolOptions,
+            soapOptions,
+            grpcOptions
         );
+    }
+
+    private static SoapSendOptions BuildSoapOptions(
+        RequestItem request,
+        EnvironmentModel? environment
+    )
+    {
+        var version = string.Equals(
+            request.SoapVersion?.Trim(),
+            "1.2",
+            StringComparison.OrdinalIgnoreCase
+        )
+            ? "1.2"
+            : "1.1";
+        var action = VariableResolver.Resolve(request.SoapAction, environment).Trim();
+        var body = VariableResolver.Resolve(request.MessageBody, environment);
+        return new SoapSendOptions(
+            version,
+            action,
+            SoapProtocolService.BuildEnvelope(version, body)
+        );
+    }
+
+    private static GrpcSendOptions BuildGrpcOptions(
+        RequestItem request,
+        EnvironmentModel? environment
+    )
+    {
+        var service = VariableResolver
+            .Resolve(request.GrpcService, environment)
+            .Trim()
+            .TrimStart('.');
+        var method = VariableResolver.Resolve(request.GrpcMethod, environment).Trim();
+        var requestJson = VariableResolver.Resolve(request.MessageBody, environment);
+        var deadline = Math.Clamp(request.GrpcDeadlineSeconds, 0, 300);
+        return new GrpcSendOptions(service, method, requestJson, deadline, request.GrpcUseTls);
     }
 
     private static ProtocolSendOptions BuildProtocolOptions(

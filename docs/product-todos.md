@@ -1,9 +1,9 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
-> 基线版本：v1.10.20（2026-10-29）
+> 基线版本：v1.10.21（2026-10-29）
 > 基线形态：Windows x64 / Linux x64 / macOS arm64 三类 ZIP（含按平台裁剪的存储插件），CLI 独立发布；.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
-> 基线测试：207 个 xUnit 测试，`csharpier check .` 通过
-> 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.10.20
+> 基线测试：218 个 xUnit 测试，`csharpier check .` 通过
+> 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.10.21
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
 
@@ -77,7 +77,7 @@
 
 ### 2.1 已具备能力
 
-- 请求编辑：参数、请求头、Cookie 管理、JSON/XML/Text/GraphQL/Multipart、上传、超时、请求级重定向开关、cURL 预览；协议支持 HTTP / WebSocket / Socket.IO / TCP（单条消息收发）。
+- 请求编辑：参数、请求头、Cookie 管理、JSON/XML/Text/GraphQL/Multipart、上传、超时、请求级重定向开关、cURL 预览；协议支持 HTTP / WebSocket / Socket.IO / TCP（单条消息收发）/ SOAP 1.1/1.2 / gRPC 一元调用（服务端反射 + 动态 protobuf JSON）。
 - 响应处理：JSON 树、原文、响应头、AI SSE 聚合、大响应折叠、搜索和复制。
 - 授权：Bearer、Basic、API Key、OAuth 2.0 授权码 + PKCE / 客户端凭据、集合级继承、请求级覆盖。
 - 导入导出：OpenAPI / Swagger、Postman、HAR、cURL、PowerShell、Insomnia V4、Hoppscotch、Postman Environment；集合右键可直接导出 Postman Collection v2.1。
@@ -94,7 +94,7 @@
 | 主工程 | `src/PostSharp`，单一桌面应用 |
 | 存储契约 | `src/PostSharp.Storage.Abstractions` |
 | 插件源码 | `src/Plugins/PostSharp.Storage.*` |
-| 测试 | `tests/PostSharp.Tests`，30 个测试文件，207 个用例 |
+| 测试 | `tests/PostSharp.Tests`，30 个测试文件，218 个用例 |
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
@@ -270,7 +270,7 @@
 
 **问题**
 
-当前依赖本地构建、手工测试和手工发布；没有 PR 门禁、UI 自动化和真实数据库 CI。159 个测试主要覆盖服务层，主窗口布局和关键交互仍靠人工回归。
+当前依赖本地构建、手工测试和手工发布；没有 PR 门禁、UI 自动化和真实数据库 CI。218 个测试主要覆盖服务层，主窗口布局和关键交互仍靠人工回归。
 
 **范围**
 
@@ -338,7 +338,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | P2-01 | 团队共享工作区 | 在远程文档存储上增加锁、冲突合并、成员/权限和变更记录；坚持本地优先，不强制云 | 两人同时编辑不丢数据；权限可审计；离线后恢复有冲突提示 | XL |
 | P2-02 | Linux / macOS 正式支持（后续实施） | 跨平台设计约束已生效，但正式打包、平台适配和发布不进入当前 Windows 版本；详细方案见 6.2 | Linux x64 与 macOS arm64 至少各一套安装包完成启动、请求、存储、授权和更新验证；Windows 功能不回归 | XL |
 | P2-03 | AI 原生工作流 | 自然语言生成请求/断言、失败解释、回归差异摘要；支持本地模型和远程模型 | 生成结果必须可预览、可拒绝、可审计；不自动执行破坏性操作 | XL |
-| P2-04 | 协议扩展 | 已支持 GraphQL HTTP POST / Variables / Postman 往返；WebSocket、Socket.IO（Engine.IO v4）与 TCP/TLS 已支持单条消息收发；gRPC、MQTT、SOAP/WSDL 仍需按客户需求立项 | gRPC 需 proto/描述符或服务端反射；常驻会话/多轮消息、Socket.IO 轮询回退和其余协议待有明确场景与验收样例 | XL |
+| P2-04 | 协议扩展 | 已支持 GraphQL HTTP POST / Variables / Postman 往返；WebSocket、Socket.IO（Engine.IO v4）与 TCP/TLS 单条消息收发；SOAP 1.1/1.2 + WSDL 浅层描述；gRPC 服务端反射 + 一元调用 + 动态 protobuf JSON/MCP 工具 | 流式 RPC、.proto 文件/描述符导入、WS-Security/MTOM、MQTT 等仍需按客户需求立项；常驻会话、Socket.IO 轮询回退和 MQTT 待有明确场景与验收样例 | XL |
 | P2-05 | 插件市场/注册表 | 插件发现、版本、签名、评分、撤回和兼容性 | 只允许签名插件进入推荐列表；安装前显示权限和来源 | XL |
 | P2-06 | 企业能力 | SSO、RBAC、审计导出/SIEM、保留策略、策略锁定 | 企业部署可集中配置；本地离线模式仍可用 | XL |
 | P2-07 | 国际化 | 中文/英文 UI、文档和错误文案 | 语言可切换；布局不因英文长度溢出 | L |
@@ -489,7 +489,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 - [ ] 阅读 `AGENTS.md`、`README.md`、`docs/storage-plugins.md` 和本文件。
 - [ ] 执行 `dotnet build src/PostSharp/PostSharp.csproj -c Debug`，确认 0 警告 0 错误。
-- [ ] 执行 `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj -c Debug`，确认 159 个基线用例通过。
+- [ ] 执行 `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj -c Debug`，确认 218 个基线用例通过。
 - [ ] 执行 `csharpier check .`。
 - [ ] 解压当前 Release 包，使用独立数据目录启动，确认首次为演示工作区。
 - [ ] 确认不会把 `.postsharp`、日志、Token、连接串或真实截图提交到仓库。
