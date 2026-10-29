@@ -29,6 +29,12 @@ public sealed partial class HistoryEntry : ObservableObject
 
     public string Body { get; init; } = string.Empty;
 
+    public string GraphQlQuery { get; init; } = string.Empty;
+
+    public string GraphQlVariables { get; init; } = "{}";
+
+    public string GraphQlOperationName { get; init; } = string.Empty;
+
     public List<RowSnapshot> Params { get; init; } = new();
 
     public List<RowSnapshot> Headers { get; init; } = new();
@@ -92,6 +98,9 @@ public sealed partial class HistoryEntry : ObservableObject
             FollowRedirects = FollowRedirects,
             BodyMode = BodyMode,
             Body = Body,
+            GraphQlQuery = GraphQlQuery,
+            GraphQlVariables = GraphQlVariables,
+            GraphQlOperationName = GraphQlOperationName,
         };
 
         foreach (var row in Params)

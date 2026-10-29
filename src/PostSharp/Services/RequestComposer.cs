@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using PostSharp.Models;
 
 namespace PostSharp.Services;
@@ -68,9 +70,24 @@ public static class RequestComposer
 
         var bodyMode = request.BodyMode ?? "None";
         var isMultipart = string.Equals(bodyMode, "Multipart", StringComparison.OrdinalIgnoreCase);
+        var isGraphQl = string.Equals(bodyMode, "GraphQL", StringComparison.OrdinalIgnoreCase);
+        if (isGraphQl)
+        {
+            method = "POST";
+        }
+
         var hasBody =
             !isMultipart && !string.Equals(bodyMode, "None", StringComparison.OrdinalIgnoreCase);
-        var body = hasBody ? VariableResolver.Resolve(request.Body, environment) : null;
+        string? body;
+        if (isGraphQl)
+        {
+            body = BuildGraphQlBody(request, environment);
+        }
+        else
+        {
+            body = hasBody ? VariableResolver.Resolve(request.Body, environment) : null;
+        }
+
         if (string.IsNullOrEmpty(body))
         {
             body = null;
@@ -83,9 +100,10 @@ public static class RequestComposer
         string? contentType = null;
         if (body is not null && !hasUserContentType)
         {
-            contentType = string.Equals(bodyMode, "Json", StringComparison.OrdinalIgnoreCase)
-                ? "application/json"
-                : "text/plain";
+            contentType =
+                isGraphQl || string.Equals(bodyMode, "Json", StringComparison.OrdinalIgnoreCase)
+                    ? "application/json"
+                    : "text/plain";
         }
 
         List<KeyValuePair<string, string>>? formFields = null;
@@ -521,6 +539,47 @@ public static class RequestComposer
         uri = parsed;
         problem = string.Empty;
         return true;
+    }
+
+    private static string BuildGraphQlBody(RequestItem request, EnvironmentModel? environment)
+    {
+        var query = VariableResolver.Resolve(request.GraphQlQuery, environment);
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            throw new InvalidOperationException("GraphQL Query 不能为空。");
+        }
+
+        var payload = new JsonObject { ["query"] = query };
+        var variablesText = VariableResolver.Resolve(request.GraphQlVariables, environment).Trim();
+        if (variablesText.Length > 0)
+        {
+            JsonNode? variables;
+            try
+            {
+                variables = JsonNode.Parse(variablesText);
+            }
+            catch (JsonException exception)
+            {
+                throw new InvalidOperationException(
+                    "GraphQL Variables 必须是合法的 JSON 对象。",
+                    exception
+                );
+            }
+
+            if (variables is not JsonObject variablesObject)
+            {
+                throw new InvalidOperationException("GraphQL Variables 必须是 JSON 对象。");
+            }
+
+            payload["variables"] = variablesObject.DeepClone();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.GraphQlOperationName))
+        {
+            payload["operationName"] = request.GraphQlOperationName.Trim();
+        }
+
+        return payload.ToJsonString();
     }
 
     private static string BuildUrl(RequestItem request, EnvironmentModel? environment)

@@ -860,6 +860,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             TimeoutSeconds = imported.TimeoutSeconds,
             BodyMode = imported.BodyMode,
             Body = imported.Body,
+            GraphQlQuery = imported.GraphQlQuery,
+            GraphQlVariables = imported.GraphQlVariables,
+            GraphQlOperationName = imported.GraphQlOperationName,
             UploadFilePath = imported.UploadFilePath,
             UploadFieldName = string.IsNullOrWhiteSpace(imported.UploadFieldName)
                 ? "file"
@@ -1956,7 +1959,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public bool IsJsonBody => Editing.BodyMode == "Json";
 
-    public bool IsTextBody => !IsMultipartBody;
+    public bool IsGraphQlBody => Editing.BodyMode == "GraphQL";
+
+    public bool IsTextBody => !IsMultipartBody && !IsGraphQlBody;
 
     public bool ShowRequestBodyJsonViewer => IsJsonBody && IsRequestBodyJsonView;
 
@@ -6472,6 +6477,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 or nameof(RequestItem.Method)
                 or nameof(RequestItem.Body)
                 or nameof(RequestItem.BodyMode)
+                or nameof(RequestItem.GraphQlQuery)
+                or nameof(RequestItem.GraphQlVariables)
+                or nameof(RequestItem.GraphQlOperationName)
                 or nameof(RequestItem.UploadFilePath)
                 or nameof(RequestItem.UploadFieldName)
         )
@@ -6559,7 +6567,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     private void RefreshDerivedState()
     {
-        var body = Editing.Body ?? string.Empty;
+        var body = IsGraphQlBody
+            ? Editing.GraphQlQuery ?? string.Empty
+            : Editing.Body ?? string.Empty;
         BodyPreview = string.IsNullOrWhiteSpace(body)
             ? "请求体为空"
             : Truncate(
@@ -6572,6 +6582,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         OnPropertyChanged(nameof(IsMultipartBody));
         OnPropertyChanged(nameof(IsJsonBody));
+        OnPropertyChanged(nameof(IsGraphQlBody));
         OnPropertyChanged(nameof(IsTextBody));
         OnPropertyChanged(nameof(ShowRequestBodyJsonViewer));
         OnPropertyChanged(nameof(ShowRequestBodyEditor));
@@ -6901,6 +6912,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             FollowRedirects = request.FollowRedirects,
             BodyMode = request.BodyMode,
             Body = HistoryEntry.LimitBody(SecretMasker.MaskSecrets(request.Body, secrets)),
+            GraphQlQuery = HistoryEntry.LimitBody(
+                SecretMasker.MaskSecrets(request.GraphQlQuery, secrets)
+            ),
+            GraphQlVariables = HistoryEntry.LimitBody(
+                SecretMasker.MaskSecrets(request.GraphQlVariables, secrets)
+            ),
+            GraphQlOperationName = request.GraphQlOperationName,
             StatusCode = result.StatusCode,
             DurationMs = result.ElapsedMs,
             Params = request

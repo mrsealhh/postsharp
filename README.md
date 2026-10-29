@@ -60,13 +60,13 @@ PostSharp 的定位是：
 - **重定向策略**：每个请求可切换是否跟随 3xx 重定向；关闭后直接展示 3xx 状态、响应头和 `Location`，便于调试登录跳转与网关转发。策略随请求和历史记录持久化。
 
 ![Cookie 管理](docs/cookie-manager.png)
-- **请求体**：无 / JSON / 文本 / 表单上传。
+- **请求体**：无 / JSON / 文本 / GraphQL / 表单上传；GraphQL 自动组成 POST JSON，支持 Query、Variables 和 Operation name。
   - JSON/XML 一键格式化，JSON 一键压缩。
   - 单行切换与单行预览，长文本不再占满编辑区。
   - multipart/form-data：表单字段 + 多文件选择 / 拖拽，每个文件可编辑字段名。
   - 大文件按 64KB 流式读取并显示上传进度；发送中的「取消」可中断上传。
 - **cURL / PowerShell 导入 / 导出**：按当前环境解析变量，生成可执行的 bash cURL 或 PowerShell `Invoke-RestMethod`；支持从 Postman、浏览器或 PostSharp 生成的 `-X` / `-H` / `-d` / `--data-raw` / `-F` / `-u` 命令，以及 PowerShell `-Uri` / `-Method` / `-Headers` / `-Body` / `-Form` / `-TimeoutSec` 命令导入请求；可保存为 `.sh` 或 `.ps1`。
-- **Postman Collection 导入 / 导出**：读取 Postman Collection v2.0 / v2.1 的嵌套文件夹、请求、查询参数、请求头、Bearer / Basic / API Key 认证、raw / urlencoded / formdata 请求体和集合变量；集合树右键菜单可直接「导出 Postman」，默认导出为 Collection v2.1；也可在导入导出对话框导出选中集合或整个工作区。
+- **Postman Collection 导入 / 导出**：读取 Postman Collection v2.0 / v2.1 的嵌套文件夹、请求、查询参数、请求头、Bearer / Basic / API Key 认证、raw / urlencoded / formdata / GraphQL 请求体和集合变量；集合树右键菜单可直接「导出 Postman」，默认导出为 Collection v2.1；也可在导入导出对话框导出选中集合或整个工作区。
 - **Postman 环境文件**：独立导入 `values` 或 `variable` 数组，创建或合并同名环境并激活。
 - **HAR 1.2 导入**：读取浏览器、Postman、Apifox 导出的 HTTP Archive；默认只保留 XHR / Fetch，支持 query、headers、cookies、JSON / text / form-data 请求体，可切换包含静态资源。
 - **Insomnia V4 导入**：读取 `resources` 数组中的 workspace、request_group、request 和 environment；脚本/测试不执行。
@@ -772,10 +772,10 @@ docs/
 | 套件预检 | 缺失请求、环、悬空节点/连线、无效映射/条件/断言和环境变量会阻止保存或运行；编辑器按节点列出问题并支持定位，管理层持续展示提醒 |
 | 运行历史 | 每个套件持久化最近 20 次运行摘要、步骤结果、节点/连线快照；自动化页可切换历史，重启后保留 |
 | 失败重跑 | 失败运行可只重跑失败步骤及依赖；每个步骤结果提供「从此步继续」，自动补跑上游依赖 |
-| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；194 个测试全部通过 |
-| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、194 个测试通过 |
+| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；197 个测试全部通过 |
+| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、197 个测试通过 |
 | MCP DAG | `create_suite` / `update_suite` 接受 `workflow.nodes`、`workflow.edges`，支持边条件、All/Any 汇合和最大并行度；构建 0 警告/错误 |
-| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；194 个测试通过 |
+| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；197 个测试通过 |
 | MCP 单条清理 | 新增 `get_history`、`delete_history`、`delete_audit`，审计/历史单条移入回收站可恢复 |
 | MCP 后台运行 | 新增 `start_suite_run` / `get_suite_run_job` / `cancel_suite_run`；任务返回节点/连线实时进度和最终运行 id，退出应用后任务不保留 |
 | MCP 预检 | 新增 `validate_suite`，返回 `code`、`severity`、`stepId`、`stepName`、`message`、`hint`；后台任务预检失败也会带回结构化问题 |
@@ -846,7 +846,7 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：194 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：197 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
@@ -873,6 +873,7 @@ docs/
 | 发布体积 | 三平台均为自包含；删除插件 RID 和非目标平台 runtimes 后约 Windows 73 MB、Linux 72 MB、macOS 73 MB；CLI 独立发布 |
 | 套件编排布局 | 右侧明细禁用横向滚动；汇合方式/并行组改为显式标签并单独换行，长说明不再撑宽左列 |
 | Postman 导出 | 集合右键「导出 Postman」直接生成 v2.1 Collection；选中集合导出后 JSON 结构、请求名和 URL 通过单测 |
+| GraphQL | Query、Variables、Operation name 自动组成 POST JSON；Variables 必须是 JSON 对象；Postman Collection 导出/导入往返通过单测 |
 | 签名说明 | macOS 未签名/未公证的 Gatekeeper 处理与公证步骤已写入 `docs/macos.md`；Linux 使用 SHA256 校验 |
 | 重定向策略 | 请求级开关随 Clone、工作区 DTO 和历史记录往返；关闭时由独立 HttpClient handler 直接返回 3xx（单测） |
 | OAuth 客户端凭据 | 授权窗口可选择客户端凭据；令牌请求体包含 `grant_type=client_credentials`、客户端 ID/密钥和 scope；缺少客户端密钥时配置校验失败（单测） |
@@ -995,9 +996,9 @@ master                 稳定可发布
 发布新版本（从 1.10.17 起同时发布三类 ZIP）：
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.10.19
-.\scripts\build-linux-release.ps1 -Version 1.10.19
-.\scripts\build-osx-release.ps1 -Version 1.10.19 -RuntimeIdentifier osx-arm64
+.\scripts\build-release.ps1 -Version 1.10.20
+.\scripts\build-linux-release.ps1 -Version 1.10.20
+.\scripts\build-osx-release.ps1 -Version 1.10.20 -RuntimeIdentifier osx-arm64
 # CLI 独立发布，不进入上面三个桌面包
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier win-x64 -SelfContained
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier linux-x64 -SelfContained
@@ -1031,7 +1032,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：194 个 xUnit 测试。
+- 自测：197 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
@@ -1049,6 +1050,7 @@ master                 稳定可发布
 - 字体设置主要覆盖窗口正文和代码视图；Arc 组件的内部令牌字体不保证全部跟随。
 - OpenAPI 导入会优先使用 `x-apifox-folder`，支持 securitySchemes 占位认证头、服务器选择和外部 `$ref` 自动下载；回调/Webhook 仍未实现。
 - Cookie 仅支持当前进程内存中的查看和按站点清空，未做跨重启持久化、导入导出或按请求隔离；代理、客户端证书、重试/退避、HTTP/2 开关和流式下载未实现；OAuth 2.0 已支持授权码 + PKCE 与客户端凭据，隐式、设备码和密码模式仍未实现；Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
+- GraphQL 已支持 HTTP POST、Query、Variables、Operation name 和 Postman Collection 往返；gRPC / WebSocket / Socket.IO / MQTT / SOAP 等协议尚未实现，gRPC 需要单独接入 proto/描述符或服务端反射。
 - 授权只支持请求与集合两级（含多级集合继承），没有工作区级或环境级默认授权；同一集合的授权由该集合对象持有，未单独覆盖的下级请求共用同一个令牌，刷新后同步生效。
 - 单点登录使用系统默认浏览器；复制请求会复制一份独立的授权与令牌，副本重新登录或刷新不会影响原请求；删除集合/请求时其授权配置一起移除。
 - MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。后台独立服务是一个隐藏的同程序进程，不是注册为 Windows 服务 / systemd / launchd，也不支持开机自启；服务进程异常退出后端点会停止。MCP 套件已支持任意 DAG、结构化预检、后台运行/进度轮询/取消、运行历史和失败重跑；后台任务只保存在当前进程内，应用退出后需通过运行历史查看已完成结果。

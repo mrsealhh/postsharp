@@ -175,6 +175,20 @@ public static class PostmanExportService
     private static JsonObject? ToBody(RequestItem request)
     {
         var mode = request.BodyMode ?? "None";
+        if (string.Equals(mode, "GraphQL", StringComparison.OrdinalIgnoreCase))
+        {
+            return new JsonObject
+            {
+                ["mode"] = "graphql",
+                ["graphql"] = new JsonObject
+                {
+                    ["query"] = request.GraphQlQuery,
+                    ["variables"] = request.GraphQlVariables,
+                    ["operationName"] = request.GraphQlOperationName,
+                },
+            };
+        }
+
         if (string.Equals(mode, "Json", StringComparison.OrdinalIgnoreCase))
         {
             return new JsonObject
