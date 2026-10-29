@@ -3,7 +3,6 @@ using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using PostSharp.Models;
@@ -39,18 +38,8 @@ public partial class App : Application
 
         try
         {
-            Styles.Add(
-                new StyleInclude(new Uri("avares://PostSharp/"))
-                {
-                    Source = new Uri("avares://PostSharp/Styles/ToolTipStyles.axaml"),
-                }
-            );
-            Styles.Add(
-                new StyleInclude(new Uri("avares://PostSharp/"))
-                {
-                    Source = new Uri("avares://PostSharp/Styles/SelectableRowStyles.axaml"),
-                }
-            );
+            Styles.Add(new PostSharp.Styles.ToolTipStyles());
+            Styles.Add(new PostSharp.Styles.SelectableRowStyles());
 
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {

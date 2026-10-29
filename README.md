@@ -2,7 +2,7 @@
 
 <img src="src/PostSharp/Assets/logo.png" width="110" align="right" alt="PostSharp logo" />
 
-> 面向 AI 的本地接口调试工作台。基于 **Avalonia 12.1.4** 与 **TKCode.Arc 0.3.1-preview.3**，把「AI 通过 MCP 触发请求 → 审计留痕 → 自动化回归」串成一条闭环，同时保留完整的 Postman 式手动调试能力。
+> 面向 AI 的本地接口调试工作台。基于 **Avalonia 12.1.4** 与 **TKCode.Arc 0.3.2-preview.1**，把「AI 通过 MCP 触发请求 → 审计留痕 → 自动化回归」串成一条闭环，同时保留完整的 Postman 式手动调试能力。
 
 ![PostSharp 主界面](docs/screenshot.png)
 
@@ -171,11 +171,11 @@ PostSharp 的定位是：
 | --- | --- |
 | .NET | `net10.0` |
 | Avalonia | `12.1.4` |
-| TKCode.Arc | `0.3.1-preview.3` |
-| TKCode.Arc.Fonts | `0.3.1-preview.3` |
-| TKCode.Arc.Themes.Corners | `0.3.1-preview.3` |
-| TKCode.Arc.Workflow | `0.3.1-preview.3` |
-| AtomUI | 由 TKCode.Arc 带入，`6.2.8` |
+| TKCode.Arc | `0.3.2-preview.1` |
+| TKCode.Arc.Fonts | `0.3.2-preview.1` |
+| TKCode.Arc.Themes.Corners | `0.3.2-preview.1` |
+| TKCode.Arc.Workflow | `0.3.2-preview.1` |
+| TKCode.Arc.Foundation | 由 TKCode.Arc 带入，`0.3.2-preview.1`；0.3.2 起不再依赖 AtomUI |
 | MVVM | CommunityToolkit.Mvvm `8.4.0` |
 | 持久化 | 本地 SQLite：`Microsoft.Data.Sqlite` `10.0.14`；远程 PostgreSQL / MySQL / SQL Server / MongoDB 以插件随包发布（`Npgsql` `10.0.3`、`MySqlConnector` `2.6.2`、`Microsoft.Data.SqlClient` `7.1.1`、`MongoDB.Driver` `2.24.0`）；可选 OLAP 插件：ClickHouse（`ClickHouse.Client` `7.8.2`）、Doris / StarRocks（`MySqlConnector`） |
 | 存储插件 | `PostSharp.Storage.Abstractions` 契约 + `plugins/<name>/plugin.json` 目录扫描 |
@@ -614,7 +614,7 @@ src/PostSharp/
     AppLog.cs             Serilog 文件日志与目录切换
     DataFile.cs           数据文件原子写入、.bak 备份与损坏文件隔离
     SecretMasker.cs       机密变量与凭据请求头打码
-    ThemeService.cs       主题偏好解析与 AtomUI 应用
+    ThemeService.cs       主题偏好解析与 ArcTheme 应用
     FontService.cs        字体导入、字体目录扫描与 Avalonia 私有字体集合
     OpenApiImportService.cs OpenAPI/Swagger JSON、YAML、URL 解析
     PostmanImportService.cs Postman Collection v2.0/v2.1 解析、认证/请求体转换与提示
@@ -674,7 +674,7 @@ src/PostSharp/
   Styles/
     ToolTipStyles.axaml   全局 Tooltip 浮层卡片样式
   App.cs                  全局样式与主窗口启动
-  Program.cs               Arc / AtomUI 启动注册
+  Program.cs               Arc 启动注册
 src/PostSharp.Storage.Abstractions/
   StorageContracts.cs      插件契约：IStorageProviderPlugin / IDocumentBackend / 选项与结果
   SqlDocumentBackend.cs    ADO.NET 插件共用的分类文档表实现
@@ -878,6 +878,9 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
+| Arc 0.3.2 | 升级 `TKCode.Arc` 到 `0.3.2-preview.1`，移除 AtomUI 传递依赖；启动改用 `UseArc(...)`，主题改用 `ArcTheme.Apply`；构建、222 个测试、主窗口启动和控件渲染通过 |
+| Arc 主题与弹层 | 浅色/深色启动正常；协议 Select 弹层、ToolTip 和主界面控件渲染正常 |
+| NativeAOT 试编译 | `PublishAot=true` 生成约 58 MB 原生 exe；修复动态 `StyleInclude` 后仍因 `System.Text.Json` 反射序列化在启动阶段失败；结论为暂不具备生产级 AOT |
 | 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：222 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
@@ -1074,6 +1077,7 @@ master                 稳定可发布
 ### 当前 MVP 限制
 
 - 存储插件在进程内加载，权限等同当前用户程序，不支持热卸载；替换同名插件后建议重启应用。
+- 当前发布包是自包含 JIT，不是 NativeAOT。Arc 0.3.2 已移除 AtomUI 并声明 AOT 安全；实测 `dotnet publish -p:PublishAot=true` 能生成约 58 MB 的原生 exe，但应用启动时在 `SuiteStore.Save` 因 `System.Text.Json` 反射序列化被 AOT 禁用而失败（`Reflection-based serialization has been disabled`）。因此当前**没有生产级 AOT 能力**；需要为全部 DTO/导入导出改用 source-generated JSON、处理存储插件的动态加载，并完成 AOT 启动/请求/持久化冒烟后再评估。
 - OpenAPI 同步按 `METHOD + 路径` 匹配；导入不再限制操作数量，保留循环引用和网络超时保护。Webhook / callback 与运行时响应校验未实现。
 - SSE 取消后可用 `Last-Event-ID` 手动「继续」；自动重连和从任意断点恢复仍依赖服务端支持。
 - multipart 已支持多文件、64KB 流式上传、进度和取消；断点续传、分片上传协议和超大文件校验未实现。

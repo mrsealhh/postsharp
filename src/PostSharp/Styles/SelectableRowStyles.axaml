@@ -3,6 +3,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
     xmlns:controls="using:PostSharp.Controls"
+    x:Class="PostSharp.Styles.SelectableRowStyles"
 >
     <Style Selector="controls|SelectableRow">
         <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
