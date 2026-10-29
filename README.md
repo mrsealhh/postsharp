@@ -979,19 +979,24 @@ master                 稳定可发布
 
 自动更新只对带有 `.postsharp-update-enabled` 标记的发布包启用，避免开发目录覆盖自身。
 
-发布新版本：
+发布新版本（从 1.10.17 起同时发布三类 ZIP）：
 
 ```powershell
-.\scripts\build-release.ps1 -Version 0.3.0
+.\scripts\build-release.ps1 -Version 1.10.17
+.\scripts\build-linux-release.ps1 -Version 1.10.17
+.\scripts\build-osx-release.ps1 -Version 1.10.17 -RuntimeIdentifier osx-arm64
 ```
 
 脚本会生成：
 
-- `artifacts/PostSharp-win-x64.zip`：应用目录内容，根目录包含 `PostSharp.exe` 和默认四个存储插件。
-- `artifacts/PostSharp-win-x64.zip.sha256`：SHA256 校验文件。
+- `artifacts/PostSharp-win-x64.zip` / `.sha256`：Windows x64 应用目录，根目录包含 `PostSharp.exe`、`cli/` 和默认四个存储插件；带 Windows 自动更新标记。
+- `artifacts/PostSharp-linux-x64.zip` / `.sha256`：Linux x64 自包含包，根目录 `run.sh` 已具备可执行位；不启用 Windows 自动更新。
+- `artifacts/PostSharp-osx-arm64.zip` / `.sha256`：macOS arm64 自包含包，根目录 `run.command` 已具备可执行位；未签名、未公证，不启用 Windows 自动更新。
 - `artifacts/plugins/PostSharp.Storage.*.zip`：默认四类与 ClickHouse / Doris / StarRocks 插件包，可作为 Release 附加资产单独上传。
 
-在 GitHub 创建 tag `v0.3.0` 和 Release，上传上面两个文件。应用启动后每 6 小时检查 `releases/latest`，下载并校验包；下载完成后仅提示「可安装」，由用户点击右下角「更新 / 安装」确认后再由独立 PowerShell 更新器替换应用目录并重启，失败时恢复备份。更新前会把原应用目录复制到 LocalAppData 的更新区；如果项目数据目录位于应用目录内，会同步复制回新目录，避免更新丢失 SQLite 数据。设置窗口显示当前版本和更新状态，也可手动检查或关闭自动检查。
+三个 ZIP 由 `scripts/zip-directory.ps1` 统一生成：条目使用 `/`，启动脚本为 LF，`PostSharp`、`postsharp-cli`、`run.sh`、`run.command` 带 Unix `0100755` 可执行位，避免 Windows 压缩后在 Linux/macOS 解压异常。
+
+在 GitHub 创建与版本一致的 tag 和 Release，至少上传三组 ZIP + SHA256。Windows 应用启动后每 6 小时检查 `releases/latest`，下载并校验包；下载完成后仅提示「可安装」，由用户点击右下角「更新 / 安装」确认后再由独立 PowerShell 更新器替换应用目录并重启，失败时恢复备份。Linux/macOS 预览包当前需要手动下载和解压，不参与 Windows 自动更新。
 
 ### 已知限制与路线图
 
