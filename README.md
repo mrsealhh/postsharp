@@ -892,6 +892,7 @@ docs/
 | Arc 0.3.2 | 升级 `TKCode.Arc` 到 `0.3.2-preview.1`，移除 AtomUI 传递依赖；启动改用 `UseArc(...)`，主题改用 `ArcTheme.Apply`；构建、222 个测试、主窗口启动和控件渲染通过 |
 | Arc 主题与弹层 | 浅色/深色启动正常；协议 Select 弹层、ToolTip 和主界面控件渲染正常 |
 | 1.10.24 发布 | 三平台 ZIP + NativeAOT ZIP 及各自 SHA256 上传 GitHub Release（`v1.10.24`）；更新器按 `<资产名>.sha256` 精确匹配校验值，JIT/AOT 各自只认本通道资产；AOT 包自带 `.postsharp-aot` 与更新标记，AOT 冒烟 18 项通过 |
+| 更新通道实测 | 用 1.10.23 JIT 包调用 `check_updates`：下载 1.10.24 主包、SHA256 与发布值一致、整目录替换后重启为 1.10.24（待安装标记自动清除）；AOT 1.10.24 调用 `check_updates` 返回「已是最新」（状态 4，说明 AOT 更新已启用），AOT 资产自更新从下一版生效 |
 | NativeAOT | `PublishAot=true` 生成约 63 MB 原生 exe；全部本地文档与 MCP 结果改用 source-generated JSON，存储插件在 AOT 下自动回退本地 SQLite；`scripts/aot-smoke.ps1` 18 项检查通过（启动、70 个 MCP 工具、集合/环境/套件/历史/审计/发送/套件运行/设置重启持久化），日志无异常，自有代码 0 条 IL 告警 |
 | 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：232 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |

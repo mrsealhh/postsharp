@@ -29,6 +29,7 @@ powershell -ExecutionPolicy Bypass -File scripts/aot-smoke.ps1
 | 套件 | `create_suite` → `run_suite` 1/1 通过 → `delete_suite` |
 | 持久化 | `update_settings` 写入后重启原生进程，设置仍然存在 |
 | 冒烟脚本 | 18 项检查通过，日志无 `[ERR]`、无反射序列化异常 |
+| 自更新 | Windows AOT 包带 `.postsharp-aot` 与更新标记，`check_updates` 返回「已是最新」而非「不支持的目录」；AOT 资产自更新从下一版生效 |
 
 ## 其他平台
 
