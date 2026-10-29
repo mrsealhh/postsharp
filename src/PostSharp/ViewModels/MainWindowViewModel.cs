@@ -42,7 +42,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private const int MaxCollectionDepth = 5;
     private const string SideBySideLayout = "SideBySide";
     private const string StackedLayout = "Stacked";
-    private const string CliReleaseUrl = "https://github.com/mrsealhh/postsharp/releases/latest";
+    private const string CliReleaseUrl =
+        "https://github.com/mrsealhh/postsharp/releases/tag/cli-v1.1.0";
     private const string CliDocsUrl =
         "https://github.com/mrsealhh/postsharp/blob/master/docs/cli.md";
 
@@ -1411,38 +1412,6 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [RelayCommand]
     private void OpenCliDocs() => OpenExternalUrl(CliDocsUrl, "CLI 使用说明");
 
-    [RelayCommand]
-    private void OpenCliFolder()
-    {
-        var directory = Path.GetDirectoryName(CliExecutablePath);
-        if (directory is null || !Directory.Exists(directory))
-        {
-            ShowToast("当前发布包未附带 CLI，请先从 Releases 下载");
-            return;
-        }
-
-        try
-        {
-            var fileName =
-                OperatingSystem.IsWindows() ? "explorer.exe"
-                : OperatingSystem.IsMacOS() ? "open"
-                : "xdg-open";
-            Process.Start(
-                new ProcessStartInfo
-                {
-                    FileName = fileName,
-                    Arguments = OperatingSystem.IsWindows() ? $"\"{directory}\"" : directory,
-                    UseShellExecute = OperatingSystem.IsWindows(),
-                }
-            );
-        }
-        catch (Exception exception)
-        {
-            Log.Error(exception, "打开 CLI 目录失败 {Directory}", directory);
-            ShowToast($"无法打开 CLI 目录，请手动访问 {directory}");
-        }
-    }
-
     private void OpenExternalUrl(string url, string label)
     {
         try
@@ -2017,22 +1986,6 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public string McpEndpoint =>
         _mockServer.IsRunning ? $"{_mockServer.BaseUrl}/mcp" : "MCP 服务未启动";
-
-    public string CliExecutablePath { get; } =
-        Path.Combine(
-            AppContext.BaseDirectory,
-            "cli",
-            OperatingSystem.IsWindows() ? "postsharp-cli.exe" : "postsharp-cli"
-        );
-
-    public bool IsBundledCliAvailable => File.Exists(CliExecutablePath);
-
-    public string CliLocationText =>
-        IsBundledCliAvailable
-            ? $"随包 CLI：{CliExecutablePath}"
-            : "当前为开发构建或发布包未附带 CLI，可从 Releases 下载";
-
-    public string CliExampleCommand => $"\"{CliExecutablePath}\" suite list";
 
     public string McpClientConfig =>
         $$"""

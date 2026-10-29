@@ -46,7 +46,7 @@ PostSharp 的定位是：
 ### AI 方向
 
 - **MCP 工具**：集合/请求、环境变量、历史与回收站、审计与回收站、自动化套件、系统配置、存储配置/同步/切换、导入导出等语义操作均可由 MCP 调用（窗口尺寸、剪贴板等纯界面动作除外）。
-- **命令行 CLI**：`postsharp-cli` 通过本机 MCP 端点执行套件列表、预检、后台运行、运行历史、失败重跑、请求发送和审计查询；支持 `--json`、`--junit`、`--markdown`、`--html` 和稳定退出码，适合终端与 CI。`postsharp-cli mcp-stdio` 可把 stdin/stdout MCP 桥接到 HTTP MCP，兼容只支持 stdio 的 harness。应用内「指南 → 命令行 CLI」卡片提供常用命令、MCP 地址复制、本机 CLI 路径和下载入口；桌面安装包附带 `cli/` 目录。
+- **命令行 CLI**：`postsharp-cli` 通过本机 MCP 端点执行套件列表、预检、后台运行、运行历史、失败重跑、请求发送和审计查询；支持 `--json`、`--junit`、`--markdown`、`--html` 和稳定退出码，适合终端与 CI。`postsharp-cli mcp-stdio` 可把 stdin/stdout MCP 桥接到 HTTP MCP，兼容只支持 stdio 的 harness。CLI 是独立下载包，不随桌面安装包分发；应用内「指南 → 命令行 CLI」卡片提供常用命令、MCP 地址复制和下载入口。
 - **完整审计**：来源 `UI` / `MCP`、MCP 客户端名称、工具名、时间、状态、耗时、大小、cURL、请求头和请求/响应预览。
 - **SSE / AI 输出聚合**：自动解析 `text/event-stream`，聚合常见 AI 协议的 thinking 与 content，接收中增量刷新，取消后保留已接收内容。
 - **自动化套件**：统一套件编排器，左侧集合/接口浏览器、中间画布、右侧节点明细；支持依赖 DAG、条件分支与汇合、失败重试、输入映射、断言、定时运行与失败停止；运行结果进入审计，画布实时显示节点与连线状态。
@@ -243,7 +243,7 @@ Apifox 的原生格式暂未直接解析；当前推荐三条官方导出路径�
 3. 打开顶栏「管理层」：
    - **审计**：查看刚才的 UI 发送。
    - **自动化**：运行「内置 Mock 冒烟测试」。
-   - **指南**：一分钟了解全部核心功能；末尾「命令行 CLI」卡片可复制命令和 MCP 地址、下载 CLI。
+   - **指南**：一分钟了解全部核心功能；末尾「命令行 CLI」卡片可复制命令和 MCP 地址，并从独立 CLI Release 下载。
 4. 顶栏「设置」打开独立设置窗口：主题、日志目录、字体、超时、默认请求体等。
 5. 集合树顶部的「导入」打开导入/导出对话框，先选择来源卡片，再选择文件或粘贴内容；底部「批量导入文件…」可以一次选择多个文件并自动识别格式。
 6. 选中请求并打开「授权」标签页：默认「继承上级集合」，标题会写明继承自哪个集合；要单独配置就先选类型（Bearer / Basic / API Key / OAuth 2.0），再点「打开授权配置…」。选中集合时同一标签页改为编辑该集合的授权，同集合下未单独配置的请求共用这份授权；切到另一个集合会显示它自己的配置，不会沿用上一份。
@@ -285,6 +285,8 @@ http://127.0.0.1:5199/mcp
 ```
 
 支持 Streamable HTTP 的 MCP 客户端（Cursor、Claude Code、Cline 等）可以直接添加。服务实现 JSON-RPC 2.0，支持 `initialize`、`notifications/initialized`、`ping`、`tools/list`、`tools/call`。
+
+设置页提供「关闭窗口后保持 MCP 后台常驻」，默认开启。开启后关闭主窗口只会隐藏到系统托盘，MCP 端点、工作区、定时套件和运行任务继续工作，AI 客户端与独立 CLI 可以直接调用；需要完全退出时使用托盘菜单「退出 PostSharp」。关闭该开关后，关闭窗口会按传统方式退出进程。
 
 ### 工具列表
 
@@ -764,10 +766,10 @@ docs/
 | 套件预检 | 缺失请求、环、悬空节点/连线、无效映射/条件/断言和环境变量会阻止保存或运行；编辑器按节点列出问题并支持定位，管理层持续展示提醒 |
 | 运行历史 | 每个套件持久化最近 20 次运行摘要、步骤结果、节点/连线快照；自动化页可切换历史，重启后保留 |
 | 失败重跑 | 失败运行可只重跑失败步骤及依赖；每个步骤结果提供「从此步继续」，自动补跑上游依赖 |
-| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；192 个测试全部通过 |
-| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、192 个测试通过 |
+| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；193 个测试全部通过 |
+| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、193 个测试通过 |
 | MCP DAG | `create_suite` / `update_suite` 接受 `workflow.nodes`、`workflow.edges`，支持边条件、All/Any 汇合和最大并行度；构建 0 警告/错误 |
-| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；192 个测试通过 |
+| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；193 个测试通过 |
 | MCP 单条清理 | 新增 `get_history`、`delete_history`、`delete_audit`，审计/历史单条移入回收站可恢复 |
 | MCP 后台运行 | 新增 `start_suite_run` / `get_suite_run_job` / `cancel_suite_run`；任务返回节点/连线实时进度和最终运行 id，退出应用后任务不保留 |
 | MCP 预检 | 新增 `validate_suite`，返回 `code`、`severity`、`stepId`、`stepName`、`message`、`hint`；后台任务预检失败也会带回结构化问题 |
@@ -838,7 +840,7 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：192 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：193 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
@@ -853,14 +855,18 @@ docs/
 | 审核修复 | 套件映射后的机密不再写入历史；授权查询令牌与 API Key 请求头不进入审计、MCP 返回或日志；授权刷新超时显示错误而不崩溃（单测/构建） |
 | 列表对齐 | 1000/1400 宽度下审计行、状态/时间、方法徽标、操作列保持对齐 |
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
-| CLI 指南 | 指南页新增「命令行 CLI」卡片：常用命令与 MCP 地址可复制，下载/说明入口可用；随包 CLI 显示本机路径并支持打开目录 |
+| CLI 指南 | 指南页 CLI 卡片提供命令复制、MCP 地址复制、独立 CLI 下载和说明入口；桌面包不再包含 `cli/` |
 | CLI 报告 | `suite run/rerun-failed/continue` 支持 `--junit`、`--markdown`、`--html`；`--version` 和帮助信息通过构建 |
-| CLI 打包 | Windows/Linux/macOS 发布脚本将 CLI 放入 `cli/`；包内 CLI `--version` 与桌面版本一致 |
-| 跨平台构建 | Linux x64 / macOS arm64 自包含包构建通过，CLI 随包；Windows 包构建和测试通过 |
-| 三平台打包 | ZIP 条目统一使用 `/`，`run.sh` / `run.command` 为 LF 并带 `0100755` 可执行位；三个包均包含 `cli/`，无 PDB 和用户数据 |
+| CLI 打包 | CLI 使用独立 `PostSharp.Cli-*.zip` 发布，桌面三平台包不再包含 `cli/` |
+| 跨平台构建 | Linux x64 / macOS arm64 自包含包构建通过；Windows 包构建和测试通过 |
+| 三平台打包 | ZIP 条目统一使用 `/`，`run.sh` / `run.command` 为 LF 并带 `0100755` 可执行位；桌面包不含 `cli/`，无 PDB 和用户数据 |
 | Cookie 管理 | 顶栏 Cookie 入口可打开；空状态、刷新、清空按钮可见；Cookie 容器读取与按站点清除单测通过 |
 | 机密变量落盘 | 机密环境变量在 Capture 后为 DPAPI/AES-GCM 密文，ToEnvironmentModel 可还原原值；旧明文读取保持兼容（单测） |
 | 机密落盘复测 | MCP `set_variable secret=true` 后停止应用，在 `postsharp.db`、WAL 与日志中搜索示例令牌均无明文；工作区只保留 `dpapi:v1:` 密文 |
+| MCP 常驻 | 默认开启；关闭主窗口后进程仍在，CLI `suite list` 继续可用；通过 MCP `update_settings keepMcpResident=false` 后关闭窗口进程退出 |
+| 发布体积 | 删除插件 RID 目录和非目标平台 `runtimes` 后，Windows 36.98 MB、Linux 72.25 MB、macOS 73.48 MB；CLI 改为独立包 |
+| 套件编排布局 | 右侧明细禁用横向滚动，汇合方式/并行组不再向左溢出，与上方节点字段对齐 |
+| 签名说明 | macOS 未签名/未公证的 Gatekeeper 处理与公证步骤已写入 `docs/macos.md`；Linux 使用 SHA256 校验 |
 | 重定向策略 | 请求级开关随 Clone、工作区 DTO 和历史记录往返；关闭时由独立 HttpClient handler 直接返回 3xx（单测） |
 | OAuth 客户端凭据 | 授权窗口可选择客户端凭据；令牌请求体包含 `grant_type=client_credentials`、客户端 ID/密钥和 scope；缺少客户端密钥时配置校验失败（单测） |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
@@ -982,19 +988,23 @@ master                 稳定可发布
 发布新版本（从 1.10.17 起同时发布三类 ZIP）：
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.10.17
-.\scripts\build-linux-release.ps1 -Version 1.10.17
-.\scripts\build-osx-release.ps1 -Version 1.10.17 -RuntimeIdentifier osx-arm64
+.\scripts\build-release.ps1 -Version 1.10.18
+.\scripts\build-linux-release.ps1 -Version 1.10.18
+.\scripts\build-osx-release.ps1 -Version 1.10.18 -RuntimeIdentifier osx-arm64
+# CLI 独立发布，不进入上面三个桌面包
+.\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier win-x64 -SelfContained
+.\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier linux-x64 -SelfContained
+.\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier osx-arm64 -SelfContained
 ```
 
 脚本会生成：
 
-- `artifacts/PostSharp-win-x64.zip` / `.sha256`：Windows x64 应用目录，根目录包含 `PostSharp.exe`、`cli/` 和默认四个存储插件；带 Windows 自动更新标记。
+- `artifacts/PostSharp-win-x64.zip` / `.sha256`：Windows x64 应用目录，根目录包含 `PostSharp.exe` 和默认四个存储插件；带 Windows 自动更新标记。CLI 不在桌面包内，单独从 CLI Release 下载。
 - `artifacts/PostSharp-linux-x64.zip` / `.sha256`：Linux x64 自包含包，根目录 `run.sh` 已具备可执行位；不启用 Windows 自动更新。
 - `artifacts/PostSharp-osx-arm64.zip` / `.sha256`：macOS arm64 自包含包，根目录 `run.command` 已具备可执行位；未签名、未公证，不启用 Windows 自动更新。
 - `artifacts/plugins/PostSharp.Storage.*.zip`：默认四类与 ClickHouse / Doris / StarRocks 插件包，可作为 Release 附加资产单独上传。
 
-三个 ZIP 由 `scripts/zip-directory.ps1` 统一生成：条目使用 `/`，启动脚本为 LF，`PostSharp`、`postsharp-cli`、`run.sh`、`run.command` 带 Unix `0100755` 可执行位，避免 Windows 压缩后在 Linux/macOS 解压异常。
+三个 ZIP 由 `scripts/zip-directory.ps1` 统一生成：条目使用 `/`，启动脚本为 LF，`PostSharp`、`run.sh`、`run.command` 带 Unix `0100755` 可执行位。打包脚本会删除插件里的 `win-x64` / `linux-x64` / `osx-*` 自包含 RID 目录，以及 `runtimes` 中非目标平台的子目录；1.10.18 的体积约为 Windows 37 MB、Linux 72 MB、macOS 73 MB。CLI 单独打包，不写入这些包。
 
 在 GitHub 创建与版本一致的 tag 和 Release，至少上传三组 ZIP + SHA256。Windows 应用启动后每 6 小时检查 `releases/latest`，下载并校验包；下载完成后仅提示「可安装」，由用户点击右下角「更新 / 安装」确认后再由独立 PowerShell 更新器替换应用目录并重启，失败时恢复备份。Linux/macOS 预览包当前需要手动下载和解压，不参与 Windows 自动更新。
 
@@ -1014,7 +1024,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：192 个 xUnit 测试。
+- 自测：193 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
@@ -1034,14 +1044,16 @@ master                 稳定可发布
 - Cookie 仅支持当前进程内存中的查看和按站点清空，未做跨重启持久化、导入导出或按请求隔离；代理、客户端证书、重试/退避、HTTP/2 开关和流式下载未实现；OAuth 2.0 已支持授权码 + PKCE 与客户端凭据，隐式、设备码和密码模式仍未实现；Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
 - 授权只支持请求与集合两级（含多级集合继承），没有工作区级或环境级默认授权；同一集合的授权由该集合对象持有，未单独覆盖的下级请求共用同一个令牌，刷新后同步生效。
 - 单点登录使用系统默认浏览器；复制请求会复制一份独立的授权与令牌，副本重新登录或刷新不会影响原请求；删除集合/请求时其授权配置一起移除。
-- MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。MCP 套件已支持任意 DAG、结构化预检、后台运行/进度轮询/取消、运行历史和失败重跑；后台任务只保存在当前进程内，应用退出后需通过运行历史查看已完成结果。
+- MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。MCP 后台常驻依赖桌面进程的托盘模式，不是独立的 Windows 服务或 systemd 服务；完全退出进程后端点会停止。MCP 套件已支持任意 DAG、结构化预检、后台运行/进度轮询/取消、运行历史和失败重跑；后台任务只保存在当前进程内，应用退出后需通过运行历史查看已完成结果。
+- CLI 不再随桌面安装包分发，需要从独立 `cli-v1.1.0` Release 下载；CLI 调用时要求桌面端正在运行或保持 MCP 托盘常驻。
+- Windows 尚未 Authenticode 签名；Linux/macOS 预览包未签名，macOS 未公证，Gatekeeper 可能需要手动允许或执行 `xattr -dr com.apple.quarantine`。真正的签名/公证需要证书、Apple 账号和对应构建环境。
 - 删除环境仍为直接删除，尚未进入回收站。
 
 ### 后续路线图
 
 详细的产品化 TODO、验收标准、迭代顺序和交接清单见 [PostSharp 后续产品化 TODO 与开发交接](docs/product-todos.md)。
 
-平台约束：新功能按跨平台方案设计，Windows 专属能力单独开 feature。当前提供 Windows x64 正式包、Linux x64 预览包和 macOS arm64/x64 预览包；Linux/WSL 启动说明见 [Linux / WSL 运行说明](docs/linux-wsl.md)，macOS 启动与限制见 [macOS 运行说明](docs/macos.md)。Linux 签名安装器/AppImage/deb、macOS 签名公证和统一 CI 仍属于 P2-02 后续工作。
+平台约束：新功能按跨平台方案设计，Windows 专属能力单独开 feature。当前提供 Windows x64 正式包、Linux x64 预览包和 macOS arm64 预览包；CLI 作为独立跨平台包发布。Linux/WSL 启动说明见 [Linux / WSL 运行说明](docs/linux-wsl.md)，macOS 启动与限制见 [macOS 运行说明](docs/macos.md)。Linux 签名安装器/AppImage/deb、macOS 签名公证和统一 CI 仍属于 P2-02 后续工作。
 
 1. 导入对话框 XAML 独立拆分，继续降低 `MainWindow.axaml` 体积。
 2. OpenAPI 更多安全方案与回调/Webhook 提示。
@@ -1050,6 +1062,8 @@ master                 稳定可发布
 5. HTTP 传输补全：代理、客户端证书、重试/退避、HTTP/2 和流式下载。
 6. OAuth 补全：设备码、隐式和密码模式，以及工作区/环境级默认授权。
 7. 上传断点续传；JMeter / WSDL / SOAP 等重格式按需求立项。
+8. 发布可信链：Windows Authenticode、macOS Developer ID 签名 + 公证 + stapling、Linux 安装包与 GPG/minisign 校验。
+9. MCP 独立后台服务：Windows 服务 / systemd / launchd，加上本机 token 鉴权和多客户端隔离。
 
 ## 许可证
 

@@ -4,13 +4,13 @@
 
 ## 桌面端入口
 
-应用内「指南 → 命令行 CLI」卡片提供常用命令复制、MCP 地址复制、下载 CLI 和查看说明入口。桌面安装包会附带 `cli/` 目录；CLI 仍是独立进程，桌面端必须保持开启。
+应用内「指南 → 命令行 CLI」卡片提供常用命令复制、MCP 地址复制、下载 CLI 和查看说明入口。CLI 是独立下载包，不随桌面安装包分发；桌面端开启「MCP 后台常驻」后，关闭主窗口仍会保持 MCP 端点可用。
 
 ## 前置条件
 
-1. PostSharp 桌面端正在运行。
+1. PostSharp 桌面端已启动，并开启设置中的「关闭窗口后保持 MCP 后台常驻」。
 2. 默认 MCP 地址为 `http://127.0.0.1:5199/mcp`。
-3. 框架依赖包需要 .NET 10 运行时；自包含包不需要。
+3. 自包含 CLI 包不需要额外运行时。
 
 ## 命令
 
@@ -86,7 +86,7 @@ postsharp-cli suite run 6a1d... --markdown reports/suite.md --html reports/suite
 postsharp-cli --version
 ```
 
-桌面安装包中的 CLI 位于安装目录的 `cli/` 下：Windows 为 `cli/postsharp-cli.exe`，Linux/macOS 为 `cli/postsharp-cli`（可运行 `cli/run.sh`）。
+CLI 从独立的 `cli-v1.1.0` Release 下载：Windows 解压后运行 `postsharp-cli.exe`，Linux/macOS 解压后运行 `bash run.sh`（启动脚本已带可执行位）。
 
 `suite run` 使用 `start_suite_run`，随后轮询 `get_suite_run_job`；退出码根据最终状态返回。CLI 不开放删除、清空和切换存储等破坏性操作。
 

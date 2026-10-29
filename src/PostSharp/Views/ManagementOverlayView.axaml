@@ -1456,15 +1456,9 @@
                                                     Foreground="{arc:ArcDesignTokenResource Foreground}"
                                                 />
                                                 <TextBlock
-                                                    Text="postsharp-cli 是独立命令行程序，不会启动第二个桌面端；它通过本机 MCP 调用当前正在运行的 PostSharp，适合终端、CI 和只支持 stdio 的 AI 客户端。支持 JUnit、Markdown 和 HTML 报告；运行前请保持桌面端开启。"
+                                                    Text="postsharp-cli 是独立下载包，不随桌面安装包分发；它通过本机 MCP 调用正在运行的 PostSharp，适合终端、CI 和只支持 stdio 的 AI 客户端。支持 JUnit、Markdown 和 HTML 报告；桌面端开启「MCP 后台常驻」后，关闭主窗口仍可继续使用。"
                                                     FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                                     Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                                                    TextWrapping="Wrap"
-                                                />
-                                                <TextBlock
-                                                    Text="{Binding CliLocationText}"
-                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                                     TextWrapping="Wrap"
                                                 />
                                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
@@ -1532,13 +1526,6 @@
                                                         Variant="Plain"
                                                     />
                                                 </Grid>
-                                                <arc:CopyButton
-                                                    Value="{Binding CliExampleCommand}"
-                                                    Label="复制本机命令"
-                                                    Variant="Plain"
-                                                    HorizontalAlignment="Left"
-                                                    IsVisible="{Binding IsBundledCliAvailable}"
-                                                />
                                             </StackPanel>
                                             <StackPanel
                                                 Grid.Column="2"
@@ -1550,20 +1537,8 @@
                                                 <arc:Button
                                                     Variant="Secondary"
                                                     Size="Small"
-                                                    Command="{Binding OpenCliFolderCommand}"
-                                                    IsVisible="{Binding IsBundledCliAvailable}"
-                                                >
-                                                    <controls:IconLabel
-                                                        Icon="{x:Static arc:ArcIcons.FolderOpen}"
-                                                        Text="打开 CLI 目录"
-                                                        IconSize="13"
-                                                    />
-                                                </arc:Button>
-                                                <arc:Button
-                                                    Variant="Secondary"
-                                                    Size="Small"
                                                     Command="{Binding OpenCliReleaseCommand}"
-                                                    ToolTip.Tip="下载最新桌面包（含 cli/）；桌面端需保持运行"
+                                                    ToolTip.Tip="下载独立的跨平台 CLI 包；桌面端需保持 MCP 常驻"
                                                 >
                                                     <controls:IconLabel
                                                         Icon="{x:Static arc:ArcIcons.ArrowDown}"

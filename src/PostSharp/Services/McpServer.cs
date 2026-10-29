@@ -406,7 +406,8 @@ public sealed class McpServer
                             OptionalString(arguments, "logLevel"),
                             OptionalString(arguments, "sseThinkingPath"),
                             OptionalString(arguments, "sseContentPath"),
-                            OptionalBool(arguments, "autoCheckUpdates")
+                            OptionalBool(arguments, "autoCheckUpdates"),
+                            OptionalBool(arguments, "keepMcpResident")
                         )
                     )
                     .ConfigureAwait(false),
@@ -1439,6 +1440,9 @@ public sealed class McpServer
                         ["sseContentPath"] = StringSchema("SSE 内容节点路径"),
                         ["autoCheckUpdates"] = BooleanSchema(
                             "是否每 6 小时后台检查 GitHub Releases"
+                        ),
+                        ["keepMcpResident"] = BooleanSchema(
+                            "关闭主窗口后是否隐藏到系统托盘并保持 MCP 服务运行"
                         ),
                     }
                 )

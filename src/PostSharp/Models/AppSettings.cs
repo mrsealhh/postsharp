@@ -115,4 +115,8 @@ public partial class AppSettings : ObservableObject
     /// <summary>Checks GitHub Releases in the background and stages newer builds for the next launch.</summary>
     [ObservableProperty]
     private bool _autoCheckUpdates = true;
+
+    /// <summary>Closing the main window hides it to the tray and keeps the local MCP endpoint alive.</summary>
+    [ObservableProperty]
+    private bool _keepMcpResident = true;
 }

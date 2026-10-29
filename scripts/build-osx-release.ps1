@@ -45,29 +45,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "macOS publish failed."
 }
 
-$cliPublish = Join-Path $publish "cli"
-dotnet publish (Join-Path $root "src\PostSharp.Cli\PostSharp.Cli.csproj") `
-    -c Release `
-    -r $RuntimeIdentifier `
-    --self-contained true `
-    -p:Version=$Version `
-    -o $cliPublish
-
-if ($LASTEXITCODE -ne 0) {
-    throw "CLI publish failed."
-}
-
-$cliRunScript = @'
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$(dirname "$0")"
-chmod +x postsharp-cli
-exec ./postsharp-cli "$@"
-'@
-Set-PortableUnixScript -Path (Join-Path $cliPublish "run.sh") -Content $cliRunScript
-
+# CLI is a separate download; the desktop package intentionally has no cli/ directory.
 Get-ChildItem $publish -Filter *.pdb -Recurse -Force | Remove-Item -Force
-Remove-PlatformFolders (Join-Path $publish "plugins") "^(win|linux)"
+Remove-PlatformFolders (Join-Path $publish "plugins") "^(win|linux|osx)-"
+Remove-PlatformFolders (Join-Path $publish "plugins") "^(win|linux)$"
 
 $runScript = @'
 #!/usr/bin/env bash
