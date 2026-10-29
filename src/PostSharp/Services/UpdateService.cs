@@ -43,7 +43,14 @@ public static class UpdateService
 {
     public const string Repository = "mrsealhh/postsharp";
     public const string PackageAssetName = "PostSharp-win-x64.zip";
+    public const string AotPackageAssetName = "PostSharp-aot-win-x64.zip";
     public const string UpdateMarkerFileName = ".postsharp-update-enabled";
+
+    /// <summary>
+    /// Present only in the NativeAOT package. Both channels update independently: a native install must never
+    /// pull the self-contained JIT package (or the other way around), because the file layouts differ.
+    /// </summary>
+    public const string AotMarkerFileName = ".postsharp-aot";
 
     private const string LatestReleaseApi =
         "https://api.github.com/repos/" + Repository + "/releases/latest";
@@ -65,6 +72,14 @@ public static class UpdateService
             return $"{version.Major}.{version.Minor}.{Math.Max(version.Build, 0)}";
         }
     }
+
+    /// <summary>True for the NativeAOT package, which publishes its own asset name.</summary>
+    public static bool IsAotLayout =>
+        File.Exists(Path.Combine(AppContext.BaseDirectory, AotMarkerFileName));
+
+    /// <summary>Asset name this layout must download; the JIT and NativeAOT packages never mix.</summary>
+    public static string PackageAssetNameForLayout(bool isAot) =>
+        isAot ? AotPackageAssetName : PackageAssetName;
 
     /// <summary>
     /// Release packages contain a marker file. Development builds and arbitrary output folders therefore never
@@ -410,38 +425,16 @@ public static class UpdateService
             return null;
         }
 
-        string? assetUrl = null;
-        string? checksumUrl = null;
         if (
-            root.TryGetProperty("assets", out var assets)
-            && assets.ValueKind == JsonValueKind.Array
+            !root.TryGetProperty("assets", out var assets)
+            || assets.ValueKind != JsonValueKind.Array
         )
         {
-            foreach (var asset in assets.EnumerateArray())
-            {
-                var name = asset.TryGetProperty("name", out var nameElement)
-                    ? nameElement.GetString()
-                    : null;
-                var url = asset.TryGetProperty("browser_download_url", out var urlElement)
-                    ? urlElement.GetString()
-                    : null;
-                if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(url))
-                {
-                    continue;
-                }
-
-                if (string.Equals(name, PackageAssetName, StringComparison.OrdinalIgnoreCase))
-                {
-                    assetUrl = url;
-                }
-                else if (name.Contains("sha256", StringComparison.OrdinalIgnoreCase))
-                {
-                    checksumUrl = url;
-                }
-            }
+            return null;
         }
 
-        if (assetUrl is null || checksumUrl is null)
+        var selection = SelectPackageAssets(assets, PackageAssetNameForLayout(IsAotLayout));
+        if (selection.AssetUrl is null || selection.ChecksumUrl is null)
         {
             return null;
         }
@@ -451,9 +444,46 @@ public static class UpdateService
             root.TryGetProperty("html_url", out var htmlElement)
                 ? htmlElement.GetString() ?? string.Empty
                 : string.Empty,
-            assetUrl,
-            checksumUrl
+            selection.AssetUrl,
+            selection.ChecksumUrl
         );
+    }
+
+    /// <summary>
+    /// Picks the package and its own checksum. Matching the checksum by exact name matters because a release
+    /// now carries the JIT and NativeAOT packages side by side.
+    /// </summary>
+    internal static (string? AssetUrl, string? ChecksumUrl) SelectPackageAssets(
+        JsonElement assets,
+        string assetName
+    )
+    {
+        string? assetUrl = null;
+        string? checksumUrl = null;
+        foreach (var asset in assets.EnumerateArray())
+        {
+            var name = asset.TryGetProperty("name", out var nameElement)
+                ? nameElement.GetString()
+                : null;
+            var url = asset.TryGetProperty("browser_download_url", out var urlElement)
+                ? urlElement.GetString()
+                : null;
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(url))
+            {
+                continue;
+            }
+
+            if (string.Equals(name, assetName, StringComparison.OrdinalIgnoreCase))
+            {
+                assetUrl = url;
+            }
+            else if (string.Equals(name, assetName + ".sha256", StringComparison.OrdinalIgnoreCase))
+            {
+                checksumUrl = url;
+            }
+        }
+
+        return (assetUrl, checksumUrl);
     }
 
     /// <summary>Parses a release tag such as <c>v1.2.3</c> for version comparison.</summary>
