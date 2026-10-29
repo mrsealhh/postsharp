@@ -132,6 +132,30 @@ public partial class RequestItem : ObservableObject
     [ObservableProperty]
     private bool _tcpUseTls;
 
+    /// <summary>SOAP 1.1 or 1.2.</summary>
+    [ObservableProperty]
+    private string _soapVersion = "1.1";
+
+    /// <summary>SOAPAction header for SOAP 1.1; SOAP 1.2 puts it in Content-Type.</summary>
+    [ObservableProperty]
+    private string _soapAction = string.Empty;
+
+    /// <summary>Fully qualified gRPC service name, for example helloworld.Greeter.</summary>
+    [ObservableProperty]
+    private string _grpcService = string.Empty;
+
+    /// <summary>Unary method name, for example SayHello.</summary>
+    [ObservableProperty]
+    private string _grpcMethod = string.Empty;
+
+    /// <summary>Use TLS when the gRPC URL has no scheme.</summary>
+    [ObservableProperty]
+    private bool _grpcUseTls = true;
+
+    /// <summary>0 uses the request timeout.</summary>
+    [ObservableProperty]
+    private int _grpcDeadlineSeconds;
+
     [ObservableProperty]
     private string _uploadFilePath = string.Empty;
 
@@ -173,6 +197,20 @@ public partial class RequestItem : ObservableObject
 
     [JsonIgnore]
     public bool HasOpenApiDoc => OpenApiDoc is not null;
+
+    partial void OnProtocolChanged(string value)
+    {
+        if (
+            string.Equals(
+                RequestProtocol.Normalize(value),
+                RequestProtocol.Soap,
+                StringComparison.Ordinal
+            ) && string.Equals(Method, "GET", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            Method = "POST";
+        }
+    }
 
     partial void OnUploadFilePathChanged(string value)
     {
@@ -245,6 +283,12 @@ public partial class RequestItem : ObservableObject
             SocketIoPath = SocketIoPath,
             TcpTerminator = TcpTerminator,
             TcpUseTls = TcpUseTls,
+            SoapVersion = SoapVersion,
+            SoapAction = SoapAction,
+            GrpcService = GrpcService,
+            GrpcMethod = GrpcMethod,
+            GrpcUseTls = GrpcUseTls,
+            GrpcDeadlineSeconds = GrpcDeadlineSeconds,
             Owner = Owner,
             Auth = copyAuthorization ? Auth.Clone() : Auth,
         };

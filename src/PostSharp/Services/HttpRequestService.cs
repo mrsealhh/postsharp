@@ -187,10 +187,25 @@ public sealed class HttpRequestService
                 content = new ByteArrayContent(Encoding.UTF8.GetBytes(composed.Body));
                 if (composed.ContentType is not null)
                 {
-                    content.Headers.ContentType = new MediaTypeHeaderValue(composed.ContentType)
+                    if (
+                        MediaTypeHeaderValue.TryParse(
+                            composed.ContentType,
+                            out var requestMediaType
+                        )
+                    )
                     {
-                        CharSet = "utf-8",
-                    };
+                        requestMediaType.CharSet = "utf-8";
+                        content.Headers.ContentType = requestMediaType;
+                    }
+                    else
+                    {
+                        // SOAP 1.2 action parameters can carry colons and slashes inside quotes;
+                        // let the transport send the raw value instead of rejecting it.
+                        content.Headers.TryAddWithoutValidation(
+                            "Content-Type",
+                            composed.ContentType + "; charset=utf-8"
+                        );
+                    }
                 }
 
                 message.Content = content;

@@ -1204,7 +1204,7 @@
                                         />
                                         <arc:Switch
                                             IsChecked="{Binding Editing.FollowRedirects, Mode=TwoWay}"
-                                            IsEnabled="{Binding IsHttpProtocol}"
+                                            IsEnabled="{Binding IsHttpLikeProtocol}"
                                             ToolTip.Tip="跟随 3xx 重定向（最多 10 次）；关闭后直接显示 3xx 响应"
                                             AutomationProperties.Name="跟随重定向"
                                         />
@@ -1922,7 +1922,7 @@
                                                 >
                                                     <WrapPanel ItemSpacing="12" LineSpacing="8">
                                                         <arc:SegmentedControl
-                                                            IsVisible="{Binding !IsSocketIoProtocol}"
+                                                            IsVisible="{Binding ShowMessageFormatSelector}"
                                                             SelectedValue="{Binding Editing.MessageFormat, Mode=TwoWay}"
                                                             AutomationProperties.Name="消息格式"
                                                         >
@@ -1990,8 +1990,73 @@
                                                         </StackPanel>
                                                         <StackPanel
                                                             Orientation="Horizontal"
+                                                            Spacing="8"
+                                                            IsVisible="{Binding IsSoapProtocol}"
+                                                        >
+                                                            <arc:SegmentedControl
+                                                                SelectedValue="{Binding Editing.SoapVersion, Mode=TwoWay}"
+                                                                AutomationProperties.Name="SOAP 版本"
+                                                            >
+                                                                <arc:SegmentedOption
+                                                                    Value="1.1"
+                                                                    Label="SOAP 1.1"
+                                                                />
+                                                                <arc:SegmentedOption
+                                                                    Value="1.2"
+                                                                    Label="SOAP 1.2"
+                                                                />
+                                                            </arc:SegmentedControl>
+                                                            <arc:Input
+                                                                Width="320"
+                                                                Label="SOAPAction"
+                                                                Text="{Binding Editing.SoapAction, Mode=TwoWay}"
+                                                                AutomationProperties.Name="SOAP Action"
+                                                            />
+                                                        </StackPanel>
+                                                        <StackPanel
+                                                            Orientation="Horizontal"
+                                                            Spacing="8"
+                                                            IsVisible="{Binding IsGrpcProtocol}"
+                                                        >
+                                                            <arc:Input
+                                                                Width="200"
+                                                                Label="服务"
+                                                                Text="{Binding Editing.GrpcService, Mode=TwoWay}"
+                                                                Placeholder="helloworld.Greeter"
+                                                                FontFamily="{DynamicResource PostSharpCodeFont}"
+                                                                AutomationProperties.Name="gRPC 服务"
+                                                            />
+                                                            <arc:Input
+                                                                Width="130"
+                                                                Label="方法"
+                                                                Text="{Binding Editing.GrpcMethod, Mode=TwoWay}"
+                                                                Placeholder="SayHello"
+                                                                FontFamily="{DynamicResource PostSharpCodeFont}"
+                                                                AutomationProperties.Name="gRPC 方法"
+                                                            />
+                                                            <arc:NumberField
+                                                                Width="150"
+                                                                Label="Deadline"
+                                                                Minimum="0"
+                                                                Maximum="300"
+                                                                Step="5"
+                                                                SuffixFormatter="{x:Static controls:TimeoutFormatting.SuffixFormatter}"
+                                                                Value="{Binding Editing.GrpcDeadlineSeconds, Mode=TwoWay}"
+                                                                ToolTip.Tip="0 表示使用请求超时"
+                                                                AutomationProperties.Name="gRPC deadline 秒"
+                                                            />
+                                                            <arc:Switch
+                                                                Content="TLS"
+                                                                IsChecked="{Binding Editing.GrpcUseTls, Mode=TwoWay}"
+                                                                AutomationProperties.Name="gRPC TLS"
+                                                                VerticalAlignment="Center"
+                                                            />
+                                                        </StackPanel>
+                                                        <StackPanel
+                                                            Orientation="Horizontal"
                                                             Spacing="6"
                                                             VerticalAlignment="Center"
+                                                            IsVisible="{Binding ShowProtocolWaitWindow}"
                                                         >
                                                             <TextBlock
                                                                 Text="等待回复"
@@ -2037,10 +2102,26 @@
                                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                                         TextWrapping="Wrap"
                                                     />
+                                                    <TextBlock
+                                                        Grid.Row="1"
+                                                        IsVisible="{Binding IsSoapProtocol}"
+                                                        Text="填写 Body 片段会自动包进 SOAP Envelope；粘贴完整 Envelope 则原样发送。1.1 使用 text/xml + SOAPAction，1.2 使用 application/soap+xml。"
+                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                        TextWrapping="Wrap"
+                                                    />
+                                                    <TextBlock
+                                                        Grid.Row="1"
+                                                        IsVisible="{Binding IsGrpcProtocol}"
+                                                        Text="一元调用：通过服务端反射读取描述符，把请求 JSON 编码为 protobuf；请求头会作为 metadata。服务端需要开启 reflection；流式 RPC 暂不支持。"
+                                                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                        TextWrapping="Wrap"
+                                                    />
 
                                                     <TextBlock
                                                         Grid.Row="2"
-                                                        Text="发送内容"
+                                                        Text="{Binding ProtocolPayloadLabel}"
                                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                                     />
@@ -2054,7 +2135,7 @@
                                                         ClipToBounds="True"
                                                         FontFamily="{DynamicResource PostSharpCodeFont}"
                                                         FontSize="{DynamicResource PostSharpCodeFontSize}"
-                                                        Placeholder="Hello from PostSharp"
+                                                        Placeholder="{Binding ProtocolPayloadPlaceholder}"
                                                         AutomationProperties.Name="协议消息内容"
                                                     />
                                                 </Grid>
@@ -2063,7 +2144,7 @@
 
                                         <arc:TabItem
                                             Header="cURL"
-                                            IsVisible="{Binding IsHttpProtocol}"
+                                            IsVisible="{Binding IsHttpLikeProtocol}"
                                         >
                                             <Grid
                                                 RowDefinitions="Auto,*"
@@ -2181,7 +2262,7 @@
 
                                         <arc:TabItem
                                             Header="调用代码"
-                                            IsVisible="{Binding IsHttpProtocol}"
+                                            IsVisible="{Binding IsHttpLikeProtocol}"
                                         >
                                             <Grid
                                                 RowDefinitions="Auto,*"

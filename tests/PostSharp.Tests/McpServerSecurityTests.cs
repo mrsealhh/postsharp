@@ -58,6 +58,9 @@ public sealed class McpServerSecurityTests
         Assert.Contains("switch_storage", names);
         Assert.Contains("import_content", names);
         Assert.Contains("export_workspace", names);
+        Assert.Contains("send_request", names);
+        Assert.Contains("soap_describe", names);
+        Assert.Contains("grpc_describe", names);
         Assert.Contains("create_environment", names);
         Assert.Contains("clear_audit", names);
         Assert.Contains("restore_collection_trash", names);

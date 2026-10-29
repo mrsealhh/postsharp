@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Avalonia.Threading;
 using PostSharp.Models;
@@ -60,7 +61,13 @@ public sealed record McpRequestInfo(
     string SocketIoNamespace,
     string SocketIoPath,
     string TcpTerminator,
-    bool TcpUseTls
+    bool TcpUseTls,
+    string SoapVersion,
+    string SoapAction,
+    string GrpcService,
+    string GrpcMethod,
+    bool GrpcUseTls,
+    int GrpcDeadlineSeconds
 );
 
 public sealed record McpCollectionInfo(
@@ -334,7 +341,13 @@ public sealed record McpRequestDraft(
     string? SocketIoNamespace,
     string? SocketIoPath,
     string? TcpTerminator,
-    bool? TcpUseTls
+    bool? TcpUseTls,
+    string? SoapVersion,
+    string? SoapAction,
+    string? GrpcService,
+    string? GrpcMethod,
+    bool? GrpcUseTls,
+    int? GrpcDeadlineSeconds
 );
 
 /// <summary>
@@ -450,11 +463,15 @@ public sealed class McpWorkspaceAdapter
                 _viewModel.Collections.Add(collection);
             }
 
+            var protocol = RequestProtocol.Normalize(draft.Protocol);
             var request = new RequestItem
             {
                 Name = string.IsNullOrWhiteSpace(draft.Name) ? "MCP 请求" : draft.Name.Trim(),
-                Protocol = RequestProtocol.Normalize(draft.Protocol),
-                Method = NormalizeMethod(draft.Method),
+                Protocol = protocol,
+                Method =
+                    protocol == RequestProtocol.Soap && string.IsNullOrWhiteSpace(draft.Method)
+                        ? "POST"
+                        : NormalizeMethod(draft.Method),
                 Url = draft.Url ?? string.Empty,
                 BodyMode = NormalizeBodyMode(draft.BodyMode),
                 Body = draft.Body ?? string.Empty,
@@ -472,6 +489,14 @@ public sealed class McpWorkspaceAdapter
                     : draft.SocketIoPath.Trim(),
                 TcpTerminator = NormalizeTcpTerminator(draft.TcpTerminator),
                 TcpUseTls = draft.TcpUseTls ?? false,
+                SoapVersion = string.Equals(draft.SoapVersion, "1.2", StringComparison.Ordinal)
+                    ? "1.2"
+                    : "1.1",
+                SoapAction = draft.SoapAction ?? string.Empty,
+                GrpcService = draft.GrpcService?.Trim() ?? string.Empty,
+                GrpcMethod = draft.GrpcMethod?.Trim() ?? string.Empty,
+                GrpcUseTls = draft.GrpcUseTls ?? true,
+                GrpcDeadlineSeconds = Math.Clamp(draft.GrpcDeadlineSeconds ?? 0, 0, 300),
                 UploadFilePath = draft.UploadFilePath ?? string.Empty,
                 UploadFieldName = string.IsNullOrWhiteSpace(draft.UploadFieldName)
                     ? "file"
@@ -579,6 +604,42 @@ public sealed class McpWorkspaceAdapter
                 request.TcpUseTls = tcpUseTls;
             }
 
+            if (!string.IsNullOrWhiteSpace(draft.SoapVersion))
+            {
+                request.SoapVersion = string.Equals(
+                    draft.SoapVersion.Trim(),
+                    "1.2",
+                    StringComparison.Ordinal
+                )
+                    ? "1.2"
+                    : "1.1";
+            }
+
+            if (draft.SoapAction is not null)
+            {
+                request.SoapAction = draft.SoapAction;
+            }
+
+            if (draft.GrpcService is not null)
+            {
+                request.GrpcService = draft.GrpcService.Trim();
+            }
+
+            if (draft.GrpcMethod is not null)
+            {
+                request.GrpcMethod = draft.GrpcMethod.Trim();
+            }
+
+            if (draft.GrpcUseTls is { } grpcUseTls)
+            {
+                request.GrpcUseTls = grpcUseTls;
+            }
+
+            if (draft.GrpcDeadlineSeconds is { } grpcDeadline)
+            {
+                request.GrpcDeadlineSeconds = Math.Clamp(grpcDeadline, 0, 300);
+            }
+
             if (draft.Params is not null)
             {
                 ReplaceRows(request.Params, draft.Params);
@@ -637,6 +698,21 @@ public sealed class McpWorkspaceAdapter
     {
         return await Dispatcher.UIThread.InvokeAsync(() => _viewModel.DeleteRequest(id, "MCP"));
     }
+
+    public Task<SoapDescription> DescribeSoapAsync(
+        string? wsdlUrl,
+        string? wsdl,
+        bool includeSample,
+        CancellationToken cancellationToken
+    ) => SoapProtocolService.DescribeAsync(wsdlUrl, wsdl, includeSample, cancellationToken);
+
+    public Task<JsonObject> DescribeGrpcAsync(
+        string url,
+        bool useTls,
+        string? service,
+        string? method,
+        CancellationToken cancellationToken
+    ) => GrpcProtocolClient.DescribeAsync(url, useTls, service, method, cancellationToken);
 
     public async Task<McpSendResult> SendAsync(
         Guid id,
@@ -2158,7 +2234,13 @@ public sealed class McpWorkspaceAdapter
             request.SocketIoNamespace,
             request.SocketIoPath,
             request.TcpTerminator,
-            request.TcpUseTls
+            request.TcpUseTls,
+            request.SoapVersion,
+            request.SoapAction,
+            request.GrpcService,
+            request.GrpcMethod,
+            request.GrpcUseTls,
+            request.GrpcDeadlineSeconds
         );
 
     private static void ApplyAuth(RequestAuth auth, McpAuthInput input)

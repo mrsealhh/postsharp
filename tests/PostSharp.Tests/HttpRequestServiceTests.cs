@@ -386,6 +386,40 @@ public sealed class HttpRequestServiceTests
             throw new NotSupportedException();
     }
 
+    [Fact]
+    public async Task SendsSoap12ContentTypeWithQuotedAction()
+    {
+        HttpRequestMessage? captured = null;
+        using var client = new HttpClient(
+            new StubHttpHandler(request =>
+            {
+                captured = request;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("ok"),
+                };
+            })
+        );
+        var service = new HttpRequestService(client);
+        var composed = new ComposedRequest(
+            "POST",
+            "https://example.com/soap",
+            Array.Empty<KeyValuePair<string, string>>(),
+            "<soap:Envelope />",
+            "application/soap+xml; action=\"urn:test\"",
+            null
+        );
+
+        var result = await service.SendAsync(composed, composed.Url, CancellationToken.None);
+
+        Assert.True(result.HasResponse);
+        Assert.NotNull(captured);
+        Assert.Equal(
+            "application/soap+xml; action=\"urn:test\"; charset=utf-8",
+            Assert.Single(captured.Content!.Headers.GetValues("Content-Type"))
+        );
+    }
+
     private sealed class CaptureProgress : IProgress<SseProgress>
     {
         public List<SseProgress> Items { get; } = new();

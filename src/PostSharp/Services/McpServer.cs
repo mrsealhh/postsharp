@@ -378,6 +378,23 @@ public sealed class McpServer
                     format = "Postman Collection v2.1",
                     content = await _workspace.ExportWorkspaceAsync().ConfigureAwait(false),
                 },
+                "soap_describe" => await _workspace
+                    .DescribeSoapAsync(
+                        OptionalString(arguments, "wsdlUrl"),
+                        OptionalString(arguments, "wsdl"),
+                        OptionalBool(arguments, "includeSample") ?? false,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
+                "grpc_describe" => await _workspace
+                    .DescribeGrpcAsync(
+                        RequireString(arguments, "url"),
+                        OptionalBool(arguments, "useTls") ?? true,
+                        OptionalString(arguments, "service"),
+                        OptionalString(arguments, "method"),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
                 "import_content" => await _workspace
                     .ImportContentAsync(
                         OptionalString(arguments, "source"),
@@ -1041,10 +1058,12 @@ public sealed class McpServer
                             "HTTP",
                             "WebSocket",
                             "Socket.IO",
-                            "TCP"
+                            "TCP",
+                            "SOAP",
+                            "gRPC"
                         ),
                         ["messageBody"] = StringSchema(
-                            "WebSocket / Socket.IO / TCP 发送的消息内容"
+                            "WebSocket / Socket.IO / TCP 消息内容；SOAP 为 Body 片段或完整 Envelope；gRPC 为请求 JSON"
                         ),
                         ["messageFormat"] = EnumSchema("消息格式，默认 Text", "Text", "Hex"),
                         ["waitMilliseconds"] = IntegerSchema(
@@ -1062,6 +1081,18 @@ public sealed class McpServer
                             "CRLF"
                         ),
                         ["tcpUseTls"] = BooleanSchema("TCP 使用 TLS"),
+                        ["soapVersion"] = EnumSchema("SOAP 版本，默认 1.1", "1.1", "1.2"),
+                        ["soapAction"] = StringSchema("SOAPAction（SOAP 1.1）"),
+                        ["grpcService"] = StringSchema("gRPC 服务全名，例如 helloworld.Greeter"),
+                        ["grpcMethod"] = StringSchema("gRPC 一元方法名，例如 SayHello"),
+                        ["grpcUseTls"] = BooleanSchema(
+                            "gRPC URL 没有 scheme 时是否使用 TLS，默认 true"
+                        ),
+                        ["grpcDeadlineSeconds"] = IntegerSchema(
+                            "gRPC deadline 秒数，0 使用请求超时",
+                            0,
+                            300
+                        ),
                         ["auth"] = AuthSchema("请求级授权；敏感值只在写入时使用"),
                     },
                     "url"
@@ -1112,9 +1143,13 @@ public sealed class McpServer
                             "HTTP",
                             "WebSocket",
                             "Socket.IO",
-                            "TCP"
+                            "TCP",
+                            "SOAP",
+                            "gRPC"
                         ),
-                        ["messageBody"] = StringSchema("WebSocket / Socket.IO / TCP 消息内容"),
+                        ["messageBody"] = StringSchema(
+                            "WebSocket / Socket.IO / TCP 消息内容；SOAP Body；gRPC 请求 JSON"
+                        ),
                         ["messageFormat"] = EnumSchema("消息格式", "Text", "Hex"),
                         ["waitMilliseconds"] = IntegerSchema(
                             "发送后收集回复的等待窗口毫秒",
@@ -1126,6 +1161,12 @@ public sealed class McpServer
                         ["socketIoPath"] = StringSchema("Socket.IO 路径"),
                         ["tcpTerminator"] = EnumSchema("TCP 文本消息结束符", "None", "LF", "CRLF"),
                         ["tcpUseTls"] = BooleanSchema("TCP 使用 TLS"),
+                        ["soapVersion"] = EnumSchema("SOAP 版本", "1.1", "1.2"),
+                        ["soapAction"] = StringSchema("SOAPAction"),
+                        ["grpcService"] = StringSchema("gRPC 服务全名"),
+                        ["grpcMethod"] = StringSchema("gRPC 一元方法名"),
+                        ["grpcUseTls"] = BooleanSchema("gRPC 是否使用 TLS"),
+                        ["grpcDeadlineSeconds"] = IntegerSchema("gRPC deadline 秒数", 0, 300),
                         ["auth"] = AuthSchema("请求级授权；省略时保持原配置"),
                     },
                     "id"
@@ -1152,7 +1193,7 @@ public sealed class McpServer
             ),
             Tool(
                 "send_request",
-                "发送请求并返回状态、耗时、响应头和响应体",
+                "发送请求并返回状态、耗时、响应头和响应体；支持 HTTP / WebSocket / Socket.IO / TCP / SOAP / gRPC 一元调用",
                 ObjectSchema(
                     new JsonObject
                     {
@@ -1160,6 +1201,32 @@ public sealed class McpServer
                         ["environmentId"] = StringSchema("环境 id，省略时使用当前环境"),
                     },
                     "id"
+                )
+            ),
+            Tool(
+                "soap_describe",
+                "读取 WSDL，列出 SOAP 服务、端口、operation、SOAPAction 和请求元素；可选返回示例 Envelope",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["wsdlUrl"] = StringSchema("WSDL 地址；与 wsdl 二选一"),
+                        ["wsdl"] = StringSchema("WSDL XML 内容；与 wsdlUrl 二选一"),
+                        ["includeSample"] = BooleanSchema("是否生成示例 Envelope，默认 false"),
+                    }
+                )
+            ),
+            Tool(
+                "grpc_describe",
+                "通过 gRPC 服务端反射列出服务/方法，或返回指定方法的请求/响应字段和示例 JSON",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["url"] = StringSchema("gRPC 地址，例如 https://host:443 或 host:50051"),
+                        ["useTls"] = BooleanSchema("地址没有 scheme 时是否使用 TLS，默认 true"),
+                        ["service"] = StringSchema("服务全名；省略时只列出全部服务"),
+                        ["method"] = StringSchema("方法名；提供时返回字段 schema 与示例请求"),
+                    },
+                    "url"
                 )
             ),
             Tool(
@@ -2066,7 +2133,13 @@ public sealed class McpServer
             OptionalString(arguments, "socketIoNamespace"),
             OptionalString(arguments, "socketIoPath"),
             OptionalString(arguments, "tcpTerminator"),
-            OptionalBool(arguments, "tcpUseTls")
+            OptionalBool(arguments, "tcpUseTls"),
+            OptionalString(arguments, "soapVersion"),
+            OptionalString(arguments, "soapAction"),
+            OptionalString(arguments, "grpcService"),
+            OptionalString(arguments, "grpcMethod"),
+            OptionalBool(arguments, "grpcUseTls"),
+            OptionalInt(arguments, "grpcDeadlineSeconds")
         );
 
     private static McpAuthInput? ReadAuth(JsonObject arguments)

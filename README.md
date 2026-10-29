@@ -61,11 +61,13 @@ PostSharp 的定位是：
 
 ![Cookie 管理](docs/cookie-manager.png)
 - **请求体**：无 / JSON / 文本 / GraphQL / 表单上传；GraphQL 自动组成 POST JSON，支持 Query、Variables 和 Operation name。
-- **协议调试**：顶栏协议选择 HTTP / WebSocket / Socket.IO / TCP。
+- **协议调试**：顶栏协议选择 HTTP / WebSocket / Socket.IO / TCP / SOAP / gRPC。
   - WebSocket：支持 ws / wss（也接受 http / https 自动转换）、请求头与 `Sec-WebSocket-Protocol` 子协议、文本或 Hex 二进制帧；发送一条消息后按等待窗口收集回复帧并自动断开。
   - Socket.IO：使用 Engine.IO v4 的 WebSocket 传输（`EIO=4`），自动握手、连接命名空间、发送一个事件并收集事件回执；事件负载按 JSON 解析，服务端 ping 自动回复 pong。
   - TCP：支持 `host:port`、`tcp://`、`tls://`，文本消息可追加 LF / CRLF，Hex 模式按原始字节发送，收到二进制时显示十六进制。
-  - 三个协议共用参数、请求头、授权、变量解析、响应面板、历史、审计、套件与 MCP `send_request`；回复以带时间戳的会话记录展示。
+  - SOAP：支持 1.1 / 1.2；Body 片段自动包进 Envelope，完整 Envelope 原样发送；1.1 自动补 `SOAPAction` 和 `text/xml`，1.2 使用 `application/soap+xml`；响应中的 Fault 会提取到状态和 `SOAP-Fault` 头。
+  - gRPC：通过服务端反射读取描述符，支持一元调用、请求 JSON ↔ protobuf 动态编解码、请求头作为 metadata、deadline 和 TLS / h2c；流式 RPC 暂不支持。
+  - 这些协议共用参数、请求头、授权、变量解析、响应面板、历史、审计、套件与 MCP `send_request`；WebSocket / Socket.IO / TCP 的回复以带时间戳的会话记录展示。
   - JSON/XML 一键格式化，JSON 一键压缩。
   - 单行切换与单行预览，长文本不再占满编辑区。
   - multipart/form-data：表单字段 + 多文件选择 / 拖拽，每个文件可编辑字段名。
@@ -309,11 +311,13 @@ http://127.0.0.1:5199/mcp
 | `move_collection` | 移动集合到指定父级和位置 |
 | `delete_collection` | 删除集合及其子集合/请求（移入集合回收站，可在界面恢复） |
 | `get_request` | 读取请求完整定义 |
-| `create_request` | 新建请求，支持参数、请求头、JSON/Text/Multipart、上传、收藏、位置，以及 WebSocket / Socket.IO / TCP 协议字段 |
-| `update_request` | 修改任意字段（含协议、消息内容、Socket.IO 事件/命名空间、TCP 结束符与 TLS），可移动集合或调整顺序 |
+| `create_request` | 新建请求，支持参数、请求头、JSON/Text/Multipart、上传、收藏、位置，以及 WebSocket / Socket.IO / TCP / SOAP / gRPC 协议字段 |
+| `update_request` | 修改任意字段（含协议、消息内容、Socket.IO 事件/命名空间、TCP、SOAP 版本/Action、gRPC 服务/方法/deadline），可移动集合或调整顺序 |
 | `move_request` | 移动请求到指定集合并设置顺序 |
 | `delete_request` | 删除请求（移入集合回收站，可在界面恢复） |
-| `send_request` | 发送请求，返回状态、耗时、大小、响应头、响应体；SSE 时同时返回聚合的 thinking/content |
+| `send_request` | 发送请求，返回状态、耗时、大小、响应头、响应体；支持 HTTP / WebSocket / Socket.IO / TCP / SOAP / gRPC 一元调用，SSE 时同时返回聚合的 thinking/content |
+| `soap_describe` | 读取 WSDL，列出服务、端口、operation、SOAPAction、请求元素，可选生成示例 Envelope |
+| `grpc_describe` | 通过服务端反射列出服务/方法，或返回指定方法的请求/响应字段与示例 JSON |
 | `get_curl` | 生成已解析环境变量的可执行 cURL（机密变量以 `******` 代替） |
 | `run_sequence` | 按顺序运行一组请求（轻量自动化，不含断言/映射） |
 | `list_suites` | 查看套件、步骤顺序、workflow 节点/连线、延迟、断言和输入映射 |
@@ -380,6 +384,12 @@ http://127.0.0.1:5199/mcp
 - 打码防止 AI **读到**机密值，但不阻止 AI **使用**它：AI 仍可新建一个发往任意地址、带 `{{token}}` 的请求并发送。只把 MCP 交给可信的客户端，并在审计中复查 AI 发起的请求。
 - 当前无 MCP 令牌鉴权，不要改成 `0.0.0.0` 或直接暴露公网。
 - 所有 AI 发送都会进入审计，包含客户端名称和工具名。
+
+### SOAP / gRPC 的 AI 驱动示例
+
+- **gRPC**：先 `grpc_describe { url, service, method }` 获取 `requestSample`，再用 `create_request` 设置 `protocol: "gRPC"`、`grpcService`、`grpcMethod`、`messageBody`，最后 `send_request`。服务端需开启 reflection；流式方法会返回明确错误。
+- **SOAP**：先 `soap_describe { wsdlUrl, includeSample: true }` 获取 operation 的 `endpoint`、`soapVersion`、`soapAction` 和示例 Envelope，再 `create_request` 设置 `protocol: "SOAP"` 与对应字段，最后 `send_request`。示例 Envelope 可直接作为 `messageBody`，也可以只传 Body 片段由客户端自动包装。
+- 两个 describe 工具只读取描述信息，不会发送业务请求；真正的调用仍走 `send_request`，因此会写入历史、审计并受同一套打码规则约束。
 
 ## AI 审计与自动化
 
@@ -777,10 +787,10 @@ docs/
 | 套件预检 | 缺失请求、环、悬空节点/连线、无效映射/条件/断言和环境变量会阻止保存或运行；编辑器按节点列出问题并支持定位，管理层持续展示提醒 |
 | 运行历史 | 每个套件持久化最近 20 次运行摘要、步骤结果、节点/连线快照；自动化页可切换历史，重启后保留 |
 | 失败重跑 | 失败运行可只重跑失败步骤及依赖；每个步骤结果提供「从此步继续」，自动补跑上游依赖 |
-| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；207 个测试全部通过 |
-| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、207 个测试通过 |
+| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；218 个测试全部通过 |
+| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、218 个测试通过 |
 | MCP DAG | `create_suite` / `update_suite` 接受 `workflow.nodes`、`workflow.edges`，支持边条件、All/Any 汇合和最大并行度；构建 0 警告/错误 |
-| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；207 个测试通过 |
+| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；218 个测试通过 |
 | MCP 单条清理 | 新增 `get_history`、`delete_history`、`delete_audit`，审计/历史单条移入回收站可恢复 |
 | MCP 后台运行 | 新增 `start_suite_run` / `get_suite_run_job` / `cancel_suite_run`；任务返回节点/连线实时进度和最终运行 id，退出应用后任务不保留 |
 | MCP 预检 | 新增 `validate_suite`，返回 `code`、`severity`、`stepId`、`stepName`、`message`、`hint`；后台任务预检失败也会带回结构化问题 |
@@ -851,14 +861,14 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：207 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：218 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
 | 内存诊断 | `dotnet-gcdump` 显示 live heap 约 55 MB；剩余主要是 Avalonia/Skia/ANGLE 原生内存；`dotnet-counters` 的 LOH 在大响应后会延迟回收，故默认软件渲染并限制审计文本 |
 | 存储配置 | 设置窗口「存储」显示本地 SQLite 路径、数据库类型、连接串、三个分类绑定、测试连接、同步和切换按钮；新增远程库后字段可编辑 |
 | 项目数据目录 | 首次启动把旧 `%APPDATA%\PostSharp` 的 settings/workspace/audit/postsharp.db 复制到项目 `.postsharp`，本地文档表看到 settings/workspace/suites 三类 |
-| MCP 语义工具 | `tools/list` 返回 57 个工具；实测 `get_settings`、`update_settings`、`check_updates`、`get_storage_config`、`test_storage_profile`、`switch_storage`、集合授权、环境 CRUD、导出工作区均返回结果 |
+| MCP 语义工具 | `tools/list` 返回 70 个工具；实测 `get_settings`、`update_settings`、`check_updates`、`get_storage_config`、`test_storage_profile`、`switch_storage`、集合授权、环境 CRUD、导出工作区均返回结果 |
 | 远程存储错误 | 用不可达 PostgreSQL / MongoDB 配置测试连接，返回 `success=false` 和面向用户的失败原因，未阻塞本地 SQLite |
 | 自动更新入口 | 顶栏「更新」按钮和设置窗口「检查更新」均可主动触发；下载完成后按钮变为「安装」，由用户点击后才应用；版本标签解析、包名/校验文件和开发目录禁用逻辑通过单测 |
 | 发送 loading | 慢响应发送中切换到创建订单，发送按钮不显示其他请求的 loading；两个请求均完成并写入历史 |
@@ -880,6 +890,9 @@ docs/
 | Postman 导出 | 集合右键「导出 Postman」直接生成 v2.1 Collection；选中集合导出后 JSON 结构、请求名和 URL 通过单测 |
 | GraphQL | Query、Variables、Operation name 自动组成 POST JSON；Variables 必须是 JSON 对象；Postman Collection 导出/导入往返通过单测 |
 | 协议请求 | 本地回环实测 WebSocket 文本收发（101）、Socket.IO v4 握手/命名空间/事件回执、TCP 文本收发与 LF 结束符；HTTP 请求不携带协议选项 |
+| SOAP 实连 | 对 `dataaccess.com` 的 `NumberToWords` 发送 SOAP 1.1 Envelope，返回 `five hundred`；WSDL 解析出端点、operation、请求元素和示例 Envelope |
+| gRPC 实连 | 通过 `grpcb.in:9001` 服务端反射解析 `hello.HelloService/SayHello`，发送 `{"greeting":"PostSharp"}` 返回 `{"reply":"hello PostSharp"}`；h2c 与 TLS 均可用 |
+| MCP 协议工具 | `soap_describe` 返回 WSDL 操作与示例；`grpc_describe` 返回方法、字段和示例 JSON；`send_request` 对 SOAP / gRPC 返回 200 与响应体 |
 | 签名说明 | macOS 未签名/未公证的 Gatekeeper 处理与公证步骤已写入 `docs/macos.md`；Linux 使用 SHA256 校验 |
 | 重定向策略 | 请求级开关随 Clone、工作区 DTO 和历史记录往返；关闭时由独立 HttpClient handler 直接返回 3xx（单测） |
 | OAuth 客户端凭据 | 授权窗口可选择客户端凭据；令牌请求体包含 `grant_type=client_credentials`、客户端 ID/密钥和 scope；缺少客户端密钥时配置校验失败（单测） |
@@ -1002,9 +1015,9 @@ master                 稳定可发布
 发布新版本（从 1.10.17 起同时发布三类 ZIP）：
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.10.20
-.\scripts\build-linux-release.ps1 -Version 1.10.20
-.\scripts\build-osx-release.ps1 -Version 1.10.20 -RuntimeIdentifier osx-arm64
+.\scripts\build-release.ps1 -Version 1.10.21
+.\scripts\build-linux-release.ps1 -Version 1.10.21
+.\scripts\build-osx-release.ps1 -Version 1.10.21 -RuntimeIdentifier osx-arm64
 # CLI 独立发布，不进入上面三个桌面包
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier win-x64 -SelfContained
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier linux-x64 -SelfContained
@@ -1038,7 +1051,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：207 个 xUnit 测试。
+- 自测：218 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
@@ -1056,7 +1069,10 @@ master                 稳定可发布
 - 字体设置主要覆盖窗口正文和代码视图；Arc 组件的内部令牌字体不保证全部跟随。
 - OpenAPI 导入会优先使用 `x-apifox-folder`，支持 securitySchemes 占位认证头、服务器选择和外部 `$ref` 自动下载；回调/Webhook 仍未实现。
 - Cookie 仅支持当前进程内存中的查看和按站点清空，未做跨重启持久化、导入导出或按请求隔离；代理、客户端证书、重试/退避、HTTP/2 开关和流式下载未实现；OAuth 2.0 已支持授权码 + PKCE 与客户端凭据，隐式、设备码和密码模式仍未实现；Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
-- GraphQL 已支持 HTTP POST、Query、Variables、Operation name 和 Postman Collection 往返；WebSocket / Socket.IO / TCP 已支持单条消息发送与回复收集，尚未提供常驻会话、消息列表和多轮交互；Socket.IO 仅支持 WebSocket 传输（未实现轮询回退）；gRPC / MQTT / SOAP 等协议尚未实现，gRPC 需要单独接入 proto/描述符或服务端反射。
+- GraphQL 已支持 HTTP POST、Query、Variables、Operation name 和 Postman Collection 往返；WebSocket / Socket.IO / TCP 已支持单条消息发送与回复收集，尚未提供常驻会话、消息列表和多轮交互；Socket.IO 仅支持 WebSocket 传输（未实现轮询回退）。
+- SOAP 已支持 1.1/1.2、Envelope 包装、SOAPAction 和 Fault 提取，WSDL 解析为浅层描述（WSDL 外部 import、WS-Security、MTOM、WS-Addressing 未实现）。
+- gRPC 已支持服务端反射 + 一元调用 + metadata/deadline；流式 RPC、`.proto` 文件导入/描述符文件、自签名证书和复杂 Any 类型未实现；未开启 reflection 的服务暂不可用。
+- MQTT / WebSocket 之外的实时消息协议（Socket.IO 轮询回退、MQTT、SOAP WS-*）仍按需求立项。
 - 授权只支持请求与集合两级（含多级集合继承），没有工作区级或环境级默认授权；同一集合的授权由该集合对象持有，未单独覆盖的下级请求共用同一个令牌，刷新后同步生效。
 - 单点登录使用系统默认浏览器；复制请求会复制一份独立的授权与令牌，副本重新登录或刷新不会影响原请求；删除集合/请求时其授权配置一起移除。
 - MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。后台独立服务是一个隐藏的同程序进程，不是注册为 Windows 服务 / systemd / launchd，也不支持开机自启；服务进程异常退出后端点会停止。MCP 套件已支持任意 DAG、结构化预检、后台运行/进度轮询/取消、运行历史和失败重跑；后台任务只保存在当前进程内，应用退出后需通过运行历史查看已完成结果。
@@ -1076,7 +1092,7 @@ master                 稳定可发布
 4. 套件 CSV/JSON 数据驱动、循环节点和失败重跑策略。
 5. HTTP 传输补全：代理、客户端证书、重试/退避、HTTP/2 和流式下载。
 6. OAuth 补全：设备码、隐式和密码模式，以及工作区/环境级默认授权。
-7. 上传断点续传；JMeter / WSDL / SOAP 等重格式按需求立项。
+7. 上传断点续传；gRPC 流式 / .proto 导入、SOAP WS-Security / MTOM、MQTT 等按需求立项。
 8. 发布可信链：Windows Authenticode、macOS Developer ID 签名 + 公证 + stapling、Linux 安装包与 GPG/minisign 校验。
 9. MCP 系统服务化：注册 Windows 服务 / systemd / launchd、开机自启，加上本机 token 鉴权和多客户端隔离。
 
