@@ -68,5 +68,5 @@ pwsh ./scripts/aot-smoke.ps1 -SkipPublish -PublishDirectory artifacts/PostSharp-
 
 - 进程内存储插件依赖 `AssemblyLoadContext` 和反射实例化，NativeAOT 下不可用：`StoragePluginRegistry.Refresh()` 直接返回提示并回退本地 SQLite，设置页仍显示远程配置但不能加载插件。需要远程存储时请使用 JIT 包。
 - `Google.Protobuf` 3.19.4 自身仍会给出 IL2104 / IL3053 告警；gRPC 一元调用在冒烟中可用，但复杂 `Any` / 自定义选项类型未验证。
-- AOT 产物不进入 `scripts/build-*-release.ps1` 的三平台主包：由 `scripts/build-aot-release.ps1` 单独产出 ZIP，随同版本 Release 发布。目前 Release 只上传 `win-x64` AOT 包；Linux/macOS 需在对应平台构建后再上传。产物未签名/公证。
+- AOT 产物不进入 `scripts/build-*-release.ps1` 的三平台主包：由 `scripts/build-aot-release.ps1` 单独产出 ZIP，随同版本 Release 发布。目前 Release 只上传 `win-x64` AOT 包；Linux/macOS 需在对应平台构建后再上传。产物未签名/公证。\n- Windows AOT 包带 `.postsharp-aot` 与 `.postsharp-update-enabled` 标记，按 `PostSharp-aot-win-x64.zip` 资产自更新；JIT 安装只认 `PostSharp-win-x64.zip`。两个通道各自替换整份目录，不会互相混装；校验值按精确资产名匹配（同版本并存多个 `.sha256` 时不会取错）。
 - 裁剪是 NativeAOT 默认行为，若后续新增反射式序列化或动态加载代码，`scripts/aot-smoke.ps1` 会在启动或工具调用阶段暴露问题，提交前应运行一次。

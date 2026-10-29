@@ -88,6 +88,13 @@ else {
 
 Get-ChildItem $publish -Filter *.pdb -Recurse -Force | Remove-Item -Force
 
+# The native package updates itself from PostSharp-aot-<rid>.zip. The markers keep the two channels apart:
+# UpdateService picks the asset by layout, and the JIT package must never overwrite a native install.
+if ($isWindowsHost -and $RuntimeIdentifier -like "win*") {
+    New-Item -ItemType File -Path (Join-Path $publish ".postsharp-aot") -Force | Out-Null
+    New-Item -ItemType File -Path (Join-Path $publish ".postsharp-update-enabled") -Force | Out-Null
+}
+
 # In-process storage plugins need AssemblyLoadContext, so a native build falls back to local SQLite.
 # Drop them unless the caller explicitly wants to ship the same folder layout.
 if (-not $KeepPlugins) {
