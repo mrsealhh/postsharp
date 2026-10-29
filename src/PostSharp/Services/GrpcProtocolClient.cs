@@ -129,7 +129,7 @@ public static class GrpcProtocolClient
             stopwatch.Stop();
 
             var responseJson = GrpcMessageCodec.Decode(schema, responseType, responseBytes);
-            var body = JsonSerializer.Serialize(responseJson, PrettyJson);
+            var body = responseJson.ToJsonString(PrettyJson);
             var headers = BuildResultHeaders(
                 responseHeaders,
                 call.GetTrailers(),

@@ -13,20 +13,6 @@ namespace PostSharp.Services;
 /// </summary>
 public sealed class MockApiServer : IDisposable
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
-    private static readonly JsonSerializerOptions SseJsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     private static readonly MockUser[] Users =
     {
         new(1, "林小满", "xiaoman.lin@example.com", "admin", true),
@@ -150,7 +136,7 @@ public sealed class MockApiServer : IDisposable
                         stream,
                         400,
                         "Bad Request",
-                        new { error = "invalid_request_line" },
+                        new JsonObject { ["error"] = "invalid_request_line" },
                         cancellationToken
                     );
                     return;
@@ -251,12 +237,12 @@ public sealed class MockApiServer : IDisposable
                             stream,
                             200,
                             "OK",
-                            new
+                            new JsonObject
                             {
-                                status = "ok",
-                                service = "postsharp-mock",
-                                version = "0.1.0",
-                                time = DateTimeOffset.Now,
+                                ["status"] = "ok",
+                                ["service"] = "postsharp-mock",
+                                ["version"] = "0.1.0",
+                                ["time"] = DateTimeOffset.Now,
                             },
                             cancellationToken
                         );
@@ -267,7 +253,7 @@ public sealed class MockApiServer : IDisposable
                             stream,
                             200,
                             "OK",
-                            new { total = Users.Length, users = Users },
+                            new JsonObject { ["total"] = Users.Length, ["users"] = UsersJson() },
                             cancellationToken
                         );
                         return;
@@ -277,11 +263,11 @@ public sealed class MockApiServer : IDisposable
                             stream,
                             500,
                             "Internal Server Error",
-                            new
+                            new JsonObject
                             {
-                                code = 500,
-                                message = "这是一条模拟的错误响应。",
-                                hint = "用状态徽标和响应头验证错误排查流程。",
+                                ["code"] = 500,
+                                ["message"] = "这是一条模拟的错误响应。",
+                                ["hint"] = "用状态徽标和响应头验证错误排查流程。",
                             },
                             cancellationToken
                         );
@@ -298,7 +284,7 @@ public sealed class MockApiServer : IDisposable
                             stream,
                             200,
                             "OK",
-                            new { message = "慢响应完成。", delayMs = delay },
+                            new JsonObject { ["message"] = "慢响应完成。", ["delayMs"] = delay },
                             cancellationToken
                         );
                         return;
@@ -313,15 +299,12 @@ public sealed class MockApiServer : IDisposable
                             stream,
                             200,
                             "OK",
-                            new
+                            new JsonObject
                             {
-                                message = "大响应测试。",
-                                sizeKb,
-                                data = new string('A', sizeKb * 1024),
-                                items = Enumerable
-                                    .Range(1, 50)
-                                    .Select(index => new { id = index, name = $"item-{index}" })
-                                    .ToArray(),
+                                ["message"] = "大响应测试。",
+                                ["sizeKb"] = sizeKb,
+                                ["data"] = new string('A', sizeKb * 1024),
+                                ["items"] = LargeItems(),
                             },
                             cancellationToken
                         );
@@ -336,13 +319,13 @@ public sealed class MockApiServer : IDisposable
                             stream,
                             200,
                             "OK",
-                            new
+                            new JsonObject
                             {
-                                receivedBytes = contentLength,
-                                fileName = MultipartFileName(body) ?? "unknown",
-                                contentType = headers.GetValueOrDefault("Content-Type")
-                                    ?? string.Empty,
-                                message = "文件已接收（Mock 服务不会落盘）。",
+                                ["receivedBytes"] = contentLength,
+                                ["fileName"] = MultipartFileName(body) ?? "unknown",
+                                ["contentType"] =
+                                    headers.GetValueOrDefault("Content-Type") ?? string.Empty,
+                                ["message"] = "文件已接收（Mock 服务不会落盘）。",
                             },
                             cancellationToken
                         );
@@ -353,12 +336,12 @@ public sealed class MockApiServer : IDisposable
                             stream,
                             201,
                             "Created",
-                            new
+                            new JsonObject
                             {
-                                id = "ord_2026_1042",
-                                status = "created",
-                                received = TryParseJson(body),
-                                createdAt = DateTimeOffset.Now,
+                                ["id"] = "ord_2026_1042",
+                                ["status"] = "created",
+                                ["received"] = ToNode(TryParseJson(body)),
+                                ["createdAt"] = DateTimeOffset.Now,
                             },
                             cancellationToken
                         );
@@ -369,14 +352,14 @@ public sealed class MockApiServer : IDisposable
                             stream,
                             200,
                             "OK",
-                            new
+                            new JsonObject
                             {
-                                method,
-                                path,
-                                query,
-                                headers,
-                                body = TryParseJson(body),
-                                receivedAt = DateTimeOffset.Now,
+                                ["method"] = method,
+                                ["path"] = path,
+                                ["query"] = ToJsonObject(query),
+                                ["headers"] = ToJsonObject(headers),
+                                ["body"] = ToNode(TryParseJson(body)),
+                                ["receivedAt"] = DateTimeOffset.Now,
                             },
                             cancellationToken
                         );
@@ -395,13 +378,17 @@ public sealed class MockApiServer : IDisposable
                             stream,
                             404,
                             "Not Found",
-                            new { code = 404, message = $"没有 id 为 {userId} 的用户。" },
+                            new JsonObject
+                            {
+                                ["code"] = 404,
+                                ["message"] = $"没有 id 为 {userId} 的用户。",
+                            },
                             cancellationToken
                         );
                         return;
                     }
 
-                    await WriteResponseAsync(stream, 200, "OK", user, cancellationToken);
+                    await WriteResponseAsync(stream, 200, "OK", UserJson(user), cancellationToken);
                     return;
                 }
 
@@ -409,23 +396,22 @@ public sealed class MockApiServer : IDisposable
                     stream,
                     200,
                     "OK",
-                    new
+                    new JsonObject
                     {
-                        message = "PostSharp mock API",
-                        method,
-                        path,
-                        query,
-                        body = TryParseJson(body),
-                        endpoints = new[]
-                        {
-                            "GET /api/health",
-                            "GET /api/users",
-                            "GET /api/users/{id}",
-                            "POST /api/orders",
-                            "POST /api/echo",
-                            "GET /api/error",
-                            "GET /api/slow?ms=1200",
-                        },
+                        ["message"] = "PostSharp mock API",
+                        ["method"] = method,
+                        ["path"] = path,
+                        ["query"] = ToJsonObject(query),
+                        ["body"] = ToNode(TryParseJson(body)),
+                        ["endpoints"] = new JsonArray(
+                            JsonValue.Create("GET /api/health"),
+                            JsonValue.Create("GET /api/users"),
+                            JsonValue.Create("GET /api/users/{id}"),
+                            JsonValue.Create("POST /api/orders"),
+                            JsonValue.Create("POST /api/echo"),
+                            JsonValue.Create("GET /api/error"),
+                            JsonValue.Create("GET /api/slow?ms=1200")
+                        ),
                     },
                     cancellationToken
                 );
@@ -507,6 +493,66 @@ public sealed class MockApiServer : IDisposable
         return end > start ? body[start..end].Trim() : body[start..].Trim();
     }
 
+    private static string SseChunk(string kind, string chunk) =>
+        new JsonObject
+        {
+            ["choices"] = new JsonArray(
+                new JsonObject { ["delta"] = new JsonObject { [kind] = chunk } }
+            ),
+        }.ToJsonString(DataJson.CompactNodeOptions);
+
+    private static JsonObject UserJson(MockUser user) =>
+        new()
+        {
+            ["id"] = user.id,
+            ["name"] = user.name,
+            ["email"] = user.email,
+            ["role"] = user.role,
+            ["active"] = user.active,
+        };
+
+    private static JsonArray UsersJson()
+    {
+        var users = new List<JsonNode?>();
+        foreach (var user in Users)
+        {
+            users.Add(UserJson(user));
+        }
+
+        return new JsonArray(users.ToArray());
+    }
+
+    private static JsonArray LargeItems()
+    {
+        var items = new List<JsonNode?>();
+        for (var index = 1; index <= 50; index++)
+        {
+            items.Add(new JsonObject { ["id"] = index, ["name"] = $"item-{index}" });
+        }
+
+        return new JsonArray(items.ToArray());
+    }
+
+    private static JsonNode? ToNode(object? value) =>
+        value switch
+        {
+            null => null,
+            JsonNode node => node,
+            string text => JsonValue.Create(text),
+            _ => JsonValue.Create(value.ToString()),
+        };
+
+    private static JsonObject ToJsonObject(IReadOnlyDictionary<string, string> values)
+    {
+        var json = new JsonObject();
+        foreach (var pair in values)
+        {
+            json[pair.Key] = pair.Value;
+        }
+
+        return json;
+    }
+
     private static async Task WriteSseAsync(
         NetworkStream stream,
         CancellationToken cancellationToken
@@ -543,20 +589,14 @@ public sealed class MockApiServer : IDisposable
 
         foreach (var chunk in thinkingChunks)
         {
-            var payload = JsonSerializer.Serialize(
-                new { choices = new[] { new { delta = new { reasoning_content = chunk } } } },
-                SseJsonOptions
-            );
+            var payload = SseChunk("reasoning_content", chunk);
             await WriteSseEventAsync(stream, payload, cancellationToken).ConfigureAwait(false);
             await Task.Delay(70, cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var chunk in contentChunks)
         {
-            var payload = JsonSerializer.Serialize(
-                new { choices = new[] { new { delta = new { content = chunk } } } },
-                SseJsonOptions
-            );
+            var payload = SseChunk("content", chunk);
             await WriteSseEventAsync(stream, payload, cancellationToken).ConfigureAwait(false);
             await Task.Delay(70, cancellationToken).ConfigureAwait(false);
         }
@@ -585,13 +625,13 @@ public sealed class MockApiServer : IDisposable
         NetworkStream stream,
         int statusCode,
         string reason,
-        object? payload,
+        JsonNode? payload,
         CancellationToken cancellationToken
     )
     {
         var bodyBytes = payload is null
             ? Array.Empty<byte>()
-            : Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, JsonOptions));
+            : Encoding.UTF8.GetBytes(payload.ToJsonString(DataJson.NodeOptions));
 
         var head = new StringBuilder()
             .Append("HTTP/1.1 ")

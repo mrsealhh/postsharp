@@ -1,9 +1,9 @@
 # PostSharp 后续产品化 TODO 与开发交接
 
-> 基线版本：v1.10.22（2026-10-29）
+> 基线版本：v1.10.23（2026-10-29）
 > 基线形态：Windows x64 / Linux x64 / macOS arm64 三类 ZIP（含按平台裁剪的存储插件），CLI 独立发布；.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.2-preview.1
-> 基线测试：222 个 xUnit 测试，`csharpier check .` 通过
-> 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.10.22
+> 基线测试：228 个 xUnit 测试，`csharpier check .` 通过
+> 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.10.23
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
 
@@ -132,7 +132,7 @@
 | 主工程 | `src/PostSharp`，单一桌面应用 |
 | 存储契约 | `src/PostSharp.Storage.Abstractions` |
 | 插件源码 | `src/Plugins/PostSharp.Storage.*` |
-| 测试 | `tests/PostSharp.Tests`，30 个测试文件，222 个用例 |
+| 测试 | `tests/PostSharp.Tests`，30 个测试文件，228 个用例 |
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
@@ -155,7 +155,7 @@
 | MCP | 仅回环监听；已支持可选本机 token 和只读模式；无 SSE 通知、无细粒度工具权限；工具 70 个但以原子操作为主 | 本机其他进程可尝试调用（启用 token 后受控）；多客户端能力有限；AI 完成一个意图的调用次数偏多 |
 | 协议深度 | SOAP 仅浅层 WSDL；gRPC 仅一元+反射；WS/SIO/TCP 为单轮消息 | 复杂企业协议和常驻会话场景仍需补课，不能对外承诺“全协议” |
 | 包体与依赖 | 自包含包约 73 MB；新增 gRPC/Google.Protobuf 依赖 | 继续加协议会推高包体和启动成本，必须模块化 |
-| AOT / 裁剪 | Arc 0.3.2 已移除 AtomUI 并声明 AOT 安全；试编译可生成约 58 MB 原生 exe，但启动时在 `SuiteStore.Save` 因 System.Text.Json 反射序列化被禁用而失败；插件 AssemblyLoadContext 和部分 Avalonia 资源加载仍有 AOT 警告；正式包仍为 JIT 自包含 | 暂不能把 NativeAOT 作为正式发布形态；需 source-generated JSON、插件静态根和 AOT 启动/请求/持久化冒烟后再评估 |
+| AOT / 裁剪 | 已打通：本地文档与 MCP 结果全部使用 source-generated JSON，`AppSettings` 走显式转换器；Windows 原生 exe 约 63 MB，`scripts/aot-smoke.ps1` 18 项检查通过（启动、70 个 MCP 工具、发送、套件运行、重启后设置持久化），自有代码 0 条 IL 告警；存储插件在 AOT 下自动回退本地 SQLite | 正式发布包仍保持 JIT 自包含；AOT 作为可选通道，暂不进入三平台发布产物，远程存储插件在 AOT 下不可用 |
 | 定时套件 | 依赖应用内 DispatcherTimer，应用关闭后不执行 | 不能作为无人值守回归服务 |
 | 可观测性 | Serilog 文件日志 + 数据提示条，无崩溃转储/诊断包 | 用户问题定位依赖手工收集 |
 | 国际化 | 界面和文案以中文为主 | 海外用户和英文文档扩展受限 |
@@ -171,7 +171,7 @@
 - [ ] 录制 → 回放 → 套件生成 → CI 报告 → 运行 diff 的完整链路。
 - [ ] 冷启动、空闲内存、包体、1 万条历史/审计和大响应的性能门禁。
 - [ ] gRPC 流式与 `.proto`/descriptor 导入；SOAP WS-Security/MTOM；常驻 WS/SIO 会话；MQTT 按客户立项。
-- [ ] NativeAOT/trimming 发布与启动冒烟；试编译已生成原生 exe，但启动时 System.Text.Json 反射序列化被禁用导致 `SuiteStore.Save` 失败；需 source-generated JSON 和插件静态根后再评估，正式包保持 JIT 自包含。
+- [x] NativeAOT 能力：source-generated JSON（`DataJsonContext` / `McpJsonContext`）、设置显式转换器、插件 AOT 回退；`scripts/aot-smoke.ps1` 覆盖启动、MCP 工具、发送、套件和重启持久化（18 项通过）。发布形态仍保持 JIT 自包含，见 `docs/aot.md`。
 
 ## 3. 优先级、规模与完成定义
 
@@ -376,7 +376,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | P1-10 | 性能与规模化 | 历史/审计/大树、10k 记录、大响应和长时间运行未做基准；软件渲染默认；冷启动/空闲内存无门禁 | 冷启动 < 1.5s、空闲内存 < 150MB；建立启动、内存、列表滚动、响应渲染基线；列表虚拟化；大数据集不卡顿；内存上限可诊断 | M |
 | P1-11 | 可维护性拆分 | `MainWindowViewModel`、`MainWindow.axaml` 过大；静态服务和 `async void` 增加测试难度 | 拆分请求编辑、历史、树、套件、OpenAPI、设置子 VM/控件；导入对话框独立 XAML；关键异步有取消和异常出口 | L |
 | P1-12 | 首次使用与文档 | 初始演示可用，但无首次引导、无“重置演示数据”、错误帮助入口；文档和截图容易过期 | 首次启动 3 步引导；可重置演示工作区；每条错误有下一步；README/截图由演示数据生成 | S/M |
-| P1-13 | 轻量化与分发 | 三平台自包含包约 73 MB；无 winget/scoop/brew；无框架依赖/精简包选项；启动与空闲内存无门禁；NativeAOT/裁剪未纳入发布流程 | 冷启动 < 1.5s、空闲内存 < 150MB、Windows 包 ≤ 75MB；提供便携包与包管理器清单；启动/内存纳入冒烟；AOT 仅作为实验通道，需先消除 JSON 反射和插件动态加载风险 | M |
+| P1-13 | 轻量化与分发 | 三平台自包含包约 73 MB；无 winget/scoop/brew；无框架依赖/精简包选项；启动与空闲内存无门禁；NativeAOT 已打通但未进入发布流程 | 冷启动 < 1.5s、空闲内存 < 150MB、Windows 包 ≤ 75MB；提供便携包与包管理器清单；启动/内存纳入冒烟；AOT 作为可选通道提供独立产物与冒烟脚本（已具备，待决定是否随版本发布） | M |
 | P1-14 | MCP 意图层与会话 | 70 个工具以 CRUD/单次发送为主；长任务、流式会话、大内容、权限和幂等语义不统一 | 增加意图工具、会话 job、资源化大内容、token/只读权限、结构化错误和幂等键；单意图平均调用次数下降 | L |
 | P1-15 | 录制回放与回归闭环 | HAR 只能导入；无浏览器/代理录制、无回放、无“从流量生成套件”；运行 diff 缺失 | 录制 → 回放 → 生成套件 → CI 报告 → 运行 diff 全链路可演示；失败步骤可定位 | L/XL |
 | P1-16 | 场景模板与分享 | 无场景模板库、无可分享的 `.postsharp` 场景文件；新用户从零搭建 | 内置 8–10 个场景模板；一键导入/导出场景；模板可审计、可版本化 | M |
@@ -554,7 +554,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | 首次体验（P1-12） | 首次 3 步引导、可重置演示工作区、MCP 配置一键复制、示例场景 | 新用户 5 分钟内完成第一次请求和第一次 AI 调用 |
 | 会话基础设施（P2-09 前置） | 会话模型、消息日志、连接/断开/发送/接收接口（先不追求完整 UI） | WebSocket 会话可通过 MCP 连接、发送、接收、关闭；有超时和取消 |
 
-**H1 退出条件**：上述验收全部通过；222+ 测试基线不下降；三平台包可启动；完成一次“AI 从 describe 到 send 到报告”的公开演示。
+**H1 退出条件**：上述验收全部通过；228+ 测试基线不下降；三平台包可启动；完成一次“AI 从 describe 到 send 到报告”的公开演示。
 
 #### H2（约 2–3 个版本，v1.12.x）：录制回放与回归
 
@@ -637,7 +637,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 - [ ] 阅读 `AGENTS.md`、`README.md`、`docs/storage-plugins.md` 和本文件。
 - [ ] 执行 `dotnet build src/PostSharp/PostSharp.csproj -c Debug`，确认 0 警告 0 错误。
-- [ ] 执行 `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj -c Debug`，确认 222 个基线用例通过。
+- [ ] 执行 `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj -c Debug`，确认 228 个基线用例通过。
 - [ ] 执行 `csharpier check .`。
 - [ ] 解压当前 Release 包，使用独立数据目录启动，确认首次为演示工作区。
 - [ ] 确认不会把 `.postsharp`、日志、Token、连接串或真实截图提交到仓库。

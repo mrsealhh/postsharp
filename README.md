@@ -221,6 +221,15 @@ powershell -ExecutionPolicy Bypass -File scripts/build-storage-plugins.ps1
 
 插件契约与自定义数据库接入见 [docs/storage-plugins.md](docs/storage-plugins.md)。
 
+NativeAOT（可选通道，发布包仍默认自包含 JIT）：
+
+```powershell
+dotnet publish src/PostSharp/PostSharp.csproj -c Release -r win-x64 -p:PublishAot=true -p:SelfContained=true -p:UseOptimizedPublish=false
+powershell -ExecutionPolicy Bypass -File scripts/aot-smoke.ps1
+```
+
+冒烟脚本会构建原生产物、启动进程，并通过 MCP 走完集合/环境/套件/历史/审计/发送/持久化重启检查。支持范围、已验证结果和限制见 [docs/aot.md](docs/aot.md)。
+
 ### Apifox 迁移
 
 Apifox 的原生格式暂未直接解析；当前推荐三条官方导出路径，PostSharp 已经有对应导入器：
@@ -880,8 +889,8 @@ docs/
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
 | Arc 0.3.2 | 升级 `TKCode.Arc` 到 `0.3.2-preview.1`，移除 AtomUI 传递依赖；启动改用 `UseArc(...)`，主题改用 `ArcTheme.Apply`；构建、222 个测试、主窗口启动和控件渲染通过 |
 | Arc 主题与弹层 | 浅色/深色启动正常；协议 Select 弹层、ToolTip 和主界面控件渲染正常 |
-| NativeAOT 试编译 | `PublishAot=true` 生成约 58 MB 原生 exe；修复动态 `StyleInclude` 后仍因 `System.Text.Json` 反射序列化在启动阶段失败；结论为暂不具备生产级 AOT |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：222 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
+| NativeAOT | `PublishAot=true` 生成约 63 MB 原生 exe；全部本地文档与 MCP 结果改用 source-generated JSON，存储插件在 AOT 下自动回退本地 SQLite；`scripts/aot-smoke.ps1` 18 项检查通过（启动、70 个 MCP 工具、集合/环境/套件/历史/审计/发送/套件运行/设置重启持久化），日志无异常，自有代码 0 条 IL 告警 |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：228 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
@@ -1033,12 +1042,14 @@ master                 稳定可发布
 
 自动更新只对带有 `.postsharp-update-enabled` 标记的发布包启用，避免开发目录覆盖自身。
 
-发布新版本（从 1.10.17 起同时发布三类 ZIP）：
+发布新版本（三类主包 + 可选 NativeAOT 包）：
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.10.22
-.\scripts\build-linux-release.ps1 -Version 1.10.22
-.\scripts\build-osx-release.ps1 -Version 1.10.22 -RuntimeIdentifier osx-arm64
+.\scripts\build-release.ps1 -Version 1.10.23
+.\scripts\build-linux-release.ps1 -Version 1.10.23
+.\scripts\build-osx-release.ps1 -Version 1.10.23 -RuntimeIdentifier osx-arm64
+# 可选：NativeAOT 单独产物（Windows 上构建）
+.\scripts\build-aot-release.ps1 -Version 1.10.23
 # CLI 独立发布，不进入上面三个桌面包
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier win-x64 -SelfContained
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier linux-x64 -SelfContained
@@ -1050,11 +1061,12 @@ master                 稳定可发布
 - `artifacts/PostSharp-win-x64.zip` / `.sha256`：Windows x64 自包含应用目录，根目录包含 `PostSharp.exe`、.NET 运行时和默认四个存储插件；带 Windows 自动更新标记。CLI 不在桌面包内，单独从 CLI Release 下载。
 - `artifacts/PostSharp-linux-x64.zip` / `.sha256`：Linux x64 自包含包，根目录 `run.sh` 已具备可执行位；不启用 Windows 自动更新。
 - `artifacts/PostSharp-osx-arm64.zip` / `.sha256`：macOS arm64 自包含包，根目录 `run.command` 已具备可执行位；未签名、未公证，不启用 Windows 自动更新。
+- `artifacts/PostSharp-aot-win-x64.zip` / `.sha256`：Windows x64 NativeAOT 单文件包，约 63 MB；不含存储插件（AOT 下自动回退本地 SQLite），不带自动更新标记，作为同一 Release 的可选资产上传。
 - `artifacts/plugins/PostSharp.Storage.*.zip`：默认四类与 ClickHouse / Doris / StarRocks 插件包，可作为 Release 附加资产单独上传。
 
 三个 ZIP 由 `scripts/zip-directory.ps1` 统一生成：条目使用 `/`，启动脚本为 LF，`PostSharp`、`run.sh`、`run.command` 带 Unix `0100755` 可执行位。打包脚本会删除插件里的 `win-x64` / `linux-x64` / `osx-*` 自包含 RID 目录，以及 `runtimes` 中非目标平台的子目录；1.10.19 的体积约为 Windows 73 MB、Linux 72 MB、macOS 73 MB。CLI 单独打包，不写入这些包。
 
-在 GitHub 创建与版本一致的 tag 和 Release，至少上传三组 ZIP + SHA256。Windows 应用启动后每 6 小时检查 `releases/latest`，下载并校验包；下载完成后仅提示「可安装」，由用户点击右下角「更新 / 安装」确认后再由独立 PowerShell 更新器替换应用目录并重启，失败时恢复备份。Linux/macOS 预览包当前需要手动下载和解压，不参与 Windows 自动更新。
+在 GitHub 创建与版本一致的 tag 和 Release，上传三组 ZIP + SHA256；NativeAOT 通道同时上传 `PostSharp-aot-win-x64.zip` 及其 SHA256（同版本、不参与自动更新）。Windows 应用启动后每 6 小时检查 `releases/latest`，下载并校验包；下载完成后仅提示「可安装」，由用户点击右下角「更新 / 安装」确认后再由独立 PowerShell 更新器替换应用目录并重启，失败时恢复备份。Linux/macOS 预览包当前需要手动下载和解压，不参与 Windows 自动更新。
 
 ### 已知限制与路线图
 
@@ -1072,12 +1084,12 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：222 个 xUnit 测试。
+- 自测：228 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
 - 存储插件在进程内加载，权限等同当前用户程序，不支持热卸载；替换同名插件后建议重启应用。
-- 当前发布包是自包含 JIT，不是 NativeAOT。Arc 0.3.2 已移除 AtomUI 并声明 AOT 安全；实测 `dotnet publish -p:PublishAot=true` 能生成约 58 MB 的原生 exe，但应用启动时在 `SuiteStore.Save` 因 `System.Text.Json` 反射序列化被 AOT 禁用而失败（`Reflection-based serialization has been disabled`）。因此当前**没有生产级 AOT 能力**；需要为全部 DTO/导入导出改用 source-generated JSON、处理存储插件的动态加载，并完成 AOT 启动/请求/持久化冒烟后再评估。
+- 正式发布包是自包含 JIT；NativeAOT 是已验证的可选通道（见 [docs/aot.md](docs/aot.md)）：本地文档和 MCP 结果已全部改为 source-generated JSON，设置通过显式转换器读写，`scripts/aot-smoke.ps1` 覆盖启动、MCP 工具、发送、套件和重启持久化。限制是 NativeAOT 下进程内存储插件不可用（依赖 `AssemblyLoadContext`，自动回退本地 SQLite），`Google.Protobuf` 依赖仍带 IL2104/IL3053 告警，AOT 产物暂不进入三平台发布包。
 - OpenAPI 同步按 `METHOD + 路径` 匹配；导入不再限制操作数量，保留循环引用和网络超时保护。Webhook / callback 与运行时响应校验未实现。
 - SSE 取消后可用 `Last-Event-ID` 手动「继续」；自动重连和从任意断点恢复仍依赖服务端支持。
 - multipart 已支持多文件、64KB 流式上传、进度和取消；断点续传、分片上传协议和超大文件校验未实现。

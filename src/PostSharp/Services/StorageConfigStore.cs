@@ -1,5 +1,3 @@
-using System.Text.Encodings.Web;
-using System.Text.Json;
 using PostSharp.Models;
 
 namespace PostSharp.Services;
@@ -7,13 +5,6 @@ namespace PostSharp.Services;
 /// <summary>Loads and saves the local storage profile bootstrap file.</summary>
 public sealed class StorageConfigStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     public string FilePath { get; }
 
     public StorageConfigStore()
@@ -24,10 +15,7 @@ public sealed class StorageConfigStore
 
     public StorageConfig Load()
     {
-        var load = DataFile.Load(
-            FilePath,
-            text => JsonSerializer.Deserialize<StorageConfig>(text, JsonOptions)
-        );
+        var load = DataFile.Load(FilePath, text => DataJson.Deserialize<StorageConfig>(text));
         if (load.IsProblem)
         {
             Log.Warning(
@@ -48,5 +36,5 @@ public sealed class StorageConfigStore
     }
 
     public SaveResult Save(StorageConfig config) =>
-        DataFile.Save(FilePath, () => JsonSerializer.Serialize(config.Normalize(), JsonOptions));
+        DataFile.Save(FilePath, () => DataJson.Serialize(config.Normalize()));
 }

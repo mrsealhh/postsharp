@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Loader;
 using System.Text.Json;
@@ -92,6 +93,14 @@ public sealed class StoragePluginRegistry
         {
             _plugins.Clear();
             _issues.Clear();
+            if (!RuntimeFeature.IsDynamicCodeSupported)
+            {
+                _issues.Add(
+                    "当前为 NativeAOT 构建：进程内存储插件需要动态加载，已回退本地 SQLite。"
+                );
+                _loaded = true;
+                return _issues.ToList();
+            }
             IReadOnlyList<string> scanDirectories;
             try
             {
@@ -240,6 +249,21 @@ public sealed class StoragePluginRegistry
         }
     }
 
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "插件加载只在支持动态代码的运行时执行；NativeAOT 下 Refresh 提前返回，不会走到这里。"
+    )]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2072",
+        Justification = "插件类型来自外部程序集，必须在运行时创建；NativeAOT 下不会执行。"
+    )]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2075",
+        Justification = "插件类型来自外部程序集，必须在运行时反射；NativeAOT 下不会执行。"
+    )]
     private void LoadEntryAssembly(string entry, string source, bool reportNoPlugin)
     {
         try
@@ -365,6 +389,11 @@ public sealed class StoragePluginRegistry
         }
     }
 
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "枚举插件程序集类型只发生在支持动态代码的运行时；NativeAOT 下不会执行。"
+    )]
     private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
     {
         try

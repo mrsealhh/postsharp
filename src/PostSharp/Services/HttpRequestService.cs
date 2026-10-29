@@ -64,12 +64,6 @@ public sealed class HttpRequestService
         _noRedirectClient = client ?? SharedNoRedirectClient;
     }
 
-    private static readonly JsonSerializerOptions PrettyJson = new()
-    {
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     public int TimeoutSeconds { get; set; } = 60;
 
     public bool AutoFormatResponse { get; set; } = true;
@@ -506,7 +500,7 @@ public sealed class HttpRequestService
             try
             {
                 using var document = JsonDocument.Parse(text);
-                return (JsonSerializer.Serialize(document.RootElement, PrettyJson), true);
+                return (DataJson.Format(document.RootElement, true, true), true);
             }
             catch (JsonException exception)
             {

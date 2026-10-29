@@ -1,5 +1,3 @@
-using System.Text.Encodings.Web;
-using System.Text.Json;
 using PostSharp.Models;
 
 namespace PostSharp.Services;
@@ -7,13 +5,6 @@ namespace PostSharp.Services;
 /// <summary>Stores automation suites separately so their storage profile can be switched independently.</summary>
 public sealed class SuiteStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     private readonly StorageCoordinator _storage = StorageCoordinator.Current;
 
     public DataFileLoad<List<SuiteDto>> Load()
@@ -26,7 +17,7 @@ public sealed class SuiteStore
 
         try
         {
-            var suites = JsonSerializer.Deserialize<List<SuiteDto>>(document.Payload, JsonOptions);
+            var suites = DataJson.Deserialize<List<SuiteDto>>(document.Payload);
             return suites is null
                 ? new DataFileLoad<List<SuiteDto>>(null, DataFileState.Unreadable, null)
                 : new DataFileLoad<List<SuiteDto>>(suites, DataFileState.Loaded, null);
@@ -41,6 +32,6 @@ public sealed class SuiteStore
     public SaveResult Save(IEnumerable<TestSuite> suites) =>
         _storage.SaveDocument(
             StorageCategories.Suites,
-            JsonSerializer.Serialize(WorkspaceStore.CaptureSuites(suites), JsonOptions)
+            DataJson.Serialize(WorkspaceStore.CaptureSuites(suites))
         );
 }

@@ -35,8 +35,6 @@ public sealed record OpenApiSyncResult(
 /// </summary>
 public static class OpenApiSyncService
 {
-    private static readonly JsonSerializerOptions DocJson = new();
-
     public static OpenApiSyncResult Apply(
         RequestCollection root,
         OpenApiImportDocument document,
@@ -208,6 +206,5 @@ public static class OpenApiSyncService
         rows.EnsureTrailingRow();
     }
 
-    private static string Serialize(OpenApiOperationDoc doc) =>
-        JsonSerializer.Serialize(doc, DocJson);
+    private static string Serialize(OpenApiOperationDoc doc) => DataJson.Serialize(doc);
 }

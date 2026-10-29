@@ -15,13 +15,6 @@ public sealed class McpServer
 {
     private const string ServerVersion = "0.5.0";
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     private readonly McpWorkspaceAdapter _workspace;
 
     private string? _clientName;
@@ -56,14 +49,12 @@ public sealed class McpServer
                 403,
                 "Forbidden",
                 "application/json",
-                JsonSerializer.Serialize(
-                    Error(
+                Error(
                         null,
                         -32001,
                         "拒绝访问：MCP 只接受本机客户端，网页不能调用。请在 Cursor、Claude Code 等客户端中配置该地址。"
-                    ),
-                    JsonOptions
-                )
+                    )
+                    .ToJsonString(McpJson.SerializerOptions)
             );
         }
 
@@ -88,14 +79,12 @@ public sealed class McpServer
                 401,
                 "Unauthorized",
                 "application/json",
-                JsonSerializer.Serialize(
-                    Error(
+                Error(
                         null,
                         -32001,
                         "MCP 需要本机 token。请在客户端配置 Authorization: Bearer <token>。"
-                    ),
-                    JsonOptions
-                ),
+                    )
+                    .ToJsonString(McpJson.SerializerOptions),
                 unauthorizedHeaders
             );
         }
@@ -106,18 +95,15 @@ public sealed class McpServer
                 405,
                 "Method Not Allowed",
                 "application/json",
-                JsonSerializer.Serialize(
-                    new
+                new JsonObject
+                {
+                    ["jsonrpc"] = "2.0",
+                    ["error"] = new JsonObject
                     {
-                        jsonrpc = "2.0",
-                        error = new
-                        {
-                            code = -32000,
-                            message = "MCP Streamable HTTP 端点只接受 POST。",
-                        },
+                        ["code"] = -32000,
+                        ["message"] = "MCP Streamable HTTP 端点只接受 POST。",
                     },
-                    JsonOptions
-                ),
+                }.ToJsonString(McpJson.SerializerOptions),
                 new Dictionary<string, string>(cors, StringComparer.OrdinalIgnoreCase)
                 {
                     ["Allow"] = "POST, OPTIONS",
@@ -137,7 +123,7 @@ public sealed class McpServer
                 200,
                 "OK",
                 "application/json",
-                JsonSerializer.Serialize(Error(null, -32700, "JSON 解析失败。"), JsonOptions),
+                Error(null, -32700, "JSON 解析失败。").ToJsonString(McpJson.SerializerOptions),
                 cors
             );
         }
@@ -148,14 +134,12 @@ public sealed class McpServer
                 403,
                 "Forbidden",
                 "application/json",
-                JsonSerializer.Serialize(
-                    Error(
+                Error(
                         null,
                         -32003,
                         $"只读模式不允许调用 {blockedTool}；请在设置中关闭「只读模式」或改用查看类工具。"
-                    ),
-                    JsonOptions
-                ),
+                    )
+                    .ToJsonString(McpJson.SerializerOptions),
                 cors
             );
         }
@@ -192,7 +176,7 @@ public sealed class McpServer
             200,
             "OK",
             "application/json",
-            response.ToJsonString(JsonOptions),
+            response.ToJsonString(McpJson.SerializerOptions),
             new Dictionary<string, string>(cors, StringComparer.OrdinalIgnoreCase)
             {
                 ["Mcp-Session-Id"] = "postsharp-local",
@@ -492,12 +476,12 @@ public sealed class McpServer
                         OptionalInt(arguments, "position")
                     )
                     .ConfigureAwait(false),
-                "delete_collection" => new
-                {
-                    deleted = await _workspace
+                "delete_collection" => Payload(
+                    "deleted",
+                    await _workspace
                         .DeleteCollectionAsync(RequireGuid(arguments, "id"))
-                        .ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
                 "create_request" => await _workspace
                     .CreateRequestAsync(ReadDraft(arguments))
                     .ConfigureAwait(false),
@@ -511,19 +495,19 @@ public sealed class McpServer
                         OptionalInt(arguments, "position")
                     )
                     .ConfigureAwait(false),
-                "delete_request" => new
-                {
-                    deleted = await _workspace
+                "delete_request" => Payload(
+                    "deleted",
+                    await _workspace
                         .DeleteRequestAsync(RequireGuid(arguments, "id"))
-                        .ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
                 "duplicate_request" => await _workspace
                     .DuplicateRequestAsync(RequireGuid(arguments, "id"))
                     .ConfigureAwait(false),
-                "export_workspace" => new
+                "export_workspace" => new JsonObject
                 {
-                    format = "Postman Collection v2.1",
-                    content = await _workspace.ExportWorkspaceAsync().ConfigureAwait(false),
+                    ["format"] = "Postman Collection v2.1",
+                    ["content"] = await _workspace.ExportWorkspaceAsync().ConfigureAwait(false),
                 },
                 "soap_describe" => await _workspace
                     .DescribeSoapAsync(
@@ -590,12 +574,12 @@ public sealed class McpServer
                         OptionalString(arguments, "connectionString")
                     )
                     .ConfigureAwait(false),
-                "delete_storage_profile" => new
-                {
-                    deleted = await _workspace
+                "delete_storage_profile" => Payload(
+                    "deleted",
+                    await _workspace
                         .DeleteStorageProfileAsync(RequireString(arguments, "id"))
-                        .ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
                 "set_storage_binding" => await _workspace
                     .SetStorageBindingAsync(
                         RequireString(arguments, "category"),
@@ -624,10 +608,10 @@ public sealed class McpServer
                     .ConfigureAwait(false),
                 "run_sequence" => await RunSequenceToolAsync(arguments, policy, cancellationToken)
                     .ConfigureAwait(false),
-                "get_curl" => new
+                "get_curl" => new JsonObject
                 {
-                    id = RequireGuid(arguments, "id"),
-                    curl = await _workspace
+                    ["id"] = RequireGuid(arguments, "id"),
+                    ["curl"] = await _workspace
                         .GetCurlAsync(RequireGuid(arguments, "id"))
                         .ConfigureAwait(false),
                 },
@@ -640,12 +624,12 @@ public sealed class McpServer
                 "get_audit" => await _workspace
                     .GetAuditAsync(RequireGuid(arguments, "id"))
                     .ConfigureAwait(false),
-                "delete_audit" => new
-                {
-                    deleted = await _workspace
+                "delete_audit" => Payload(
+                    "deleted",
+                    await _workspace
                         .DeleteAuditAsync(RequireGuid(arguments, "id"))
-                        .ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
                 "create_suite" => await _workspace
                     .CreateSuiteAsync(
                         OptionalString(arguments, "name") ?? "MCP 测试套件",
@@ -696,12 +680,12 @@ public sealed class McpServer
                 "get_suite_run_job" => await _workspace
                     .GetSuiteRunJobAsync(RequireGuid(arguments, "jobId"))
                     .ConfigureAwait(false),
-                "cancel_suite_run" => new
-                {
-                    cancelled = await _workspace
+                "cancel_suite_run" => Payload(
+                    "cancelled",
+                    await _workspace
                         .CancelSuiteRunJobAsync(RequireGuid(arguments, "jobId"))
-                        .ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
                 "list_suite_runs" => await _workspace
                     .ListSuiteRunsAsync(RequireGuid(arguments, "suiteId"))
                     .ConfigureAwait(false),
@@ -736,89 +720,89 @@ public sealed class McpServer
                         cancellationToken
                     )
                     .ConfigureAwait(false),
-                "delete_suite" => new
-                {
-                    deleted = await _workspace
+                "delete_suite" => Payload(
+                    "deleted",
+                    await _workspace
                         .DeleteSuiteAsync(RequireGuid(arguments, "id"))
-                        .ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
                 "list_history" => await _workspace
                     .ListHistoryAsync(OptionalInt(arguments, "limit") ?? 20)
                     .ConfigureAwait(false),
                 "get_history" => await _workspace
                     .GetHistoryAsync(RequireDate(arguments, "timestamp"))
                     .ConfigureAwait(false),
-                "delete_history" => new
-                {
-                    deleted = await _workspace
+                "delete_history" => Payload(
+                    "deleted",
+                    await _workspace
                         .DeleteHistoryAsync(RequireDate(arguments, "timestamp"))
-                        .ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
                 "list_history_trash" => await _workspace
                     .ListHistoryTrashAsync(OptionalInt(arguments, "limit") ?? 20)
                     .ConfigureAwait(false),
-                "clear_history" => new
-                {
-                    moved = await _workspace.ClearHistoryAsync().ConfigureAwait(false),
-                },
-                "restore_history" => new
-                {
-                    restored = await _workspace
+                "clear_history" => Payload(
+                    "moved",
+                    await _workspace.ClearHistoryAsync().ConfigureAwait(false)
+                ),
+                "restore_history" => Payload(
+                    "restored",
+                    await _workspace
                         .RestoreHistoryAsync(RequireDate(arguments, "timestamp"))
-                        .ConfigureAwait(false),
-                },
-                "purge_history" => new
-                {
-                    deleted = await _workspace
+                        .ConfigureAwait(false)
+                ),
+                "purge_history" => Payload(
+                    "deleted",
+                    await _workspace
                         .PurgeHistoryAsync(RequireDate(arguments, "timestamp"))
-                        .ConfigureAwait(false),
-                },
-                "empty_history_trash" => new
-                {
-                    deleted = await _workspace.EmptyHistoryTrashAsync().ConfigureAwait(false),
-                },
-                "clear_audit" => new
-                {
-                    moved = await _workspace.ClearAuditAsync().ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
+                "empty_history_trash" => Payload(
+                    "deleted",
+                    await _workspace.EmptyHistoryTrashAsync().ConfigureAwait(false)
+                ),
+                "clear_audit" => Payload(
+                    "moved",
+                    await _workspace.ClearAuditAsync().ConfigureAwait(false)
+                ),
                 "list_audit_trash" => await _workspace
                     .ListAuditTrashAsync(OptionalInt(arguments, "limit") ?? 50)
                     .ConfigureAwait(false),
-                "restore_audit" => new
-                {
-                    restored = await _workspace
+                "restore_audit" => Payload(
+                    "restored",
+                    await _workspace
                         .RestoreAuditAsync(RequireGuid(arguments, "id"))
-                        .ConfigureAwait(false),
-                },
-                "purge_audit" => new
-                {
-                    deleted = await _workspace
+                        .ConfigureAwait(false)
+                ),
+                "purge_audit" => Payload(
+                    "deleted",
+                    await _workspace
                         .PurgeAuditAsync(RequireGuid(arguments, "id"))
-                        .ConfigureAwait(false),
-                },
-                "empty_audit_trash" => new
-                {
-                    deleted = await _workspace.EmptyAuditTrashAsync().ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
+                "empty_audit_trash" => Payload(
+                    "deleted",
+                    await _workspace.EmptyAuditTrashAsync().ConfigureAwait(false)
+                ),
                 "list_collection_trash" => await _workspace
                     .ListCollectionTrashAsync()
                     .ConfigureAwait(false),
-                "restore_collection_trash" => new
-                {
-                    restored = await _workspace
+                "restore_collection_trash" => Payload(
+                    "restored",
+                    await _workspace
                         .RestoreCollectionTrashAsync(RequireGuid(arguments, "id"))
-                        .ConfigureAwait(false),
-                },
-                "purge_collection_trash" => new
-                {
-                    deleted = await _workspace
+                        .ConfigureAwait(false)
+                ),
+                "purge_collection_trash" => Payload(
+                    "deleted",
+                    await _workspace
                         .PurgeCollectionTrashAsync(RequireGuid(arguments, "id"))
-                        .ConfigureAwait(false),
-                },
-                "empty_collection_trash" => new
-                {
-                    deleted = await _workspace.EmptyCollectionTrashAsync().ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
+                "empty_collection_trash" => Payload(
+                    "deleted",
+                    await _workspace.EmptyCollectionTrashAsync().ConfigureAwait(false)
+                ),
                 "list_environments" => await _workspace
                     .ListEnvironmentsAsync()
                     .ConfigureAwait(false),
@@ -831,24 +815,24 @@ public sealed class McpServer
                         RequireString(arguments, "name")
                     )
                     .ConfigureAwait(false),
-                "delete_environment" => new
-                {
-                    deleted = await _workspace
+                "delete_environment" => Payload(
+                    "deleted",
+                    await _workspace
                         .DeleteEnvironmentAsync(RequireGuid(arguments, "id"))
-                        .ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
                 "activate_environment" => await _workspace
                     .ActivateEnvironmentAsync(RequireGuid(arguments, "id"))
                     .ConfigureAwait(false),
-                "delete_variable" => new
-                {
-                    deleted = await _workspace
+                "delete_variable" => Payload(
+                    "deleted",
+                    await _workspace
                         .DeleteVariableAsync(
                             OptionalGuid(arguments, "environmentId"),
                             RequireString(arguments, "key")
                         )
-                        .ConfigureAwait(false),
-                },
+                        .ConfigureAwait(false)
+                ),
                 "set_variable" => await _workspace
                     .SetVariableAsync(
                         OptionalGuid(arguments, "environmentId"),
@@ -863,7 +847,11 @@ public sealed class McpServer
 
             if (payload is null)
             {
-                return ToolResult(id, new { error = "没有找到对象。" }, isError: true);
+                return ToolResult(
+                    id,
+                    new JsonObject { ["error"] = "没有找到对象。" },
+                    isError: true
+                );
             }
 
             return ToolResult(id, payload, isError: false);
@@ -871,11 +859,11 @@ public sealed class McpServer
         catch (Exception ex)
         {
             Log.Error(ex, "MCP 工具调用失败 {Tool}", name);
-            return ToolResult(id, new { error = ex.Message }, isError: true);
+            return ToolResult(id, new JsonObject { ["error"] = ex.Message }, isError: true);
         }
     }
 
-    private async Task<object> SendToolAsync(
+    private async Task<JsonObject> SendToolAsync(
         JsonObject arguments,
         McpAccessPolicy policy,
         CancellationToken cancellationToken
@@ -890,27 +878,12 @@ public sealed class McpServer
             )
             .ConfigureAwait(false);
 
-        return new
-        {
-            result.RequestId,
-            result.Name,
-            result.Method,
-            result.Url,
-            result.StatusCode,
-            result.StatusText,
-            result.Error,
-            result.ElapsedMs,
-            result.SizeBytes,
-            result.IsJson,
-            result.ContentType,
-            result.IsSse,
-            result.SseEventCount,
-            sseThinking = result.SseThinking,
-            sseContent = result.SseContent,
-            body = Truncate(result.Body, McpSendResult.BodyLimit),
-            bodyTruncated = result.BodyTruncated,
-            headers = result.Headers,
-        };
+        var payload = McpJson.ToObject(result);
+        payload["sseThinking"] = result.SseThinking;
+        payload["sseContent"] = result.SseContent;
+        payload["body"] = Truncate(result.Body, McpSendResult.BodyLimit);
+        payload["bodyTruncated"] = result.BodyTruncated;
+        return payload;
     }
 
     private async Task<object> RunSequenceToolAsync(
@@ -1081,9 +1054,22 @@ public sealed class McpServer
         return mappings;
     }
 
-    private static JsonNode ToolResult(JsonNode? id, object payload, bool isError)
+    private static JsonObject Payload(string name, object? value) =>
+        new() { [name] = PayloadValue(value) };
+
+    private static JsonNode? PayloadValue(object? value) =>
+        value switch
+        {
+            null => null,
+            bool flag => JsonValue.Create(flag),
+            int number => JsonValue.Create(number),
+            string text => JsonValue.Create(text),
+            _ => JsonNode.Parse(McpJson.Serialize(value)),
+        };
+
+    private static JsonNode ToolResult(JsonNode? id, object? payload, bool isError)
     {
-        var text = JsonSerializer.Serialize(payload, JsonOptions);
+        var text = McpJson.Serialize(payload);
         return Result(
             id,
             new JsonObject
@@ -1944,13 +1930,9 @@ public sealed class McpServer
 
         if (required.Length > 0)
         {
-            var requiredNodes = new JsonArray();
-            foreach (var name in required)
-            {
-                requiredNodes.Add(name);
-            }
-
-            schema["required"] = requiredNodes;
+            schema["required"] = new JsonArray(
+                required.Select(name => (JsonNode?)JsonValue.Create(name)).ToArray()
+            );
         }
 
         return schema;
@@ -1996,27 +1978,27 @@ public sealed class McpServer
 
     private static JsonObject StorageCategoriesSchema(string description)
     {
-        var values = new JsonArray();
-        foreach (var category in StorageCategories.All)
-        {
-            values.Add(category);
-        }
-
         return new JsonObject
         {
             ["type"] = "array",
             ["description"] = description,
-            ["items"] = new JsonObject { ["type"] = "string", ["enum"] = values },
+            ["items"] = new JsonObject
+            {
+                ["type"] = "string",
+                ["enum"] = new JsonArray(
+                    StorageCategories
+                        .All.Select(category => (JsonNode?)JsonValue.Create(category))
+                        .ToArray()
+                ),
+            },
         };
     }
 
     private static JsonObject EnumSchema(string description, params string[] values)
     {
-        var array = new JsonArray();
-        foreach (var value in values)
-        {
-            array.Add(value);
-        }
+        var array = new JsonArray(
+            values.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()
+        );
 
         return new JsonObject
         {
