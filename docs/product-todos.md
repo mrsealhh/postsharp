@@ -363,6 +363,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] `scripts/build-osx-release.ps1` 支持 `osx-arm64` / `osx-x64` 自包含包；未签名/未公证。
 - [x] Linux/macOS 包不启用 Windows 自动更新标记。
 - [x] 发布流程从 1.10.17 起同时上传 Windows / Linux x64 / macOS arm64 三类 ZIP 和 SHA256。
+- [x] 跨平台 ZIP 统一 `/` 路径、LF 启动脚本和 Unix 可执行位，避免 Windows 压缩后在 Linux/macOS 解压失败。
 - [ ] libsecret/Secret Service、macOS Keychain、AppImage/deb、签名安装器和三平台 CI 仍待完成。
 
 **目标平台**

@@ -4,6 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "zip-directory.ps1")
 
 function Remove-PlatformFolders {
     param(
@@ -70,8 +71,7 @@ if (Test-Path $zip) {
     Remove-Item $zip -Force
 }
 
-$files = Get-ChildItem $publish -Force | Select-Object -ExpandProperty FullName
-Compress-Archive -Path $files -DestinationPath $zip -Force
+New-PortableZip -SourceDirectory $publish -DestinationPath $zip
 
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -Path $checksum -Value "$hash  PostSharp-win-x64.zip" -Encoding ascii

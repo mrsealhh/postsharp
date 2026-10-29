@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "zip-directory.ps1")
 
 function Remove-PlatformFolders {
     param(
@@ -63,7 +64,7 @@ cd "$(dirname "$0")"
 chmod +x postsharp-cli
 exec ./postsharp-cli "$@"
 '@
-Set-Content -Path (Join-Path $cliPublish "run.sh") -Value $cliRunScript -Encoding ascii -NoNewline
+Set-PortableUnixScript -Path (Join-Path $cliPublish "run.sh") -Content $cliRunScript
 
 Get-ChildItem $publish -Filter *.pdb -Recurse -Force | Remove-Item -Force
 Remove-PlatformFolders (Join-Path $publish "plugins") "^(win|linux)"
@@ -75,14 +76,13 @@ cd "$(dirname "$0")"
 chmod +x PostSharp
 exec ./PostSharp "$@"
 '@
-Set-Content -Path (Join-Path $publish "run.command") -Value $runScript -Encoding ascii -NoNewline
+Set-PortableUnixScript -Path (Join-Path $publish "run.command") -Content $runScript
 
 if (Test-Path $zip) {
     Remove-Item $zip -Force
 }
 
-$files = Get-ChildItem $publish -Force | Select-Object -ExpandProperty FullName
-Compress-Archive -Path $files -DestinationPath $zip -Force
+New-PortableZip -SourceDirectory $publish -DestinationPath $zip
 
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -Path $checksum -Value "$hash  PostSharp-$RuntimeIdentifier.zip" -Encoding ascii

@@ -857,6 +857,7 @@ docs/
 | CLI 报告 | `suite run/rerun-failed/continue` 支持 `--junit`、`--markdown`、`--html`；`--version` 和帮助信息通过构建 |
 | CLI 打包 | Windows/Linux/macOS 发布脚本将 CLI 放入 `cli/`；包内 CLI `--version` 与桌面版本一致 |
 | 跨平台构建 | Linux x64 / macOS arm64 自包含包构建通过，CLI 随包；Windows 包构建和测试通过 |
+| 三平台打包 | ZIP 条目统一使用 `/`，`run.sh` / `run.command` 为 LF 并带 `0100755` 可执行位；三个包均包含 `cli/`，无 PDB 和用户数据 |
 | Cookie 管理 | 顶栏 Cookie 入口可打开；空状态、刷新、清空按钮可见；Cookie 容器读取与按站点清除单测通过 |
 | 机密变量落盘 | 机密环境变量在 Capture 后为 DPAPI/AES-GCM 密文，ToEnvironmentModel 可还原原值；旧明文读取保持兼容（单测） |
 | 机密落盘复测 | MCP `set_variable secret=true` 后停止应用，在 `postsharp.db`、WAL 与日志中搜索示例令牌均无明文；工作区只保留 `dpapi:v1:` 密文 |
