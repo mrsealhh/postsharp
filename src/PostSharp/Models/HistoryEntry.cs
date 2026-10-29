@@ -23,6 +23,8 @@ public sealed partial class HistoryEntry : ObservableObject
 
     public int TimeoutSeconds { get; init; }
 
+    public bool FollowRedirects { get; init; } = true;
+
     public string BodyMode { get; init; } = "None";
 
     public string Body { get; init; } = string.Empty;
@@ -87,6 +89,7 @@ public sealed partial class HistoryEntry : ObservableObject
             Method = Method,
             Url = Url,
             TimeoutSeconds = TimeoutSeconds,
+            FollowRedirects = FollowRedirects,
             BodyMode = BodyMode,
             Body = Body,
         };

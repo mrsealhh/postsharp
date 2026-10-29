@@ -645,6 +645,7 @@ public sealed class WorkspaceStore
             Method = string.IsNullOrWhiteSpace(dto.Method) ? "GET" : dto.Method,
             Url = dto.Url,
             TimeoutSeconds = dto.TimeoutSeconds,
+            FollowRedirects = dto.FollowRedirects,
             BodyMode = dto.BodyMode,
             Body = dto.Body,
             UploadFilePath = dto.UploadFiles.Count == 0 ? dto.UploadFilePath : string.Empty,
@@ -713,6 +714,7 @@ public sealed class WorkspaceStore
             Method = dto.Method,
             Url = dto.Url,
             TimeoutSeconds = dto.TimeoutSeconds,
+            FollowRedirects = dto.FollowRedirects,
             BodyMode = dto.BodyMode,
             Body = HistoryEntry.LimitBody(dto.Body),
             StatusCode = dto.StatusCode,
@@ -731,6 +733,7 @@ public sealed class WorkspaceStore
             Method = entry.Method,
             Url = entry.Url,
             TimeoutSeconds = entry.TimeoutSeconds,
+            FollowRedirects = entry.FollowRedirects,
             BodyMode = entry.BodyMode,
             Body = HistoryEntry.LimitBody(entry.Body),
             StatusCode = entry.StatusCode,
@@ -749,6 +752,7 @@ public sealed class WorkspaceStore
             Method = request.Method,
             Url = request.Url,
             TimeoutSeconds = request.TimeoutSeconds,
+            FollowRedirects = request.FollowRedirects,
             BodyMode = request.BodyMode,
             Body = request.Body,
             UploadFilePath = request.UploadFilePath,
@@ -890,6 +894,8 @@ public sealed class RequestDto
 
     public int TimeoutSeconds { get; set; }
 
+    public bool FollowRedirects { get; set; } = true;
+
     public string BodyMode { get; set; } = "None";
 
     public string Body { get; set; } = string.Empty;
@@ -966,6 +972,8 @@ public sealed class HistoryDto
     public string Url { get; set; } = string.Empty;
 
     public int TimeoutSeconds { get; set; }
+
+    public bool FollowRedirects { get; set; } = true;
 
     public string BodyMode { get; set; } = "None";
 

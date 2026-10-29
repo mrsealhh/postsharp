@@ -1182,6 +1182,17 @@
                                             ToolTip.Tip="本请求超时秒数；0 表示跟随设置中的全局超时"
                                             AutomationProperties.Name="请求超时（秒，0 跟随全局）"
                                         />
+                                        <TextBlock
+                                            Text="重定向"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                            VerticalAlignment="Center"
+                                        />
+                                        <arc:Switch
+                                            IsChecked="{Binding Editing.FollowRedirects, Mode=TwoWay}"
+                                            ToolTip.Tip="跟随 3xx 重定向（最多 10 次）；关闭后直接显示 3xx 响应"
+                                            AutomationProperties.Name="跟随重定向"
+                                        />
                                     </StackPanel>
                                     <StackPanel
                                         Grid.Column="3"

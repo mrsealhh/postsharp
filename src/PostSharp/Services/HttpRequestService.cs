@@ -48,8 +48,12 @@ public sealed class HttpRequestService
     private const long MaxResponseBytes = 8 * 1024 * 1024;
 
     private static readonly HttpClient SharedClient = CreateClient();
+    private static readonly HttpClient SharedNoRedirectClient = CreateClient(
+        allowAutoRedirect: false
+    );
 
     private readonly HttpClient _client;
+    private readonly HttpClient _noRedirectClient;
 
     public HttpRequestService()
         : this(null) { }
@@ -57,6 +61,7 @@ public sealed class HttpRequestService
     public HttpRequestService(HttpClient? client)
     {
         _client = client ?? SharedClient;
+        _noRedirectClient = client ?? SharedNoRedirectClient;
     }
 
     private static readonly JsonSerializerOptions PrettyJson = new()
@@ -246,7 +251,8 @@ public sealed class HttpRequestService
                 timeout.Token
             );
 
-            using var response = await _client
+            var client = composed.FollowRedirects ? _client : _noRedirectClient;
+            using var response = await client
                 .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, linked.Token)
                 .ConfigureAwait(false);
 
@@ -358,8 +364,11 @@ public sealed class HttpRequestService
             Error: message
         );
 
-    private static HttpClient CreateClient() =>
-        new(SessionCookieJar.CreateHandler()) { Timeout = Timeout.InfiniteTimeSpan };
+    private static HttpClient CreateClient(bool allowAutoRedirect = true) =>
+        new(SessionCookieJar.CreateHandler(allowAutoRedirect))
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
 
     private static string GuessContentType(string path)
     {

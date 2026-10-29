@@ -86,6 +86,27 @@ public sealed class AuthorizationService
         Apply(profile, tokens);
     }
 
+    public async Task AcquireClientCredentialsAsync(
+        AuthorizationProfile profile,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var endpoints = await _oidc
+            .DiscoverAsync(profile.DiscoveryUrl, cancellationToken)
+            .ConfigureAwait(false);
+        var tokens = await _oidc
+            .AcquireClientCredentialsAsync(
+                endpoints.TokenEndpoint,
+                profile.ClientId.Trim(),
+                profile.ClientSecret,
+                profile.Scopes,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        Apply(profile, tokens);
+    }
+
     /// <summary>
     /// 发送前调用：令牌过期且有 refresh_token 时先刷新。返回 false 表示这次请求没有可用的访问令牌。
     /// </summary>
@@ -94,6 +115,37 @@ public sealed class AuthorizationService
         CancellationToken cancellationToken = default
     )
     {
+        if (profile.IsClientCredentials)
+        {
+            if (profile.IsUsable)
+            {
+                return true;
+            }
+
+            await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (profile.IsUsable)
+                {
+                    return true;
+                }
+
+                await AcquireClientCredentialsAsync(profile, cancellationToken)
+                    .ConfigureAwait(false);
+                Log.Information("客户端凭据令牌已获取 {ExpiresAt}", profile.ExpiresAt);
+                return true;
+            }
+            catch (OidcException exception)
+            {
+                Log.Warning(exception, "客户端凭据令牌获取失败");
+                return false;
+            }
+            finally
+            {
+                _refreshGate.Release();
+            }
+        }
+
         if (!profile.HasAccessToken)
         {
             return false;

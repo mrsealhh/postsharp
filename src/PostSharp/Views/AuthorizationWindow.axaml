@@ -193,6 +193,20 @@
                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                         TextWrapping="Wrap"
                                     />
+                                    <arc:Select
+                                        Label="授权方式"
+                                        SelectedValue="{Binding Profile.GrantType, Mode=TwoWay}"
+                                        AutomationProperties.Name="授权方式"
+                                    >
+                                        <arc:SelectItem
+                                            Content="授权码 + PKCE（浏览器）"
+                                            Value="AuthorizationCode"
+                                        />
+                                        <arc:SelectItem
+                                            Content="客户端凭据（无浏览器）"
+                                            Value="ClientCredentials"
+                                        />
+                                    </arc:Select>
                                     <arc:Input
                                         x:Name="DiscoveryInput"
                                         Label="发现地址"
@@ -212,19 +226,20 @@
                                         Text="{Binding Profile.RedirectUri, Mode=TwoWay}"
                                         Placeholder="http://127.0.0.1:53682/callback"
                                         Description="{Binding RedirectHint}"
+                                        IsVisible="{Binding !Profile.IsClientCredentials}"
                                         AutomationProperties.Name="重定向地址"
                                     />
                                     <arc:Input
                                         Label="授权范围"
                                         Text="{Binding Profile.Scopes, Mode=TwoWay}"
                                         Placeholder="openid profile offline_access"
-                                        Description="空格分隔，例如 openid profile offline_access。"
+                                        Description="空格分隔，例如 openid profile offline_access；客户端凭据模式可留空。"
                                         AutomationProperties.Name="授权范围"
                                     />
                                     <arc:Input
                                         Label="客户端密钥"
                                         Text="{Binding Profile.ClientSecret, Mode=TwoWay}"
-                                        Description="公共客户端留空；机密客户端才需要填写。"
+                                        Description="授权码公共客户端可留空；客户端凭据模式必填。"
                                         AutomationProperties.Name="客户端密钥"
                                     />
                                 </StackPanel>
@@ -240,11 +255,11 @@
                                     />
                                     <WrapPanel ItemSpacing="8" LineSpacing="8">
                                         <arc:Button
-                                            Content="登录"
+                                            Content="{Binding SignInButtonText}"
                                             Variant="Primary"
                                             Click="OnSignInClick"
                                             IsEnabled="{Binding CanSignIn}"
-                                            AutomationProperties.Name="登录"
+                                            AutomationProperties.Name="登录或获取令牌"
                                         />
                                         <arc:Button
                                             Content="取消登录"
@@ -419,12 +434,12 @@
                                                 TextAlignment="Center"
                                             />
                                             <arc:Button
-                                                Content="登录"
+                                                Content="{Binding SignInButtonText}"
                                                 Variant="Primary"
                                                 HorizontalAlignment="Center"
                                                 Click="OnSignInClick"
                                                 IsEnabled="{Binding CanSignIn}"
-                                                AutomationProperties.Name="登录"
+                                                AutomationProperties.Name="登录或获取令牌"
                                             />
                                         </StackPanel>
                                     </Border>

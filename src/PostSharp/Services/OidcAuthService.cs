@@ -52,7 +52,17 @@ public sealed class OidcAuthService
     private const int TokenTimeoutSeconds = 30;
     private const int ExpirySkewSeconds = 30;
 
-    private static readonly HttpClient Client = CreateClient();
+    private static readonly HttpClient SharedClient = CreateClient();
+
+    private readonly HttpClient _client;
+
+    public OidcAuthService()
+        : this(null) { }
+
+    public OidcAuthService(HttpClient? client)
+    {
+        _client = client ?? SharedClient;
+    }
 
     public async Task<OidcEndpoints> DiscoverAsync(
         string discoveryUrl,
@@ -227,6 +237,37 @@ public sealed class OidcAuthService
             .ConfigureAwait(false);
     }
 
+    /// <summary>OAuth 2.0 客户端凭据流程；不需要浏览器和回调地址。</summary>
+    public async Task<OidcTokenSet> AcquireClientCredentialsAsync(
+        Uri tokenEndpoint,
+        string clientId,
+        string clientSecret,
+        string scopes,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var form = new Dictionary<string, string>
+        {
+            ["grant_type"] = "client_credentials",
+            ["client_id"] = clientId,
+            ["client_secret"] = clientSecret,
+        };
+
+        if (!string.IsNullOrWhiteSpace(scopes))
+        {
+            form["scope"] = scopes.Trim();
+        }
+
+        return await PostTokenAsync(
+                tokenEndpoint,
+                form,
+                string.Empty,
+                string.Empty,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
     /// <summary>判断地址是否是本次授权的回调，并取出 code / error / state。</summary>
     public static bool TryMatchCallback(Uri callback, string redirectUri, out OidcCallback result)
     {
@@ -287,7 +328,7 @@ public sealed class OidcAuthService
         return values;
     }
 
-    private static async Task<OidcTokenSet> PostTokenAsync(
+    private async Task<OidcTokenSet> PostTokenAsync(
         Uri tokenEndpoint,
         Dictionary<string, string> form,
         string previousRefreshToken,
@@ -308,7 +349,7 @@ public sealed class OidcAuthService
             };
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            response = await Client.SendAsync(request, timeout.Token).ConfigureAwait(false);
+            response = await _client.SendAsync(request, timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -424,7 +465,7 @@ public sealed class OidcAuthService
         return new OidcException(message) { ErrorCode = error };
     }
 
-    private static async Task<string> GetStringAsync(Uri uri, CancellationToken cancellationToken)
+    private async Task<string> GetStringAsync(Uri uri, CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(DiscoveryTimeoutSeconds));
@@ -433,7 +474,7 @@ public sealed class OidcAuthService
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            using var response = await Client
+            using var response = await _client
                 .SendAsync(request, timeout.Token)
                 .ConfigureAwait(false);
 

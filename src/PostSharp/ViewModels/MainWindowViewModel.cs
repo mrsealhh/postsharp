@@ -6945,6 +6945,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Method = request.Method,
             Url = SecretMasker.MaskSecrets(request.Url, secrets),
             TimeoutSeconds = request.TimeoutSeconds,
+            FollowRedirects = request.FollowRedirects,
             BodyMode = request.BodyMode,
             Body = HistoryEntry.LimitBody(SecretMasker.MaskSecrets(request.Body, secrets)),
             StatusCode = result.StatusCode,

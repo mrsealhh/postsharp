@@ -166,9 +166,11 @@ public sealed partial class RequestAuth : ObservableObject
     public string OAuthStatusText =>
         OAuth2 is not { } profile ? "未配置 OAuth 2.0"
         : profile.IsUsable
-            ? string.IsNullOrWhiteSpace(profile.SignedInAs) ? "已登录"
+            ? profile.IsClientCredentials ? "已获取客户端凭据令牌"
+                : string.IsNullOrWhiteSpace(profile.SignedInAs) ? "已登录"
                 : $"已登录：{profile.SignedInAs}"
         : profile.HasAccessToken ? "令牌已过期"
+        : profile.IsClientCredentials ? "未获取令牌"
         : "未登录";
 
     public string OAuthExpiresText =>

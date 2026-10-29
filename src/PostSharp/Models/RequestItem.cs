@@ -79,6 +79,10 @@ public partial class RequestItem : ObservableObject
     [ObservableProperty]
     private int _timeoutSeconds;
 
+    /// <summary>When false, a 3xx response is returned as-is instead of being followed automatically.</summary>
+    [ObservableProperty]
+    private bool _followRedirects = true;
+
     /// <summary>None, Json or Text.</summary>
     [ObservableProperty]
     private string _bodyMode = "None";
@@ -184,6 +188,7 @@ public partial class RequestItem : ObservableObject
             Method = Method,
             Url = Url,
             TimeoutSeconds = TimeoutSeconds,
+            FollowRedirects = FollowRedirects,
             BodyMode = BodyMode,
             Body = Body,
             Owner = Owner,

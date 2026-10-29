@@ -2,7 +2,7 @@
 
 > 基线版本：v1.10.13（2026-10-28）
 > 基线形态：当前发布 Windows x64 便携包，.NET 10，Avalonia 12.1.4，TKCode.Arc 0.3.1-preview.3
-> 基线测试：187 个 xUnit 测试，`csharpier check .` 通过
+> 基线测试：192 个 xUnit 测试，`csharpier check .` 通过
 > 线上版本：https://github.com/mrsealhh/postsharp/releases/tag/v1.2.0
 > 平台策略：**共享核心按跨平台设计；Windows 专属能力隔离为可关闭 feature；Linux/macOS 实施统一列入 P2-02，后续排期。**
 > 文档性质：产品待办与技术交接，不是已承诺的版本计划；P0 先做，P1/P2 由产品负责人确认后再排期。
@@ -77,9 +77,9 @@
 
 ### 2.1 已具备能力
 
-- 请求编辑：参数、请求头、Cookie 参数占位、JSON/XML/Text/Multipart、上传、超时、cURL 预览。
+- 请求编辑：参数、请求头、Cookie 管理、JSON/XML/Text/Multipart、上传、超时、请求级重定向开关、cURL 预览。
 - 响应处理：JSON 树、原文、响应头、AI SSE 聚合、大响应折叠、搜索和复制。
-- 授权：Bearer、Basic、API Key、OAuth 2.0 授权码 + PKCE、集合级继承、请求级覆盖。
+- 授权：Bearer、Basic、API Key、OAuth 2.0 授权码 + PKCE / 客户端凭据、集合级继承、请求级覆盖。
 - 导入导出：OpenAPI / Swagger、Postman、HAR、cURL、PowerShell、Insomnia V4、Hoppscotch、Postman Environment。
 - OpenAPI：离线接口文档、URL 同步、外部 `$ref`、多服务器、安全方案占位、调用代码导出。
 - 存储：本地 SQLite 兜底；远程 PostgreSQL / MySQL / SQL Server / MongoDB 默认插件；ClickHouse / Doris / StarRocks 可选插件；连接失败暂停远程回写。
@@ -94,7 +94,7 @@
 | 主工程 | `src/PostSharp`，单一桌面应用 |
 | 存储契约 | `src/PostSharp.Storage.Abstractions` |
 | 插件源码 | `src/Plugins/PostSharp.Storage.*` |
-| 测试 | `tests/PostSharp.Tests`，30 个测试文件，187 个用例 |
+| 测试 | `tests/PostSharp.Tests`，30 个测试文件，192 个用例 |
 | 发布 | `scripts/build-release.ps1` + 手动创建 GitHub Release |
 | 数据目录 | `<项目目录>\.postsharp`，不可写时回退 `%APPDATA%\PostSharp` |
 | 远程插件目录 | `<数据目录>\plugins` 或 `<安装目录>\plugins` |
@@ -319,8 +319,8 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | ID | TODO | 当前问题/范围 | 验收标准 | 规模 |
 | --- | --- | --- | --- | --- |
 | P1-01 | OpenAPI 完整性 | 操作数量与文档截断上限已取消；Webhook/callback、运行时响应校验、3.1/JSON Schema 2020-12 未完成；安全方案目前多为占位 | 支持 3.1 常用 schema；Webhook/callback 给出可操作提示；同步差异可预览/撤销；运行时校验可开关并记录失败原因 | L |
-| P1-02 | HTTP 传输能力 | 已支持 Cookie 查看/按站点清空；仍无跨重启持久化、代理、客户端证书、重定向策略、重试/退避、HTTP/2 开关；下载大文件能力有限 | 每个请求可配置代理/证书/重定向；Cookie 可查看/清除/持久化；失败可重试并保留审计；流式下载可取消 | L |
-| P1-03 | 授权补全 | 仅 OAuth 2.0 授权码 + PKCE；无客户端凭据、设备码、隐式、工作区级/环境级默认授权 | 至少补客户端凭据和设备码；授权默认值层级明确；刷新并发只更新一次；令牌过期/撤销有清晰提示 | M/L |
+| P1-02 | HTTP 传输能力 | 已支持 Cookie 查看/按站点清空和请求级重定向开关；仍无跨重启持久化、代理、客户端证书、重试/退避、HTTP/2 开关；下载大文件能力有限 | 每个请求可配置代理/证书/重定向；Cookie 可查看/清除/持久化；失败可重试并保留审计；流式下载可取消 | L |
+| P1-03 | 授权补全 | 已支持 OAuth 2.0 授权码 + PKCE 和客户端凭据；无设备码、隐式、密码模式、工作区级/环境级默认授权 | 补设备码和隐式；授权默认值层级明确；刷新并发只更新一次；令牌过期/撤销有清晰提示 | M/L |
 | P1-04 | 导入导出补全 | Apifox 原生格式未适配；Insomnia v5、Hoppscotch 环境、Postman 脚本/测试、HAR 响应体、部分认证不完整 | 有样本才实现，不无样本逆向；导入前预览统计；不支持的字段逐项提示；导出后可回导 | M/L |
 | P1-05 | Multipart 大文件 | 已支持多文件、64KB 流式、进度和取消；无断点续传、分片协议、超大文件预检 | 可配置分片/重试；磁盘空间与文件大小预检；取消后清理临时文件；断点恢复有明确限制 | M |
 | P1-06 | 套件与无人值守 | 已支持依赖 DAG、条件分支、All/Any 汇合、结构化条件表达式、最大并行和统一执行器；无循环/任意跳转、数据驱动；CLI 已支持 JUnit/Markdown/HTML 报告；定时仍依赖应用常开 | 支持 CSV/JSON 数据驱动；定时不依赖主窗口 | XL |
@@ -362,6 +362,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] `scripts/build-linux-release.ps1` 生成 `linux-x64` 自包含预览包；包内不含 WebView 运行时。
 - [x] `scripts/build-osx-release.ps1` 支持 `osx-arm64` / `osx-x64` 自包含包；未签名/未公证。
 - [x] Linux/macOS 包不启用 Windows 自动更新标记。
+- [x] 发布流程从 1.10.17 起同时上传 Windows / Linux x64 / macOS arm64 三类 ZIP 和 SHA256。
 - [ ] libsecret/Secret Service、macOS Keychain、AppImage/deb、签名安装器和三平台 CI 仍待完成。
 
 **目标平台**

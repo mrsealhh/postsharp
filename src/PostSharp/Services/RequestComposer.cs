@@ -14,7 +14,8 @@ public sealed record ComposedRequest(
     IReadOnlyList<KeyValuePair<string, string>>? FormFields = null,
     string? UploadFilePath = null,
     string? UploadFieldName = null,
-    IReadOnlyList<ComposedUploadFile>? UploadFiles = null
+    IReadOnlyList<ComposedUploadFile>? UploadFiles = null,
+    bool FollowRedirects = true
 );
 
 public sealed record ComposedUploadFile(string FieldName, string FilePath);
@@ -158,7 +159,8 @@ public static class RequestComposer
             formFields,
             uploadFilePath,
             uploadFieldName,
-            uploadFiles
+            uploadFiles,
+            request.FollowRedirects
         );
     }
 
