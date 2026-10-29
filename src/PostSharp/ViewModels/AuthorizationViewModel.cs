@@ -49,6 +49,10 @@ public sealed partial class AuthorizationViewModel : ObservableObject
 
     public string WindowTitle => $"授权配置 · {TargetLabel} · PostSharp";
 
+    public bool IsClientCredentials => Profile.IsClientCredentials;
+
+    public string SignInButtonText => IsClientCredentials ? "获取令牌" : "登录";
+
     public string AttachDescription =>
         Auth.Target == AuthKinds.InQuery
             ? "登录后把令牌作为查询参数 access_token 附加到使用这份配置的请求。"
@@ -95,12 +99,16 @@ public sealed partial class AuthorizationViewModel : ObservableObject
     public bool CanSignIn => !IsBusy && !IsSigningIn;
 
     public bool IsManualCallbackAvailable =>
-        IsSigningIn && !LoopbackRedirectListener.IsLoopbackRedirect(Profile.RedirectUri);
+        !Profile.IsClientCredentials
+        && IsSigningIn
+        && !LoopbackRedirectListener.IsLoopbackRedirect(Profile.RedirectUri);
 
     public string LoginHint =>
-        LoopbackRedirectListener.IsLoopbackRedirect(Profile.RedirectUri)
+        Profile.IsClientCredentials
+            ? "客户端凭据模式直接用客户端 ID 和密钥向令牌端点申请令牌，不需要浏览器或回调地址。"
+        : LoopbackRedirectListener.IsLoopbackRedirect(Profile.RedirectUri)
             ? "登录会打开系统默认浏览器；授权完成后浏览器重定向到本机回环地址，PostSharp 接收授权码并换取令牌。"
-            : "登录会打开系统默认浏览器；当前回调地址不是本机回环地址，请把浏览器地址栏里的完整回调地址粘贴到下方完成登录。";
+        : "登录会打开系统默认浏览器；当前回调地址不是本机回环地址，请把浏览器地址栏里的完整回调地址粘贴到下方完成登录。";
 
     public string RedirectHint =>
         $"当前请求使用：{Profile.RedirectUri}。必须与 IdP 登记值完全一致；本机回环地址可自动回调，其他地址请手动粘贴回调链接。";
@@ -120,6 +128,12 @@ public sealed partial class AuthorizationViewModel : ObservableObject
         if (problem is not null)
         {
             SetError(problem);
+            return null;
+        }
+
+        if (Profile.IsClientCredentials)
+        {
+            await AcquireClientCredentialsAsync(cancellationToken);
             return null;
         }
 
@@ -177,6 +191,46 @@ public sealed partial class AuthorizationViewModel : ObservableObject
             _expectedState,
             pkce.Challenge
         );
+    }
+
+    private async Task AcquireClientCredentialsAsync(CancellationToken cancellationToken)
+    {
+        IsBusy = true;
+        HasError = false;
+        ErrorText = string.Empty;
+        StatusTitle = "正在获取令牌";
+        StatusDetail = "正在向令牌端点申请客户端凭据访问令牌。";
+        StatusTone = BadgeTone.Warning;
+
+        var succeeded = false;
+        try
+        {
+            await _authorization.AcquireClientCredentialsAsync(Profile, cancellationToken);
+            succeeded = true;
+        }
+        catch (OidcException exception)
+        {
+            SetError(exception.Message);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusTitle = "已取消";
+            StatusDetail = "本次获取令牌已取消，可以重新点击「获取令牌」。";
+            StatusTone = BadgeTone.Neutral;
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "获取客户端凭据令牌失败");
+            SetError("获取令牌时出现意外错误，请检查配置后重试。");
+        }
+        finally
+        {
+            IsBusy = false;
+            if (succeeded)
+            {
+                RefreshStatus();
+            }
+        }
     }
 
     /// <summary>浏览器重定向到回调地址时调用：校验 state 后换取令牌。</summary>
@@ -261,6 +315,12 @@ public sealed partial class AuthorizationViewModel : ObservableObject
     /// <summary>用 refresh_token 立即换一枚新令牌。</summary>
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
+        if (Profile.IsClientCredentials)
+        {
+            await AcquireClientCredentialsAsync(cancellationToken);
+            return;
+        }
+
         if (!Profile.CanRefresh)
         {
             SetError("没有 refresh_token，无法刷新，请重新登录。");
@@ -362,6 +422,18 @@ public sealed partial class AuthorizationViewModel : ObservableObject
 
     private void OnProfileChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(AuthorizationProfile.GrantType))
+        {
+            Profile.ClearTokens();
+            OnPropertyChanged(nameof(IsClientCredentials));
+            OnPropertyChanged(nameof(SignInButtonText));
+            OnPropertyChanged(nameof(LoginHint));
+            OnPropertyChanged(nameof(IsManualCallbackAvailable));
+            OnPropertyChanged(nameof(AttachDescription));
+            RefreshStatus();
+            return;
+        }
+
         if (e.PropertyName == nameof(AuthorizationProfile.RedirectUri))
         {
             OnPropertyChanged(nameof(LoginHint));
@@ -415,14 +487,18 @@ public sealed partial class AuthorizationViewModel : ObservableObject
         if (Profile.IsUsable)
         {
             IsSignedIn = true;
-            StatusTitle = "已登录";
-            StatusDetail = string.IsNullOrWhiteSpace(Profile.SignedInAs)
-                ? $"访问令牌在 {ExpiresAtText} 前有效；{AttachDescription}"
+            StatusTitle = Profile.IsClientCredentials ? "已获取令牌" : "已登录";
+            StatusDetail =
+                Profile.IsClientCredentials
+                    ? $"客户端凭据令牌在 {ExpiresAtText} 前有效；{AttachDescription}"
+                : string.IsNullOrWhiteSpace(Profile.SignedInAs)
+                    ? $"访问令牌在 {ExpiresAtText} 前有效；{AttachDescription}"
                 : $"{Profile.SignedInAs} · 访问令牌在 {ExpiresAtText} 前有效。";
             StatusTone = BadgeTone.Success;
-            BrowserPlaceholderTitle = "已登录";
-            BrowserPlaceholderDetail =
-                "授权已完成，可以关闭本窗口回到主界面；需要切换账号时重新点击「登录」。";
+            BrowserPlaceholderTitle = Profile.IsClientCredentials ? "客户端凭据已就绪" : "已登录";
+            BrowserPlaceholderDetail = Profile.IsClientCredentials
+                ? "令牌会自动附加到使用本配置的请求；过期后发送请求时会自动重新申请。"
+                : "授权已完成，可以关闭本窗口回到主界面；需要切换账号时重新点击「登录」。";
             return;
         }
 
@@ -430,18 +506,24 @@ public sealed partial class AuthorizationViewModel : ObservableObject
         if (Profile.HasAccessToken)
         {
             StatusTitle = "令牌已过期";
-            StatusDetail = "访问令牌已过期，点击「刷新令牌」或重新登录。";
+            StatusDetail = Profile.IsClientCredentials
+                ? "客户端凭据令牌已过期，点击「刷新令牌」重新申请。"
+                : "访问令牌已过期，点击「刷新令牌」或重新登录。";
             StatusTone = BadgeTone.Warning;
             BrowserPlaceholderTitle = "令牌已过期";
-            BrowserPlaceholderDetail = "点击「刷新令牌」用 refresh_token 换新令牌，或重新登录。";
+            BrowserPlaceholderDetail = Profile.IsClientCredentials
+                ? "点击「刷新令牌」重新向令牌端点申请客户端凭据令牌。"
+                : "点击「刷新令牌」用 refresh_token 换新令牌，或重新登录。";
             return;
         }
 
-        StatusTitle = "尚未登录";
+        StatusTitle = Profile.IsClientCredentials ? "尚未获取令牌" : "尚未登录";
         StatusDetail = $"{LoginHint}{AttachDescription}";
         StatusTone = BadgeTone.Neutral;
-        BrowserPlaceholderTitle = "系统浏览器登录";
-        BrowserPlaceholderDetail = "点击「登录」后会打开系统默认浏览器；授权完成后会回到本窗口。";
+        BrowserPlaceholderTitle = Profile.IsClientCredentials ? "客户端凭据" : "系统浏览器登录";
+        BrowserPlaceholderDetail = Profile.IsClientCredentials
+            ? "填写客户端 ID 和密钥后点击「获取令牌」；不需要浏览器，也不会打开回调窗口。"
+            : "点击「登录」后会打开系统默认浏览器；授权完成后会回到本窗口。";
     }
 
     private void ResetPending()
@@ -455,11 +537,14 @@ public sealed partial class AuthorizationViewModel : ObservableObject
     {
         HasError = true;
         ErrorText = message;
-        StatusTitle = "登录失败";
-        StatusDetail = "上一次授权没有完成，按下方提示处理后可以重试。";
+        var clientCredentials = Profile.IsClientCredentials;
+        StatusTitle = clientCredentials ? "获取令牌失败" : "登录失败";
+        StatusDetail = "上一次操作没有完成，按下方提示处理后可以重试。";
         StatusTone = BadgeTone.Danger;
-        BrowserPlaceholderTitle = "登录未完成";
-        BrowserPlaceholderDetail = "按左侧错误提示处理后，重新点击「登录」。";
+        BrowserPlaceholderTitle = clientCredentials ? "获取令牌未完成" : "登录未完成";
+        BrowserPlaceholderDetail = clientCredentials
+            ? "按左侧错误提示处理后，重新点击「获取令牌」。"
+            : "按左侧错误提示处理后，重新点击「登录」。";
         Log.Warning("授权流程失败：{Message}", message);
     }
 }

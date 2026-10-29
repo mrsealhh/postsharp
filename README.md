@@ -57,6 +57,7 @@ PostSharp 的定位是：
 - **方法**：GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS。
 - **请求头**：键值表、常用头一键插入、重复头提示、环境变量。
 - **Cookie 管理**：顶栏 Cookie 按钮查看当前请求站点在本次运行中捕获的 Cookie，显示名称、值、作用域、过期时间和 Secure / HttpOnly 标记；支持刷新与清空当前站点。Cookie 只保存在进程内存，不写入工作区、审计或发布包。
+- **重定向策略**：每个请求可切换是否跟随 3xx 重定向；关闭后直接展示 3xx 状态、响应头和 `Location`，便于调试登录跳转与网关转发。策略随请求和历史记录持久化。
 
 ![Cookie 管理](docs/cookie-manager.png)
 - **请求体**：无 / JSON / 文本 / 表单上传。
@@ -100,7 +101,9 @@ PostSharp 的定位是：
 - **作用域跟着树选中对象走**：选中请求时，「授权」标签页编辑该请求；选中集合时，同一处改为编辑该集合自己的配置，不会再落到上一次打开的请求上。切换集合或请求会立即换成对应的一份配置，上一份的令牌与登录状态不会带过来。
 - **逐级覆盖**：请求或子集合可以单独选择「无认证」或换成另一套凭据，只影响自己和它的下级。
 - **认证类型**：继承上级集合 / 无认证 / Bearer 令牌 / Basic 认证 / API Key（请求头或查询参数）/ OAuth 2.0。
-- **OAuth 2.0（OIDC）**：授权码 + S256 PKCE，读取 `.well-known/openid-configuration` 自动发现授权与令牌端点。默认使用系统默认浏览器：桌面端在 `127.0.0.1` 启动临时回环监听，浏览器授权后重定向到 `http://127.0.0.1:端口/callback`，PostSharp 接收授权码并换取令牌；回调的 `state` 校验通过后才使用。若授权服务器只允许 https 回调，浏览器无法直接回到本机，可把地址栏里的完整回调地址粘贴到授权窗口完成登录。回调页不会把 token 交给浏览器。访问令牌过期前自动用 refresh_token 续期。
+- **OAuth 2.0（OIDC）**：支持「授权码 + S256 PKCE」和「客户端凭据」两种方式，读取 `.well-known/openid-configuration` 自动发现授权与令牌端点。
+  - 授权码模式使用系统默认浏览器：桌面端在 `127.0.0.1` 启动临时回环监听，浏览器授权后重定向到 `http://127.0.0.1:端口/callback`，PostSharp 接收授权码并换取令牌；回调的 `state` 校验通过后才使用。若授权服务器只允许 https 回调，浏览器无法直接回到本机，可把地址栏里的完整回调地址粘贴到授权窗口完成登录。回调页不会把 token 交给浏览器。访问令牌过期前自动用 refresh_token 续期。
+  - 客户端凭据模式不需要浏览器和回调地址；填写客户端 ID、密钥和可选授权范围后点击「获取令牌」，发送请求时如果令牌缺失或过期会自动重新申请。
 - **新配置默认值**：OAuth 2.0 的重定向地址默认 `http://127.0.0.1:53682/callback`，发现地址和客户端 ID 留空，输入框只显示灰色示例；授权范围默认 `openid profile offline_access`。授权服务器登记的回调地址必须与这里完全一致；系统浏览器模式只接受 `http` 本机回环地址。
 - **附加位置**：请求头（`Authorization: Bearer …`）或查询参数（`access_token=…`）；请求里已经手写的同名请求头优先，不会被覆盖。
 - **全链路一致**：界面发送、cURL 预览、MCP `send_request` / `get_curl`、自动化套件使用同一套解析结果。
@@ -761,10 +764,10 @@ docs/
 | 套件预检 | 缺失请求、环、悬空节点/连线、无效映射/条件/断言和环境变量会阻止保存或运行；编辑器按节点列出问题并支持定位，管理层持续展示提醒 |
 | 运行历史 | 每个套件持久化最近 20 次运行摘要、步骤结果、节点/连线快照；自动化页可切换历史，重启后保留 |
 | 失败重跑 | 失败运行可只重跑失败步骤及依赖；每个步骤结果提供「从此步继续」，自动补跑上游依赖 |
-| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；187 个测试全部通过 |
-| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、187 个测试通过 |
+| 稳定性测试 | 新增预检、环/悬空边、映射上游、重跑计划、历史 DTO 往返和调度快照测试；192 个测试全部通过 |
+| MCP 套件更新 | `update_suite` 替换步骤后重建线性工作流，旧节点不再导致预检失败；修复后构建 0 警告/错误、192 个测试通过 |
 | MCP DAG | `create_suite` / `update_suite` 接受 `workflow.nodes`、`workflow.edges`，支持边条件、All/Any 汇合和最大并行度；构建 0 警告/错误 |
-| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；187 个测试通过 |
+| MCP 运行历史 | 新增 `list_suite_runs`、`get_suite_run`、`rerun_failed_suite`、`continue_suite_from_step`；运行结果带稳定运行 id；192 个测试通过 |
 | MCP 单条清理 | 新增 `get_history`、`delete_history`、`delete_audit`，审计/历史单条移入回收站可恢复 |
 | MCP 后台运行 | 新增 `start_suite_run` / `get_suite_run_job` / `cancel_suite_run`；任务返回节点/连线实时进度和最终运行 id，退出应用后任务不保留 |
 | MCP 预检 | 新增 `validate_suite`，返回 `code`、`severity`、`stepId`、`stepName`、`message`、`hint`；后台任务预检失败也会带回结构化问题 |
@@ -835,7 +838,7 @@ docs/
 | 单实例 | 第二次启动立即退出，系统中始终只有 1 个 PostSharp 进程 |
 | 导入框架 | 导入状态、命令和反馈拆分到 `ImportViewModel`，工作区写入通过 `IImportHost` 边界完成；批量解析通过 `IImportProvider` 注册表分发；来源切换、粘贴导入和批量导入行为保持 |
 | 导入导出 UI | 「导入 / 导出」对话框宽 720–900 DIP；来源卡片可收起，批量入口、粘贴区、可折叠结果/提示区在 125% 缩放下不重叠 |
-| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：187 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
+| 自测 | `dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj`：192 个测试全部通过（含 OpenAPI 响应/表单/同步/缓存、调用代码、数据文件、机密打码、MCP 来源校验、集合回收站、审计补做打码、授权凭据打码、SQLite 文档读写、存储配置、内存截断、SSE 文本格式化、深层/递归 schema、OpenAPI 自动环境与大规模导入、更新版本解析、套件预检/重跑计划/运行历史） |
 | P2 修复 | 客户端密钥首次加载迁移为 DPAPI 加密；临时刷新失败保留 refresh_token；状态文本/Content-Type 打码；集合回收站超容量提示 |
 | 内存基线 | Release 冷启动：软件渲染约 100–130 MB 私有内存；自动 GPU 渲染约 220 MB 起；设置页可切换 |
 | 长会话内存 | 连续 10 次 400 KB SSE：审计 AI 内容单条最大 32 KB，历史请求体上限 256 KB，SSE 单流上限 2 MB；进程不再按完整 AI 流累积 |
@@ -852,11 +855,13 @@ docs/
 | 树节点操作 | 悬浮三点菜单（新建请求/二级集合/收藏/重命名/删除）、双击重命名、右键菜单（含收藏）均验证 |
 | CLI 指南 | 指南页新增「命令行 CLI」卡片：常用命令与 MCP 地址可复制，下载/说明入口可用；随包 CLI 显示本机路径并支持打开目录 |
 | CLI 报告 | `suite run/rerun-failed/continue` 支持 `--junit`、`--markdown`、`--html`；`--version` 和帮助信息通过构建 |
-| CLI 打包 | Windows/Linux/macOS 发布脚本将 CLI 放入 `cli/`；Windows 包内 CLI `--version` 为 1.10.15 |
+| CLI 打包 | Windows/Linux/macOS 发布脚本将 CLI 放入 `cli/`；包内 CLI `--version` 与桌面版本一致 |
 | 跨平台构建 | Linux x64 / macOS arm64 自包含包构建通过，CLI 随包；Windows 包构建和测试通过 |
 | Cookie 管理 | 顶栏 Cookie 入口可打开；空状态、刷新、清空按钮可见；Cookie 容器读取与按站点清除单测通过 |
 | 机密变量落盘 | 机密环境变量在 Capture 后为 DPAPI/AES-GCM 密文，ToEnvironmentModel 可还原原值；旧明文读取保持兼容（单测） |
 | 机密落盘复测 | MCP `set_variable secret=true` 后停止应用，在 `postsharp.db`、WAL 与日志中搜索示例令牌均无明文；工作区只保留 `dpapi:v1:` 密文 |
+| 重定向策略 | 请求级开关随 Clone、工作区 DTO 和历史记录往返；关闭时由独立 HttpClient handler 直接返回 3xx（单测） |
+| OAuth 客户端凭据 | 授权窗口可选择客户端凭据；令牌请求体包含 `grant_type=client_credentials`、客户端 ID/密钥和 scope；缺少客户端密钥时配置校验失败（单测） |
 | 收藏持久化 | 收藏请求后显示星标，重启应用后仍保留 |
 | 树节点拖拽 | 请求上下拖动调整同级顺序；集合拖入集合或拖到边缘排序成功；循环/深度校验生效 |
 | 集合层级 | 集合最多五级；新建与拖拽路径均做深度校验 |
@@ -1003,7 +1008,7 @@ master                 稳定可发布
 - multipart：多文件、拖拽添加、单文件移除、64KB 流式上传进度与取消。
 - 界面：请求/响应独立拖拽高度并持久化、请求体 JSON 视图、全局圆角、单实例保护。
 - 迁移指南：YApi / ApiPost / Eolink / Apifox 卡片引导。
-- 自测：187 个 xUnit 测试。
+- 自测：192 个 xUnit 测试。
 
 ### 当前 MVP 限制
 
@@ -1020,7 +1025,7 @@ master                 稳定可发布
 - Hoppscotch 支持 Collection JSON；环境文件、multipart 文件内容和脚本不会导入。
 - 字体设置主要覆盖窗口正文和代码视图；Arc 组件的内部令牌字体不保证全部跟随。
 - OpenAPI 导入会优先使用 `x-apifox-folder`，支持 securitySchemes 占位认证头、服务器选择和外部 `$ref` 自动下载；回调/Webhook 仍未实现。
-- Cookie 仅支持当前进程内存中的查看和按站点清空，未做跨重启持久化、导入导出或按请求隔离；代理、客户端证书、OAuth 2.0 之外的授权类型（隐式、客户端凭据、设备码）、Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
+- Cookie 仅支持当前进程内存中的查看和按站点清空，未做跨重启持久化、导入导出或按请求隔离；代理、客户端证书、重试/退避、HTTP/2 开关和流式下载未实现；OAuth 2.0 已支持授权码 + PKCE 与客户端凭据，隐式、设备码和密码模式仍未实现；Postman 脚本/测试执行未实现；Postman / HAR / cURL / Insomnia / Hoppscotch 已支持基础导入，Postman Collection 与 cURL 支持导出。
 - 授权只支持请求与集合两级（含多级集合继承），没有工作区级或环境级默认授权；同一集合的授权由该集合对象持有，未单独覆盖的下级请求共用同一个令牌，刷新后同步生效。
 - 单点登录使用系统默认浏览器；复制请求会复制一份独立的授权与令牌，副本重新登录或刷新不会影响原请求；删除集合/请求时其授权配置一起移除。
 - MCP 仅本地回环并拒绝网页来源，无令牌鉴权 / OAuth；SSE 通知未实现。MCP 套件已支持任意 DAG、结构化预检、后台运行/进度轮询/取消、运行历史和失败重跑；后台任务只保存在当前进程内，应用退出后需通过运行历史查看已完成结果。
@@ -1036,7 +1041,9 @@ master                 稳定可发布
 2. OpenAPI 更多安全方案与回调/Webhook 提示。
 3. Apifox 原生格式评估：先收集官方导出样本和 schema，不做无样本逆向。
 4. 套件 CSV/JSON 数据驱动、循环节点和失败重跑策略。
-5. 上传断点续传；JMeter / WSDL / SOAP 等重格式按需求立项。
+5. HTTP 传输补全：代理、客户端证书、重试/退避、HTTP/2 和流式下载。
+6. OAuth 补全：设备码、隐式和密码模式，以及工作区/环境级默认授权。
+7. 上传断点续传；JMeter / WSDL / SOAP 等重格式按需求立项。
 
 ## 许可证
 

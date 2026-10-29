@@ -4,7 +4,15 @@ using PostSharp.Services;
 
 namespace PostSharp.Models;
 
-/// <summary>OIDC 授权码流程的配置，以及最近一次登录换回的令牌。</summary>
+public static class OAuthGrantTypes
+{
+    public const string AuthorizationCode = "AuthorizationCode";
+    public const string ClientCredentials = "ClientCredentials";
+
+    public static bool IsKnown(string value) => value is AuthorizationCode or ClientCredentials;
+}
+
+/// <summary>OAuth 2.0 的授权方式、服务器配置与最近一次换回的令牌。</summary>
 public sealed partial class AuthorizationProfile : ObservableObject
 {
     private string _accessToken = string.Empty;
@@ -15,6 +23,9 @@ public sealed partial class AuthorizationProfile : ObservableObject
     private string _idTokenCipher = string.Empty;
     private string _clientSecret = string.Empty;
     private string _clientSecretCipher = string.Empty;
+
+    [ObservableProperty]
+    private string _grantType = OAuthGrantTypes.AuthorizationCode;
 
     [ObservableProperty]
     private string _discoveryUrl = string.Empty;
@@ -157,7 +168,10 @@ public sealed partial class AuthorizationProfile : ObservableObject
     public bool HasAccessToken => !string.IsNullOrWhiteSpace(_accessToken);
 
     [JsonIgnore]
-    public bool CanRefresh => !string.IsNullOrWhiteSpace(_refreshToken);
+    public bool IsClientCredentials => GrantType == OAuthGrantTypes.ClientCredentials;
+
+    [JsonIgnore]
+    public bool CanRefresh => IsClientCredentials || !string.IsNullOrWhiteSpace(_refreshToken);
 
     [JsonIgnore]
     public bool IsTokenExpired =>
@@ -180,6 +194,7 @@ public sealed partial class AuthorizationProfile : ObservableObject
     public AuthorizationProfile Clone() =>
         new()
         {
+            GrantType = GrantType,
             DiscoveryUrl = DiscoveryUrl,
             ClientId = ClientId,
             RedirectUri = RedirectUri,
@@ -204,6 +219,16 @@ public sealed partial class AuthorizationProfile : ObservableObject
         if (string.IsNullOrWhiteSpace(ClientId))
         {
             return "客户端 ID 不能为空。";
+        }
+
+        if (IsClientCredentials)
+        {
+            if (string.IsNullOrWhiteSpace(ClientSecret))
+            {
+                return "客户端凭据模式需要填写客户端密钥。";
+            }
+
+            return null;
         }
 
         if (!IsAcceptableRedirectAddress(RedirectUri))

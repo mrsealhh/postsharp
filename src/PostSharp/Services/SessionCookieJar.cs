@@ -75,13 +75,13 @@ public static class SessionCookieJar
     }
 
     /// <summary>Wires the shared cookie container into the HTTP handler.</summary>
-    public static HttpClientHandler CreateHandler() =>
+    public static HttpClientHandler CreateHandler(bool allowAutoRedirect = true) =>
         new()
         {
             UseCookies = true,
             CookieContainer = Container,
             AutomaticDecompression = DecompressionMethods.All,
-            AllowAutoRedirect = true,
+            AllowAutoRedirect = allowAutoRedirect,
             MaxAutomaticRedirections = 10,
         };
 }

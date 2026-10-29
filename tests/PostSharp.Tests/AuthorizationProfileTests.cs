@@ -63,4 +63,38 @@ public sealed class AuthorizationProfileTests
         Assert.Null(profile.FindConfigurationProblem());
         Assert.False(LoopbackRedirectListener.IsLoopbackRedirect(profile.RedirectUri));
     }
+
+    [Fact]
+    public void ClientCredentialsDoesNotNeedRedirectButNeedsSecret()
+    {
+        var profile = new AuthorizationProfile
+        {
+            GrantType = OAuthGrantTypes.ClientCredentials,
+            DiscoveryUrl = "https://login.example.com/.well-known/openid-configuration",
+            ClientId = "service-client",
+            ClientSecret = "service-secret",
+            RedirectUri = string.Empty,
+            Scopes = string.Empty,
+        };
+
+        Assert.True(profile.IsClientCredentials);
+        Assert.True(profile.CanRefresh);
+        Assert.Null(profile.FindConfigurationProblem());
+
+        profile.ClientSecret = string.Empty;
+        Assert.Contains("客户端密钥", profile.FindConfigurationProblem(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GrantTypeRoundTripsThroughJson()
+    {
+        var json = JsonSerializer.Serialize(
+            new AuthorizationProfile { GrantType = OAuthGrantTypes.ClientCredentials }
+        );
+        var restored = JsonSerializer.Deserialize<AuthorizationProfile>(json);
+
+        Assert.NotNull(restored);
+        Assert.Equal(OAuthGrantTypes.ClientCredentials, restored.GrantType);
+        Assert.True(restored.IsClientCredentials);
+    }
 }
