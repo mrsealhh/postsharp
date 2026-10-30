@@ -725,7 +725,13 @@ public sealed class McpWorkspaceAdapter
         CancellationToken cancellationToken
     )
     {
-        var outcome = await SendCoreAsync(id, environmentId, context, cancellationToken)
+        var outcome = await SendCoreAsync(
+                id,
+                environmentId,
+                context,
+                cancellationToken,
+                includeMaskedResponse: false
+            )
             .ConfigureAwait(false);
         return outcome.Result;
     }
@@ -738,25 +744,37 @@ public sealed class McpWorkspaceAdapter
         CancellationToken cancellationToken
     )
     {
-        var outcome = await SendCoreAsync(id, environmentId, context, cancellationToken)
+        var outcome = await SendCoreAsync(
+                id,
+                environmentId,
+                context,
+                cancellationToken,
+                includeMaskedResponse: true
+            )
             .ConfigureAwait(false);
+        if (outcome.Masked is not { } masked)
+        {
+            throw new InvalidOperationException("内部错误：验证请求没有生成脱敏响应。");
+        }
+
         return EndpointVerifier.Verify(
             outcome.Result.RequestId,
             outcome.Result.Name,
             outcome.Result.Method,
             outcome.Result.Url,
-            outcome.Masked,
+            masked,
             expectation
         );
     }
 
-    private sealed record SendOutcome(McpSendResult Result, HttpResult Masked);
+    private sealed record SendOutcome(McpSendResult Result, HttpResult? Masked);
 
     private async Task<SendOutcome> SendCoreAsync(
         Guid id,
         Guid? environmentId,
         McpCallContext context,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool includeMaskedResponse
     )
     {
         var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>
@@ -864,11 +882,15 @@ public sealed class McpWorkspaceAdapter
             // MaskHead returns more than the limit exactly when it had to cut.
             body.Length > McpSendResult.BodyLimit
         );
-        var masked = SecretMasker.MaskResult(result, secrets) with
-        {
-            ReasonPhrase = SecretMasker.MaskSecrets(result.ReasonPhrase, secrets),
-            Error = result.Error is null ? null : SecretMasker.MaskSecrets(result.Error, secrets),
-        };
+        var masked = includeMaskedResponse
+            ? SecretMasker.MaskResult(result, secrets) with
+            {
+                ReasonPhrase = SecretMasker.MaskSecrets(result.ReasonPhrase, secrets),
+                Error = result.Error is null
+                    ? null
+                    : SecretMasker.MaskSecrets(result.Error, secrets),
+            }
+            : null;
         return new SendOutcome(payload, masked);
     }
 
