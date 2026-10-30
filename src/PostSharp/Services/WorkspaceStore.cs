@@ -72,7 +72,9 @@ public sealed class WorkspaceStore
         IEnumerable<TestSuite> suites,
         IEnumerable<TrashedNode> trashedNodes,
         Guid? activeEnvironmentId,
-        bool includeSuites = true
+        bool includeSuites = true,
+        Guid? selectedCollectionId = null,
+        Guid? selectedRequestId = null
     )
     {
         return new WorkspaceDto
@@ -91,6 +93,8 @@ public sealed class WorkspaceStore
             Suites = includeSuites ? CaptureSuites(suites) : new List<SuiteDto>(),
             TrashedNodes = trashedNodes.Select(ToTrashedNodeDto).ToList(),
             ActiveEnvironmentId = activeEnvironmentId,
+            SelectedCollectionId = selectedCollectionId,
+            SelectedRequestId = selectedRequestId,
         };
     }
 
@@ -506,6 +510,7 @@ public sealed class WorkspaceStore
             Id = dto.Id == Guid.Empty ? Guid.NewGuid() : dto.Id,
             Name = dto.Name,
             IsFavorite = dto.IsFavorite,
+            IsExpanded = dto.IsExpanded,
             OpenApiSource = dto.OpenApiSource,
         };
         collection.Auth.CopyFrom(ToAuth(dto.Auth));
@@ -578,6 +583,7 @@ public sealed class WorkspaceStore
             Id = collection.Id,
             Name = collection.Name,
             IsFavorite = collection.IsFavorite,
+            IsExpanded = collection.IsExpanded,
             ParentId = collection.Parent?.Id,
             OpenApiSource = collection.OpenApiSource,
             Requests = collection.Requests.Select(ToDto).ToList(),
@@ -916,6 +922,11 @@ public sealed class WorkspaceDto
     public List<TrashedNodeDto> TrashedNodes { get; set; } = new();
 
     public Guid? ActiveEnvironmentId { get; set; }
+
+    /// <summary>Tree selection restored on the next start; a missing or deleted id falls back to the first request.</summary>
+    public Guid? SelectedCollectionId { get; set; }
+
+    public Guid? SelectedRequestId { get; set; }
 }
 
 public sealed class CollectionDto
@@ -925,6 +936,9 @@ public sealed class CollectionDto
     public string Name { get; set; } = string.Empty;
 
     public bool IsFavorite { get; set; }
+
+    /// <summary>Expanded in the sidebar tree; old workspaces default to expanded.</summary>
+    public bool IsExpanded { get; set; } = true;
 
     public Guid? ParentId { get; set; }
 

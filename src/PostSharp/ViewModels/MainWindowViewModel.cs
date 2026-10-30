@@ -70,11 +70,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         Interval = TimeSpan.FromSeconds(30),
     };
+    private readonly DispatcherTimer _workspacePersistTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(400),
+    };
     private readonly Dictionary<Guid, DateTimeOffset> _lastScheduledRuns = new();
+    private Guid? _restoredSelectedCollectionId;
+    private Guid? _restoredSelectedRequestId;
     private bool _initializing = true;
 
     public MainWindowViewModel()
     {
+        _workspacePersistTimer.Tick += OnWorkspacePersistTick;
         AuditPage = new PagedCollection<AuditEntry>(VisibleAudit);
         TreePage = new PagedCollection<TreeDisplayNode>(TreeNodes, 80);
         TreeTrash = new TreeTrashViewModel(Collections, OnTreeTrashChanged, ShowToast);
@@ -169,11 +176,37 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         var firstRequest = Collections
             .SelectMany(collection => collection.Requests)
             .FirstOrDefault();
-        Editing = firstRequest ?? new RequestItem { Name = "新建请求" };
-        SelectedCollection = firstRequest?.Owner;
-        SelectedRequest = firstRequest;
+        var restoredRequest = _restoredSelectedRequestId is { } restoredRequestId
+            ? FindRequestById(restoredRequestId)
+            : null;
+        var restoredCollection = _restoredSelectedCollectionId is { } restoredCollectionId
+            ? FindCollectionById(restoredCollectionId)
+            : null;
+        if (restoredRequest is not null)
+        {
+            Editing = restoredRequest;
+            SelectedCollection = restoredRequest.Owner;
+            SelectedRequest = restoredRequest;
+            ExpandAncestors(restoredRequest.Owner);
+        }
+        else if (restoredCollection is not null)
+        {
+            SelectedCollection = restoredCollection;
+            SelectedRequest = null;
+            Editing =
+                FlattenCollectionRequests(restoredCollection).FirstOrDefault()
+                ?? new RequestItem { Name = "新建请求" };
+            ExpandAncestors(restoredCollection);
+        }
+        else
+        {
+            Editing = firstRequest ?? new RequestItem { Name = "新建请求" };
+            SelectedCollection = firstRequest?.Owner;
+            SelectedRequest = firstRequest;
+        }
+
         SelectedSuite ??= Suites.FirstOrDefault();
-        IsDraft = firstRequest is null;
+        IsDraft = Editing.Owner is null;
         _initializing = false;
         RefreshRequestTabOptions();
 
@@ -2241,9 +2274,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
     }
 
-    partial void OnSelectedCollectionChanged(RequestCollection? value) => OnAuthScopeChanged();
+    partial void OnSelectedCollectionChanged(RequestCollection? value)
+    {
+        SchedulePersist();
+        OnAuthScopeChanged();
+    }
 
-    partial void OnSelectedRequestChanged(RequestItem? value) => OnAuthScopeChanged();
+    partial void OnSelectedRequestChanged(RequestItem? value)
+    {
+        SchedulePersist();
+        OnAuthScopeChanged();
+    }
 
     private void OnAuthScopeChanged()
     {
@@ -3056,6 +3097,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         NotifyTreeChanged();
+        SchedulePersist();
         ShowToast(expand ? "已展开全部集合" : "已折叠全部集合");
     }
 
@@ -3086,6 +3128,39 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         Persist();
         NotifyTreeChanged();
         ShowToast("已复制请求");
+    }
+
+    [RelayCommand]
+    private void DuplicateSelectedCollection()
+    {
+        if (SelectedCollection is not { } source)
+        {
+            ShowToast("请先选择一个集合");
+            return;
+        }
+
+        try
+        {
+            EnsureTreeShowsNewNode();
+            var copy = CollectionDuplicator.Duplicate(source);
+            var siblings = source.Parent?.Children ?? Collections;
+            var index = siblings.IndexOf(source);
+            copy.Parent = source.Parent;
+            siblings.Insert(index >= 0 ? index + 1 : siblings.Count, copy);
+            ExpandAncestors(copy.Parent);
+            SelectCollection(copy);
+            NotifyTreeChanged();
+            Persist();
+            _workspacePersistTimer.Stop();
+            ShowToast("已复制集合");
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "复制集合失败 {CollectionName}", source.Name);
+            DataNotice.Warn(
+                $"复制集合「{source.Name}」失败：{exception.Message}。请检查集合内容是否完整，或重启 PostSharp 后重试；工作区没有被部分写入。"
+            );
+        }
     }
 
     [RelayCommand]
@@ -3963,6 +4038,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         collection.IsExpanded = expanded;
         NotifyTreeChanged();
+        SchedulePersist();
     }
 
     public bool IsExpanded(RequestCollection collection) => collection.IsExpanded;
@@ -6789,6 +6865,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         _suiteScheduleTimer.Stop();
         _suiteScheduleTimer.Tick -= OnSuiteScheduleTick;
+        _workspacePersistTimer.Stop();
+        _workspacePersistTimer.Tick -= OnWorkspacePersistTick;
         UpdateService.PendingChanged -= OnPendingUpdateChanged;
         _updateCts?.Cancel();
         _updateCts?.Dispose();
@@ -7396,6 +7474,80 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         IsToastOpen = true;
     }
 
+    /// <summary>Collects fast selection and expand changes into one write instead of saving per click.</summary>
+    private void SchedulePersist()
+    {
+        if (_initializing)
+        {
+            return;
+        }
+
+        _workspacePersistTimer.Stop();
+        _workspacePersistTimer.Start();
+    }
+
+    private void OnWorkspacePersistTick(object? sender, EventArgs e)
+    {
+        _workspacePersistTimer.Stop();
+        Persist();
+    }
+
+    private RequestItem? FindRequestById(Guid id)
+    {
+        foreach (var collection in Collections)
+        {
+            var request = FlattenCollectionRequests(collection)
+                .FirstOrDefault(candidate => candidate.Id == id);
+            if (request is not null)
+            {
+                return request;
+            }
+        }
+
+        return null;
+    }
+
+    private RequestCollection? FindCollectionById(Guid id)
+    {
+        foreach (var collection in Collections)
+        {
+            var match = FindCollection(collection, id);
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    private static RequestCollection? FindCollection(RequestCollection collection, Guid id)
+    {
+        if (collection.Id == id)
+        {
+            return collection;
+        }
+
+        foreach (var child in collection.Children)
+        {
+            var match = FindCollection(child, id);
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    private static void ExpandAncestors(RequestCollection? collection)
+    {
+        for (var current = collection; current is not null; current = current.Parent)
+        {
+            current.IsExpanded = true;
+        }
+    }
+
     private void Persist()
     {
         if (_initializing)
@@ -7412,7 +7564,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 Suites,
                 TreeTrash.Items,
                 ActiveEnvironment?.Id,
-                includeSuites: false
+                includeSuites: false,
+                selectedCollectionId: SelectedCollection?.Id,
+                selectedRequestId: SelectedRequest?.Id
             )
         );
         var suitesSaved = _suiteStore.Save(Suites);
@@ -7426,6 +7580,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     private void LoadWorkspace(WorkspaceDto workspace)
     {
+        _restoredSelectedCollectionId = workspace.SelectedCollectionId;
+        _restoredSelectedRequestId = workspace.SelectedRequestId;
         foreach (var collectionDto in workspace.Collections)
         {
             Collections.Add(WorkspaceStore.ToCollectionModel(collectionDto));
