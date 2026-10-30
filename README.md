@@ -45,7 +45,7 @@ PostSharp 的定位是：
 
 ### AI 方向
 
-- **MCP 工具**：集合/请求、环境变量、历史与回收站、审计与回收站、自动化套件、系统配置、存储配置/同步/切换、导入导出等语义操作均可由 MCP 调用（窗口尺寸、剪贴板等纯界面动作除外）。
+- **MCP 工具**：集合/请求、环境变量、历史与回收站、审计与回收站、自动化套件、系统配置、存储配置/同步/切换、导入导出等语义操作均可由 MCP 调用（窗口尺寸、剪贴板等纯界面动作除外）；`verify_endpoint` / `generate_suite` / `diff_runs` / `explain_failure` / `export_report` 把常见意图压到 1–2 次调用并返回结构化结论。
 - **命令行 CLI**：`postsharp-cli` 通过本机 MCP 端点执行套件列表、预检、后台运行、运行历史、失败重跑、请求发送和审计查询；支持 `--json`、`--junit`、`--markdown`、`--html` 和稳定退出码，适合终端与 CI。`postsharp-cli mcp-stdio` 可把 stdin/stdout MCP 桥接到 HTTP MCP，兼容只支持 stdio 的 harness。CLI 是独立下载包，不随桌面安装包分发；应用内「指南 → 命令行 CLI」卡片提供常用命令、MCP 地址复制和下载入口。
 - **完整审计**：来源 `UI` / `MCP`、MCP 客户端名称、工具名、时间、状态、耗时、大小、cURL、请求头和请求/响应预览。
 - **SSE / AI 输出聚合**：自动解析 `text/event-stream`，聚合常见 AI 协议的 thinking 与 content，接收中增量刷新，取消后保留已接收内容。
@@ -359,6 +359,11 @@ http://127.0.0.1:5199/mcp
 | `list_suite_runs` / `get_suite_run` | 查看最近 20 次运行摘要 / 读取一次运行的完整结果 |
 | `rerun_failed_suite` / `continue_suite_from_step` | 只重跑失败步骤及依赖 / 从历史步骤继续并补跑上游依赖 |
 | `delete_suite` | 删除套件 |
+| `verify_endpoint` | 一次调用验证端点：状态码、响应体、JSONPath/响应头断言逐项检查，返回结论、耗时和掩码响应预览 |
+| `generate_suite` | 从集合/请求生成可运行套件，按最近一次成功发送固定期望状态；`dryRun` 只预览草稿和预检结果 |
+| `export_report` | 把一次运行导出为 Markdown / HTML / JUnit XML / JSON，写入数据目录 `reports` 并返回路径 |
+| `diff_runs` | 对比两次运行：新增失败、修复、状态码变化、耗时回归/改善、增删步骤和节点状态 |
+| `explain_failure` | 解释失败：归类到预检/网络/状态/正文/断言/依赖，返回步骤、证据、修复提示和下一步工具调用 |
 | `list_audit` | 查询 UI/MCP 审计摘要，支持 `source=UI\|MCP` |
 | `get_audit` / `delete_audit` | 读取单条审计详情 / 移入审计回收站 |
 | `list_history` / `get_history` / `delete_history` / `list_history_trash` | 查看发送历史、读取完整快照、单条移入回收站 / 历史回收站 |
@@ -402,6 +407,20 @@ http://127.0.0.1:5199/mcp
 }
 ```
 
+### MCP 意图工具
+
+意图工具把常见工作压到 1–2 次调用，返回结构化结论而不是原始响应：
+
+| 意图 | 调用 | 返回 |
+| --- | --- | --- |
+| 验证一个接口 | `verify_endpoint {"requestId":"<id>","expectedStatus":200,"assertions":[{"kind":"JSONPath","path":"data.ok","expected":"true"}]}` | `passed`、逐项 `checks`、`conclusion`、`responsePreview` |
+| 从集合生成套件 | `generate_suite {"collectionIds":["<id>"],"dryRun":true}` | 每步的 `expectedStatus` 和推断依据 `evidence`；确认后传 `dryRun:false` 保存 |
+| 对比两次运行 | `diff_runs {"suiteId":"<id>","baseRunId":"<runId>"}` | 新增失败、修复、状态码变化、耗时回归和节点变化 |
+| 解释失败 | `explain_failure {"suiteId":"<id>","runId":"<runId>"}` | `findings` 带步骤、分类、证据、提示和 `nextAction` |
+| 导出报告 | `export_report {"suiteId":"<id>","format":"junit"}` | 报告内容、字节数、截断标记和 `.postsharp/reports` 下的文件路径 |
+
+`generate_suite` 只固定最近一次成功发送的状态码；最近一次失败时不会把错误状态写成期望值，而是在 `notes` 中提示。报告文件写在数据目录的 `reports/` 下，只读模式也可以导出。
+
 ### 安全
 
 - 仅监听回环地址 `127.0.0.1`。
@@ -444,7 +463,7 @@ http://127.0.0.1:5199/mcp
 - **节点明细**：延迟、重试次数/间隔、条件、汇合方式、并行组；「规则映射」「规则断言」「条件规则」二级弹窗；映射来源可选择任意已完成上游步骤。
 - **DAG 执行语义**：连线表示依赖与分支，支持总是、上游成功、上游失败、上游跳过和条件表达式；节点汇合支持全部上游完成（All）与任一上游到达（Any）；套件可设置最大并行度、失败即停止和定时运行。顺序执行等价于线性 DAG。开启失败即停止时，失败节点的失败分支和汇合节点仍会执行，未进入失败分支的未开始节点标记为未运行。
 - **条件表达式**：结构化规则支持状态码、响应 JSON 字段、响应头、耗时、步骤结果和环境变量，操作符含等于/不等于/包含/不包含/存在/不存在/大于/小于/正则/属于，规则可按全部（All）或任一（Any）组合；条件不满足时节点标记跳过并沿分支继续传播。多上游汇合时，节点条件以第一条已到达的上游结果为准；需要按不同上游分别判断时请使用连线条件。
-- **AI 自主编排**：MCP 可按步骤数组或 `workflow` 创建/更新/重排/删除套件；`workflow` 支持任意节点、连线、边条件、All/Any 汇合和最大并行度，省略时自动生成线性/并行组 DAG。`validate_suite` 返回结构化预检错误，`get_suite` 返回稳定步骤 id 与完整工作流，`run_suite` 返回运行 id，`start_suite_run` 可在后台运行并通过 `get_suite_run_job` 轮询进度、`cancel_suite_run` 取消；`list_suite_runs` / `get_suite_run` 可回看最近 20 次运行，失败后可 `rerun_failed_suite` 或 `continue_suite_from_step`。
+- **AI 自主编排**：MCP 可按步骤数组或 `workflow` 创建/更新/重排/删除套件；`workflow` 支持任意节点、连线、边条件、All/Any 汇合和最大并行度，省略时自动生成线性/并行组 DAG。`validate_suite` 返回结构化预检错误，`get_suite` 返回稳定步骤 id 与完整工作流，`run_suite` 返回运行 id，`start_suite_run` 可在后台运行并通过 `get_suite_run_job` 轮询进度、`cancel_suite_run` 取消；`list_suite_runs` / `get_suite_run` 可回看最近 20 次运行，失败后可 `rerun_failed_suite` 或 `continue_suite_from_step`。意图层再提供 `verify_endpoint`（一次发送并判定）、`generate_suite`（从集合/请求生成带期望状态的套件）、`diff_runs`（两次运行差异）、`explain_failure`（失败步骤与断言定位）和 `export_report`（Markdown/HTML/JUnit/JSON）。
 - **下一步延迟**：每个步骤可设置当前步骤结束到下一请求的延迟，默认 200ms；用于维护接口依赖的调用间隔。
 - **前序出参映射**：每个步骤可配置多条映射规则，从前序某个步骤的响应中提取字段，写入当前请求的：
   - 请求体（支持 `data.token` 这类嵌套路径）
@@ -978,6 +997,7 @@ docs/
 | OAuth 默认值 | 新集合切换到 OAuth 2.0 后，发现地址和客户端 ID 为空，重定向地址默认 `http://127.0.0.1:53682/callback`；输入框显示灰色示例占位符，授权范围默认 `openid profile offline_access` |
 | 授权复制与解析 | 临时控制台验证：`RequestAuth.Clone()` 后修改副本的 access_token 不影响原对象；`AuthResolver` 对「集合 A Bearer → 子集合 B 继承 → 请求」解析到集合 A，子集合 C 配 API Key 时请求 2 解析到集合 C |
 | 构建 | Debug / Release 均 0 警告、0 错误；`csharpier check .` 通过 |
+| MCP 意图工具 | 新增 `verify_endpoint` / `generate_suite` / `export_report` / `diff_runs` / `explain_failure`，工具总数 75；只读模式暴露 `export_report` / `diff_runs` / `explain_failure`，隐藏发送和生成；`verify_endpoint` 记录审计；单测覆盖检查项、期望状态推断、四种报告、diff 分类、失败定位和 source-generated JSON；259 个测试通过。本机已有 PostSharp 实例占用单实例锁，未做 GUI/MCP 实机联调 |
 
 ## 开发约定
 

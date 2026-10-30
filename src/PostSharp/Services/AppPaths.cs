@@ -51,6 +51,9 @@ public static class AppPaths
 
     public static string BackupDirectory => Path.Combine(Root, "backups");
 
+    /// <summary>Fixed directory where MCP and CLI reports are written.</summary>
+    public static string ReportDirectory => Path.Combine(Root, "reports");
+
     /// <summary>Fixed directory where users drop downloaded remote-storage plugins.</summary>
     public static string StoragePluginDirectory => Path.Combine(Root, "plugins");
 

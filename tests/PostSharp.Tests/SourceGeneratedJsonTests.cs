@@ -142,4 +142,100 @@ public sealed class SourceGeneratedJsonTests
             Assert.StartsWith("[", json);
         }
     }
+
+    [Fact]
+    public void IntentToolPayloadsSerializeThroughMcpMetadata()
+    {
+        var verification = new EndpointVerification(
+            Guid.NewGuid(),
+            "健康检查",
+            "GET",
+            "https://example.com/health",
+            true,
+            true,
+            200,
+            "OK",
+            12,
+            "通过",
+            [new EndpointCheck("Status", "2xx/3xx", "200", true, "状态 200 符合预期")],
+            "{\"ok\":true}",
+            null
+        );
+        var generation = new SuiteGenerationResult(
+            Saved: false,
+            SuiteId: null,
+            Name: "生成套件",
+            StepCount: 1,
+            [
+                new SuiteDraftStep(
+                    Guid.NewGuid(),
+                    "健康检查",
+                    "GET",
+                    "https://example.com",
+                    200,
+                    "证据"
+                ),
+            ],
+            ["dryRun"],
+            false,
+            0,
+            "通过"
+        );
+        var diff = new SuiteRunDiff(
+            "套件",
+            Guid.NewGuid(),
+            DateTimeOffset.Now,
+            Guid.NewGuid(),
+            DateTimeOffset.Now,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            "新增失败 1 步。",
+            [
+                new SuiteRunStepDiff(
+                    Guid.NewGuid(),
+                    "步骤",
+                    "NewFailure",
+                    true,
+                    false,
+                    200,
+                    500,
+                    1,
+                    2,
+                    1,
+                    "明细"
+                ),
+            ],
+            [new SuiteRunNodeDiff(Guid.NewGuid(), "节点", "Done", "Failed", 1, 2, "Done → Failed")]
+        );
+        var explanation = new SuiteFailureExplanation(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "套件",
+            false,
+            "失败",
+            "下一步",
+            [new SuiteFailureFinding(null, string.Empty, "Preflight", "消息", "证据", "提示")]
+        );
+        var report = new SuiteReportExport("markdown", "report.md", "# 报告", 10, false, null);
+
+        Assert.Contains("\"requestId\"", McpJson.Serialize(verification), StringComparison.Ordinal);
+        Assert.Contains(
+            "\"expectedStatus\": 200",
+            McpJson.Serialize(generation),
+            StringComparison.Ordinal
+        );
+        Assert.Contains("\"newFailures\": 1", McpJson.Serialize(diff), StringComparison.Ordinal);
+        Assert.Contains("\"findings\"", McpJson.Serialize(explanation), StringComparison.Ordinal);
+        Assert.Contains(
+            "\"fileName\": \"report.md\"",
+            McpJson.Serialize(report),
+            StringComparison.Ordinal
+        );
+    }
 }
