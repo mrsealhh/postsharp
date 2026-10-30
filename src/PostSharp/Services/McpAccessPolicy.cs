@@ -66,6 +66,9 @@ public static class McpToolAccess
         "export_workspace",
         "soap_describe",
         "grpc_describe",
+        "export_report",
+        "diff_runs",
+        "explain_failure",
     };
 
     public static bool IsReadOnly(string tool) => ReadOnlyTools.Contains(tool);

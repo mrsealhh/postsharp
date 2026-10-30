@@ -11,7 +11,7 @@ namespace PostSharp.Services;
 /// POST /mcp and exposes the workspace as tools, so an AI client can list and edit requests,
 /// send them, change variables and run a request sequence.
 /// </summary>
-public sealed class McpServer
+public sealed partial class McpServer
 {
     private const string ServerVersion = "0.5.0";
 
@@ -381,6 +381,7 @@ public sealed class McpServer
                                 + "template 支持 Bearer {value} 这类格式。步骤还支持 retryCount、retryDelayMs、condition、parallelGroup 和 assertions；用 run_suite 运行并读取每步断言，"
                                 + "用 list_suites / get_suite 检查规则，用 validate_suite 获取结构化预检错误，用 list_suite_runs / get_suite_run 查看最近 20 次运行历史，用 rerun_failed_suite / continue_suite_from_step 重跑失败或从节点继续。"
                                 + "长套件用 start_suite_run 立即拿到 jobId，再用 get_suite_run_job 轮询节点/连线进度，必要时 cancel_suite_run。"
+                                + "意图优先：verify_endpoint 一次发送并给出状态/正文/断言结论；generate_suite 从集合或请求生成套件（dryRun 只预览）；diff_runs 对比两次运行；explain_failure 定位失败步骤和断言；export_report 输出 Markdown/HTML/JUnit/JSON 报告到数据目录 reports。"
                                 + "send_request、run_sequence、run_suite、rerun_failed_suite 和 continue_suite_from_step 都会写入审计记录；list_audit / get_audit 可查所有 UI 和 AI 触发记录。"
                                 + "环境和历史：list_environments / create_environment / rename_environment / delete_environment / activate_environment / set_variable / delete_variable；"
                                 + "list_history / get_history / delete_history / clear_history / list_history_trash / restore_history / purge_history / empty_history_trash。"
@@ -726,6 +727,16 @@ public sealed class McpServer
                         .DeleteSuiteAsync(RequireGuid(arguments, "id"))
                         .ConfigureAwait(false)
                 ),
+                "verify_endpoint" => await VerifyEndpointToolAsync(
+                        arguments,
+                        policy,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
+                "generate_suite" => await GenerateSuiteToolAsync(arguments).ConfigureAwait(false),
+                "export_report" => await ExportReportToolAsync(arguments).ConfigureAwait(false),
+                "diff_runs" => await DiffRunsToolAsync(arguments).ConfigureAwait(false),
+                "explain_failure" => await ExplainFailureToolAsync(arguments).ConfigureAwait(false),
                 "list_history" => await _workspace
                     .ListHistoryAsync(OptionalInt(arguments, "limit") ?? 20)
                     .ConfigureAwait(false),
@@ -1611,6 +1622,31 @@ public sealed class McpServer
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("套件 id") }, "id")
             ),
             Tool(
+                "verify_endpoint",
+                "一次调用验证一个端点：发送请求并按状态码、响应体和断言给出通过/失败结论；返回检查项、耗时、掩码后的响应预览和失败原因",
+                VerifyEndpointSchema()
+            ),
+            Tool(
+                "generate_suite",
+                "从一个或多个集合/请求生成可运行套件：按最近一次成功发送固定期望状态并返回推断依据；dryRun 只预览草稿和预检结果",
+                GenerateSuiteSchema()
+            ),
+            Tool(
+                "export_report",
+                "把一次运行导出为 Markdown/HTML/JUnit/JSON 报告，写入数据目录 reports，返回文件路径、内容和截断标记",
+                ExportReportSchema()
+            ),
+            Tool(
+                "diff_runs",
+                "对比同一套件两次运行：新增失败、修复、状态码变化、耗时回归/改善、增删步骤和节点状态变化",
+                DiffRunsSchema()
+            ),
+            Tool(
+                "explain_failure",
+                "解释一次运行为什么失败：归类到预检/网络/状态/正文/断言/依赖，给出步骤、证据、修复提示和下一步工具调用",
+                ExplainFailureSchema()
+            ),
+            Tool(
                 "duplicate_request",
                 "复制一个请求到同一集合的下一位置",
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("请求 id") }, "id")
@@ -2089,28 +2125,31 @@ public sealed class McpServer
                         "OnPreviousFailure"
                     ),
                     ["parallelGroup"] = IntegerSchema("并行组，0 表示不并行", 0, 1000),
-                    ["assertions"] = new JsonObject
-                    {
-                        ["type"] = "array",
-                        ["description"] = "JSONPath 或响应头断言",
-                        ["items"] = new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["kind"] = EnumSchema("断言类型", "JSONPath", "Header"),
-                                ["path"] = StringSchema("JSONPath 或响应头名"),
-                                ["expected"] = StringSchema("期望值"),
-                            },
-                            ["required"] = new JsonArray("path", "expected"),
-                        },
-                    },
+                    ["assertions"] = AssertionsSchema(),
                     ["mappings"] = MappingArraySchema(),
                 },
                 ["required"] = new JsonArray("requestId"),
             },
         };
     }
+
+    private static JsonObject AssertionsSchema() =>
+        new()
+        {
+            ["type"] = "array",
+            ["description"] = "JSONPath 或响应头断言",
+            ["items"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["kind"] = EnumSchema("断言类型", "JSONPath", "Header"),
+                    ["path"] = StringSchema("JSONPath 或响应头名"),
+                    ["expected"] = StringSchema("期望值"),
+                },
+                ["required"] = new JsonArray("path", "expected"),
+            },
+        };
 
     private static JsonObject SuiteWorkflowSchema(string description) =>
         new()

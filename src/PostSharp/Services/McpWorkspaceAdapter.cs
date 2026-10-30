@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Avalonia.Threading;
@@ -724,6 +725,40 @@ public sealed class McpWorkspaceAdapter
         CancellationToken cancellationToken
     )
     {
+        var outcome = await SendCoreAsync(id, environmentId, context, cancellationToken)
+            .ConfigureAwait(false);
+        return outcome.Result;
+    }
+
+    public async Task<EndpointVerification> VerifyEndpointAsync(
+        Guid id,
+        Guid? environmentId,
+        EndpointExpectation expectation,
+        McpCallContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        var outcome = await SendCoreAsync(id, environmentId, context, cancellationToken)
+            .ConfigureAwait(false);
+        return EndpointVerifier.Verify(
+            outcome.Result.RequestId,
+            outcome.Result.Name,
+            outcome.Result.Method,
+            outcome.Result.Url,
+            outcome.Masked,
+            expectation
+        );
+    }
+
+    private sealed record SendOutcome(McpSendResult Result, HttpResult Masked);
+
+    private async Task<SendOutcome> SendCoreAsync(
+        Guid id,
+        Guid? environmentId,
+        McpCallContext context,
+        CancellationToken cancellationToken
+    )
+    {
         var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>
         {
             var request = FindRequest(id);
@@ -806,7 +841,7 @@ public sealed class McpWorkspaceAdapter
             .ToList();
         var body = SecretMasker.MaskHead(result.Body, McpSendResult.BodyLimit, secrets);
 
-        return new McpSendResult(
+        var payload = new McpSendResult(
             id,
             snapshot.Request.Name,
             composed?.Method ?? snapshot.Request.Method,
@@ -829,6 +864,12 @@ public sealed class McpWorkspaceAdapter
             // MaskHead returns more than the limit exactly when it had to cut.
             body.Length > McpSendResult.BodyLimit
         );
+        var masked = SecretMasker.MaskResult(result, secrets) with
+        {
+            ReasonPhrase = SecretMasker.MaskSecrets(result.ReasonPhrase, secrets),
+            Error = result.Error is null ? null : SecretMasker.MaskSecrets(result.Error, secrets),
+        };
+        return new SendOutcome(payload, masked);
     }
 
     public async Task<McpSequenceResult> RunSequenceAsync(
@@ -1284,6 +1325,196 @@ public sealed class McpWorkspaceAdapter
             context.Client,
             cancellationToken
         );
+    }
+
+    public async Task<SuiteGenerationResult> GenerateSuiteAsync(
+        string name,
+        IReadOnlyList<Guid> collectionIds,
+        IReadOnlyList<Guid> requestIds,
+        int delayMs,
+        bool stopOnError,
+        bool assertObservedStatus,
+        bool dryRun
+    )
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var requests = new List<RequestItem>();
+            foreach (var collectionId in collectionIds)
+            {
+                var collection =
+                    _viewModel.Collections.FirstOrDefault(candidate => candidate.Id == collectionId)
+                    ?? throw new KeyNotFoundException($"没有找到 id 为 {collectionId} 的集合。");
+                requests.AddRange(FlattenRequests(collection));
+            }
+
+            foreach (var requestId in requestIds)
+            {
+                var request =
+                    FindRequest(requestId)
+                    ?? throw new KeyNotFoundException($"没有找到 id 为 {requestId} 的请求。");
+                requests.Add(request);
+            }
+
+            var unique = new List<RequestItem>();
+            var seen = new HashSet<Guid>();
+            foreach (var request in requests)
+            {
+                if (seen.Add(request.Id))
+                {
+                    unique.Add(request);
+                }
+            }
+
+            if (unique.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "collectionIds 和 requestIds 至少需要一个，且要包含可加入套件的请求。"
+                );
+            }
+
+            var draft = SuiteGenerationPlanner.Plan(
+                unique,
+                _viewModel.History.ToList(),
+                assertObservedStatus
+            );
+            var notes = new List<string>();
+            if (requests.Count > unique.Count)
+            {
+                notes.Add($"已忽略 {requests.Count - unique.Count} 个重复请求。");
+            }
+
+            var unpinned = draft.Count(step => step.ExpectedStatus is null);
+            if (unpinned > 0)
+            {
+                notes.Add($"{unpinned} 步只检查网络成功（2xx/3xx），没有可用的成功发送历史。");
+            }
+
+            var suiteName = string.IsNullOrWhiteSpace(name) ? "MCP 生成套件" : name.Trim();
+            var suite = new TestSuite { Name = suiteName, StopOnError = stopOnError };
+            var stepInputs = draft
+                .Select(step => new McpSuiteStepInput(
+                    step.RequestId,
+                    step.ExpectedStatus,
+                    null,
+                    Math.Clamp(delayMs, 0, 60_000),
+                    Array.Empty<McpSuiteMappingInput>()
+                ))
+                .ToList();
+            suite.Steps.AddRange(BuildSuiteSteps(stepInputs));
+            SuiteWorkflowFactory.EnsureLinear(suite);
+            var validation = SuitePreflight.Validate(
+                suite,
+                _viewModel.Collections,
+                _viewModel.ActiveEnvironment
+            );
+            if (dryRun)
+            {
+                notes.Add("dryRun=true，草稿未写入工作区。");
+            }
+            else
+            {
+                _viewModel.Suites.Add(suite);
+                _viewModel.SelectedSuite = suite;
+                _viewModel.NotifyWorkspaceChanged();
+            }
+
+            return new SuiteGenerationResult(
+                !dryRun,
+                dryRun ? null : suite.Id,
+                suiteName,
+                draft.Count,
+                draft,
+                notes,
+                validation.HasErrors,
+                validation.ErrorCount,
+                validation.Summary
+            );
+        });
+    }
+
+    public async Task<SuiteReportExport> ExportReportAsync(
+        Guid suiteId,
+        Guid? runId,
+        string format,
+        int contentLimit
+    )
+    {
+        var run = await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var suite =
+                _viewModel.Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            return ResolveRun(suite, runId);
+        });
+        var export = SuiteRunReport.Export(run, format, contentLimit);
+        Directory.CreateDirectory(AppPaths.ReportDirectory);
+        var path = Path.Combine(AppPaths.ReportDirectory, export.FileName);
+        await File.WriteAllTextAsync(
+                path,
+                SuiteRunReport.Build(run, export.Format),
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
+            )
+            .ConfigureAwait(false);
+        return export with { Path = path };
+    }
+
+    public async Task<SuiteRunDiff> DiffRunsAsync(
+        Guid suiteId,
+        Guid baseRunId,
+        Guid? targetRunId,
+        int elapsedRegressionPercent
+    )
+    {
+        var runs = await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var suite =
+                _viewModel.Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            var baseRun = ResolveRun(suite, baseRunId);
+            var targetRun = targetRunId is { } requested
+                ? ResolveRun(suite, requested)
+                : suite.Runs.FirstOrDefault(candidate => candidate.Id != baseRunId)
+                    ?? throw new InvalidOperationException(
+                        "套件只有一次运行，无法比较；请先再运行一次。"
+                    );
+            return (Base: baseRun, Target: targetRun);
+        });
+        return SuiteRunDiffService.Compare(runs.Base, runs.Target, elapsedRegressionPercent);
+    }
+
+    public async Task<SuiteFailureExplanation> ExplainFailureAsync(
+        Guid suiteId,
+        Guid? runId,
+        Guid? stepId
+    )
+    {
+        var run = await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var suite =
+                _viewModel.Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            var resolved = ResolveRun(suite, runId);
+            if (stepId is { } requested && resolved.Steps.All(step => step.StepId != requested))
+            {
+                throw new KeyNotFoundException($"运行中没有 id 为 {requested} 的步骤。");
+            }
+
+            return resolved;
+        });
+        return SuiteFailureExplainer.Explain(run, stepId);
+    }
+
+    private static TestRunResult ResolveRun(TestSuite suite, Guid? runId)
+    {
+        if (runId is { } requested)
+        {
+            return suite.Runs.FirstOrDefault(candidate => candidate.Id == requested)
+                ?? throw new KeyNotFoundException($"套件中没有 id 为 {requested} 的运行记录。");
+        }
+
+        return suite.Runs.FirstOrDefault()
+            ?? throw new InvalidOperationException($"套件「{suite.Name}」还没有运行记录。");
     }
 
     public async Task<IReadOnlyList<McpHistoryInfo>> ListHistoryAsync(int limit)

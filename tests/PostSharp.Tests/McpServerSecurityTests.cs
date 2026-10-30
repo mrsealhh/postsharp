@@ -67,8 +67,13 @@ public sealed class McpServerSecurityTests
             .ToList();
         Assert.Contains("get_request", names);
         Assert.Contains("list_collections", names);
+        Assert.Contains("export_report", names);
+        Assert.Contains("diff_runs", names);
+        Assert.Contains("explain_failure", names);
         Assert.DoesNotContain("send_request", names);
         Assert.DoesNotContain("create_request", names);
+        Assert.DoesNotContain("verify_endpoint", names);
+        Assert.DoesNotContain("generate_suite", names);
 
         var blocked = await SendAsync(
             "POST",
@@ -113,6 +118,33 @@ public sealed class McpServerSecurityTests
         Assert.Contains("create_environment", names);
         Assert.Contains("clear_audit", names);
         Assert.Contains("restore_collection_trash", names);
+    }
+
+    [Fact]
+    public async Task ListsIntentTools()
+    {
+        var response = await SendAsync(
+            "POST",
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            null,
+            "127.0.0.1:5199"
+        );
+        Assert.NotNull(response.Body);
+
+        using var document = JsonDocument.Parse(response.Body);
+        var names = document
+            .RootElement.GetProperty("result")
+            .GetProperty("tools")
+            .EnumerateArray()
+            .Select(tool => tool.GetProperty("name").GetString())
+            .ToList();
+
+        Assert.Equal(75, names.Count);
+        Assert.Contains("verify_endpoint", names);
+        Assert.Contains("generate_suite", names);
+        Assert.Contains("export_report", names);
+        Assert.Contains("diff_runs", names);
+        Assert.Contains("explain_failure", names);
     }
 
     [Theory]
