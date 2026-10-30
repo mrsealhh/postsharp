@@ -54,6 +54,8 @@ PostSharp 的定位是：
 
 ### 调试能力
 
+- **侧栏树**：集合展开/收起和选中节点随工作区保存，下次打开直接回到上次的位置；节点被删除时回退第一个请求，空工作区保持「新建请求」草稿。
+- **复制集合**：集合右键可递归复制整棵子树，参数、请求头、表单、上传和授权都独立，副本换新 id、不继承 OpenAPI 来源与收藏，套件仍指向原请求。
 - **方法**：GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS。
 - **请求头**：键值表、常用头一键插入、重复头提示、环境变量。
 - **Cookie 管理**：顶栏 Cookie 按钮查看当前请求站点在本次运行中捕获的 Cookie，显示名称、值、作用域、过期时间和 Secure / HttpOnly 标记；支持刷新与清空当前站点。Cookie 只保存在进程内存，不写入工作区、审计或发布包。
@@ -998,6 +1000,8 @@ docs/
 | 授权复制与解析 | 临时控制台验证：`RequestAuth.Clone()` 后修改副本的 access_token 不影响原对象；`AuthResolver` 对「集合 A Bearer → 子集合 B 继承 → 请求」解析到集合 A，子集合 C 配 API Key 时请求 2 解析到集合 C |
 | 构建 | Debug / Release 均 0 警告、0 错误；`csharpier check .` 通过 |
 | MCP 意图工具 | 新增 `verify_endpoint` / `generate_suite` / `export_report` / `diff_runs` / `explain_failure`，工具总数 75；只读模式暴露 `export_report` / `diff_runs` / `explain_failure`，隐藏发送和生成；`verify_endpoint` 记录审计；单测覆盖检查项、期望状态推断、四种报告、diff 分类、失败定位和 source-generated JSON；259 个测试通过。本机已有 PostSharp 实例占用单实例锁，未做 GUI/MCP 实机联调 |
+| 集合树状态 | `CollectionDto.IsExpanded` 与 `SelectedCollectionId` / `SelectedRequestId` 随工作区落盘；启动恢复展开状态和选中节点，节点被删除时回退第一个请求，空工作区保持「新建请求」；旧工作区默认展开；选中/展开变化合并为一次延迟保存（单测） |
+| 复制集合 | 右键「复制集合」递归复制子集合与请求，参数、请求头、表单、上传、授权都复制为独立对象；所有节点换新 id，套件仍指向原请求；副本不继承 OpenAPI 来源和收藏；成功后 Toast「已复制集合」，失败走顶部提示条；单测覆盖深拷贝、id 与授权隔离、原树不变 |
 
 ## 开发约定
 

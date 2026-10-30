@@ -2926,6 +2926,22 @@
                                             />
                                         </arc:Button>
                                         <arc:Button
+                                            Variant="Ghost"
+                                            Size="Small"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="12,0"
+                                            IsVisible="{Binding IsCollectionSelected}"
+                                            Command="{Binding DuplicateSelectedCollectionCommand}"
+                                            Click="OnTreeMenuItemClick"
+                                        >
+                                            <controls:IconLabel
+                                                Icon="{x:Static arc:ArcIcons.Copy}"
+                                                Text="复制集合"
+                                                IconSize="13"
+                                            />
+                                        </arc:Button>
+                                        <arc:Button
                                             x:Name="TreeMenuSuiteButton"
                                             Variant="Ghost"
                                             Size="Small"
