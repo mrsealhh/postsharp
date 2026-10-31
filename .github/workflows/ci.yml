@@ -43,5 +43,15 @@ jobs:
       - name: Build
         run: dotnet build PostSharp.slnx -c Debug
 
+      - name: Validate packaging manifests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Get-Content packaging/scoop/postsharp.json -Raw | ConvertFrom-Json | Out-Null
+          $winget = Get-Content packaging/winget/PostSharp.yaml -Raw
+          if ($winget -notmatch 'InstallerSha256:\s+[0-9A-Fa-f]{64}') { throw 'winget manifest is missing InstallerSha256.' }
+          $brew = Get-Content packaging/homebrew/postsharp.rb -Raw
+          if ($brew -notmatch 'sha256\s+"[0-9A-Fa-f]{64}"') { throw 'Homebrew cask is missing sha256.' }
+
       - name: Test
         run: dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj -c Debug --no-build

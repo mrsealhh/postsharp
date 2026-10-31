@@ -439,6 +439,25 @@ public sealed partial class McpServer
             );
         }
 
+        var requestedTool = name.Trim();
+        if (
+            McpDestructiveTools.IsDestructive(requestedTool)
+            && OptionalBool(arguments, "dryRun") == true
+        )
+        {
+            try
+            {
+                var preview = await PreviewDestructiveAsync(requestedTool, arguments)
+                    .ConfigureAwait(false);
+                return ToolResult(id, preview, isError: false);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "MCP 破坏性操作 dry-run 失败 {Tool}", requestedTool);
+                return ToolResult(id, new JsonObject { ["error"] = ex.Message }, isError: true);
+            }
+        }
+
         try
         {
             object? payload = name switch
@@ -675,7 +694,8 @@ public sealed partial class McpServer
                 "start_suite_run" => await _workspace
                     .StartSuiteRunAsync(
                         RequireGuid(arguments, "id"),
-                        new McpCallContext("start_suite_run", _clientName, policy.PermissionLabel)
+                        new McpCallContext("start_suite_run", _clientName, policy.PermissionLabel),
+                        OptionalString(arguments, "idempotencyKey")
                     )
                     .ConfigureAwait(false),
                 "get_suite_run_job" => await _workspace
@@ -1558,7 +1578,16 @@ public sealed partial class McpServer
             Tool(
                 "start_suite_run",
                 "在后台启动套件运行并立即返回 jobId；用 get_suite_run_job 轮询进度，用 cancel_suite_run 取消",
-                ObjectSchema(new JsonObject { ["id"] = StringSchema("套件 id") }, "id")
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["id"] = StringSchema("套件 id"),
+                        ["idempotencyKey"] = StringSchema(
+                            "幂等键；相同 key 重复调用会返回同一个 jobId，不会重复执行"
+                        ),
+                    },
+                    "id"
+                )
             ),
             Tool(
                 "get_suite_run_job",
@@ -1952,13 +1981,24 @@ public sealed partial class McpServer
             Tool("empty_collection_trash", "永久清空集合回收站", ObjectSchema(new JsonObject()))
         );
 
-    private static JsonObject Tool(string name, string description, JsonObject schema) =>
-        new()
+    private static JsonObject Tool(string name, string description, JsonObject schema)
+    {
+        if (
+            McpDestructiveTools.IsDestructive(name)
+            && schema["properties"] is JsonObject properties
+            && !properties.ContainsKey("dryRun")
+        )
+        {
+            properties["dryRun"] = BooleanSchema("只返回影响预览，不执行；默认 false");
+        }
+
+        return new JsonObject
         {
             ["name"] = name,
             ["description"] = description,
             ["inputSchema"] = schema,
         };
+    }
 
     private static JsonObject ObjectSchema(JsonObject properties, params string[] required)
     {

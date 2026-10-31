@@ -133,6 +133,7 @@ public sealed record McpSuiteRunJobInfo(
     Guid JobId,
     Guid SuiteId,
     string SuiteName,
+    string? IdempotencyKey,
     string Status,
     DateTimeOffset StartedAt,
     DateTimeOffset? CompletedAt,
@@ -1210,10 +1211,16 @@ public sealed class McpWorkspaceAdapter
         return await _viewModel.RunSuiteForMcpAsync(id, context.Client, cancellationToken);
     }
 
-    public async Task<McpSuiteRunJobInfo> StartSuiteRunAsync(Guid suiteId, McpCallContext context)
+    public async Task<McpSuiteRunJobInfo> StartSuiteRunAsync(
+        Guid suiteId,
+        McpCallContext context,
+        string? idempotencyKey = null
+    )
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
-            ToSuiteRunJobInfo(_viewModel.StartSuiteRunForMcp(suiteId, context.Client))
+            ToSuiteRunJobInfo(
+                _viewModel.StartSuiteRunForMcp(suiteId, context.Client, idempotencyKey)
+            )
         );
     }
 
@@ -1254,6 +1261,7 @@ public sealed class McpWorkspaceAdapter
                 job.Id,
                 job.SuiteId,
                 job.SuiteName,
+                job.IdempotencyKey,
                 job.Status,
                 job.StartedAt,
                 job.CompletedAt,

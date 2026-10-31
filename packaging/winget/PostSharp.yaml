@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.singleton.1.10.0.schema.json
+PackageIdentifier: Mrsealhh.PostSharp
+PackageVersion: 1.11.0
+PackageLocale: en-US
+Publisher: mrsealhh
+PublisherUrl: https://github.com/mrsealhh/postsharp
+PublisherSupportUrl: https://github.com/mrsealhh/postsharp/issues
+PackageName: PostSharp
+PackageUrl: https://github.com/mrsealhh/postsharp
+License: MIT
+LicenseUrl: https://github.com/mrsealhh/postsharp/blob/master/LICENSE
+ShortDescription: Local API debugging workbench with MCP automation.
+Description: PostSharp combines a Postman-style HTTP client with MCP tools, audit trails and regression suites, so an AI client and a person can drive the same local workspace.
+Moniker: postsharp
+Tags:
+  - api
+  - http
+  - mcp
+  - testing
+  - automation
+ManifestType: singleton
+ManifestVersion: 1.10.0
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: PostSharp.exe
+        PortableCommandAlias: postsharp
+    InstallerUrl: https://github.com/mrsealhh/postsharp/releases/download/v1.11.0/PostSharp-win-x64.zip
+    InstallerSha256: 59C5969E6E2ECA487642BCC7F9A55ED9F20C504186A55940C82DEEB1214A84D1

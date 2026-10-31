@@ -5330,8 +5330,25 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         );
     }
 
-    public SuiteRunJob StartSuiteRunForMcp(Guid suiteId, string? client)
+    public SuiteRunJob StartSuiteRunForMcp(
+        Guid suiteId,
+        string? client,
+        string? idempotencyKey = null
+    )
     {
+        var existing = SuiteRunJobLookup.FindByIdempotencyKey(_suiteRunJobs.Values, idempotencyKey);
+        if (existing is not null)
+        {
+            if (existing.SuiteId != suiteId)
+            {
+                throw new InvalidOperationException(
+                    $"idempotencyKey「{idempotencyKey}」已用于另一个套件，请换一个 key。"
+                );
+            }
+
+            return existing;
+        }
+
         var suite =
             Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
             ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
@@ -5354,6 +5371,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         {
             SuiteId = suite.Id,
             SuiteName = suite.Name,
+            IdempotencyKey = string.IsNullOrWhiteSpace(idempotencyKey)
+                ? null
+                : idempotencyKey.Trim(),
             TotalSteps = suite.Steps.Count,
         };
         foreach (var step in suite.Steps)

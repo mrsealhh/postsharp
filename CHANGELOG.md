@@ -1,5 +1,19 @@
 # 更新日志
 
+## v1.11.1（待发布）
+
+### MCP 安全与可重复性
+
+- 破坏性工具新增 `dryRun`：删除集合/请求/套件/审计/历史/环境/变量/存储配置，清空或永久删除回收站，恢复记录和切换存储，都先返回目标名称、影响数量和提示，不执行实际修改。
+- `start_suite_run` 新增 `idempotencyKey`：同一 key 重复调用返回同一个 jobId；key 用于另一个套件时返回明确错误。
+- `get_suite_run_job` 返回 `idempotencyKey`，便于客户端对账。
+
+### 分发
+
+- 新增 `packaging/winget`、`packaging/scoop`、`packaging/homebrew` 清单模板。
+- 新增 `scripts/update-packaging.ps1`，从发布 ZIP 的 `.sha256` 生成对应版本清单。
+- 新增 `docs/distribution.md`，说明本地安装、上游提交和限制。
+
 ## v1.11.0 — 2026-10-31
 
 主题：MCP 意图层、集合树体验与托盘可靠性。
