@@ -233,8 +233,16 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void OnMinimizeWindowClick(object? sender, RoutedEventArgs e) =>
+    private void OnMinimizeWindowClick(object? sender, RoutedEventArgs e)
+    {
+        if (Application.Current is App app)
+        {
+            app.MinimizeToTray(this);
+            return;
+        }
+
         WindowState = WindowState.Minimized;
+    }
 
     private void OnToggleMaximizeWindowClick(object? sender, RoutedEventArgs e) => ToggleMaximize();
 

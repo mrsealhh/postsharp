@@ -25,6 +25,7 @@ public partial class App : Application
     private bool _allowExit;
     private bool _startBackgroundServiceOnExit;
     private bool _serviceShutdownRequested;
+    private bool _wasMaximizedBeforeTray;
 
     public override async void OnFrameworkInitializationCompleted()
     {
@@ -89,12 +90,21 @@ public partial class App : Application
         }
 
         var menu = new NativeMenu();
-        var show = new NativeMenuItem("打开 PostSharp");
-        show.Click += (_, _) => ShowMainWindow(maximize: false);
+        var show = new NativeMenuItem("显示主页面");
+        show.Click += (_, _) =>
+            Dispatcher.UIThread.Post(
+                () => ShowMainWindow(maximize: false),
+                DispatcherPriority.Background
+            );
         var maximize = new NativeMenuItem("最大化打开");
-        maximize.Click += (_, _) => ShowMainWindow(maximize: true);
+        maximize.Click += (_, _) =>
+            Dispatcher.UIThread.Post(
+                () => ShowMainWindow(maximize: true),
+                DispatcherPriority.Background
+            );
         var exit = new NativeMenuItem("退出 PostSharp");
-        exit.Click += (_, _) => ExitApplication();
+        exit.Click += (_, _) =>
+            Dispatcher.UIThread.Post(ExitApplication, DispatcherPriority.Background);
         menu.Items.Add(show);
         menu.Items.Add(maximize);
         menu.Items.Add(new NativeMenuItemSeparator());
@@ -102,15 +112,48 @@ public partial class App : Application
 
         _trayIcon = new TrayIcon
         {
-            Icon = new WindowIcon(
-                AssetLoader.Open(new Uri("avares://PostSharp/Assets/logo-icon.png"))
-            ),
-            ToolTipText = "PostSharp · MCP 后台常驻",
+            Icon = LoadTrayIcon(),
+            ToolTipText = "PostSharp · 左键打开主页面，右键显示菜单",
             Menu = menu,
             IsVisible = _viewModel.Settings.McpServiceMode != McpServiceModes.Disabled,
         };
-        _trayIcon.Clicked += (_, _) => ShowMainWindow(maximize: false);
+        _trayIcon.Clicked += (_, _) =>
+            Dispatcher.UIThread.Post(
+                () => ShowMainWindow(maximize: false),
+                DispatcherPriority.Background
+            );
         TrayIcon.SetIcons(this, new TrayIcons { _trayIcon });
+        Log.Information("托盘图标已创建 {Mode}", _viewModel.Settings.McpServiceMode);
+    }
+
+    /// <summary>Windows tray icons need an .ico; a large PNG can render as a blank or black square.</summary>
+    private static WindowIcon LoadTrayIcon() =>
+        new(
+            AssetLoader.Open(
+                new Uri(
+                    OperatingSystem.IsWindows()
+                        ? "avares://PostSharp/Assets/logo.ico"
+                        : "avares://PostSharp/Assets/logo-icon.png"
+                )
+            )
+        );
+
+    private static void RemoveTrayIcon(TrayIcon? icon)
+    {
+        if (icon is null)
+        {
+            return;
+        }
+
+        try
+        {
+            icon.IsVisible = false;
+            icon.Dispose();
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "移除托盘图标失败");
+        }
     }
 
     private void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
@@ -124,29 +167,25 @@ public partial class App : Application
         if (mode == McpServiceModes.Page)
         {
             e.Cancel = true;
-            _mainWindow?.Hide();
-            if (_trayIcon is not null)
-            {
-                _trayIcon.IsVisible = true;
-            }
-
+            HideToTray(showTrayIcon: true);
             Log.Information("主窗口已隐藏，MCP 页面常驻服务继续运行");
             return;
         }
 
         _startBackgroundServiceOnExit = mode == McpServiceModes.Background;
         _allowExit = true;
-        if (_trayIcon is not null)
-        {
-            _trayIcon.IsVisible = false;
-        }
-
+        RemoveTrayIcon(_trayIcon);
+        _trayIcon = null;
         _desktop?.Shutdown();
     }
 
     private void OnDesktopExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
     {
         _serviceStopTimer?.Stop();
+        RemoveTrayIcon(_trayIcon);
+        _trayIcon = null;
+        RemoveTrayIcon(_serviceTrayIcon);
+        _serviceTrayIcon = null;
         if (IsMcpService)
         {
             if (!_serviceShutdownRequested)
@@ -206,10 +245,44 @@ public partial class App : Application
 
         var mode = _viewModel?.Settings.McpServiceMode ?? McpServiceModes.Disabled;
         _trayIcon.IsVisible = mode != McpServiceModes.Disabled;
-        if (mode != McpServiceModes.Page && _mainWindow?.IsVisible == false)
+        Log.Information("托盘图标可见性已更新 {Mode} {Visible}", mode, _trayIcon.IsVisible);
+        if (mode != McpServiceModes.Page && _mainWindow is { IsVisible: false })
         {
             ShowMainWindow(maximize: false);
         }
+    }
+
+    /// <summary>True when the sidebar has a tray icon that can bring the window back.</summary>
+    public bool CanMinimizeToTray => _trayIcon is { IsVisible: true };
+
+    /// <summary>Minimize to the tray when it is available; otherwise fall back to a normal taskbar minimize.</summary>
+    public void MinimizeToTray(Window window)
+    {
+        if (!CanMinimizeToTray || !ReferenceEquals(window, _mainWindow))
+        {
+            window.WindowState = WindowState.Minimized;
+            return;
+        }
+
+        HideToTray(showTrayIcon: false);
+    }
+
+    private void HideToTray(bool showTrayIcon)
+    {
+        if (_mainWindow is not { } window)
+        {
+            return;
+        }
+
+        _wasMaximizedBeforeTray = window.WindowState == WindowState.Maximized;
+        window.ShowInTaskbar = false;
+        window.Hide();
+        if (showTrayIcon && _trayIcon is not null)
+        {
+            _trayIcon.IsVisible = true;
+        }
+
+        Log.Information("主窗口已隐藏到托盘");
     }
 
     private void ShowMainWindow(bool maximize)
@@ -219,23 +292,35 @@ public partial class App : Application
             return;
         }
 
-        Dispatcher.UIThread.Post(() =>
+        try
         {
+            var restoreMaximized =
+                maximize
+                || _wasMaximizedBeforeTray
+                || (window.IsVisible && window.WindowState == WindowState.Maximized);
+            _wasMaximizedBeforeTray = false;
+            window.ShowInTaskbar = true;
             window.Show();
-            window.WindowState = maximize ? WindowState.Maximized : WindowState.Normal;
+            window.WindowState = restoreMaximized ? WindowState.Maximized : WindowState.Normal;
             window.Activate();
-        });
+            Log.Information("已从托盘显示主窗口 {Maximized}", restoreMaximized);
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "从托盘显示主窗口失败");
+            _viewModel?.DataNotice.Warn(
+                "无法从托盘显示主窗口。请用任务栏或重新启动 PostSharp；详细信息已写入日志。"
+            );
+        }
     }
 
     private void ExitApplication()
     {
         _allowExit = true;
         _startBackgroundServiceOnExit = false;
-        if (_trayIcon is not null)
-        {
-            _trayIcon.IsVisible = false;
-        }
-
+        RemoveTrayIcon(_trayIcon);
+        _trayIcon = null;
+        Log.Information("用户从托盘退出 PostSharp");
         _desktop?.Shutdown();
     }
 
@@ -247,24 +332,27 @@ public partial class App : Application
         }
 
         var menu = new NativeMenu();
-        var open = new NativeMenuItem("打开 PostSharp 客户端");
-        open.Click += (_, _) => LaunchClient();
-        var exit = new NativeMenuItem("退出 MCP 后台服务");
-        exit.Click += (_, _) => StopMcpService();
+        var open = new NativeMenuItem("显示主页面");
+        open.Click += (_, _) =>
+            Dispatcher.UIThread.Post(LaunchClient, DispatcherPriority.Background);
+        var exit = new NativeMenuItem("退出后台服务");
+        exit.Click += (_, _) =>
+            Dispatcher.UIThread.Post(StopMcpService, DispatcherPriority.Background);
         menu.Items.Add(open);
         menu.Items.Add(new NativeMenuItemSeparator());
         menu.Items.Add(exit);
 
         _serviceTrayIcon = new TrayIcon
         {
-            Icon = new WindowIcon(
-                AssetLoader.Open(new Uri("avares://PostSharp/Assets/logo-icon.png"))
-            ),
-            ToolTipText = "PostSharp · MCP 后台独立服务",
+            Icon = LoadTrayIcon(),
+            ToolTipText = "PostSharp · 后台服务 · 右键显示菜单",
             Menu = menu,
             IsVisible = true,
         };
+        _serviceTrayIcon.Clicked += (_, _) =>
+            Dispatcher.UIThread.Post(LaunchClient, DispatcherPriority.Background);
         TrayIcon.SetIcons(this, new TrayIcons { _serviceTrayIcon });
+        Log.Information("MCP 后台服务托盘图标已创建");
     }
 
     private void LaunchClient()
@@ -296,11 +384,9 @@ public partial class App : Application
     {
         _serviceShutdownRequested = true;
         _allowExit = true;
-        if (_serviceTrayIcon is not null)
-        {
-            _serviceTrayIcon.IsVisible = false;
-        }
-
+        RemoveTrayIcon(_serviceTrayIcon);
+        _serviceTrayIcon = null;
+        Log.Information("用户从托盘退出 MCP 后台服务");
         _viewModel?.Shutdown();
         _desktop?.Shutdown();
     }
