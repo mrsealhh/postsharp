@@ -3674,6 +3674,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [RelayCommand]
     private void ConfirmResetDemo()
     {
+        if (IsRunningSuite || HasActiveSuiteRunJob())
+        {
+            IsResetDemoDialogOpen = false;
+            ShowToast("套件正在运行，请先等待或取消后再重置");
+            return;
+        }
+
         IsResetDemoDialogOpen = false;
         Collections.Clear();
         Environments.Clear();
