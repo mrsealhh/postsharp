@@ -1,6 +1,6 @@
 # 更新日志
 
-## v1.11.1（待发布）
+## v1.11.1 — 2026-10-31
 
 ### MCP 安全与可重复性
 
@@ -13,6 +13,11 @@
 - 新增 `packaging/winget`、`packaging/scoop`、`packaging/homebrew` 清单模板。
 - 新增 `scripts/update-packaging.ps1`，从发布 ZIP 的 `.sha256` 生成对应版本清单。
 - 新增 `docs/distribution.md`，说明本地安装、上游提交和限制。
+
+### 工程
+
+- 新增 MCP 安全与幂等测试；278 个测试通过，Debug 构建 0 警告 0 错误。
+- CI 增加 packaging 校验（Scoop JSON、winget/Homebrew 哈希）。
 
 ## v1.11.0 — 2026-10-31
 
