@@ -1118,7 +1118,7 @@ master                 稳定可发布
 .\scripts\update-packaging.ps1 -Version 1.11.1
 ```
 
-会从 `artifacts/*.sha256` 读取校验值并更新 `packaging/winget/PostSharp.yaml`、`packaging/scoop/postsharp.json`、`packaging/homebrew/postsharp.rb`。安装命令、上游提交方式和已知限制见 [docs/distribution.md](docs/distribution.md)。
+会从 `artifacts/*.sha256` 读取校验值并更新 `packaging/winget/PostSharp.yaml`、`packaging/scoop/postsharp.json`、`packaging/homebrew/postsharp.rb`。安装命令、上游提交方式和已知限制见 [docs/distribution.md](docs/distribution.md)。仓库还提供 `.github/workflows/release.yml`，可在 Actions 页面手动构建全部平台包并创建 draft release。
 
 ### 已知限制与路线图
 
