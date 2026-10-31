@@ -489,6 +489,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _isDeleteDialogOpen;
 
     [ObservableProperty]
+    private bool _isResetDemoDialogOpen;
+
+    [ObservableProperty]
     private string _deleteDialogTitle = "删除？";
 
     [ObservableProperty]
@@ -1757,6 +1760,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         || IsCookieDialogOpen
         || IsRenameDialogOpen
         || IsDeleteDialogOpen
+        || IsResetDemoDialogOpen
         || IsHistoryTrashConfirmOpen
         || IsHistoryTrashOpen
         || IsHistoryPurgeConfirmOpen
@@ -1773,6 +1777,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (IsDeleteDialogOpen)
         {
             ConfirmDeleteCommand.Execute(null);
+            return true;
+        }
+
+        if (IsResetDemoDialogOpen)
+        {
+            ConfirmResetDemoCommand.Execute(null);
             return true;
         }
 
@@ -1857,6 +1867,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (IsDeleteDialogOpen)
         {
             CancelDeleteCommand.Execute(null);
+            return true;
+        }
+
+        if (IsResetDemoDialogOpen)
+        {
+            CancelResetDemoCommand.Execute(null);
             return true;
         }
 
@@ -3641,6 +3657,46 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         _pendingDelete = null;
         IsDeleteDialogOpen = false;
+    }
+
+    [RelayCommand]
+    private void RequestResetDemo()
+    {
+        IsResetDemoDialogOpen = true;
+    }
+
+    [RelayCommand]
+    private void CancelResetDemo()
+    {
+        IsResetDemoDialogOpen = false;
+    }
+
+    [RelayCommand]
+    private void ConfirmResetDemo()
+    {
+        IsResetDemoDialogOpen = false;
+        Collections.Clear();
+        Environments.Clear();
+        Suites.Clear();
+        History.Clear();
+        RecycledHistory.Clear();
+        TreeTrash.Items.Clear();
+        SelectedSuite = null;
+        SelectedCollection = null;
+        SelectedRequest = null;
+        Editing = new RequestItem { Name = "新建请求" };
+        IsDraft = true;
+        SeedWorkspace();
+        var firstRequest = Collections
+            .SelectMany(collection => collection.Requests)
+            .FirstOrDefault();
+        Editing = firstRequest ?? new RequestItem { Name = "新建请求" };
+        SelectedCollection = firstRequest?.Owner ?? Collections.FirstOrDefault();
+        SelectedRequest = firstRequest;
+        IsDraft = firstRequest is null;
+        RefreshRequestTabOptions();
+        NotifyWorkspaceChanged();
+        ShowToast("已重置演示工作区");
     }
 
     [RelayCommand]
