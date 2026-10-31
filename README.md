@@ -1083,11 +1083,11 @@ master                 稳定可发布
 发布新版本（三类主包 + 可选 NativeAOT 包）：
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.11.0
-.\scripts\build-linux-release.ps1 -Version 1.11.0
-.\scripts\build-osx-release.ps1 -Version 1.11.0 -RuntimeIdentifier osx-arm64
+.\scripts\build-release.ps1 -Version 1.11.1
+.\scripts\build-linux-release.ps1 -Version 1.11.1
+.\scripts\build-osx-release.ps1 -Version 1.11.1 -RuntimeIdentifier osx-arm64
 # 可选：NativeAOT 单独产物（Windows 上构建）
-.\scripts\build-aot-release.ps1 -Version 1.11.0
+.\scripts\build-aot-release.ps1 -Version 1.11.1
 # CLI 独立发布，不进入上面三个桌面包
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier win-x64 -SelfContained
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier linux-x64 -SelfContained
@@ -1111,7 +1111,7 @@ master                 稳定可发布
 `packaging/` 提供 winget、Scoop 和 Homebrew 清单模板，发布后运行：
 
 ```powershell
-.\scripts\update-packaging.ps1 -Version 1.11.0
+.\scripts\update-packaging.ps1 -Version 1.11.1
 ```
 
 会从 `artifacts/*.sha256` 读取校验值并更新 `packaging/winget/PostSharp.yaml`、`packaging/scoop/postsharp.json`、`packaging/homebrew/postsharp.rb`。安装命令、上游提交方式和已知限制见 [docs/distribution.md](docs/distribution.md)。
