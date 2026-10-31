@@ -11,6 +11,7 @@
 
 - 新增 `scripts/perf-smoke.ps1`：启动自包含包，测量到健康端点就绪的冷启动时间和空闲私有内存，支持 `-Json`。
 - 新增 `docs/performance.md`，记录 JIT/AOT 基线和 1.11.1 复测结果。
+- 新增 `.github/workflows/release.yml`：手动触发构建三平台 JIT、Windows AOT 和校验文件，可选创建 draft release。
 
 ## v1.11.1 — 2026-10-31
 

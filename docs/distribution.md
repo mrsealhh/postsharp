@@ -56,6 +56,15 @@ brew tap mrsealhh/postsharp
 brew install --cask postsharp
 ```
 
+## GitHub Actions 发布
+
+仓库提供 `.github/workflows/release.yml`，在 Actions 页面手动运行：
+
+- 输入版本号（不带 `v`）。
+- 勾选 `publish` 时，构建完成后创建一个 **draft release**；检查资产和校验值后再手动发布。
+- 产物包括 Windows/Linux/macOS JIT 包、Windows NativeAOT 包和各自 `.sha256`；构建后会自动更新 `packaging/` 清单。
+- 工作流只构建并上传，不会自动把 draft 转成正式版本。
+
 ## 说明
 
 - macOS 包未签名/公证；Homebrew cask 只安装可执行文件，不包含 `.app` 图标。

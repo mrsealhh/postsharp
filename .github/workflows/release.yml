@@ -1,0 +1,86 @@
+name: Release packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without the leading v
+        required: true
+      publish:
+        description: Create a draft GitHub release after the build
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  AVALONIA_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  packages:
+    name: Build release packages
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build Windows package
+        run: pwsh -NoProfile -File scripts/build-release.ps1 -Version ${{ inputs.version }}
+
+      - name: Build Linux package
+        run: pwsh -NoProfile -File scripts/build-linux-release.ps1 -Version ${{ inputs.version }}
+
+      - name: Build macOS package
+        run: pwsh -NoProfile -File scripts/build-osx-release.ps1 -Version ${{ inputs.version }} -RuntimeIdentifier osx-arm64
+
+      - name: Build Windows NativeAOT package
+        run: pwsh -NoProfile -File scripts/build-aot-release.ps1 -Version ${{ inputs.version }}
+
+      - name: Update packaging manifests
+        run: pwsh -NoProfile -File scripts/update-packaging.ps1 -Version ${{ inputs.version }}
+
+      - name: Validate packaging manifests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Get-Content packaging/scoop/postsharp.json -Raw | ConvertFrom-Json | Out-Null
+          $winget = Get-Content packaging/winget/PostSharp.yaml -Raw
+          if ($winget -notmatch 'InstallerSha256:\s+[0-9A-Fa-f]{64}') { throw 'winget manifest is missing InstallerSha256.' }
+          $brew = Get-Content packaging/homebrew/postsharp.rb -Raw
+          if ($brew -notmatch 'sha256\s+"[0-9A-Fa-f]{64}"') { throw 'Homebrew cask is missing sha256.' }
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: postsharp-${{ inputs.version }}-packages
+          if-no-files-found: error
+          path: |
+            artifacts/PostSharp-win-x64.zip
+            artifacts/PostSharp-win-x64.zip.sha256
+            artifacts/PostSharp-linux-x64.zip
+            artifacts/PostSharp-linux-x64.zip.sha256
+            artifacts/PostSharp-osx-arm64.zip
+            artifacts/PostSharp-osx-arm64.zip.sha256
+            artifacts/PostSharp-aot-win-x64.zip
+            artifacts/PostSharp-aot-win-x64.zip.sha256
+
+      - name: Create draft release
+        if: ${{ inputs.publish }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ inputs.version }}" --target master --draft --title "PostSharp ${{ inputs.version }}" --notes-file CHANGELOG.md artifacts/PostSharp-win-x64.zip artifacts/PostSharp-win-x64.zip.sha256 artifacts/PostSharp-linux-x64.zip artifacts/PostSharp-linux-x64.zip.sha256 artifacts/PostSharp-osx-arm64.zip artifacts/PostSharp-osx-arm64.zip.sha256 artifacts/PostSharp-aot-win-x64.zip artifacts/PostSharp-aot-win-x64.zip.sha256
