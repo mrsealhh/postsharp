@@ -3,7 +3,6 @@ using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Platform;
 using Avalonia.Threading;
 using PostSharp.Models;
 using PostSharp.Services;
@@ -18,8 +17,8 @@ public partial class App : Application
 
     private MainWindowViewModel? _viewModel;
     private MainWindow? _mainWindow;
-    private TrayIcon? _trayIcon;
-    private TrayIcon? _serviceTrayIcon;
+    private ITrayIconHost? _trayIcon;
+    private ITrayIconHost? _serviceTrayIcon;
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private DispatcherTimer? _serviceStopTimer;
     private bool _allowExit;
@@ -89,56 +88,57 @@ public partial class App : Application
             return;
         }
 
-        var menu = new NativeMenu();
-        var show = new NativeMenuItem("显示主页面");
-        show.Click += (_, _) =>
-            Dispatcher.UIThread.Post(
-                () => ShowMainWindow(maximize: false),
-                DispatcherPriority.Background
-            );
-        var maximize = new NativeMenuItem("最大化打开");
-        maximize.Click += (_, _) =>
-            Dispatcher.UIThread.Post(
-                () => ShowMainWindow(maximize: true),
-                DispatcherPriority.Background
-            );
-        var exit = new NativeMenuItem("退出 PostSharp");
-        exit.Click += (_, _) =>
-            Dispatcher.UIThread.Post(ExitApplication, DispatcherPriority.Background);
-        menu.Items.Add(show);
-        menu.Items.Add(maximize);
-        menu.Items.Add(new NativeMenuItemSeparator());
-        menu.Items.Add(exit);
-
-        _trayIcon = new TrayIcon
-        {
-            Icon = LoadTrayIcon(),
-            ToolTipText = "PostSharp · 左键打开主页面，右键显示菜单",
-            Menu = menu,
-            IsVisible = _viewModel.Settings.McpServiceMode != McpServiceModes.Disabled,
-        };
-        _trayIcon.Clicked += (_, _) =>
-            Dispatcher.UIThread.Post(
-                () => ShowMainWindow(maximize: false),
-                DispatcherPriority.Background
-            );
-        TrayIcon.SetIcons(this, new TrayIcons { _trayIcon });
+        _trayIcon = CreateTrayHost(
+            "PostSharp · 左键打开主页面，右键显示菜单",
+            [
+                new TrayMenuEntry(
+                    "显示主页面",
+                    () =>
+                        Dispatcher.UIThread.Post(
+                            () => ShowMainWindow(maximize: false),
+                            DispatcherPriority.Background
+                        )
+                ),
+                new TrayMenuEntry(
+                    "最大化打开",
+                    () =>
+                        Dispatcher.UIThread.Post(
+                            () => ShowMainWindow(maximize: true),
+                            DispatcherPriority.Background
+                        )
+                ),
+                null,
+                new TrayMenuEntry(
+                    "退出 PostSharp",
+                    () => Dispatcher.UIThread.Post(ExitApplication, DispatcherPriority.Background)
+                ),
+            ]
+        );
+        _trayIcon.IsVisible = _viewModel.Settings.McpServiceMode != McpServiceModes.Disabled;
         Log.Information("托盘图标已创建 {Mode}", _viewModel.Settings.McpServiceMode);
     }
 
-    /// <summary>Windows tray icons need an .ico; a large PNG can render as a blank or black square.</summary>
-    private static WindowIcon LoadTrayIcon() =>
-        new(
-            AssetLoader.Open(
-                new Uri(
-                    OperatingSystem.IsWindows()
-                        ? "avares://PostSharp/Assets/logo.ico"
-                        : "avares://PostSharp/Assets/logo-icon.png"
-                )
-            )
-        );
+    private ITrayIconHost CreateTrayHost(
+        string toolTipText,
+        IReadOnlyList<TrayMenuEntry?> menuEntries
+    )
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                return new WindowsTrayIconHost(toolTipText, menuEntries);
+            }
+            catch (Exception exception)
+            {
+                Log.Warning(exception, "创建原生托盘菜单失败，回退 Avalonia 托盘");
+            }
+        }
 
-    private static void RemoveTrayIcon(TrayIcon? icon)
+        return new AvaloniaTrayIconHost(this, toolTipText, menuEntries);
+    }
+
+    private static void RemoveTrayIcon(ITrayIconHost? icon)
     {
         if (icon is null)
         {
@@ -331,27 +331,21 @@ public partial class App : Application
             return;
         }
 
-        var menu = new NativeMenu();
-        var open = new NativeMenuItem("显示主页面");
-        open.Click += (_, _) =>
-            Dispatcher.UIThread.Post(LaunchClient, DispatcherPriority.Background);
-        var exit = new NativeMenuItem("退出后台服务");
-        exit.Click += (_, _) =>
-            Dispatcher.UIThread.Post(StopMcpService, DispatcherPriority.Background);
-        menu.Items.Add(open);
-        menu.Items.Add(new NativeMenuItemSeparator());
-        menu.Items.Add(exit);
-
-        _serviceTrayIcon = new TrayIcon
-        {
-            Icon = LoadTrayIcon(),
-            ToolTipText = "PostSharp · 后台服务 · 右键显示菜单",
-            Menu = menu,
-            IsVisible = true,
-        };
-        _serviceTrayIcon.Clicked += (_, _) =>
-            Dispatcher.UIThread.Post(LaunchClient, DispatcherPriority.Background);
-        TrayIcon.SetIcons(this, new TrayIcons { _serviceTrayIcon });
+        _serviceTrayIcon = CreateTrayHost(
+            "PostSharp · 后台服务 · 右键显示菜单",
+            [
+                new TrayMenuEntry(
+                    "显示主页面",
+                    () => Dispatcher.UIThread.Post(LaunchClient, DispatcherPriority.Background)
+                ),
+                null,
+                new TrayMenuEntry(
+                    "退出后台服务",
+                    () => Dispatcher.UIThread.Post(StopMcpService, DispatcherPriority.Background)
+                ),
+            ]
+        );
+        _serviceTrayIcon.IsVisible = true;
         Log.Information("MCP 后台服务托盘图标已创建");
     }
 
