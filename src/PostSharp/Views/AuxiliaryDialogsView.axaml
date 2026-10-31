@@ -186,6 +186,80 @@
 
         <arc:Dialog
             Opened="OnDialogOpened"
+            IsOpen="{Binding IsOnboardingOpen, Mode=TwoWay}"
+            Title="欢迎使用 PostSharp"
+            Description="三步完成第一次请求和第一次 AI 调用；也可以先跳过，之后在「指南」中重新查看。"
+            Size="Medium"
+        >
+            <StackPanel Spacing="12">
+                <Grid ColumnDefinitions="30,*" ColumnSpacing="10">
+                    <arc:Badge Content="1" Tone="Neutral" Size="Small" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="3">
+                        <TextBlock
+                            Text="发送第一个请求"
+                            FontWeight="SemiBold"
+                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                        />
+                        <TextBlock
+                            Text="载入内置「健康检查」，按 Ctrl+Enter 发送；响应区会显示状态、耗时、JSON 树和可复制响应。"
+                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                            TextWrapping="Wrap"
+                        />
+                    </StackPanel>
+                </Grid>
+                <Grid ColumnDefinitions="30,*" ColumnSpacing="10">
+                    <arc:Badge Content="2" Tone="Neutral" Size="Small" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="3">
+                        <TextBlock
+                            Text="接入 MCP"
+                            FontWeight="SemiBold"
+                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                        />
+                        <TextBlock
+                            Text="把本机 MCP 地址或完整客户端配置复制到 Cursor、Claude Code、Cline 等客户端，AI 即可管理请求、运行套件并查看审计。"
+                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                            TextWrapping="Wrap"
+                        />
+                    </StackPanel>
+                </Grid>
+                <Grid ColumnDefinitions="30,*" ColumnSpacing="10">
+                    <arc:Badge Content="3" Tone="Neutral" Size="Small" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="3">
+                        <TextBlock
+                            Text="运行第一个套件"
+                            FontWeight="SemiBold"
+                            Foreground="{arc:ArcDesignTokenResource Foreground}"
+                        />
+                        <TextBlock
+                            Text="打开「自动化」运行内置 Mock 冒烟测试；失败后可查看步骤断言、审计和 AI 聚合输出。"
+                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                            TextWrapping="Wrap"
+                        />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+            <arc:Dialog.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <arc:Button
+                        Content="跳过"
+                        Variant="Secondary"
+                        Command="{Binding SkipOnboardingCommand}"
+                    />
+                    <arc:Button Variant="Primary" Command="{Binding StartOnboardingCommand}">
+                        <controls:IconLabel
+                            Icon="{x:Static arc:ArcIcons.BookOpen}"
+                            Text="打开指南"
+                        />
+                    </arc:Button>
+                </StackPanel>
+            </arc:Dialog.Actions>
+        </arc:Dialog>
+
+        <arc:Dialog
+            Opened="OnDialogOpened"
             IsOpen="{Binding IsResetDemoDialogOpen, Mode=TwoWay}"
             Title="重置为演示工作区？"
             Description="当前集合、请求、环境变量、套件、发送历史和回收站会被清空，并恢复内置 Mock 示例；审计记录和系统设置保留。该操作不可撤销。"

@@ -139,12 +139,76 @@ public sealed class McpServerSecurityTests
             .Select(tool => tool.GetProperty("name").GetString())
             .ToList();
 
-        Assert.Equal(75, names.Count);
+        Assert.Equal(84, names.Count);
         Assert.Contains("verify_endpoint", names);
         Assert.Contains("generate_suite", names);
         Assert.Contains("export_report", names);
         Assert.Contains("diff_runs", names);
         Assert.Contains("explain_failure", names);
+        Assert.Contains("start_sequence_run", names);
+        Assert.Contains("start_import", names);
+        Assert.Contains("start_storage_sync", names);
+    }
+
+    [Fact]
+    public async Task ScopedPermissionsFilterTools()
+    {
+        _server.Policy = new McpAccessPolicy(
+            RequireToken: false,
+            Token: string.Empty,
+            ReadOnly: false,
+            AllowSend: false,
+            AllowWrite: true,
+            AllowAdmin: false
+        );
+
+        var response = await SendAsync(
+            "POST",
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            null,
+            "127.0.0.1:5199"
+        );
+        Assert.NotNull(response.Body);
+
+        using var document = JsonDocument.Parse(response.Body);
+        var names = document
+            .RootElement.GetProperty("result")
+            .GetProperty("tools")
+            .EnumerateArray()
+            .Select(tool => tool.GetProperty("name").GetString())
+            .ToList();
+
+        Assert.Contains("list_collections", names);
+        Assert.Contains("delete_request", names);
+        Assert.DoesNotContain("send_request", names);
+        Assert.DoesNotContain("run_sequence", names);
+        Assert.DoesNotContain("update_settings", names);
+        Assert.DoesNotContain("sync_storage", names);
+    }
+
+    [Fact]
+    public async Task ScopedPermissionsRejectACallWithA403StyleError()
+    {
+        _server.Policy = new McpAccessPolicy(
+            RequireToken: false,
+            Token: string.Empty,
+            ReadOnly: false,
+            AllowSend: false,
+            AllowWrite: true,
+            AllowAdmin: true
+        );
+
+        var response = await SendAsync(
+            "POST",
+            """{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"send_request","arguments":{"id":"00000000-0000-0000-0000-000000000000"}}}""",
+            null,
+            "127.0.0.1:5199"
+        );
+
+        using var document = JsonDocument.Parse(response.Body);
+        var error = document.RootElement.GetProperty("error");
+        Assert.Equal(-32003, error.GetProperty("code").GetInt32());
+        Assert.Contains("权限", error.GetProperty("message").GetString(), StringComparison.Ordinal);
     }
 
     [Fact]

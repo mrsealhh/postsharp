@@ -112,6 +112,18 @@ public sealed class AppSettingsJsonConverter : JsonConverter<AppSettings>
                 case nameof(AppSettings.McpReadOnly):
                     settings.McpReadOnly = reader.GetBoolean();
                     break;
+                case nameof(AppSettings.McpAllowSend):
+                    settings.McpAllowSend = reader.GetBoolean();
+                    break;
+                case nameof(AppSettings.McpAllowWrite):
+                    settings.McpAllowWrite = reader.GetBoolean();
+                    break;
+                case nameof(AppSettings.McpAllowAdmin):
+                    settings.McpAllowAdmin = reader.GetBoolean();
+                    break;
+                case nameof(AppSettings.HasSeenOnboarding):
+                    settings.HasSeenOnboarding = reader.GetBoolean();
+                    break;
                 case nameof(AppSettings.McpTokenCipher):
                     settings.McpTokenCipher = reader.GetString() ?? settings.McpTokenCipher;
                     break;
@@ -162,6 +174,10 @@ public sealed class AppSettingsJsonConverter : JsonConverter<AppSettings>
         writer.WriteString(nameof(AppSettings.McpServiceMode), value.McpServiceMode);
         writer.WriteBoolean(nameof(AppSettings.McpRequireToken), value.McpRequireToken);
         writer.WriteBoolean(nameof(AppSettings.McpReadOnly), value.McpReadOnly);
+        writer.WriteBoolean(nameof(AppSettings.McpAllowSend), value.McpAllowSend);
+        writer.WriteBoolean(nameof(AppSettings.McpAllowWrite), value.McpAllowWrite);
+        writer.WriteBoolean(nameof(AppSettings.McpAllowAdmin), value.McpAllowAdmin);
+        writer.WriteBoolean(nameof(AppSettings.HasSeenOnboarding), value.HasSeenOnboarding);
         writer.WriteString(nameof(AppSettings.McpTokenCipher), value.McpTokenCipher);
         writer.WriteEndObject();
     }

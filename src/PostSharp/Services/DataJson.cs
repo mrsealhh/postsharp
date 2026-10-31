@@ -98,6 +98,7 @@ public static class DataJson
 [JsonSerializable(typeof(List<TestSuite>))]
 [JsonSerializable(typeof(TestRunResult))]
 [JsonSerializable(typeof(McpSuiteRunJobInfo))]
+[JsonSerializable(typeof(McpJobInfo))]
 [JsonSerializable(typeof(McpSuiteValidationInfo))]
 [JsonSerializable(typeof(McpSuiteRunInfo))]
 [JsonSerializable(typeof(List<McpSuiteRunInfo>))]

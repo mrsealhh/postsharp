@@ -2,8 +2,23 @@
 
 ## v1.11.2（待发布）
 
+### MCP 长任务 job
+
+- 新增 `start_sequence_run` / `get_sequence_run_job` / `cancel_sequence_run`：后台顺序发送、每步进度、取消和幂等键。
+- 新增 `start_import` / `get_import_job` / `cancel_import`：后台导入，支持取消和幂等键。
+- 新增 `start_storage_sync` / `get_storage_sync_job` / `cancel_storage_sync`：后台存储同步，支持取消和幂等键。
+- 统一 `McpJob` 状态（Running/Cancelling/Completed/Failed/Cancelled）、进度、终态和最近 50 条任务保留。
+- 工具总数 75 → 84。
+
+### MCP 细粒度权限
+
+- 设置 →「MCP 访问控制」新增发送、修改、管理三个独立开关；只读模式优先。
+- 工具按读取/发送/修改/管理分类，`tools/list` 按权限裁剪，越权调用返回 `-32003`。
+- `McpAuthHint` 显示当前权限组合。
+
 ### 首次体验
 
+- 首次启动弹出 3 步欢迎对话框（发送请求 / 接入 MCP / 运行套件），可「打开指南」或「跳过」；完成状态写入设置。
 - 指南页「一分钟上手」增加「重置演示工作区」：清空当前集合、请求、环境、套件、发送历史和回收站，恢复内置 Mock 示例；审计记录和系统设置保留。
 - 重置前使用确认弹窗，说明影响范围与不可撤销性；`Ctrl+Enter` 确认、`Esc` 取消。
 
