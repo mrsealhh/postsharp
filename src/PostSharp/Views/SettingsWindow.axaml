@@ -659,7 +659,7 @@
                                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                     />
                                     <TextBlock
-                                        Text="启用 token 后，客户端必须在 Authorization: Bearer &lt;token&gt; 中携带；只读模式只暴露查看、描述、导出等工具，发送、修改和删除会被拒绝。"
+                                        Text="启用 token 后，客户端必须在 Authorization: Bearer &lt;token&gt; 中携带；只读模式只暴露查看、描述、导出等工具。关闭只读后，可分别控制发送、修改和管理权限。"
                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                         TextWrapping="Wrap"
@@ -673,6 +673,24 @@
                                         Content="只读模式（禁止发送、修改、删除）"
                                         IsChecked="{Binding Draft.McpReadOnly, Mode=TwoWay}"
                                         AutomationProperties.Name="MCP 只读模式"
+                                    />
+                                    <arc:Switch
+                                        Content="允许发送请求（send / run_sequence / 套件运行）"
+                                        IsChecked="{Binding Draft.McpAllowSend, Mode=TwoWay}"
+                                        IsEnabled="{Binding !Draft.McpReadOnly}"
+                                        AutomationProperties.Name="MCP 允许发送请求"
+                                    />
+                                    <arc:Switch
+                                        Content="允许修改工作区（创建 / 更新 / 删除 / 导入）"
+                                        IsChecked="{Binding Draft.McpAllowWrite, Mode=TwoWay}"
+                                        IsEnabled="{Binding !Draft.McpReadOnly}"
+                                        AutomationProperties.Name="MCP 允许修改工作区"
+                                    />
+                                    <arc:Switch
+                                        Content="允许管理存储与系统设置"
+                                        IsChecked="{Binding Draft.McpAllowAdmin, Mode=TwoWay}"
+                                        IsEnabled="{Binding !Draft.McpReadOnly}"
+                                        AutomationProperties.Name="MCP 允许管理存储与设置"
                                     />
                                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                                         <arc:Input

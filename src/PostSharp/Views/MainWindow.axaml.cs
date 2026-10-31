@@ -474,6 +474,8 @@ public partial class MainWindow : Window
         nameof(MainWindowViewModel.IsAuditPurgeConfirmOpen),
         nameof(MainWindowViewModel.IsMcpDialogOpen),
         nameof(MainWindowViewModel.IsCookieDialogOpen),
+        nameof(MainWindowViewModel.IsOnboardingOpen),
+        nameof(MainWindowViewModel.IsResetDemoDialogOpen),
     ];
 
     private void EnsureAuxiliaryDialogs()
@@ -1696,6 +1698,7 @@ public partial class MainWindow : Window
             ApplyAppearance();
             ApplyRequestResponseLayout();
             ApplyWorkspaceLayout(_viewModel.IsWorkspaceSideBySide);
+            EnsureAuxiliaryDialogs();
         }
     }
 

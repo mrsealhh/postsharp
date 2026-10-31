@@ -355,6 +355,7 @@ http://127.0.0.1:5199/mcp
 | `grpc_describe` | 通过服务端反射列出服务/方法，或返回指定方法的请求/响应字段与示例 JSON |
 | `get_curl` | 生成已解析环境变量的可执行 cURL（机密变量以 `******` 代替） |
 | `run_sequence` | 按顺序运行一组请求（轻量自动化，不含断言/映射） |
+| `start_sequence_run` / `get_sequence_run_job` / `cancel_sequence_run` | 后台顺序发送、轮询每步进度、取消；支持 `idempotencyKey` |
 | `list_suites` | 查看套件、步骤顺序、workflow 节点/连线、延迟、断言和输入映射 |
 | `get_suite` | 读取单个套件的完整定义（含稳定步骤 id、workflow 和运行策略） |
 | `create_suite` | 创建套件，步骤支持断言/映射；可选 `workflow` 定义任意 DAG |
@@ -386,8 +387,12 @@ http://127.0.0.1:5199/mcp
 | `get_storage_config` / `upsert_storage_profile` / `delete_storage_profile` / `set_storage_binding` | 查看/新增/删除远程存储配置，绑定三个数据分类（远程类型需安装对应插件） |
 | `test_storage_profile` / `sync_storage` / `switch_storage` | 测试连接、单向同步、备份后切换存储 |
 | `import_content` / `export_workspace` | 导入 Postman/OpenAPI/HAR/Insomnia/Hoppscotch/cURL/PowerShell，导出 Postman Collection |
+| `start_import` / `get_import_job` / `cancel_import` | 后台导入并轮询进度、取消；支持 `idempotencyKey` |
+| `start_storage_sync` / `get_storage_sync_job` / `cancel_storage_sync` | 后台存储同步并轮询进度、取消；支持 `idempotencyKey` |
 
-破坏性工具（`delete_*` / `clear_*` / `purge_*` / `empty_*` / `restore_*` 和 `switch_storage`）支持 `dryRun: true`：只返回目标名称、影响数量和下一步提示，不执行修改；去掉 `dryRun` 后才会真正执行。`start_suite_run` 支持 `idempotencyKey`，同一 key 重复调用返回同一个 jobId。
+破坏性工具（`delete_*` / `clear_*` / `purge_*` / `empty_*` / `restore_*` 和 `switch_storage`）支持 `dryRun: true`：只返回目标名称、影响数量和下一步提示，不执行修改；去掉 `dryRun` 后才会真正执行。`start_suite_run`、`start_sequence_run`、`start_import`、`start_storage_sync` 支持 `idempotencyKey`，同一 key 重复调用返回同一个 jobId。
+
+设置 →「MCP 访问控制」可分别允许**发送**、**修改**、**管理**权限；只读模式优先，工具列表会按权限裁剪，越权调用返回 `-32003`。读取类工具始终可用。
 
 `create_suite` 的映射规则字段：`sourceStepIndex`（从 0 开始，只能引用更早步骤）或 `sourceStepId`、`sourcePath`（支持 `data.token`、`items[0].id`）、`targetKind`（`Body`/`Header`/`Query`/`Path`）、`targetPath`、`template`（如 `Bearer {value}`）。
 
@@ -1013,6 +1018,9 @@ docs/
 | 复制集合 | 右键「复制集合」递归复制子集合与请求，参数、请求头、表单、上传、授权都复制为独立对象；所有节点换新 id，套件仍指向原请求；副本不继承 OpenAPI 来源和收藏；成功后 Toast「已复制集合」，失败走顶部提示条；单测覆盖深拷贝、id 与授权隔离、原树不变 |
 | MCP dry-run | 实测 `delete_request {dryRun:true}` 返回 `dryRun=true`、`affected=1` 和目标，随后 `get_request` 仍能读取；`delete_suite {dryRun:true}` 后套件仍存在；删除/清空/永久删除/恢复/切换存储的 schema 自动带 `dryRun` |
 | MCP 幂等键 | 实测 `start_suite_run` 同 `idempotencyKey` 连续调用两次返回同一 `jobId`；`get_suite_run_job` 带出 `idempotencyKey`，运行完成；重复 key 用于另一个套件返回明确错误；单测覆盖 key 查找与大小写 |
+| MCP 长任务 job | `start_sequence_run` / `start_import` / `start_storage_sync` 立即返回 jobId；实测顺序任务同 key 返回同一 jobId、2/2 步完成，导入任务完成并返回结果；进度、取消和终态由统一 `McpJob` 管理 |
+| MCP 细粒度权限 | 设置页可分别开启发送/修改/管理；单测确认 `AllowSend=false` 隐藏 `send_request`/`run_suite` 但保留 `delete_request`，`AllowAdmin=false` 隐藏 `update_settings`/`sync_storage`；越权调用返回 `-32003` |
+| 首次启动引导 | 首次启动弹出 3 步欢迎对话框（发送请求 / 接入 MCP / 运行套件）；「打开指南」完成引导并切到指南页，「跳过」只标记已读；Debug 构建 0 警告 0 错误 |
 | 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.1，Windows/macOS 哈希与发布资产一致 |
 | 重置演示工作区 | 指南页「一分钟上手」增加入口；确认弹窗说明会清空集合、环境、套件、历史和回收站并恢复内置 Mock 示例，审计和设置保留；`Ctrl+Enter` 确认、`Esc` 取消；Debug 构建 0 警告 0 错误 |
 | 启动与内存基线 | 新增 `scripts/perf-smoke.ps1` 和 `docs/performance.md`；1.11.1 本机复测 JIT 2328 ms / 87 MB，AOT 2285 ms / 66 MB（到健康端点就绪）；目标 1.5s / 150MB，JIT 冷启动仍未达标 |

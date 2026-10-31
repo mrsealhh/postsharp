@@ -209,6 +209,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         IsDraft = Editing.Owner is null;
         _initializing = false;
         RefreshRequestTabOptions();
+        if (!Settings.HasSeenOnboarding)
+        {
+            IsOnboardingOpen = true;
+        }
 
         MockStatus = _mockServer.IsRunning
             ? $"Mock 服务运行中 · {_mockServer.BaseUrl}"
@@ -490,6 +494,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [ObservableProperty]
     private bool _isResetDemoDialogOpen;
+
+    [ObservableProperty]
+    private bool _isOnboardingOpen;
 
     [ObservableProperty]
     private string _deleteDialogTitle = "删除？";
@@ -1676,6 +1683,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             is null
                 or nameof(AppSettings.McpRequireToken)
                 or nameof(AppSettings.McpReadOnly)
+                or nameof(AppSettings.McpAllowSend)
+                or nameof(AppSettings.McpAllowWrite)
+                or nameof(AppSettings.McpAllowAdmin)
                 or nameof(AppSettings.McpTokenCipher)
         )
         {
@@ -1761,6 +1771,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         || IsRenameDialogOpen
         || IsDeleteDialogOpen
         || IsResetDemoDialogOpen
+        || IsOnboardingOpen
         || IsHistoryTrashConfirmOpen
         || IsHistoryTrashOpen
         || IsHistoryPurgeConfirmOpen
@@ -1774,6 +1785,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     /// <summary>Enter in a confirmation or rename dialog; buttons keep their own activation.</summary>
     public bool TryConfirmActiveDialog()
     {
+        if (IsOnboardingOpen)
+        {
+            StartOnboardingCommand.Execute(null);
+            return true;
+        }
+
         if (IsDeleteDialogOpen)
         {
             ConfirmDeleteCommand.Execute(null);
@@ -1828,6 +1845,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     /// <summary>Esc closes the top-most overlay and applies its cancel semantics.</summary>
     public bool TryCancelActiveDialog()
     {
+        if (IsOnboardingOpen)
+        {
+            SkipOnboardingCommand.Execute(null);
+            return true;
+        }
+
         if (Import.IsImportDialogOpen)
         {
             Import.CloseImportDialogCommand.Execute(null);
@@ -2142,9 +2165,36 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     public string McpTokenValue => Settings.McpRequireToken ? Settings.GetMcpToken() : string.Empty;
 
     public string McpAuthHint =>
-        Settings.McpRequireToken
-            ? (Settings.McpReadOnly ? "Token 鉴权 · 只读" : "Token 鉴权 · 读写")
-            : (Settings.McpReadOnly ? "仅本机 · 只读" : "仅本机 · 读写");
+        (Settings.McpRequireToken ? "Token 鉴权" : "仅本机") + " · " + McpScopeLabel;
+
+    private string McpScopeLabel
+    {
+        get
+        {
+            if (Settings.McpReadOnly)
+            {
+                return "只读";
+            }
+
+            var parts = new List<string> { "读取" };
+            if (Settings.McpAllowSend)
+            {
+                parts.Add("发送");
+            }
+
+            if (Settings.McpAllowWrite)
+            {
+                parts.Add("修改");
+            }
+
+            if (Settings.McpAllowAdmin)
+            {
+                parts.Add("管理");
+            }
+
+            return string.Join(" · ", parts);
+        }
+    }
 
     public string McpClientConfig
     {
@@ -2175,7 +2225,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         return new McpAccessPolicy(
             requireToken,
             requireToken ? Settings.GetMcpToken() : string.Empty,
-            Settings.McpReadOnly
+            Settings.McpReadOnly,
+            Settings.McpAllowSend,
+            Settings.McpAllowWrite,
+            Settings.McpAllowAdmin
         );
     }
 
@@ -2189,7 +2242,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         + "list_collection_trash、restore_collection_trash、purge_collection_trash、empty_collection_trash；"
         + "设置/存储：get_settings、update_settings、check_updates、get_storage_config、upsert_storage_profile、delete_storage_profile、set_storage_binding、test_storage_profile、sync_storage、switch_storage；"
         + "导入导出：import_content、export_workspace、send_request、run_sequence、get_curl；"
+        + "长任务：start_suite_run、start_sequence_run、start_import、start_storage_sync 及对应 get_*_job / cancel_*；"
         + "意图：verify_endpoint、generate_suite、export_report、diff_runs、explain_failure；"
+        + "权限：读取、发送、修改、管理可独立开关；"
         + "协议：soap_describe、grpc_describe（SOAP / gRPC 一元调用走 send_request）。";
 
     public string EditorHint =>
@@ -3663,6 +3718,25 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private void RequestResetDemo()
     {
         IsResetDemoDialogOpen = true;
+    }
+
+    [RelayCommand]
+    private void SkipOnboarding()
+    {
+        CompleteOnboarding();
+    }
+
+    [RelayCommand]
+    private void StartOnboarding()
+    {
+        CompleteOnboarding();
+        OpenGuide();
+    }
+
+    private void CompleteOnboarding()
+    {
+        Settings.HasSeenOnboarding = true;
+        IsOnboardingOpen = false;
     }
 
     [RelayCommand]

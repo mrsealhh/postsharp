@@ -661,6 +661,9 @@ public partial class SettingsViewModel : ObservableObject
         Draft.McpServiceMode = defaults.McpServiceMode;
         Draft.McpRequireToken = defaults.McpRequireToken;
         Draft.McpReadOnly = defaults.McpReadOnly;
+        Draft.McpAllowSend = defaults.McpAllowSend;
+        Draft.McpAllowWrite = defaults.McpAllowWrite;
+        Draft.McpAllowAdmin = defaults.McpAllowAdmin;
         Draft.McpTokenCipher = defaults.McpTokenCipher;
         OnPropertyChanged(nameof(McpTokenValue));
         _fontDirectoriesPreviewActive = true;
@@ -1077,6 +1080,9 @@ public partial class SettingsViewModel : ObservableObject
         _current.McpServiceMode = Draft.McpServiceMode;
         _current.McpRequireToken = Draft.McpRequireToken;
         _current.McpReadOnly = Draft.McpReadOnly;
+        _current.McpAllowSend = Draft.McpAllowSend;
+        _current.McpAllowWrite = Draft.McpAllowWrite;
+        _current.McpAllowAdmin = Draft.McpAllowAdmin;
         _current.McpTokenCipher = Draft.McpTokenCipher;
         if (_current.McpRequireToken)
         {

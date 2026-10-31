@@ -32,7 +32,14 @@ public sealed class SourceGeneratedJsonTests
     [Fact]
     public void SettingsRoundTripKeepsChineseTextUnescaped()
     {
-        var settings = new AppSettings { CodeFont = "等线", McpReadOnly = true };
+        var settings = new AppSettings
+        {
+            CodeFont = "等线",
+            McpReadOnly = true,
+            McpAllowSend = false,
+            McpAllowWrite = false,
+            McpAllowAdmin = true,
+        };
 
         var json = DataJson.Serialize(settings);
         var restored = DataJson.Deserialize<AppSettings>(json);
@@ -41,6 +48,9 @@ public sealed class SourceGeneratedJsonTests
         Assert.NotNull(restored);
         Assert.Equal("等线", restored.CodeFont);
         Assert.True(restored.McpReadOnly);
+        Assert.False(restored.McpAllowSend);
+        Assert.False(restored.McpAllowWrite);
+        Assert.True(restored.McpAllowAdmin);
     }
 
     [Fact]
@@ -236,6 +246,26 @@ public sealed class SourceGeneratedJsonTests
         Assert.Contains(
             "\"fileName\": \"report.md\"",
             McpJson.Serialize(report),
+            StringComparison.Ordinal
+        );
+
+        var job = new McpJobInfo(
+            Guid.NewGuid(),
+            "run_sequence",
+            "Completed",
+            DateTimeOffset.Now,
+            DateTimeOffset.Now,
+            "已完成",
+            null,
+            "seq-1",
+            2,
+            2,
+            new JsonObject { ["total"] = 2 }
+        );
+        Assert.Contains("\"jobId\"", McpJson.Serialize(job), StringComparison.Ordinal);
+        Assert.Contains(
+            "\"kind\": \"run_sequence\"",
+            McpJson.Serialize(job),
             StringComparison.Ordinal
         );
     }

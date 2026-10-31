@@ -168,6 +168,22 @@ public partial class AppSettings : ObservableObject
     [ObservableProperty]
     private bool _mcpReadOnly;
 
+    /// <summary>Allows MCP clients to send requests and start suite/sequence runs.</summary>
+    [ObservableProperty]
+    private bool _mcpAllowSend = true;
+
+    /// <summary>Allows MCP clients to create, update and delete workspace data.</summary>
+    [ObservableProperty]
+    private bool _mcpAllowWrite = true;
+
+    /// <summary>Allows MCP clients to change system settings and storage bindings.</summary>
+    [ObservableProperty]
+    private bool _mcpAllowAdmin = true;
+
+    /// <summary>Whether the first-run onboarding dialog has been completed or skipped.</summary>
+    [ObservableProperty]
+    private bool _hasSeenOnboarding;
+
     /// <summary>DPAPI/AES protected MCP token; empty until the user enables token auth.</summary>
     [ObservableProperty]
     private string _mcpTokenCipher = string.Empty;

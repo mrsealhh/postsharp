@@ -254,17 +254,12 @@ public sealed partial class McpServer
     private static JsonArray BuildToolsForPolicy(McpAccessPolicy policy)
     {
         var tools = BuildTools();
-        if (!policy.ReadOnly)
-        {
-            return tools;
-        }
-
         return new JsonArray(
             tools
                 .Where(tool =>
                     tool is JsonObject item
                     && item["name"]?.GetValue<string>() is { } name
-                    && McpToolAccess.IsReadOnly(name)
+                    && policy.Allows(name)
                 )
                 .Select(tool => tool?.DeepClone())
                 .ToArray()
@@ -381,6 +376,8 @@ public sealed partial class McpServer
                                 + "template 支持 Bearer {value} 这类格式。步骤还支持 retryCount、retryDelayMs、condition、parallelGroup 和 assertions；用 run_suite 运行并读取每步断言，"
                                 + "用 list_suites / get_suite 检查规则，用 validate_suite 获取结构化预检错误，用 list_suite_runs / get_suite_run 查看最近 20 次运行历史，用 rerun_failed_suite / continue_suite_from_step 重跑失败或从节点继续。"
                                 + "长套件用 start_suite_run 立即拿到 jobId，再用 get_suite_run_job 轮询节点/连线进度，必要时 cancel_suite_run。"
+                                + "顺序发送、导入和存储同步分别用 start_sequence_run / start_import / start_storage_sync，统一 get_*_job 轮询、cancel_* 取消，并支持 idempotencyKey。"
+                                + "读取、发送、修改、管理四类权限由设置控制；越权工具不会出现在 tools/list，调用会返回 -32003。"
                                 + "意图优先：verify_endpoint 一次发送并给出状态/正文/断言结论；generate_suite 从集合或请求生成套件（dryRun 只预览）；diff_runs 对比两次运行；explain_failure 定位失败步骤和断言；export_report 输出 Markdown/HTML/JUnit/JSON 报告到数据目录 reports。"
                                 + "send_request、run_sequence、run_suite、rerun_failed_suite 和 continue_suite_from_step 都会写入审计记录；list_audit / get_audit 可查所有 UI 和 AI 触发记录。"
                                 + "环境和历史：list_environments / create_environment / rename_environment / delete_environment / activate_environment / set_variable / delete_variable；"
@@ -436,6 +433,15 @@ public sealed partial class McpServer
                 id,
                 -32003,
                 $"只读模式不允许调用 {name.Trim()}。请在设置中关闭「只读模式」后重试。"
+            );
+        }
+
+        if (!policy.Allows(name.Trim()))
+        {
+            return Error(
+                id,
+                -32003,
+                $"当前 MCP 权限不允许调用 {name.Trim()}。请在设置中开启发送、修改或管理权限后重试。"
             );
         }
 
@@ -555,6 +561,24 @@ public sealed partial class McpServer
                         cancellationToken
                     )
                     .ConfigureAwait(false),
+                "start_import" => await _workspace
+                    .StartImportJobAsync(
+                        OptionalString(arguments, "source"),
+                        RequireString(arguments, "content"),
+                        OptionalString(arguments, "fileName"),
+                        OptionalBool(arguments, "includeStaticResources") ?? false,
+                        OptionalString(arguments, "idempotencyKey")
+                    )
+                    .ConfigureAwait(false),
+                "get_import_job" => await _workspace
+                    .GetJobAsync(RequireGuid(arguments, "jobId"))
+                    .ConfigureAwait(false),
+                "cancel_import" => Payload(
+                    "cancelled",
+                    await _workspace
+                        .CancelJobAsync(RequireGuid(arguments, "jobId"))
+                        .ConfigureAwait(false)
+                ),
                 "get_settings" => await _workspace.GetSettingsAsync().ConfigureAwait(false),
                 "update_settings" => await _workspace
                     .UpdateSettingsAsync(
@@ -617,6 +641,23 @@ public sealed partial class McpServer
                         cancellationToken
                     )
                     .ConfigureAwait(false),
+                "start_storage_sync" => await _workspace
+                    .StartStorageSyncJobAsync(
+                        RequireString(arguments, "sourceProfileId"),
+                        RequireString(arguments, "targetProfileId"),
+                        ReadStringArray(arguments, "categories"),
+                        OptionalString(arguments, "idempotencyKey")
+                    )
+                    .ConfigureAwait(false),
+                "get_storage_sync_job" => await _workspace
+                    .GetJobAsync(RequireGuid(arguments, "jobId"))
+                    .ConfigureAwait(false),
+                "cancel_storage_sync" => Payload(
+                    "cancelled",
+                    await _workspace
+                        .CancelJobAsync(RequireGuid(arguments, "jobId"))
+                        .ConfigureAwait(false)
+                ),
                 "switch_storage" => await _workspace
                     .SwitchStorageAsync(
                         RequireString(arguments, "targetProfileId"),
@@ -628,6 +669,27 @@ public sealed partial class McpServer
                     .ConfigureAwait(false),
                 "run_sequence" => await RunSequenceToolAsync(arguments, policy, cancellationToken)
                     .ConfigureAwait(false),
+                "start_sequence_run" => await _workspace
+                    .StartSequenceJobAsync(
+                        ReadGuidArray(arguments, "requestIds"),
+                        OptionalBool(arguments, "stopOnError") ?? true,
+                        new McpCallContext(
+                            "start_sequence_run",
+                            _clientName,
+                            policy.PermissionLabel
+                        ),
+                        OptionalString(arguments, "idempotencyKey")
+                    )
+                    .ConfigureAwait(false),
+                "get_sequence_run_job" => await _workspace
+                    .GetJobAsync(RequireGuid(arguments, "jobId"))
+                    .ConfigureAwait(false),
+                "cancel_sequence_run" => Payload(
+                    "cancelled",
+                    await _workspace
+                        .CancelJobAsync(RequireGuid(arguments, "jobId"))
+                        .ConfigureAwait(false)
+                ),
                 "get_curl" => new JsonObject
                 {
                     ["id"] = RequireGuid(arguments, "id"),
@@ -1425,6 +1487,31 @@ public sealed partial class McpServer
                 )
             ),
             Tool(
+                "start_sequence_run",
+                "在后台按顺序发送多个请求并立即返回 jobId；用 get_sequence_run_job 轮询，用 cancel_sequence_run 取消",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["requestIds"] = GuidArraySchema("按执行顺序排列的请求 id"),
+                        ["stopOnError"] = BooleanSchema("遇到网络错误或 4xx/5xx 时停止，默认 true"),
+                        ["idempotencyKey"] = StringSchema(
+                            "幂等键；相同 key 重复调用返回同一个 jobId"
+                        ),
+                    },
+                    "requestIds"
+                )
+            ),
+            Tool(
+                "get_sequence_run_job",
+                "读取顺序发送任务的进度、每步结果和终态",
+                ObjectSchema(new JsonObject { ["jobId"] = StringSchema("后台任务 id") }, "jobId")
+            ),
+            Tool(
+                "cancel_sequence_run",
+                "取消一个仍在运行的顺序发送任务",
+                ObjectSchema(new JsonObject { ["jobId"] = StringSchema("后台任务 id") }, "jobId")
+            ),
+            Tool(
                 "list_history",
                 "列出最近的发送历史",
                 ObjectSchema(
@@ -1712,6 +1799,45 @@ public sealed partial class McpServer
                 )
             ),
             Tool(
+                "start_import",
+                "在后台导入 Postman/OpenAPI/HAR/Insomnia/Hoppscotch/cURL/PowerShell 内容并返回 jobId",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["source"] = EnumSchema(
+                            "导入格式；省略时根据 fileName 和内容自动识别",
+                            "OpenApi",
+                            "PostmanCollection",
+                            "PostmanEnvironment",
+                            "Har",
+                            "Insomnia",
+                            "Hoppscotch",
+                            "Curl",
+                            "PowerShell"
+                        ),
+                        ["content"] = StringSchema("要导入的原始文本"),
+                        ["fileName"] = StringSchema("可选文件名，用于识别扩展名"),
+                        ["includeStaticResources"] = BooleanSchema(
+                            "HAR 导入是否包含静态资源，默认 false"
+                        ),
+                        ["idempotencyKey"] = StringSchema(
+                            "幂等键；相同 key 重复调用返回同一个 jobId"
+                        ),
+                    },
+                    "content"
+                )
+            ),
+            Tool(
+                "get_import_job",
+                "读取导入任务的进度、结果和终态",
+                ObjectSchema(new JsonObject { ["jobId"] = StringSchema("后台任务 id") }, "jobId")
+            ),
+            Tool(
+                "cancel_import",
+                "取消一个仍在运行的导入任务",
+                ObjectSchema(new JsonObject { ["jobId"] = StringSchema("后台任务 id") }, "jobId")
+            ),
+            Tool(
                 "get_settings",
                 "读取系统配置：主题、字体、超时、响应格式、审计保留、日志和 SSE 路径",
                 ObjectSchema(new JsonObject())
@@ -1852,6 +1978,35 @@ public sealed partial class McpServer
                     "sourceProfileId",
                     "targetProfileId"
                 )
+            ),
+            Tool(
+                "start_storage_sync",
+                "在后台单向同步存储并立即返回 jobId；用 get_storage_sync_job 轮询",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["sourceProfileId"] = StringSchema("源存储配置 id"),
+                        ["targetProfileId"] = StringSchema("目标存储配置 id"),
+                        ["categories"] = StorageCategoriesSchema(
+                            "要同步的分类；省略时同步全部三类"
+                        ),
+                        ["idempotencyKey"] = StringSchema(
+                            "幂等键；相同 key 重复调用返回同一个 jobId"
+                        ),
+                    },
+                    "sourceProfileId",
+                    "targetProfileId"
+                )
+            ),
+            Tool(
+                "get_storage_sync_job",
+                "读取存储同步任务的进度、结果和终态",
+                ObjectSchema(new JsonObject { ["jobId"] = StringSchema("后台任务 id") }, "jobId")
+            ),
+            Tool(
+                "cancel_storage_sync",
+                "取消一个仍在运行的存储同步任务",
+                ObjectSchema(new JsonObject { ["jobId"] = StringSchema("后台任务 id") }, "jobId")
             ),
             Tool(
                 "switch_storage",

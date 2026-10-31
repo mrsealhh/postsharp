@@ -35,6 +35,30 @@ public sealed class McpSafetyTests
         Assert.True(McpToolAccess.IsReadOnly("list_collections"));
     }
 
+    [Theory]
+    [InlineData("list_collections", McpToolScope.Read)]
+    [InlineData("send_request", McpToolScope.Send)]
+    [InlineData("delete_request", McpToolScope.Write)]
+    [InlineData("update_settings", McpToolScope.Admin)]
+    [InlineData("start_sequence_run", McpToolScope.Send)]
+    [InlineData("start_import", McpToolScope.Write)]
+    [InlineData("start_storage_sync", McpToolScope.Admin)]
+    public void ToolsHaveFineGrainedScopes(string tool, McpToolScope scope)
+    {
+        Assert.Equal(scope, McpToolAccess.ScopeOf(tool));
+    }
+
+    [Fact]
+    public void PolicyAllowsOnlyEnabledScopes()
+    {
+        var policy = new McpAccessPolicy(false, string.Empty, false, false, true, false);
+
+        Assert.True(policy.Allows("list_collections"));
+        Assert.True(policy.Allows("delete_request"));
+        Assert.False(policy.Allows("send_request"));
+        Assert.False(policy.Allows("update_settings"));
+    }
+
     [Fact]
     public void IdempotencyKeyFindsTheFirstMatchingJob()
     {
@@ -54,5 +78,16 @@ public sealed class McpSafetyTests
 
         Assert.Same(job, SuiteRunJobLookup.FindByIdempotencyKey([job], "Order-1"));
         Assert.Null(SuiteRunJobLookup.FindByIdempotencyKey([job], "order-1"));
+    }
+
+    [Fact]
+    public void GenericJobLookupFindsTheMatchingKey()
+    {
+        var first = new McpJob { Kind = "run_sequence", IdempotencyKey = "seq-1" };
+        var second = new McpJob { Kind = "import_content", IdempotencyKey = "import-1" };
+
+        Assert.Same(first, McpJobLookup.FindByIdempotencyKey([first, second], "seq-1"));
+        Assert.Same(second, McpJobLookup.FindByIdempotencyKey([first, second], "import-1"));
+        Assert.Null(McpJobLookup.FindByIdempotencyKey([first, second], "missing"));
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -145,6 +146,20 @@ public sealed record McpSuiteRunJobInfo(
     IReadOnlyList<McpSuiteValidationIssue> ValidationIssues,
     IReadOnlyList<SuiteRunNodeState> NodeStates,
     IReadOnlyList<SuiteRunEdgeState> EdgeStates
+);
+
+public sealed record McpJobInfo(
+    Guid JobId,
+    string Kind,
+    string Status,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? CompletedAt,
+    string Summary,
+    string? Error,
+    string? IdempotencyKey,
+    int Completed,
+    int Total,
+    JsonNode? Result
 );
 
 public sealed record McpHistoryDetail(
@@ -362,8 +377,11 @@ public sealed record McpRequestDraft(
 /// </summary>
 public sealed class McpWorkspaceAdapter
 {
+    private const int JobHistoryLimit = 50;
+
     private readonly MainWindowViewModel _viewModel;
     private readonly RequestSendService _requests = new();
+    private readonly ConcurrentDictionary<Guid, McpJob> _jobs = new();
 
     public McpWorkspaceAdapter(MainWindowViewModel viewModel) => _viewModel = viewModel;
 
@@ -899,7 +917,8 @@ public sealed class McpWorkspaceAdapter
         IReadOnlyList<Guid> requestIds,
         bool stopOnError,
         McpCallContext context,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action<int, int>? progress = null
     )
     {
         var steps = new List<McpSequenceStep>();
@@ -925,6 +944,7 @@ public sealed class McpWorkspaceAdapter
                         result.Error
                     )
                 );
+                progress?.Invoke(steps.Count, requestIds.Count);
 
                 if (stopOnError && (result.Error is not null || result.StatusCode >= 400))
                 {
@@ -936,6 +956,7 @@ public sealed class McpWorkspaceAdapter
             {
                 Log.Error(ex, "MCP 顺序运行步骤失败 {RequestId}", id);
                 steps.Add(new McpSequenceStep(id, string.Empty, 0, "失败", ex.Message));
+                progress?.Invoke(steps.Count, requestIds.Count);
                 if (stopOnError)
                 {
                     stopped = true;
@@ -955,6 +976,259 @@ public sealed class McpWorkspaceAdapter
             Stopped: stopped,
             Steps: steps
         );
+    }
+
+    public Task<McpJobInfo> StartSequenceJobAsync(
+        IReadOnlyList<Guid> requestIds,
+        bool stopOnError,
+        McpCallContext context,
+        string? idempotencyKey
+    )
+    {
+        if (requestIds.Count == 0)
+        {
+            throw new InvalidOperationException("requestIds 不能为空。");
+        }
+
+        return StartJobAsync(
+            "run_sequence",
+            idempotencyKey,
+            requestIds.Count,
+            async (job, token) =>
+            {
+                var result = await RunSequenceAsync(
+                        requestIds,
+                        stopOnError,
+                        context,
+                        token,
+                        (completed, total) =>
+                            UpdateJobProgress(job, completed, total, $"已执行 {completed}/{total}")
+                    )
+                    .ConfigureAwait(false);
+                return McpJson.ToObject(result);
+            }
+        );
+    }
+
+    public Task<McpJobInfo> StartImportJobAsync(
+        string? source,
+        string content,
+        string? fileName,
+        bool includeStaticResources,
+        string? idempotencyKey
+    )
+    {
+        return StartJobAsync(
+            "import_content",
+            idempotencyKey,
+            0,
+            async (job, token) =>
+            {
+                UpdateJobProgress(job, 0, 0, "正在导入…");
+                var summary = await ImportContentAsync(
+                        source,
+                        content,
+                        fileName,
+                        includeStaticResources,
+                        token
+                    )
+                    .ConfigureAwait(false);
+                return McpJson.ToObject(summary);
+            }
+        );
+    }
+
+    public Task<McpJobInfo> StartStorageSyncJobAsync(
+        string sourceProfileId,
+        string targetProfileId,
+        IReadOnlyList<string> categories,
+        string? idempotencyKey
+    )
+    {
+        return StartJobAsync(
+            "sync_storage",
+            idempotencyKey,
+            categories.Count,
+            async (job, token) =>
+            {
+                UpdateJobProgress(
+                    job,
+                    0,
+                    categories.Count,
+                    categories.Count == 0
+                        ? "正在同步全部分类…"
+                        : $"正在同步 {categories.Count} 个分类…"
+                );
+                var result = await SyncStorageAsync(
+                        sourceProfileId,
+                        targetProfileId,
+                        categories,
+                        token
+                    )
+                    .ConfigureAwait(false);
+                return McpJson.ToObject(result);
+            }
+        );
+    }
+
+    public Task<McpJobInfo> GetJobAsync(Guid jobId)
+    {
+        if (!_jobs.TryGetValue(jobId, out var job))
+        {
+            throw new KeyNotFoundException($"没有找到 id 为 {jobId} 的后台任务。");
+        }
+
+        return Task.FromResult(ToJobInfo(job));
+    }
+
+    public Task<bool> CancelJobAsync(Guid jobId)
+    {
+        if (!_jobs.TryGetValue(jobId, out var job))
+        {
+            return Task.FromResult(false);
+        }
+
+        lock (job.SyncRoot)
+        {
+            if (job.Status != "Running")
+            {
+                return Task.FromResult(false);
+            }
+
+            job.Status = "Cancelling";
+            job.Summary = "正在取消…";
+        }
+
+        job.Cancellation.Cancel();
+        return Task.FromResult(true);
+    }
+
+    private Task<McpJobInfo> StartJobAsync(
+        string kind,
+        string? idempotencyKey,
+        int total,
+        Func<McpJob, CancellationToken, Task<JsonNode?>> work
+    )
+    {
+        var existing = McpJobLookup.FindByIdempotencyKey(_jobs.Values, idempotencyKey);
+        if (existing is not null)
+        {
+            if (!string.Equals(existing.Kind, kind, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"idempotencyKey「{idempotencyKey}」已用于 {existing.Kind}，请换一个 key。"
+                );
+            }
+
+            return Task.FromResult(ToJobInfo(existing));
+        }
+
+        var job = new McpJob
+        {
+            Kind = kind,
+            IdempotencyKey = string.IsNullOrWhiteSpace(idempotencyKey)
+                ? null
+                : idempotencyKey.Trim(),
+            Total = total,
+        };
+        _jobs[job.Id] = job;
+        _ = RunJobAsync(job, work);
+        PruneJobs();
+        return Task.FromResult(ToJobInfo(job));
+    }
+
+    private async Task RunJobAsync(
+        McpJob job,
+        Func<McpJob, CancellationToken, Task<JsonNode?>> work
+    )
+    {
+        try
+        {
+            var result = await work(job, job.Cancellation.Token).ConfigureAwait(false);
+            lock (job.SyncRoot)
+            {
+                job.Result = result;
+                job.Status = job.Cancellation.IsCancellationRequested ? "Cancelled" : "Completed";
+                job.Summary =
+                    job.Status == "Cancelled" ? $"已取消（{job.Completed}/{job.Total}）" : "已完成";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            lock (job.SyncRoot)
+            {
+                job.Status = "Cancelled";
+                job.Summary = "已取消";
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "MCP 后台任务失败 {Kind} {JobId}", job.Kind, job.Id);
+            lock (job.SyncRoot)
+            {
+                job.Status = "Failed";
+                job.Error = exception.Message;
+                job.Summary = $"失败：{exception.Message}";
+            }
+        }
+        finally
+        {
+            lock (job.SyncRoot)
+            {
+                job.CompletedAt = DateTimeOffset.Now;
+            }
+
+            PruneJobs();
+        }
+    }
+
+    private static void UpdateJobProgress(McpJob job, int completed, int total, string summary)
+    {
+        lock (job.SyncRoot)
+        {
+            job.Completed = Math.Clamp(completed, 0, Math.Max(total, 0));
+            job.Total = Math.Max(total, 0);
+            job.Summary = summary;
+        }
+    }
+
+    private static McpJobInfo ToJobInfo(McpJob job)
+    {
+        lock (job.SyncRoot)
+        {
+            return new McpJobInfo(
+                job.Id,
+                job.Kind,
+                job.Status,
+                job.StartedAt,
+                job.CompletedAt,
+                job.Summary,
+                job.Error,
+                job.IdempotencyKey,
+                job.Completed,
+                job.Total,
+                job.Result?.DeepClone()
+            );
+        }
+    }
+
+    private void PruneJobs()
+    {
+        var stale = _jobs
+            .Values.Where(job =>
+            {
+                lock (job.SyncRoot)
+                {
+                    return job.CompletedAt is not null;
+                }
+            })
+            .OrderBy(job => job.CompletedAt)
+            .Take(Math.Max(0, _jobs.Count - JobHistoryLimit))
+            .ToList();
+        foreach (var job in stale)
+        {
+            _jobs.TryRemove(job.Id, out _);
+        }
     }
 
     public async Task<string> GetCurlAsync(Guid id)
