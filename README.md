@@ -17,6 +17,7 @@
 - [MCP 接入](#mcp-接入)
 - [命令行 CLI](docs/cli.md)
 - [分发与包管理器](docs/distribution.md)
+- [启动与内存基线](docs/performance.md)
 - [AI 审计与自动化](#ai-审计与自动化)
 - [请求与响应能力](#请求与响应能力)
 - [授权（OIDC / OAuth 2.0）](#授权oidc--oauth-20)
@@ -1014,6 +1015,7 @@ docs/
 | MCP 幂等键 | 实测 `start_suite_run` 同 `idempotencyKey` 连续调用两次返回同一 `jobId`；`get_suite_run_job` 带出 `idempotencyKey`，运行完成；重复 key 用于另一个套件返回明确错误；单测覆盖 key 查找与大小写 |
 | 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.1，Windows/macOS 哈希与发布资产一致 |
 | 重置演示工作区 | 指南页「一分钟上手」增加入口；确认弹窗说明会清空集合、环境、套件、历史和回收站并恢复内置 Mock 示例，审计和设置保留；`Ctrl+Enter` 确认、`Esc` 取消；Debug 构建 0 警告 0 错误 |
+| 启动与内存基线 | 新增 `scripts/perf-smoke.ps1` 和 `docs/performance.md`；1.11.1 本机复测 JIT 2328 ms / 87 MB，AOT 2285 ms / 66 MB（到健康端点就绪）；目标 1.5s / 150MB，JIT 冷启动仍未达标 |
 
 ## 开发约定
 
