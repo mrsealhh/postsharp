@@ -186,6 +186,35 @@
 
         <arc:Dialog
             Opened="OnDialogOpened"
+            IsOpen="{Binding IsResetDemoDialogOpen, Mode=TwoWay}"
+            Title="重置为演示工作区？"
+            Description="当前集合、请求、环境变量、套件、发送历史和回收站会被清空，并恢复内置 Mock 示例；审计记录和系统设置保留。该操作不可撤销。"
+            Size="Small"
+        >
+            <TextBlock
+                Text="Ctrl+Enter 确认，Esc 取消"
+                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+            />
+            <arc:Dialog.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <arc:Button
+                        Content="取消"
+                        Variant="Secondary"
+                        Command="{Binding CancelResetDemoCommand}"
+                    />
+                    <arc:Button Variant="Danger" Command="{Binding ConfirmResetDemoCommand}">
+                        <controls:IconLabel
+                            Icon="{x:Static arc:ArcIcons.RefreshCw}"
+                            Text="重置演示工作区"
+                        />
+                    </arc:Button>
+                </StackPanel>
+            </arc:Dialog.Actions>
+        </arc:Dialog>
+
+        <arc:Dialog
+            Opened="OnDialogOpened"
             IsOpen="{Binding IsHistoryTrashConfirmOpen, Mode=TwoWay}"
             Title="{Binding HistoryTrashConfirmTitle}"
             Description="{Binding HistoryTrashConfirmDescription}"

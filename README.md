@@ -57,6 +57,7 @@ PostSharp 的定位是：
 ### 调试能力
 
 - **侧栏树**：集合展开/收起和选中节点随工作区保存，下次打开直接回到上次的位置；节点被删除时回退第一个请求，空工作区保持「新建请求」草稿。
+- **指南与演示数据**：指南页提供 6 步上手、MCP 配置复制和「重置演示工作区」；重置会清空集合、环境、套件、历史和回收站并恢复内置 Mock 示例，审计与设置保留。
 - **复制集合**：集合右键可递归复制整棵子树，参数、请求头、表单、上传和授权都独立，副本换新 id、不继承 OpenAPI 来源与收藏，套件仍指向原请求。
 - **系统托盘**：Windows 使用原生 `Shell_NotifyIcon` + `TrackPopupMenu` 托盘菜单，左键打开主页面，右键显示「显示主页面 / 最大化打开 / 退出 PostSharp」；macOS/Linux 使用 Avalonia 托盘。托盘可用时最小化按钮隐藏到托盘，恢复时保留最大化状态。
 - **方法**：GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS。
@@ -1011,7 +1012,8 @@ docs/
 | 复制集合 | 右键「复制集合」递归复制子集合与请求，参数、请求头、表单、上传、授权都复制为独立对象；所有节点换新 id，套件仍指向原请求；副本不继承 OpenAPI 来源和收藏；成功后 Toast「已复制集合」，失败走顶部提示条；单测覆盖深拷贝、id 与授权隔离、原树不变 |
 | MCP dry-run | 实测 `delete_request {dryRun:true}` 返回 `dryRun=true`、`affected=1` 和目标，随后 `get_request` 仍能读取；`delete_suite {dryRun:true}` 后套件仍存在；删除/清空/永久删除/恢复/切换存储的 schema 自动带 `dryRun` |
 | MCP 幂等键 | 实测 `start_suite_run` 同 `idempotencyKey` 连续调用两次返回同一 `jobId`；`get_suite_run_job` 带出 `idempotencyKey`，运行完成；重复 key 用于另一个套件返回明确错误；单测覆盖 key 查找与大小写 |
-| 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.0，Windows/macOS 哈希与发布资产一致 |
+| 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.1，Windows/macOS 哈希与发布资产一致 |
+| 重置演示工作区 | 指南页「一分钟上手」增加入口；确认弹窗说明会清空集合、环境、套件、历史和回收站并恢复内置 Mock 示例，审计和设置保留；`Ctrl+Enter` 确认、`Esc` 取消；Debug 构建 0 警告 0 错误 |
 
 ## 开发约定
 
