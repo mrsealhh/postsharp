@@ -10,6 +10,7 @@
 
 - [为什么是 PostSharp](#为什么是-postsharp)
 - [功能](#功能)
+- [更新日志](CHANGELOG.md)
 - [技术栈](#技术栈)
 - [快速开始](#快速开始)
 - [内置 Mock API](#内置-mock-api)
@@ -1001,6 +1002,7 @@ docs/
 | 授权复制与解析 | 临时控制台验证：`RequestAuth.Clone()` 后修改副本的 access_token 不影响原对象；`AuthResolver` 对「集合 A Bearer → 子集合 B 继承 → 请求」解析到集合 A，子集合 C 配 API Key 时请求 2 解析到集合 C |
 | 构建 | Debug / Release 均 0 警告、0 错误；`csharpier check .` 通过 |
 | 托盘与最小化 | Windows 托盘改用原生 `Shell_NotifyIcon` + `TrackPopupMenu`，右键菜单在 Windows 11 溢出区也能正常显示（实测菜单出现在光标处，含显示主页面/最大化/退出）；菜单动作延迟到 `Dispatcher` 执行；退出、切到后台和后台服务停止时显式 `Dispose` 托盘图标，减少残留；托盘图标使用 `.ico`；最小化按钮在托盘可用时隐藏到托盘，恢复时保留最大化状态；Debug 构建 0 警告 0 错误，265 个测试通过 |
+| CI | 新增 `.github/workflows/ci.yml`：Windows runner 上安装 .NET 10 和 CSharpier 1.3.0，依次执行格式检查、Debug 构建和 265 个测试；推送到 master/dev 或提交 PR 时运行 |
 | MCP 意图工具 | 新增 `verify_endpoint` / `generate_suite` / `export_report` / `diff_runs` / `explain_failure`，工具总数 75；只读模式暴露 `export_report` / `diff_runs` / `explain_failure`，隐藏发送和生成；`verify_endpoint` 记录审计；单测覆盖检查项、期望状态推断、四种报告、diff 分类、失败定位和 source-generated JSON；259 个测试通过。本机已有 PostSharp 实例占用单实例锁，未做 GUI/MCP 实机联调 |
 | 集合树状态 | `CollectionDto.IsExpanded` 与 `SelectedCollectionId` / `SelectedRequestId` 随工作区落盘；启动恢复展开状态和选中节点，节点被删除时回退第一个请求，空工作区保持「新建请求」；旧工作区默认展开；选中/展开变化合并为一次延迟保存（单测） |
 | 复制集合 | 右键「复制集合」递归复制子集合与请求，参数、请求头、表单、上传、授权都复制为独立对象；所有节点换新 id，套件仍指向原请求；副本不继承 OpenAPI 来源和收藏；成功后 Toast「已复制集合」，失败走顶部提示条；单测覆盖深拷贝、id 与授权隔离、原树不变 |
@@ -1075,11 +1077,11 @@ master                 稳定可发布
 发布新版本（三类主包 + 可选 NativeAOT 包）：
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.10.24
-.\scripts\build-linux-release.ps1 -Version 1.10.24
-.\scripts\build-osx-release.ps1 -Version 1.10.24 -RuntimeIdentifier osx-arm64
+.\scripts\build-release.ps1 -Version 1.11.0
+.\scripts\build-linux-release.ps1 -Version 1.11.0
+.\scripts\build-osx-release.ps1 -Version 1.11.0 -RuntimeIdentifier osx-arm64
 # 可选：NativeAOT 单独产物（Windows 上构建）
-.\scripts\build-aot-release.ps1 -Version 1.10.24
+.\scripts\build-aot-release.ps1 -Version 1.11.0
 # CLI 独立发布，不进入上面三个桌面包
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier win-x64 -SelfContained
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier linux-x64 -SelfContained

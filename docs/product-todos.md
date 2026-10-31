@@ -745,7 +745,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] JUnit XML：`suite run/rerun-failed/continue --junit <文件>`。
 - [x] 桌面端「指南」页增加 CLI 说明、常用命令复制、MCP 地址复制和下载/说明入口。
 - [x] HTML/Markdown 测试报告。
-- [ ] CI 样例。
+- [x] GitHub Actions CI：`.github/workflows/ci.yml` 在 Windows runner 执行格式检查、Debug 构建和全部测试。
 - [ ] 以 `/postsharp:mcp ...` 形式包装 CLI，供 AI 客户端调用。
 - [x] CLI 改为独立 `PostSharp.Cli-*.zip` 发布；Windows/Linux/macOS 桌面包不再包含 `cli/`。
 
