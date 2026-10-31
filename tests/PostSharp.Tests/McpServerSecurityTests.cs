@@ -147,6 +147,51 @@ public sealed class McpServerSecurityTests
         Assert.Contains("explain_failure", names);
     }
 
+    [Fact]
+    public async Task DestructiveToolsExposeDryRunAndJobsExposeIdempotencyKey()
+    {
+        var response = await SendAsync(
+            "POST",
+            """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+            null,
+            "127.0.0.1:5199"
+        );
+        Assert.NotNull(response.Body);
+
+        using var document = JsonDocument.Parse(response.Body);
+        var tools = document
+            .RootElement.GetProperty("result")
+            .GetProperty("tools")
+            .EnumerateArray()
+            .ToList();
+
+        static JsonElement Find(List<JsonElement> tools, string name) =>
+            tools.Single(tool => tool.GetProperty("name").GetString() == name);
+
+        var delete = Find(tools, "delete_request");
+        Assert.True(
+            delete
+                .GetProperty("inputSchema")
+                .GetProperty("properties")
+                .TryGetProperty("dryRun", out _)
+        );
+
+        var send = Find(tools, "send_request");
+        Assert.False(
+            send.GetProperty("inputSchema")
+                .GetProperty("properties")
+                .TryGetProperty("dryRun", out _)
+        );
+
+        var start = Find(tools, "start_suite_run");
+        Assert.True(
+            start
+                .GetProperty("inputSchema")
+                .GetProperty("properties")
+                .TryGetProperty("idempotencyKey", out _)
+        );
+    }
+
     [Theory]
     [InlineData("http://localhost:6274", "localhost:5199")]
     [InlineData("http://127.0.0.1:3000", "127.0.0.1:5199")]

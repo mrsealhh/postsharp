@@ -105,6 +105,7 @@ public sealed class SourceGeneratedJsonTests
             Guid.NewGuid(),
             Guid.NewGuid(),
             "套件",
+            "run-1",
             "Running",
             DateTimeOffset.Now,
             null,

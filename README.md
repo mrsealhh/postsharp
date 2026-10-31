@@ -16,6 +16,7 @@
 - [内置 Mock API](#内置-mock-api)
 - [MCP 接入](#mcp-接入)
 - [命令行 CLI](docs/cli.md)
+- [分发与包管理器](docs/distribution.md)
 - [AI 审计与自动化](#ai-审计与自动化)
 - [请求与响应能力](#请求与响应能力)
 - [授权（OIDC / OAuth 2.0）](#授权oidc--oauth-20)
@@ -359,7 +360,7 @@ http://127.0.0.1:5199/mcp
 | `update_suite` | 修改名称/策略；传入 `steps` 或 `workflow` 可整体替换、增删、重排或分支编排 |
 | `validate_suite` | 运行前预检，返回节点 id、错误码、提醒和修复建议 |
 | `run_suite` | 同步运行套件，返回运行 id、每个步骤的断言、延迟、映射执行结果 |
-| `start_suite_run` / `get_suite_run_job` / `cancel_suite_run` | 后台启动套件、轮询节点/连线进度、主动取消 |
+| `start_suite_run` / `get_suite_run_job` / `cancel_suite_run` | 后台启动套件（可带 `idempotencyKey`）、轮询节点/连线进度、主动取消 |
 | `list_suite_runs` / `get_suite_run` | 查看最近 20 次运行摘要 / 读取一次运行的完整结果 |
 | `rerun_failed_suite` / `continue_suite_from_step` | 只重跑失败步骤及依赖 / 从历史步骤继续并补跑上游依赖 |
 | `delete_suite` | 删除套件 |
@@ -383,6 +384,8 @@ http://127.0.0.1:5199/mcp
 | `get_storage_config` / `upsert_storage_profile` / `delete_storage_profile` / `set_storage_binding` | 查看/新增/删除远程存储配置，绑定三个数据分类（远程类型需安装对应插件） |
 | `test_storage_profile` / `sync_storage` / `switch_storage` | 测试连接、单向同步、备份后切换存储 |
 | `import_content` / `export_workspace` | 导入 Postman/OpenAPI/HAR/Insomnia/Hoppscotch/cURL/PowerShell，导出 Postman Collection |
+
+破坏性工具（`delete_*` / `clear_*` / `purge_*` / `empty_*` / `restore_*` 和 `switch_storage`）支持 `dryRun: true`：只返回目标名称、影响数量和下一步提示，不执行修改；去掉 `dryRun` 后才会真正执行。`start_suite_run` 支持 `idempotencyKey`，同一 key 重复调用返回同一个 jobId。
 
 `create_suite` 的映射规则字段：`sourceStepIndex`（从 0 开始，只能引用更早步骤）或 `sourceStepId`、`sourcePath`（支持 `data.token`、`items[0].id`）、`targetKind`（`Body`/`Header`/`Query`/`Path`）、`targetPath`、`template`（如 `Bearer {value}`）。
 
@@ -1006,6 +1009,9 @@ docs/
 | MCP 意图工具 | 新增 `verify_endpoint` / `generate_suite` / `export_report` / `diff_runs` / `explain_failure`，工具总数 75；只读模式暴露 `export_report` / `diff_runs` / `explain_failure`，隐藏发送和生成；`verify_endpoint` 记录审计；单测覆盖检查项、期望状态推断、四种报告、diff 分类、失败定位和 source-generated JSON；259 个测试通过。本机已有 PostSharp 实例占用单实例锁，未做 GUI/MCP 实机联调 |
 | 集合树状态 | `CollectionDto.IsExpanded` 与 `SelectedCollectionId` / `SelectedRequestId` 随工作区落盘；启动恢复展开状态和选中节点，节点被删除时回退第一个请求，空工作区保持「新建请求」；旧工作区默认展开；选中/展开变化合并为一次延迟保存（单测） |
 | 复制集合 | 右键「复制集合」递归复制子集合与请求，参数、请求头、表单、上传、授权都复制为独立对象；所有节点换新 id，套件仍指向原请求；副本不继承 OpenAPI 来源和收藏；成功后 Toast「已复制集合」，失败走顶部提示条；单测覆盖深拷贝、id 与授权隔离、原树不变 |
+| MCP dry-run | 实测 `delete_request {dryRun:true}` 返回 `dryRun=true`、`affected=1` 和目标，随后 `get_request` 仍能读取；`delete_suite {dryRun:true}` 后套件仍存在；删除/清空/永久删除/恢复/切换存储的 schema 自动带 `dryRun` |
+| MCP 幂等键 | 实测 `start_suite_run` 同 `idempotencyKey` 连续调用两次返回同一 `jobId`；`get_suite_run_job` 带出 `idempotencyKey`，运行完成；重复 key 用于另一个套件返回明确错误；单测覆盖 key 查找与大小写 |
+| 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.0，Windows/macOS 哈希与发布资产一致 |
 
 ## 开发约定
 
@@ -1099,6 +1105,16 @@ master                 稳定可发布
 三个 ZIP 由 `scripts/zip-directory.ps1` 统一生成：条目使用 `/`，启动脚本为 LF，`PostSharp`、`run.sh`、`run.command` 带 Unix `0100755` 可执行位。打包脚本会删除插件里的 `win-x64` / `linux-x64` / `osx-*` 自包含 RID 目录，以及 `runtimes` 中非目标平台的子目录；1.10.19 的体积约为 Windows 73 MB、Linux 72 MB、macOS 73 MB。CLI 单独打包，不写入这些包。
 
 在 GitHub 创建与版本一致的 tag 和 Release，上传三组 ZIP + SHA256；NativeAOT 通道同时上传 `PostSharp-aot-win-x64.zip` 及其 SHA256；AOT 安装只在该资产上自更新，与 JIT 通道互不覆盖。Windows 应用启动后每 6 小时检查 `releases/latest`，下载并校验包；下载完成后仅提示「可安装」，由用户点击右下角「更新 / 安装」确认后再由独立 PowerShell 更新器替换应用目录并重启，失败时恢复备份。Linux/macOS 预览包当前需要手动下载和解压，不参与 Windows 自动更新。
+
+### 分发与包管理器
+
+`packaging/` 提供 winget、Scoop 和 Homebrew 清单模板，发布后运行：
+
+```powershell
+.\scripts\update-packaging.ps1 -Version 1.11.0
+```
+
+会从 `artifacts/*.sha256` 读取校验值并更新 `packaging/winget/PostSharp.yaml`、`packaging/scoop/postsharp.json`、`packaging/homebrew/postsharp.rb`。安装命令、上游提交方式和已知限制见 [docs/distribution.md](docs/distribution.md)。
 
 ### 已知限制与路线图
 

@@ -11,6 +11,9 @@ public sealed class SuiteRunJob
 
     public string SuiteName { get; init; } = string.Empty;
 
+    /// <summary>Optional MCP idempotency key; a repeated request returns this job instead of starting again.</summary>
+    public string? IdempotencyKey { get; init; }
+
     public int TotalSteps { get; init; }
 
     public DateTimeOffset StartedAt { get; } = DateTimeOffset.Now;

@@ -712,9 +712,10 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] 本机 token 鉴权，按工具分组只读/写权限；未授权请求返回 401/403。
 - [ ] 细粒度工具权限、多客户端隔离和权限变更审计。
 - [x] 意图工具：`verify_endpoint`、`generate_suite`、`diff_runs`、`explain_failure`、`export_report`。
+- [x] 破坏性工具支持 `dryRun`：删除、清空、永久删除、恢复和切换存储先返回影响预览。
 - [ ] 会话类工具：WebSocket/Socket.IO/TCP 的 connect/send/receive/close；gRPC streaming 的 job 化调用。
 - [ ] 大内容资源化：`postsharp://workspace`、`postsharp://runs/{id}`、`postsharp://audit/{id}` 等。
-- [ ] 统一进度/取消/幂等键；重复 requestId 不重复执行。
+- [x] 套件后台任务支持 `idempotencyKey`，同一 key 重复调用返回同一 jobId；其他长任务的统一 job 与幂等键待补。
 - [ ] 多客户端隔离：任务、审计来源、权限互不干扰；后台服务注册和开机自启（P1-07）。
 - [ ] 结构化错误和工具 schema 校验；新增工具必须带调用示例。
 
@@ -746,6 +747,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] 桌面端「指南」页增加 CLI 说明、常用命令复制、MCP 地址复制和下载/说明入口。
 - [x] HTML/Markdown 测试报告。
 - [x] GitHub Actions CI：`.github/workflows/ci.yml` 在 Windows runner 执行格式检查、Debug 构建和全部测试。
+- [x] 分发清单模板：`packaging/winget`、`packaging/scoop`、`packaging/homebrew`，由 `scripts/update-packaging.ps1` 生成。
 - [ ] 以 `/postsharp:mcp ...` 形式包装 CLI，供 AI 客户端调用。
 - [x] CLI 改为独立 `PostSharp.Cli-*.zip` 发布；Windows/Linux/macOS 桌面包不再包含 `cli/`。
 
