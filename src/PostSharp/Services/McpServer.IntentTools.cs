@@ -85,6 +85,24 @@ public sealed partial class McpServer
             .ConfigureAwait(false);
     }
 
+    private async Task<object> DiffOpenApiToolAsync(
+        JsonObject arguments,
+        CancellationToken cancellationToken
+    )
+    {
+        return await _workspace
+            .DiffOpenApiAsync(
+                OptionalString(arguments, "baseUrl"),
+                OptionalString(arguments, "baseContent"),
+                OptionalString(arguments, "targetUrl"),
+                OptionalString(arguments, "targetContent"),
+                OptionalString(arguments, "baseLabel"),
+                OptionalString(arguments, "targetLabel"),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
     private async Task<object> ExplainFailureToolAsync(JsonObject arguments)
     {
         return await _workspace
