@@ -1819,6 +1819,45 @@ public sealed class McpWorkspaceAdapter
         return export with { Path = path };
     }
 
+    public async Task<DiffReportExport> ExportOpenApiDiffAsync(
+        string? baseUrl,
+        string? baseContent,
+        string? targetUrl,
+        string? targetContent,
+        string? baseLabel,
+        string? targetLabel,
+        string? format,
+        int contentLimit,
+        CancellationToken cancellationToken
+    )
+    {
+        var diff = await DiffOpenApiAsync(
+                baseUrl,
+                baseContent,
+                targetUrl,
+                targetContent,
+                baseLabel,
+                targetLabel,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        return DiffReportService.ExportOpenApiDiff(diff, format, contentLimit);
+    }
+
+    public async Task<DiffReportExport> ExportRunDiffAsync(
+        Guid suiteId,
+        Guid baseRunId,
+        Guid? targetRunId,
+        int elapsedRegressionPercent,
+        string? format,
+        int contentLimit
+    )
+    {
+        var diff = await DiffRunsAsync(suiteId, baseRunId, targetRunId, elapsedRegressionPercent)
+            .ConfigureAwait(false);
+        return DiffReportService.ExportRunDiff(diff, format, contentLimit);
+    }
+
     public async Task<OpenApiContractDiff> DiffOpenApiAsync(
         string? baseUrl,
         string? baseContent,

@@ -70,6 +70,8 @@ public sealed class McpServerSecurityTests
         Assert.Contains("export_report", names);
         Assert.Contains("diff_runs", names);
         Assert.Contains("diff_openapi", names);
+        Assert.Contains("export_run_diff", names);
+        Assert.Contains("export_openapi_diff", names);
         Assert.Contains("explain_failure", names);
         Assert.DoesNotContain("send_request", names);
         Assert.DoesNotContain("create_request", names);
@@ -140,12 +142,14 @@ public sealed class McpServerSecurityTests
             .Select(tool => tool.GetProperty("name").GetString())
             .ToList();
 
-        Assert.Equal(85, names.Count);
+        Assert.Equal(87, names.Count);
         Assert.Contains("verify_endpoint", names);
         Assert.Contains("generate_suite", names);
         Assert.Contains("export_report", names);
         Assert.Contains("diff_runs", names);
         Assert.Contains("diff_openapi", names);
+        Assert.Contains("export_run_diff", names);
+        Assert.Contains("export_openapi_diff", names);
         Assert.Contains("explain_failure", names);
         Assert.Contains("start_sequence_run", names);
         Assert.Contains("start_import", names);

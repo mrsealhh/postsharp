@@ -1,5 +1,18 @@
 # 更新日志
 
+## v1.11.8（待发布）
+
+### Diff 报告导出
+
+- 新增 MCP `export_run_diff`：把两次运行差异写成 Markdown / HTML / JSON，写入数据目录 `reports`，返回路径、内容和截断标记。
+- 新增 MCP `export_openapi_diff`：把 OpenAPI 契约差异写成 Markdown / HTML / JSON，复用 `diff_openapi` 的对比和破坏性标记。
+- 报告文件使用 UTF-8 无 BOM；HTML 对操作名、步骤名和明细做转义，避免报告里的响应内容变成可执行标记。
+- 工具总数 85 → 87。
+
+### 测试
+
+- 新增运行 diff / 契约 diff 的 Markdown、HTML 和内容截断测试。
+
 ## v1.11.7 — 2026-11-02
 
 ### OpenAPI 契约 diff

@@ -820,6 +820,13 @@ public sealed partial class McpServer
                 "diff_runs" => await DiffRunsToolAsync(arguments).ConfigureAwait(false),
                 "diff_openapi" => await DiffOpenApiToolAsync(arguments, cancellationToken)
                     .ConfigureAwait(false),
+                "export_run_diff" => await ExportRunDiffToolAsync(arguments, cancellationToken)
+                    .ConfigureAwait(false),
+                "export_openapi_diff" => await ExportOpenApiDiffToolAsync(
+                        arguments,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
                 "explain_failure" => await ExplainFailureToolAsync(arguments).ConfigureAwait(false),
                 "list_history" => await _workspace
                     .ListHistoryAsync(OptionalInt(arguments, "limit") ?? 20)
@@ -1771,6 +1778,62 @@ public sealed partial class McpServer
                         ["targetContent"] = StringSchema("目标文档的 OpenAPI/Swagger 内容"),
                         ["baseLabel"] = StringSchema("基准文档名称，用于错误提示"),
                         ["targetLabel"] = StringSchema("目标文档名称，用于错误提示"),
+                    }
+                )
+            ),
+            Tool(
+                "export_run_diff",
+                "把两次运行的差异写成 Markdown/HTML/JSON 报告，写入数据目录 reports，返回文件路径和内容",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["suiteId"] = StringSchema("套件 id"),
+                        ["baseRunId"] = StringSchema("基准运行 id"),
+                        ["targetRunId"] = StringSchema("目标运行 id；省略时使用最近一次运行"),
+                        ["elapsedRegressionPercent"] = IntegerSchema(
+                            "耗时回归阈值百分比，默认 20",
+                            0,
+                            1000
+                        ),
+                        ["format"] = EnumSchema(
+                            "报告格式，默认 markdown",
+                            "markdown",
+                            "html",
+                            "json"
+                        ),
+                        ["contentLimit"] = IntegerSchema(
+                            "返回内容的最大字符数，默认 60000",
+                            1000,
+                            500000
+                        ),
+                    },
+                    "suiteId",
+                    "baseRunId"
+                )
+            ),
+            Tool(
+                "export_openapi_diff",
+                "对比两份 OpenAPI/Swagger 文档并把差异写成 Markdown/HTML/JSON 报告，返回文件路径和内容",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["baseUrl"] = StringSchema("基准文档的 http/https 地址"),
+                        ["baseContent"] = StringSchema("基准文档的 OpenAPI/Swagger 内容"),
+                        ["targetUrl"] = StringSchema("目标文档的 http/https 地址"),
+                        ["targetContent"] = StringSchema("目标文档的 OpenAPI/Swagger 内容"),
+                        ["baseLabel"] = StringSchema("基准文档名称，用于错误提示"),
+                        ["targetLabel"] = StringSchema("目标文档名称，用于错误提示"),
+                        ["format"] = EnumSchema(
+                            "报告格式，默认 markdown",
+                            "markdown",
+                            "html",
+                            "json"
+                        ),
+                        ["contentLimit"] = IntegerSchema(
+                            "返回内容的最大字符数，默认 60000",
+                            1000,
+                            500000
+                        ),
                     }
                 )
             ),
