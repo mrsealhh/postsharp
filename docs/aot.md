@@ -24,7 +24,7 @@ powershell -ExecutionPolicy Bypass -File scripts/aot-smoke.ps1
 | Windows x64 产物 | 单个原生 `PostSharp.exe` 约 63 MB |
 | 启动 | 原生进程正常启动，Mock/MCP 服务在默认端口就绪 |
 | 构建告警 | 自有代码 0 条 IL 告警；仅 `Google.Protobuf` 依赖包产生 IL2104 / IL3053 |
-| MCP | `tools/list` 84 个工具（1.11.3 AOT 冒烟 18 项通过）；集合、环境、套件、历史、审计、存储配置、回收站、导出均返回结果 |
+| MCP | `tools/list` 84 个工具（1.11.4 AOT 冒烟 18 项通过）；集合、环境、套件、历史、审计、存储配置、回收站、导出均返回结果 |
 | 请求 | `create_request` → `send_request` 200 → `get_curl` → `delete_request` 全链路通过 |
 | 套件 | `create_suite` → `run_suite` 1/1 通过 → `delete_suite` |
 | 持久化 | `update_settings` 写入后重启原生进程，设置仍然存在 |

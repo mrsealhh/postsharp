@@ -1,10 +1,10 @@
 {
-  "version": "1.11.3",
+  "version": "1.11.4",
   "description": "Local API debugging workbench with MCP automation.",
   "homepage": "https://github.com/mrsealhh/postsharp",
   "license": "MIT",
-  "url": "https://github.com/mrsealhh/postsharp/releases/download/v1.11.3/PostSharp-win-x64.zip",
-  "hash": "e69fff1d014b8e76907421b7d5d16a0f64b8ad453a9dbb1bb3ac1c91e11f2be5",
+  "url": "https://github.com/mrsealhh/postsharp/releases/download/v1.11.4/PostSharp-win-x64.zip",
+  "hash": "c5f441da898c7b265951533b5dfd0326c8d0adfcb848ae641d57f956e97ff411",
   "bin": "PostSharp.exe",
   "shortcuts": [
     ["PostSharp.exe", "PostSharp"]
