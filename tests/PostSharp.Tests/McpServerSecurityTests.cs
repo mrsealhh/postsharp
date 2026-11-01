@@ -32,6 +32,78 @@ public sealed class McpServerSecurityTests
     }
 
     [Fact]
+    public async Task AdvertisesAndReadsReportResources()
+    {
+        Directory.CreateDirectory(AppPaths.ReportDirectory);
+        var name = $"mcp-resource-{Guid.NewGuid():N}.md";
+        var path = Path.Combine(AppPaths.ReportDirectory, name);
+        await File.WriteAllTextAsync(path, "# report");
+        try
+        {
+            var initialize = await SendAsync(
+                "POST",
+                """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}""",
+                null,
+                "127.0.0.1:5199"
+            );
+            Assert.NotNull(initialize.Body);
+            using (var document = JsonDocument.Parse(initialize.Body))
+            {
+                Assert.True(
+                    document
+                        .RootElement.GetProperty("result")
+                        .GetProperty("capabilities")
+                        .TryGetProperty("resources", out _)
+                );
+            }
+
+            var list = await SendAsync(
+                "POST",
+                """{"jsonrpc":"2.0","id":2,"method":"resources/list"}""",
+                null,
+                "127.0.0.1:5199"
+            );
+            Assert.NotNull(list.Body);
+            var uri = $"postsharp://reports/{Uri.EscapeDataString(name)}";
+            using (var document = JsonDocument.Parse(list.Body))
+            {
+                var uris = document
+                    .RootElement.GetProperty("result")
+                    .GetProperty("resources")
+                    .EnumerateArray()
+                    .Select(resource => resource.GetProperty("uri").GetString())
+                    .ToList();
+                Assert.Contains(uri, uris);
+            }
+
+            var readBody =
+                $"{{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"resources/read\",\"params\":{{\"uri\":\"{uri}\"}}}}";
+            var read = await SendAsync("POST", readBody, null, "127.0.0.1:5199");
+            Assert.NotNull(read.Body);
+            using (var document = JsonDocument.Parse(read.Body))
+            {
+                var text = document
+                    .RootElement.GetProperty("result")
+                    .GetProperty("contents")[0]
+                    .GetProperty("text")
+                    .GetString();
+                Assert.Equal("# report", text);
+            }
+
+            var traversal =
+                """{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"postsharp://reports/..%2Fsettings.json"}}""";
+            var blocked = await SendAsync("POST", traversal, null, "127.0.0.1:5199");
+            Assert.NotNull(blocked.Body);
+            using var blockedDocument = JsonDocument.Parse(blocked.Body);
+            Assert.True(blockedDocument.RootElement.TryGetProperty("error", out _));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task RequiresBearerTokenWhenEnabled()
     {
         _server.Policy = new McpAccessPolicy(true, "test-token", false);
