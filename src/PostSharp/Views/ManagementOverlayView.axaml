@@ -1029,6 +1029,19 @@
                                     </arc:Button>
                                     <arc:Button
                                         Variant="Secondary"
+                                        IsEnabled="{Binding HasSelectedSuite}"
+                                        Command="{Binding ValidateSelectedSuiteCommand}"
+                                        ToolTip.Tip="检查空步骤、缺失请求、连线、条件、断言和变量；错误会阻止运行"
+                                        ToolTip.ShowOnDisabled="True"
+                                        AutomationProperties.Name="预检套件"
+                                    >
+                                        <controls:IconLabel
+                                            Icon="{x:Static arc:ArcIcons.CircleCheck}"
+                                            Text="预检"
+                                        />
+                                    </arc:Button>
+                                    <arc:Button
+                                        Variant="Secondary"
                                         IsEnabled="{Binding IsRunningSuite}"
                                         Command="{Binding CancelSuiteRunCommand}"
                                         ToolTip.Tip="套件运行中可取消：正在发送的请求会被中止，后续步骤不再执行"

@@ -4957,10 +4957,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (existing is null)
         {
             Suites.Add(incoming);
+            WireSuiteRunCommands(incoming);
             SelectedSuite = incoming;
             SelectedSuiteResult = null;
             Persist();
-            ShowToast($"已创建套件（{incoming.Steps.Count} 个步骤）");
+            var createdValidation = ValidateSuite(incoming);
+            ShowSuiteValidation(createdValidation);
+            ShowToast(
+                createdValidation.HasErrors
+                    ? $"已创建套件，但预检发现 {createdValidation.ErrorCount} 个错误"
+                    : $"已创建套件（{incoming.Steps.Count} 个步骤），预检通过"
+            );
             return;
         }
 
@@ -4989,7 +4996,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         SelectedSuite = null;
         SelectedSuite = existing;
         Persist();
-        ShowToast($"套件已更新（{existing.Steps.Count} 个步骤）");
+        var updatedValidation = ValidateSuite(existing);
+        ShowSuiteValidation(updatedValidation);
+        ShowToast(
+            updatedValidation.HasErrors
+                ? $"套件已更新，但预检发现 {updatedValidation.ErrorCount} 个错误"
+                : $"套件已更新（{existing.Steps.Count} 个步骤），预检通过"
+        );
     }
 
     [RelayCommand]
@@ -5166,6 +5179,24 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         IsSuiteValidationVisible = validation.Issues.Count > 0;
         OnPropertyChanged(nameof(SuiteValidationSummary));
+    }
+
+    [RelayCommand]
+    private void ValidateSelectedSuite()
+    {
+        if (SelectedSuite is not { } suite)
+        {
+            return;
+        }
+
+        var validation = ValidateSuite(suite);
+        ShowSuiteValidation(validation);
+        ShowToast(
+            validation.HasErrors ? $"{validation.Summary}，请处理后再运行"
+            : validation.WarningCount > 0
+                ? $"预检通过：{suite.Steps.Count} 个步骤，{validation.WarningCount} 个提醒"
+            : $"预检通过：{suite.Steps.Count} 个步骤"
+        );
     }
 
     private bool EnsureSuiteValid(TestSuite suite)

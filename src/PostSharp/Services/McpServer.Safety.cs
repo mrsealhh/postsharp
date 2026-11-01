@@ -71,7 +71,7 @@ public sealed partial class McpServer
                 preview["target"] = Target(
                     suite.Id,
                     suite.Name,
-                    $"套件 · {suite.Steps.Count} 步 · {suite.Runs.Count} 次运行历史"
+                    $"套件 · {suite.Steps.Count} 步 · {suite.RunCount} 次运行历史"
                 );
                 preview["affected"] = suite.Steps.Count;
                 break;

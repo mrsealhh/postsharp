@@ -137,8 +137,9 @@ internal static class Program
         using var document = Parse(result.Text);
         foreach (var suite in document.RootElement.EnumerateArray())
         {
-            var steps = suite.TryGetProperty("steps", out var stepsNode)
-                ? stepsNode.GetArrayLength()
+            var steps =
+                suite.TryGetProperty("stepCount", out var stepCountNode) ? stepCountNode.GetInt32()
+                : suite.TryGetProperty("steps", out var stepsNode) ? stepsNode.GetArrayLength()
                 : 0;
             Console.WriteLine(
                 $"{ReadString(suite, "id"), -38} {ReadString(suite, "name"), -32} {steps} 步"
