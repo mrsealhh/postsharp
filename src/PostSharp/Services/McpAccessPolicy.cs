@@ -106,6 +106,7 @@ public static class McpToolAccess
         "grpc_describe",
         "export_report",
         "diff_runs",
+        "diff_openapi",
         "explain_failure",
     };
 

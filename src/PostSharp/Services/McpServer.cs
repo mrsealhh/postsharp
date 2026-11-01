@@ -818,6 +818,8 @@ public sealed partial class McpServer
                 "generate_suite" => await GenerateSuiteToolAsync(arguments).ConfigureAwait(false),
                 "export_report" => await ExportReportToolAsync(arguments).ConfigureAwait(false),
                 "diff_runs" => await DiffRunsToolAsync(arguments).ConfigureAwait(false),
+                "diff_openapi" => await DiffOpenApiToolAsync(arguments, cancellationToken)
+                    .ConfigureAwait(false),
                 "explain_failure" => await ExplainFailureToolAsync(arguments).ConfigureAwait(false),
                 "list_history" => await _workspace
                     .ListHistoryAsync(OptionalInt(arguments, "limit") ?? 20)
@@ -1756,6 +1758,21 @@ public sealed partial class McpServer
                 "diff_runs",
                 "对比同一套件两次运行：新增失败、修复、状态码变化、耗时回归/改善、增删步骤和节点状态变化",
                 DiffRunsSchema()
+            ),
+            Tool(
+                "diff_openapi",
+                "对比两份 OpenAPI/Swagger 文档，标出新增/删除操作、参数、请求体和响应结构变化，并标记破坏性变更",
+                ObjectSchema(
+                    new JsonObject
+                    {
+                        ["baseUrl"] = StringSchema("基准文档的 http/https 地址"),
+                        ["baseContent"] = StringSchema("基准文档的 OpenAPI/Swagger 内容"),
+                        ["targetUrl"] = StringSchema("目标文档的 http/https 地址"),
+                        ["targetContent"] = StringSchema("目标文档的 OpenAPI/Swagger 内容"),
+                        ["baseLabel"] = StringSchema("基准文档名称，用于错误提示"),
+                        ["targetLabel"] = StringSchema("目标文档名称，用于错误提示"),
+                    }
+                )
             ),
             Tool(
                 "explain_failure",

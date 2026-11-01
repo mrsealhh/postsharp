@@ -1819,6 +1819,63 @@ public sealed class McpWorkspaceAdapter
         return export with { Path = path };
     }
 
+    public async Task<OpenApiContractDiff> DiffOpenApiAsync(
+        string? baseUrl,
+        string? baseContent,
+        string? targetUrl,
+        string? targetContent,
+        string? baseLabel,
+        string? targetLabel,
+        CancellationToken cancellationToken
+    )
+    {
+        var baseDocument = await LoadOpenApiDocumentAsync(
+                baseUrl,
+                baseContent,
+                baseLabel ?? "基准文档",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        var targetDocument = await LoadOpenApiDocumentAsync(
+                targetUrl,
+                targetContent,
+                targetLabel ?? "目标文档",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        return OpenApiContractDiffService.Compare(baseDocument, targetDocument);
+    }
+
+    private static async Task<OpenApiImportDocument> LoadOpenApiDocumentAsync(
+        string? url,
+        string? content,
+        string label,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!string.IsNullOrWhiteSpace(content))
+        {
+            return OpenApiImportService.Parse(content, label);
+        }
+
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            throw new InvalidOperationException($"{label}需要提供 URL 或 OpenAPI 内容。");
+        }
+
+        if (
+            !Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+        )
+        {
+            throw new InvalidOperationException($"{label}的 URL 必须是 http/https 地址。");
+        }
+
+        return await OpenApiImportService
+            .LoadFromUrlAsync(uri.ToString(), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task<SuiteRunDiff> DiffRunsAsync(
         Guid suiteId,
         Guid baseRunId,
