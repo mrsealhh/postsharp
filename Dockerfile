@@ -3,7 +3,7 @@
 # PostSharp headless image: MCP + Mock only, no window and no tray icon.
 # The MCP endpoint listens on loopback inside the container, so do not publish
 # port 5199 to the host. Run CI steps with `docker exec` instead.
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
 WORKDIR /src
 COPY . .
 RUN dotnet publish src/PostSharp/PostSharp.csproj \

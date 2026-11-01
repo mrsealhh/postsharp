@@ -221,7 +221,11 @@ jobs:
 
       - name: Dump container log
         if: failure()
-        run: docker logs postsharp-headless
+        run: |
+          docker logs postsharp-headless || true
+          docker exec postsharp-headless sh -c 'ls -la /data /data/logs 2>&1; for f in /data/logs/*.log; do echo "== $f"; tail -n 200 "$f"; done 2>&1' || true
+          docker exec postsharp-headless sh -c 'for p in /proc/[0-9]*; do printf "%s " "$p"; tr "\0" " " < "$p/cmdline"; echo; done' || true
+          docker exec postsharp-headless sh -c 'cat /proc/net/tcp' || true
 
       - name: Stop container
         if: always()
