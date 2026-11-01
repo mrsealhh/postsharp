@@ -60,12 +60,17 @@ public partial class App : Application
                 var window = new MainWindow { DataContext = _viewModel };
                 UiScaleService.ApplyToAll(_viewModel.Settings.UiScale);
 
-                // Leave a margin around the window on small or scaled screens instead of overflowing the desktop.
+                // Keep the window inside the current screen in DIPs; WorkingArea is reported in
+                // physical pixels, so divide by scaling before assigning Width/Height.
                 if (window.Screens.Primary is { } screen)
                 {
                     var area = screen.WorkingArea;
-                    window.Width = Math.Clamp(area.Width - 80, window.MinWidth, 1400);
-                    window.Height = Math.Clamp(area.Height - 80, window.MinHeight, 900);
+                    var scale = screen.Scaling > 0 ? screen.Scaling : 1d;
+                    var workingWidth = area.Width / scale;
+                    var workingHeight = area.Height / scale;
+                    window.Width = Math.Max(window.MinWidth, Math.Min(workingWidth - 80, 1400));
+                    window.Height = Math.Max(window.MinHeight, Math.Min(workingHeight - 80, 900));
+                    window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
                 }
 
                 _mainWindow = window;

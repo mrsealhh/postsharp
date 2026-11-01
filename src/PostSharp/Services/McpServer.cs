@@ -251,6 +251,118 @@ public sealed partial class McpServer
         return true;
     }
 
+    private const string ReportsResourcePrefix = "postsharp://reports/";
+
+    private static readonly string[] ReportExtensions =
+    [
+        ".md",
+        ".html",
+        ".json",
+        ".xml",
+        ".csv",
+        ".txt",
+    ];
+
+    private static JsonArray BuildResourceList()
+    {
+        var resources = new JsonArray();
+        if (!Directory.Exists(AppPaths.ReportDirectory))
+        {
+            return resources;
+        }
+
+        foreach (
+            var path in Directory
+                .EnumerateFiles(AppPaths.ReportDirectory)
+                .Where(path =>
+                    ReportExtensions.Contains(
+                        Path.GetExtension(path),
+                        StringComparer.OrdinalIgnoreCase
+                    )
+                )
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .Take(50)
+        )
+        {
+            var name = Path.GetFileName(path);
+            resources.Add(
+                new JsonObject
+                {
+                    ["uri"] = ReportsResourcePrefix + Uri.EscapeDataString(name),
+                    ["name"] = name,
+                    ["description"] =
+                        $"PostSharp 报告 · {File.GetLastWriteTime(path):yyyy-MM-dd HH:mm:ss}",
+                    ["mimeType"] = MimeTypeFor(name),
+                }
+            );
+        }
+
+        return resources;
+    }
+
+    private static JsonObject ReadResource(JsonNode? id, JsonNode? parameters)
+    {
+        var uri = parameters?["uri"]?.GetValue<string>();
+        if (
+            string.IsNullOrWhiteSpace(uri)
+            || !uri.StartsWith(ReportsResourcePrefix, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return Error(id, -32602, "只支持 postsharp://reports/{文件名} 资源。");
+        }
+
+        var name = Uri.UnescapeDataString(uri[ReportsResourcePrefix.Length..]);
+        if (
+            name.Length == 0
+            || name.Contains('/')
+            || name.Contains('\\')
+            || name.Contains("..", StringComparison.Ordinal)
+        )
+        {
+            return Error(id, -32602, "资源文件名无效。");
+        }
+
+        var path = Path.Combine(AppPaths.ReportDirectory, name);
+        if (!File.Exists(path))
+        {
+            return Error(id, -32002, $"资源不存在：{name}");
+        }
+
+        const int maxCharacters = 1_000_000;
+        var text = File.ReadAllText(path);
+        var truncated = text.Length > maxCharacters;
+        if (truncated)
+        {
+            text = text[..maxCharacters];
+        }
+
+        return Result(
+            id,
+            new JsonObject
+            {
+                ["contents"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["uri"] = uri,
+                        ["mimeType"] = MimeTypeFor(name),
+                        ["text"] = text,
+                    }
+                ),
+            }
+        );
+    }
+
+    private static string MimeTypeFor(string fileName) =>
+        Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".html" => "text/html",
+            ".json" => "application/json",
+            ".xml" => "application/xml",
+            ".csv" => "text/csv",
+            ".md" => "text/markdown",
+            _ => "text/plain",
+        };
+
     private static JsonArray BuildToolsForPolicy(McpAccessPolicy policy)
     {
         var tools = BuildTools();
@@ -358,6 +470,11 @@ public sealed partial class McpServer
                             ["capabilities"] = new JsonObject
                             {
                                 ["tools"] = new JsonObject { ["listChanged"] = false },
+                                ["resources"] = new JsonObject
+                                {
+                                    ["listChanged"] = false,
+                                    ["subscribe"] = false,
+                                },
                             },
                             ["serverInfo"] = new JsonObject
                             {
@@ -392,6 +509,12 @@ public sealed partial class McpServer
 
                 case "ping":
                     return Result(id, new JsonObject());
+
+                case "resources/list":
+                    return Result(id, new JsonObject { ["resources"] = BuildResourceList() });
+
+                case "resources/read":
+                    return ReadResource(id, message["params"]);
 
                 case "tools/list":
                     return Result(id, new JsonObject { ["tools"] = BuildToolsForPolicy(policy) });

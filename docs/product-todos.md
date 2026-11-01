@@ -377,7 +377,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | P1-11 | 可维护性拆分 | `MainWindowViewModel`、`MainWindow.axaml` 过大；静态服务和 `async void` 增加测试难度 | 拆分请求编辑、历史、树、套件、OpenAPI、设置子 VM/控件；导入对话框独立 XAML；关键异步有取消和异常出口 | L |
 | P1-12 | 首次使用与文档 | 已有指南页 6 步上手、MCP 配置复制、桌面端三平台包和分发清单；首次启动 3 步欢迎对话框已加入；错误帮助入口和截图自动生成仍缺 | 补齐错误帮助入口；README/截图由演示数据生成 | S/M |
 | P1-13 | 轻量化与分发 | 三平台自包含包约 66 MB；已提供 winget/scoop/brew 模板；无框架依赖/精简包选项；启动/内存已有基线（1.11.3 MCP 就绪 0.6s、空闲约 100MB）；NativeAOT 作为独立产物发布并冒烟 | 冷启动 < 1.5s、空闲内存 < 150MB、Windows 包 ≤ 75MB；提供便携包与包管理器清单（模板已具备）；启动/内存纳入冒烟；AOT 作为可选通道提供独立产物与冒烟脚本（已具备） | M |
-| P1-14 | MCP 意图层与会话 | 已提供 `verify_endpoint`、`generate_suite`、`export_report`、`diff_runs`、`diff_openapi`、`export_run_diff`、`export_openapi_diff`、`explain_failure`，工具总数 87；顺序发送/导入/存储同步已 job 化并支持幂等键；会话类工具、大内容资源化和多客户端隔离仍缺 | 增加 WebSocket/Socket.IO/TCP 会话、gRPC streaming job、资源化大内容和多客户端隔离；单意图平均调用次数继续下降 | L |
+| P1-14 | MCP 意图层与会话 | 已提供 `verify_endpoint`、`generate_suite`、`export_report`、`diff_runs`、`diff_openapi`、`export_run_diff`、`export_openapi_diff`、`explain_failure`，工具总数 87；顺序发送/导入/存储同步已 job 化并支持幂等键；报告已通过 `resources` 资源化；会话类工具、运行/审计资源化和多客户端隔离仍缺 | 增加 WebSocket/Socket.IO/TCP 会话、gRPC streaming job、运行/审计资源化和多客户端隔离；单意图平均调用次数继续下降 | L |
 | P1-15 | 录制回放与回归闭环 | HAR/Postman/OpenAPI 导入后可直接生成套件；HAR 录制会话支持预览、筛选、选择导入和敏感查询参数脱敏；自动化运行历史已支持两次运行对比；OpenAPI 契约 diff 和运行/契约 diff 报告导出已通过 MCP 提供；内置代理录制仍缺 | 录制 → 回放 → 生成套件 → CI 报告 → 运行 diff 全链路可演示；失败步骤可定位 | L/XL |
 | P1-16 | 场景模板与分享 | 无场景模板库、无可分享的 `.postsharp` 场景文件；新用户从零搭建 | 内置 8–10 个场景模板；一键导入/导出场景；模板可审计、可版本化 | M |
 
@@ -715,7 +715,8 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] 意图工具：`verify_endpoint`、`generate_suite`、`diff_runs`、`explain_failure`、`export_report`。
 - [x] 破坏性工具支持 `dryRun`：删除、清空、永久删除、恢复和切换存储先返回影响预览。
 - [ ] 会话类工具：WebSocket/Socket.IO/TCP 的 connect/send/receive/close；gRPC streaming 的 job 化调用。
-- [ ] 大内容资源化：`postsharp://workspace`、`postsharp://runs/{id}`、`postsharp://audit/{id}` 等。
+- [x] 报告资源化：`resources/list` / `resources/read` 暴露 `postsharp://reports/{文件名}`。
+- [ ] 运行与审计资源化：`postsharp://runs/{id}`、`postsharp://audit/{id}` 等。
 - [x] 套件、顺序发送、导入和存储同步统一 `start_* / get_*_job / cancel_*`，支持进度、取消和 `idempotencyKey`。
 - [ ] 多客户端隔离：任务、审计来源、权限互不干扰；后台服务注册和开机自启（P1-07）。
 - [ ] 结构化错误和工具 schema 校验；新增工具必须带调用示例。

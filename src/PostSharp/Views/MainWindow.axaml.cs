@@ -510,6 +510,7 @@ public partial class MainWindow : Window
             var editor = new WorkflowEditorWindow(
                 _viewModel.CreateWorkflowEditorViewModel(draft, existing)
             );
+            editor.FitToWorkingArea();
             editor.SuiteCreated += (_, result) =>
                 _viewModel.ApplySuiteEditorResult(result.Suite, existing);
             _ = editor.ShowDialog(this);

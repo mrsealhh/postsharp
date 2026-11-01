@@ -60,6 +60,22 @@ public partial class WorkflowEditorWindow : Window
         };
     }
 
+    /// <summary>Clamps the editor to the current screen so the save/run footer stays reachable.</summary>
+    public void FitToWorkingArea()
+    {
+        var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
+        if (screen is null)
+        {
+            return;
+        }
+
+        var scale = screen.Scaling > 0 ? screen.Scaling : 1d;
+        var workingWidth = screen.WorkingArea.Width / scale;
+        var workingHeight = screen.WorkingArea.Height / scale;
+        Width = Math.Max(MinWidth, Math.Min(Width, workingWidth - 40));
+        Height = Math.Max(MinHeight, Math.Min(Height, workingHeight - 40));
+    }
+
     private void OnCanvasDragOver(object? sender, DragEventArgs e)
     {
         if (e.DataTransfer.Contains(SuiteSourceDragFormats.Source))
