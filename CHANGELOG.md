@@ -18,7 +18,7 @@
 
 ### CI Action
 
-- 新增可复用复合 Action `.github/actions/postsharp-mcp`：安装 Xvfb、下载 Linux 包、无头启动并等待健康端点，输出 `endpoint` 和 `log`。
+- 新增可复用复合 Action `.github/actions/postsharp-mcp`：安装 Xvfb、下载 Linux 包、无头启动，等待健康端点和 MCP `initialize` 成功，输出 `endpoint` 和 `log`。
 - CI 增加 action-smoke：用本地 Action 启动 1.11.3 发布包并校验 84 个 MCP 工具。
 - `docs/ci.md` 增加 Action 输入、输出和清理示例。
 

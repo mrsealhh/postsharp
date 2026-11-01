@@ -168,7 +168,7 @@ jobs:
 
 输出：`endpoint`（`http://127.0.0.1:5199`）和 `log`（无头进程日志路径）。
 
-Action 下载的运行时放在 `$RUNNER_TEMP`，启动的进程会常驻到 job 结束；runner 会自动清理，但建议保留上面的显式停止步骤，便于在同一 job 内重启服务。
+Action 下载的运行时放在 `$RUNNER_TEMP`，启动后会先等待健康端点，再发送一次 MCP `initialize`，确认 MCP 真正可用后才返回；进程会常驻到 job 结束，runner 会自动清理，但建议保留上面的显式停止步骤，便于在同一 job 内重启服务。
 
 ## 准备 CI 数据目录
 
