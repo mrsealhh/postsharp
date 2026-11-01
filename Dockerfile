@@ -36,6 +36,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=build /app .
+COPY docker/entrypoint.sh /usr/local/bin/postsharp-entrypoint.sh
 
 ENV POSTSHARP_DATA_DIR=/data
 VOLUME ["/data"]
@@ -44,4 +45,4 @@ EXPOSE 5199
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=6 \
     CMD curl -fsS http://127.0.0.1:5199/api/health || exit 1
 
-ENTRYPOINT ["xvfb-run", "-a", "./PostSharp", "--headless"]
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/postsharp-entrypoint.sh"]

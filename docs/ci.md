@@ -44,7 +44,7 @@ curl -fsS -H 'Content-Type: application/json' \
 
 ## Docker
 
-仓库根目录提供 `Dockerfile`：多阶段构建 Linux x64 自包含包，运行镜像只安装 Xvfb、字体和 X11 依赖，入口为 `xvfb-run -a ./PostSharp --headless`。
+仓库根目录提供 `Dockerfile`：多阶段构建 Linux x64 自包含包，运行镜像只安装 Xvfb、字体和 X11 依赖，入口脚本先启动 Xvfb，再运行 `./PostSharp --headless`。
 
 ```bash
 docker build -t postsharp-headless:1.11.2 .
