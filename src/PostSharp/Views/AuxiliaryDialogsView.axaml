@@ -32,12 +32,192 @@
                 />
             </StackPanel>
             <arc:Dialog.Actions>
+                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <arc:Button
+                        Content="生成套件"
+                        Variant="Secondary"
+                        IsVisible="{Binding Import.CanGenerateSuiteFromImport}"
+                        Command="{Binding Import.GenerateSuiteFromImportCommand}"
+                        AutomationProperties.Name="从导入结果生成套件"
+                    />
+                    <arc:Button
+                        Content="知道了"
+                        Variant="Primary"
+                        Command="{Binding Import.CloseImportSuccessCommand}"
+                        AutomationProperties.Name="关闭导入成功提示"
+                    />
+                </StackPanel>
+            </arc:Dialog.Actions>
+        </arc:Dialog>
+
+        <arc:Dialog
+            Opened="OnDialogOpened"
+            IsOpen="{Binding IsRunDiffOpen, Mode=TwoWay}"
+            Title="运行对比"
+            Description="对比同一套件的两次运行，标出新增失败、修复、状态码变化和耗时回归。"
+            Size="Large"
+        >
+            <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="10">
+                <TextBlock
+                    Grid.Row="0"
+                    Text="{Binding RunDiff.HeaderLine}"
+                    FontWeight="SemiBold"
+                    Foreground="{arc:ArcDesignTokenResource Foreground}"
+                    TextWrapping="Wrap"
+                />
+                <StackPanel Grid.Row="1" Spacing="6">
+                    <TextBlock
+                        Text="{Binding RunDiff.Diff.Conclusion}"
+                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                        TextWrapping="Wrap"
+                    />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <arc:Badge
+                            Content="{Binding RunDiff.Diff.NewFailures, StringFormat='新增失败 {0}'}"
+                            Tone="Danger"
+                            Size="Small"
+                        />
+                        <arc:Badge
+                            Content="{Binding RunDiff.Diff.Fixed, StringFormat='修复 {0}'}"
+                            Tone="Success"
+                            Size="Small"
+                        />
+                        <arc:Badge
+                            Content="{Binding RunDiff.Diff.StatusChanged, StringFormat='状态码变化 {0}'}"
+                            Tone="Warning"
+                            Size="Small"
+                        />
+                        <arc:Badge
+                            Content="{Binding RunDiff.Diff.Slower, StringFormat='耗时回归 {0}'}"
+                            Tone="Warning"
+                            Size="Small"
+                        />
+                        <arc:Badge
+                            Content="{Binding RunDiff.Diff.Faster, StringFormat='耗时改善 {0}'}"
+                            Tone="Info"
+                            Size="Small"
+                        />
+                    </StackPanel>
+                    <TextBlock
+                        Text="{Binding RunDiff.UnchangedText}"
+                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                    />
+                </StackPanel>
+                <TextBlock
+                    Grid.Row="2"
+                    Text="两次运行结果一致，未发现失败、状态码或耗时变化。"
+                    IsVisible="{Binding !RunDiff.HasChanges}"
+                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                    TextWrapping="Wrap"
+                />
+                <arc:ScrollArea Grid.Row="3" IsVisible="{Binding RunDiff.HasChanges}">
+                    <StackPanel Spacing="8">
+                        <ItemsControl ItemsSource="{Binding RunDiff.ChangedRows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SuiteRunDiffRow">
+                                    <Border
+                                        Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                                        CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"
+                                        Padding="8"
+                                        Margin="0,0,0,4"
+                                    >
+                                        <Grid
+                                            ColumnDefinitions="Auto,*,Auto"
+                                            ColumnSpacing="8"
+                                            RowDefinitions="Auto,Auto"
+                                            RowSpacing="2"
+                                        >
+                                            <arc:Badge
+                                                Content="{Binding ChangeLabel}"
+                                                Tone="{Binding Tone}"
+                                                Size="Small"
+                                                VerticalAlignment="Top"
+                                            />
+                                            <StackPanel Grid.Column="1" Spacing="1">
+                                                <TextBlock
+                                                    Text="{Binding Name}"
+                                                    Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    ToolTip.Tip="{Binding Name}"
+                                                />
+                                                <TextBlock
+                                                    Text="{Binding Detail}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                    TextWrapping="Wrap"
+                                                />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" Spacing="1">
+                                                <TextBlock
+                                                    Text="{Binding StatusText}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                    HorizontalAlignment="Right"
+                                                />
+                                                <TextBlock
+                                                    Text="{Binding ElapsedText}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                    HorizontalAlignment="Right"
+                                                />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Spacing="4" IsVisible="{Binding RunDiff.HasNodes}">
+                            <TextBlock
+                                Text="节点状态变化"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                FontWeight="Medium"
+                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                            />
+                            <ItemsControl ItemsSource="{Binding RunDiff.NodeRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SuiteRunNodeDiffRow">
+                                        <Grid
+                                            ColumnDefinitions="*,Auto"
+                                            ColumnSpacing="8"
+                                            Margin="0,0,0,3"
+                                        >
+                                            <StackPanel Spacing="1">
+                                                <TextBlock
+                                                    Text="{Binding Name}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    ToolTip.Tip="{Binding Name}"
+                                                />
+                                                <TextBlock
+                                                    Text="{Binding StateText}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                />
+                                            </StackPanel>
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                Text="{Binding ElapsedText}"
+                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                VerticalAlignment="Center"
+                                            />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </arc:ScrollArea>
+            </Grid>
+            <arc:Dialog.Actions>
                 <arc:Button
-                    Content="知道了"
+                    Content="关闭"
                     Variant="Primary"
                     HorizontalAlignment="Right"
-                    Command="{Binding Import.CloseImportSuccessCommand}"
-                    AutomationProperties.Name="关闭导入成功提示"
+                    Command="{Binding CloseRunDiffCommand}"
+                    AutomationProperties.Name="关闭运行对比"
                 />
             </arc:Dialog.Actions>
         </arc:Dialog>

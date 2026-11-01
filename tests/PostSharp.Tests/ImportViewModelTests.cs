@@ -145,6 +145,48 @@ public sealed class ImportViewModelTests
     }
 
     [Fact]
+    public async Task ImportedCollectionCanOpenSuiteBuilder()
+    {
+        var viewModel = Create(out var host);
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.har");
+        const string har = """
+            {
+              "log": {
+                "version": "1.2",
+                "entries": [
+                  {
+                    "_resourceType": "xhr",
+                    "request": {
+                      "method": "GET",
+                      "url": "https://api.example.com/orders",
+                      "header": []
+                    },
+                    "response": { "content": { "mimeType": "application/json" } }
+                  }
+                ]
+              }
+            }
+            """;
+        await File.WriteAllTextAsync(path, har);
+
+        try
+        {
+            await viewModel.ImportBatchFilesAsync(new[] { path });
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        Assert.True(viewModel.CanGenerateSuiteFromImport);
+
+        viewModel.GenerateSuiteFromImportCommand.Execute(null);
+
+        Assert.False(viewModel.IsImportSuccessOpen);
+        Assert.Equal(host.ImportedCollectionId, host.SuiteCollectionId);
+    }
+
+    [Fact]
     public async Task MultipleOpenApiServersRequireSelection()
     {
         var viewModel = Create(out var host);
@@ -210,16 +252,34 @@ public sealed class ImportViewModelTests
 
         public string? Toast { get; private set; }
 
+        public Guid ImportedCollectionId { get; private set; }
+
+        public Guid? SuiteCollectionId { get; private set; }
+
         public CollectionImportOutcome ApplyCollectionImport(ImportResult result)
         {
             CollectionResult = result;
-            return new CollectionImportOutcome(result.Root.Name, result.RequestCount, 0, null);
+            ImportedCollectionId = Guid.NewGuid();
+            return new CollectionImportOutcome(
+                result.Root.Name,
+                result.RequestCount,
+                0,
+                null,
+                ImportedCollectionId
+            );
         }
 
         public CollectionImportOutcome ApplyOpenApiImport(OpenApiImportDocument document)
         {
             OpenApiDocument = document;
-            return new CollectionImportOutcome(document.Title, document.RequestCount, 0, null);
+            ImportedCollectionId = Guid.NewGuid();
+            return new CollectionImportOutcome(
+                document.Title,
+                document.RequestCount,
+                0,
+                null,
+                ImportedCollectionId
+            );
         }
 
         public CollectionImportOutcome ApplyEnvironmentImport(EnvironmentImportResult result)
@@ -228,7 +288,8 @@ public sealed class ImportViewModelTests
                 result.Environment.Name,
                 0,
                 0,
-                result.Environment.Name
+                result.Environment.Name,
+                Guid.Empty
             );
         }
 
@@ -249,6 +310,9 @@ public sealed class ImportViewModelTests
         }
 
         public void CompleteImport() => Completed = true;
+
+        public void OpenSuiteBuilderForImportedCollection(Guid collectionId) =>
+            SuiteCollectionId = collectionId;
 
         public void ShowToast(string title) => Toast = title;
     }

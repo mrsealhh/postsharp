@@ -17,5 +17,7 @@ public interface IImportHost
 
     void CompleteImport();
 
+    void OpenSuiteBuilderForImportedCollection(Guid collectionId);
+
     void ShowToast(string title);
 }

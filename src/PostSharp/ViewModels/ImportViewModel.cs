@@ -15,6 +15,7 @@ public partial class ImportViewModel : ObservableObject
 
     private CancellationTokenSource? _importCts;
     private OpenApiImportDocument? _pendingOpenApiDocument;
+    private Guid? _lastImportedCollectionId;
 
     public ImportViewModel(IImportHost host, ImportProviderRegistry? providers = null)
     {
@@ -361,6 +362,28 @@ public partial class ImportViewModel : ObservableObject
 
     [RelayCommand]
     private void CloseImportSuccess() => IsImportSuccessOpen = false;
+
+    public bool CanGenerateSuiteFromImport => _lastImportedCollectionId is not null;
+
+    [RelayCommand]
+    private void GenerateSuiteFromImport()
+    {
+        if (_lastImportedCollectionId is not { } collectionId)
+        {
+            return;
+        }
+
+        IsImportSuccessOpen = false;
+        IsImportDialogOpen = false;
+        _host.OpenSuiteBuilderForImportedCollection(collectionId);
+    }
+
+    private void RememberImportedCollection(CollectionImportOutcome outcome)
+    {
+        _lastImportedCollectionId =
+            outcome.RequestCount > 0 && outcome.RootId != Guid.Empty ? outcome.RootId : null;
+        OnPropertyChanged(nameof(CanGenerateSuiteFromImport));
+    }
 
     private void ShowImportSuccess(string title, string summary, string? detail = null)
     {
@@ -860,6 +883,7 @@ public partial class ImportViewModel : ObservableObject
                         case OpenApiImportPayload openApi:
                         {
                             var outcome = _host.ApplyOpenApiImport(openApi.Document);
+                            RememberImportedCollection(outcome);
                             requests += outcome.RequestCount;
                             folders += outcome.FolderCount;
                             AddImportReport(
@@ -876,6 +900,7 @@ public partial class ImportViewModel : ObservableObject
                         case CollectionImportPayload collection:
                         {
                             var outcome = _host.ApplyCollectionImport(collection.Result);
+                            RememberImportedCollection(outcome);
                             requests += outcome.RequestCount;
                             folders += outcome.FolderCount;
                             if (outcome.EnvironmentName is not null)
@@ -1155,6 +1180,7 @@ public partial class ImportViewModel : ObservableObject
             $"已导入 OpenAPI「{outcome.RootName}」：{outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
         );
         _host.CompleteImport();
+        RememberImportedCollection(outcome);
 
         ShowImportSuccess(
             "导入成功",
@@ -1204,6 +1230,7 @@ public partial class ImportViewModel : ObservableObject
             $"已导入 {result.Format}「{outcome.RootName}」：{outcome.RequestCount} 个请求，{outcome.FolderCount} 个分组"
         );
         _host.CompleteImport();
+        RememberImportedCollection(outcome);
 
         var environmentText = outcome.EnvironmentName is null
             ? string.Empty
@@ -1316,6 +1343,8 @@ public partial class ImportViewModel : ObservableObject
     private void BeginImport(string status, CancellationToken cancellationToken)
     {
         ClearPendingOpenApiImport();
+        _lastImportedCollectionId = null;
+        OnPropertyChanged(nameof(CanGenerateSuiteFromImport));
         _importCts?.Dispose();
         _importCts = cancellationToken.CanBeCanceled
             ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)

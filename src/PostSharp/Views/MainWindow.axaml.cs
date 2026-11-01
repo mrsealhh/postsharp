@@ -476,6 +476,7 @@ public partial class MainWindow : Window
         nameof(MainWindowViewModel.IsCookieDialogOpen),
         nameof(MainWindowViewModel.IsOnboardingOpen),
         nameof(MainWindowViewModel.IsResetDemoDialogOpen),
+        nameof(MainWindowViewModel.IsRunDiffOpen),
     ];
 
     private void EnsureAuxiliaryDialogs()

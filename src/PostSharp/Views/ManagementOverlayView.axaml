@@ -679,7 +679,7 @@
                                 </StackPanel>
 
                                 <StackPanel Grid.Row="1" Spacing="6">
-                                    <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
                                         <TextBlock
                                             Text="步骤与断言 / 最近结果"
                                             FontSize="{arc:ArcDesignTokenResource TypeXS}"
@@ -702,6 +702,16 @@
                                             SelectedItem="{Binding SelectedSuiteResult, Mode=TwoWay}"
                                             VerticalAlignment="Center"
                                             AutomationProperties.Name="选择运行历史"
+                                        />
+                                        <arc:Button
+                                            Grid.Column="3"
+                                            Content="对比"
+                                            Variant="Secondary"
+                                            Size="Small"
+                                            Command="{Binding CompareSelectedRunCommand}"
+                                            IsEnabled="{Binding CanCompareSelectedRun}"
+                                            ToolTip.Tip="与更早的一次运行对比"
+                                            AutomationProperties.Name="对比更早的运行"
                                         />
                                     </Grid>
                                     <Border

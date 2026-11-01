@@ -499,6 +499,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private bool _isOnboardingOpen;
 
     [ObservableProperty]
+    private bool _isRunDiffOpen;
+
+    [ObservableProperty]
+    private SuiteRunDiffViewModel? _runDiff;
+
+    [ObservableProperty]
     private string _deleteDialogTitle = "删除？";
 
     [ObservableProperty]
@@ -754,7 +760,18 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         var environmentName =
             ApplyImportedEnvironment(result.Environment) ?? result.Environment.Name;
-        return new CollectionImportOutcome(environmentName, 0, 0, environmentName);
+        return new CollectionImportOutcome(environmentName, 0, 0, environmentName, Guid.Empty);
+    }
+
+    public void OpenSuiteBuilderForImportedCollection(Guid collectionId)
+    {
+        if (FindCollectionById(collectionId) is { } collection)
+        {
+            OpenSuiteBuilderForCollection(collection);
+            return;
+        }
+
+        ShowToast("导入的集合已不存在，无法生成套件");
     }
 
     public void CompleteImport()
@@ -803,7 +820,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             result.Root.Name,
             requestCount,
             folderCount,
-            environmentName
+            environmentName,
+            root.Id
         );
     }
 
@@ -1121,7 +1139,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             SelectedRequest = null;
         }
 
-        return new CollectionImportOutcome(document.Title, requestCount, groupCount, null);
+        return new CollectionImportOutcome(document.Title, requestCount, groupCount, null, root.Id);
     }
 
     private void EnsureOpenApiEnvironments(OpenApiImportDocument document)
@@ -1791,6 +1809,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return true;
         }
 
+        if (IsRunDiffOpen)
+        {
+            CloseRunDiff();
+            return true;
+        }
+
         if (IsDeleteDialogOpen)
         {
             ConfirmDeleteCommand.Execute(null);
@@ -1848,6 +1872,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (IsOnboardingOpen)
         {
             SkipOnboardingCommand.Execute(null);
+            return true;
+        }
+
+        if (IsRunDiffOpen)
+        {
+            CloseRunDiff();
             return true;
         }
 
@@ -1963,6 +1993,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     public bool HasSelectedSuiteResult => SelectedSuiteResult is not null;
 
     public bool CanRerunSelectedRun => SelectedSuiteResult?.HasFailures == true;
+
+    public bool CanCompareSelectedRun =>
+        SelectedSuite is { } suite
+        && SelectedSuiteResult is { } run
+        && suite.Runs.Any(candidate =>
+            candidate.Id != run.Id && candidate.Timestamp < run.Timestamp
+        );
 
     public bool HasSuiteValidationIssues => SelectedSuiteValidationIssues.Count > 0;
 
@@ -2425,6 +2462,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         OnPropertyChanged(nameof(HasSelectedSuiteResult));
         OnPropertyChanged(nameof(CanRerunSelectedRun));
+        OnPropertyChanged(nameof(CanCompareSelectedRun));
     }
 
     partial void OnAuditFilterTextChanged(string value) => RefreshAuditView();
@@ -3719,6 +3757,31 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         IsResetDemoDialogOpen = true;
     }
+
+    [RelayCommand]
+    private void CompareSelectedRun()
+    {
+        if (SelectedSuite is not { } suite || SelectedSuiteResult is not { } target)
+        {
+            return;
+        }
+
+        var baseRun = suite
+            .Runs.Where(run => run.Id != target.Id && run.Timestamp < target.Timestamp)
+            .OrderByDescending(run => run.Timestamp)
+            .FirstOrDefault();
+        if (baseRun is null)
+        {
+            ShowToast("没有更早的运行记录可以对比");
+            return;
+        }
+
+        RunDiff = new SuiteRunDiffViewModel(SuiteRunDiffService.Compare(baseRun, target));
+        IsRunDiffOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseRunDiff() => IsRunDiffOpen = false;
 
     [RelayCommand]
     private void SkipOnboarding()
