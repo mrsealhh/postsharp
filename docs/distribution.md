@@ -8,9 +8,9 @@ PostSharp 的桌面包按平台发布为 ZIP；Windows 额外有 NativeAOT 通�
 先按版本构建 Windows 与 macOS 包：
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.11.8
-.\scripts\build-osx-release.ps1 -Version 1.11.8 -RuntimeIdentifier osx-arm64
-.\scripts\update-packaging.ps1 -Version 1.11.8
+.\scripts\build-release.ps1 -Version 1.11.9
+.\scripts\build-osx-release.ps1 -Version 1.11.9 -RuntimeIdentifier osx-arm64
+.\scripts\update-packaging.ps1 -Version 1.11.9
 ```
 
 脚本从 `artifacts/PostSharp-win-x64.zip.sha256` 和
