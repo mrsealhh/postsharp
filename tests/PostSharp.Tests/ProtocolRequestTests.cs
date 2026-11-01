@@ -197,11 +197,18 @@ public sealed class ProtocolRequestTests
             var reply = Encoding.UTF8.GetBytes("echo:" + text);
             await socket.SendAsync(reply, WebSocketMessageType.Text, true, CancellationToken.None);
             await Task.Delay(100);
-            await socket.CloseAsync(
-                WebSocketCloseStatus.NormalClosure,
-                "done",
-                CancellationToken.None
-            );
+            try
+            {
+                await socket.CloseAsync(
+                    WebSocketCloseStatus.NormalClosure,
+                    "done",
+                    CancellationToken.None
+                );
+            }
+            catch (WebSocketException)
+            {
+                // The client may close first; the reply was already sent, so the close handshake is best-effort.
+            }
         });
 
         try
@@ -254,11 +261,18 @@ public sealed class ProtocolRequestTests
             Assert.StartsWith("42", emitted);
             await SendAsync(socket, "42[\"reply\",{\"ok\":true}]");
             await Task.Delay(100);
-            await socket.CloseAsync(
-                WebSocketCloseStatus.NormalClosure,
-                "done",
-                CancellationToken.None
-            );
+            try
+            {
+                await socket.CloseAsync(
+                    WebSocketCloseStatus.NormalClosure,
+                    "done",
+                    CancellationToken.None
+                );
+            }
+            catch (WebSocketException)
+            {
+                // The client may close first; the reply was already sent, so the close handshake is best-effort.
+            }
         });
 
         try

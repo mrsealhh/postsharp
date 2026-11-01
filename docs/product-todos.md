@@ -369,7 +369,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | P1-03 | 授权补全 | 已支持 OAuth 2.0 授权码 + PKCE 和客户端凭据；无设备码、隐式、密码模式、工作区级/环境级默认授权 | 补设备码和隐式；授权默认值层级明确；刷新并发只更新一次；令牌过期/撤销有清晰提示 | M/L |
 | P1-04 | 导入导出补全 | Apifox 原生格式未适配；Insomnia v5、Hoppscotch 环境、Postman 脚本/测试、HAR 响应体、部分认证不完整 | 有样本才实现，不无样本逆向；导入前预览统计；不支持的字段逐项提示；导出后可回导 | M/L |
 | P1-05 | Multipart 大文件 | 已支持多文件、64KB 流式、进度和取消；无断点续传、分片协议、超大文件预检 | 可配置分片/重试；磁盘空间与文件大小预检；取消后清理临时文件；断点恢复有明确限制 | M |
-| P1-06 | 套件与无人值守 | 已支持依赖 DAG、条件分支、All/Any 汇合、结构化条件表达式、最大并行和统一执行器；无循环/任意跳转、数据驱动；CLI 已支持 JUnit/Markdown/HTML 报告；定时仍依赖应用常开 | 支持 CSV/JSON 数据驱动；定时不依赖主窗口 | XL |
+| P1-06 | 套件与无人值守 | 已支持依赖 DAG、条件分支、All/Any 汇合、结构化条件表达式、最大并行和统一执行器；无循环/任意跳转、数据驱动；CLI 已支持 JUnit/Markdown/HTML 报告；已提供 `--headless`、Dockerfile 和 CI 示例，定时仍无内置调度器 | 支持 CSV/JSON 数据驱动；内置定时或外部调度接入说明 | XL |
 | P1-07 | MCP 强化 | 已支持页面托盘常驻和后台独立进程常驻、客户端切换和单实例，工具 84 个；已支持本机 token、只读模式和细粒度发送/修改/管理权限；已提供意图工具、job 幂等和 dry-run；仍仅回环、无 SSE 通知；多客户端隔离、后台服务注册和权限变更审计未完成 | 多客户端隔离；注册 Windows 服务 / systemd / launchd 和开机自启；工具 schema 校验；SSE 进度/取消；审计关联 requestId；资源化大内容落地 | L |
 | P1-08 | UI/UX 与可访问性 | 120%/150% 在 1400 宽窗口可能裁切；多显示器 DPI、焦点、键盘全覆盖仍需验证；深浅主题对比度未自动化 | 最小窗口和 150% 下无不可达控件；Tab 顺序/焦点框可见；图标有 AutomationProperties.Name；浅深色 WCAG AA；标签栏溢出可预测 | L |
 | P1-09 | 插件生态 | 只有开发指南；无 SDK 模板、契约版本、清单签名、兼容矩阵 | 提供插件模板和 CI 示例；契约版本可检查；官方/第三方插件矩阵；不兼容时只禁用插件 | M/L |
@@ -546,10 +546,10 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 | 工作项 | 交付物 | 验收 |
 | --- | --- | --- |
-| MCP 安全与权限（P1-07） | 已完成本机 token、只读/写工具分组；待细粒度权限、破坏性操作 dry-run/确认 | 未带 token 的写调用返回 401；只读模式不能发送/删除；审计记录客户端和权限 |
+| MCP 安全与权限（P1-07） | 已完成本机 token、只读/写工具分组、发送/修改/管理细粒度权限和破坏性操作 dry-run | 未带 token 的写调用返回 401；只读模式不能发送/删除；越权工具不出现在 tools/list；审计记录客户端和权限 |
 | MCP 意图层（P1-14） | `verify_endpoint`、`generate_suite`、`export_report`、`diff_runs`、`explain_failure`（已完成，工具总数 84） | 一个意图只调用 1–2 次工具；返回结构化结论；失败可定位到步骤/断言 |
 | 长任务与会话 job | 套件、顺序发送、导入和存储同步统一 `start_*` / `get_*_job` / `cancel_*`，带幂等键；SSE 进度仍待补 | 所有耗时操作有 job id、进度、取消和终态；取消后资源释放 |
-| CI / GitHub Action（P1-06） | `postsharp-cli suite run --junit/--markdown/--html` 的 Action 模板、Docker 镜像 | 干净环境一条命令跑套件并产出报告；失败退出码稳定 |
+| CI / GitHub Action（P1-06） | `--headless` 无头模式、Dockerfile、Linux CI 冒烟和 GitHub Actions 示例已完成；CLI 已支持 `--junit/--markdown/--html`；可复用 Action 模板待补 | 干净环境一条命令跑套件并产出报告；失败退出码稳定 |
 | 轻量分发（P1-10/P1-13） | 启动/内存/包体基线；Windows 便携包 + winget/scoop；Linux/macOS 包管理器清单 | 冷启动 < 1.5s、空闲内存 < 150MB、Windows 包 ≤ 75MB；安装后可启动 |
 | 首次体验（P1-12） | 首次 3 步引导、可重置演示工作区、MCP 配置一键复制、示例场景 | 新用户 5 分钟内完成第一次请求和第一次 AI 调用 |
 | 会话基础设施（P2-09 前置） | 会话模型、消息日志、连接/断开/发送/接收接口（先不追求完整 UI） | WebSocket 会话可通过 MCP 连接、发送、接收、关闭；有超时和取消 |
@@ -606,7 +606,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | 1 | `feat/mcp-token-scopes` | 本机 token、只读/写权限、401/403、审计字段 | 无 token 写调用失败；只读模式不发送/不删除 |
 | 2 | `feat/mcp-intent-tools`（已完成） | `verify_endpoint`、`generate_suite`、`export_report`、`diff_runs`、`explain_failure` | 意图工具返回结构化结论；失败可定位 |
 | 3 | `feat/mcp-session-jobs` | 统一 job、进度、取消、幂等键 | 长任务可取消；重复请求不重复执行 |
-| 4 | `feat/ci-github-action` | Action 模板、Dockerfile、示例工作流 | 干净 runner 跑通并上传报告 |
+| 4 | `feat/ci-github-action`（进行中：无头模式与 Docker 已完成，待 Action 模板） | Action 模板、Dockerfile、示例工作流 | 干净 runner 跑通并上传报告 |
 | 5 | `feat/record-replay` | HAR/代理录制、回放、脱敏 | 录制→回放可复现；无明文机密 |
 | 6 | `feat/run-diff` | 两次运行 diff、契约 diff、报告 | 差异分类准确；可导出 |
 | 7 | `feat/lightweight-packaging` | 启动/内存基线、精简包、winget/scoop/brew | 指标达标；安装可启动 |
@@ -747,7 +747,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] JUnit XML：`suite run/rerun-failed/continue --junit <文件>`。
 - [x] 桌面端「指南」页增加 CLI 说明、常用命令复制、MCP 地址复制和下载/说明入口。
 - [x] HTML/Markdown 测试报告。
-- [x] GitHub Actions CI：`.github/workflows/ci.yml` 在 Windows runner 执行格式检查、Debug 构建和全部测试。
+- [x] GitHub Actions CI：`.github/workflows/ci.yml` 在 Windows runner 执行格式检查、Debug 构建、packaging 校验和全部测试；Ubuntu runner 执行无头 MCP 冒烟和 Docker 镜像验证。
 - [x] 分发清单模板：`packaging/winget`、`packaging/scoop`、`packaging/homebrew`，由 `scripts/update-packaging.ps1` 生成。
 - [ ] 以 `/postsharp:mcp ...` 形式包装 CLI，供 AI 客户端调用。
 - [x] CLI 改为独立 `PostSharp.Cli-*.zip` 发布；Windows/Linux/macOS 桌面包不再包含 `cli/`。

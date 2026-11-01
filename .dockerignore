@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+artifacts/
+.git/
+.github/
+tests/
+docs/
+packaging/
+*.zip
+*.sha256
