@@ -47,8 +47,8 @@ curl -fsS -H 'Content-Type: application/json' \
 仓库根目录提供 `Dockerfile`：多阶段构建 Linux x64 自包含包，运行镜像只安装 Xvfb、字体和 X11 依赖，入口脚本先启动 Xvfb，再运行 `./PostSharp --headless`。
 
 ```bash
-docker build -t postsharp-headless:1.11.5 .
-docker run -d --name postsharp-ci -v "$PWD/ci-data:/data" postsharp-headless:1.11.5
+docker build -t postsharp-headless:1.11.6 .
+docker run -d --name postsharp-ci -v "$PWD/ci-data:/data" postsharp-headless:1.11.6
 docker exec postsharp-ci curl -fsS http://127.0.0.1:5199/api/health
 ```
 
@@ -90,7 +90,7 @@ jobs:
       - name: Download PostSharp and CLI
         run: |
           curl -fsSL -o postsharp.zip \
-            https://github.com/mrsealhh/postsharp/releases/download/v1.11.5/PostSharp-linux-x64.zip
+            https://github.com/mrsealhh/postsharp/releases/download/v1.11.6/PostSharp-linux-x64.zip
           unzip -q postsharp.zip -d postsharp
           curl -fsSL -o cli.zip \
             https://github.com/mrsealhh/postsharp/releases/download/cli-v1.1.0/PostSharp.Cli-linux-x64.zip
@@ -143,9 +143,9 @@ jobs:
 ```yaml
       - name: Start PostSharp MCP
         id: postsharp
-        uses: mrsealhh/postsharp/.github/actions/postsharp-mcp@v1.11.5
+        uses: mrsealhh/postsharp/.github/actions/postsharp-mcp@v1.11.6
         with:
-          version: 1.11.5
+          version: 1.11.6
           data-dir: ci-data
 
       - name: Run suite
