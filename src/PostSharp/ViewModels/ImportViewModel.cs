@@ -137,6 +137,7 @@ public partial class ImportViewModel : ObservableObject
     private string _curlCommand = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanPreviewHarSession))]
     private string _harJson = string.Empty;
 
     [ObservableProperty]
@@ -1104,6 +1105,47 @@ public partial class ImportViewModel : ObservableObject
         finally
         {
             EndImport();
+        }
+    }
+
+    public bool CanPreviewHarSession => !string.IsNullOrWhiteSpace(HarJson);
+
+    [RelayCommand]
+    private void PreviewHarSession()
+    {
+        if (string.IsNullOrWhiteSpace(HarJson))
+        {
+            HasImportError = true;
+            ImportStatus = "请粘贴 HAR JSON，或改为选择 .har 文件。";
+            return;
+        }
+
+        _host.OpenRecordingSession(HarJson);
+    }
+
+    public async Task PreviewHarFileAsync(
+        string path,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (!File.Exists(path))
+        {
+            HasImportError = true;
+            ImportStatus = "HAR 文件不存在，请重新选择。";
+            return;
+        }
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(true);
+            HarJson = content;
+            _host.OpenRecordingSession(content);
+        }
+        catch (Exception exception)
+        {
+            HasImportError = true;
+            ImportStatus = $"无法预览 HAR：{DescribeImportFailure(exception)}";
+            Log.Error(exception, "预览 HAR 失败 {FilePath}", path);
         }
     }
 

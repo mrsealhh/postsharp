@@ -505,6 +505,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private SuiteRunDiffViewModel? _runDiff;
 
     [ObservableProperty]
+    private bool _isRecordingSessionOpen;
+
+    [ObservableProperty]
+    private RecordingSessionViewModel? _recordingSession;
+
+    [ObservableProperty]
     private string _deleteDialogTitle = "删除？";
 
     [ObservableProperty]
@@ -772,6 +778,54 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         ShowToast("导入的集合已不存在，无法生成套件");
+    }
+
+    public void OpenRecordingSession(string content)
+    {
+        try
+        {
+            var entries = HarSessionService.Parse(content);
+            if (entries.Count == 0)
+            {
+                ShowToast("HAR 中没有可导入的请求");
+                return;
+            }
+
+            RecordingSession = new RecordingSessionViewModel(
+                entries,
+                ApplyRecordingSession,
+                () => IsRecordingSessionOpen = false
+            );
+            IsRecordingSessionOpen = true;
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "解析录制会话失败");
+            ShowToast($"无法预览 HAR：{exception.Message}");
+        }
+    }
+
+    private void ApplyRecordingSession(IReadOnlyList<HarSessionEntry> entries, bool generateSuite)
+    {
+        try
+        {
+            var content = HarSessionService.BuildHar(entries);
+            var result = HarImportService.Parse(content, "录制会话", includeStaticResources: true);
+            var outcome = ApplyCollectionImport(result);
+            CompleteImport();
+            IsRecordingSessionOpen = false;
+            Import.IsImportDialogOpen = false;
+            ShowToast($"已从录制会话导入 {outcome.RequestCount} 个请求");
+            if (generateSuite)
+            {
+                OpenSuiteBuilderForImportedCollection(outcome.RootId);
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "导入录制会话失败");
+            ShowToast($"导入录制会话失败：{exception.Message}");
+        }
     }
 
     public void CompleteImport()
@@ -1878,6 +1932,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (IsRunDiffOpen)
         {
             CloseRunDiff();
+            return true;
+        }
+
+        if (IsRecordingSessionOpen)
+        {
+            RecordingSession?.CloseCommand.Execute(null);
             return true;
         }
 

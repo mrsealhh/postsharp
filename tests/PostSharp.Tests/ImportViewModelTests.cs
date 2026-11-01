@@ -256,6 +256,8 @@ public sealed class ImportViewModelTests
 
         public Guid? SuiteCollectionId { get; private set; }
 
+        public string? RecordingContent { get; private set; }
+
         public CollectionImportOutcome ApplyCollectionImport(ImportResult result)
         {
             CollectionResult = result;
@@ -313,6 +315,8 @@ public sealed class ImportViewModelTests
 
         public void OpenSuiteBuilderForImportedCollection(Guid collectionId) =>
             SuiteCollectionId = collectionId;
+
+        public void OpenRecordingSession(string content) => RecordingContent = content;
 
         public void ShowToast(string title) => Toast = title;
     }

@@ -3515,6 +3515,13 @@
                                             IsLoading="{Binding Import.IsImporting}"
                                             AutomationProperties.Name="选择 HAR 文件"
                                         />
+                                        <arc:Button
+                                            Content="预览会话…"
+                                            Variant="Secondary"
+                                            Click="OnPreviewHarFileClick"
+                                            IsEnabled="{Binding Import.IsNotImporting}"
+                                            AutomationProperties.Name="预览 HAR 录制会话"
+                                        />
                                         <arc:Checkbox
                                             IsChecked="{Binding Import.HarIncludeStaticResources, Mode=TwoWay}"
                                             VerticalAlignment="Center"
@@ -3537,15 +3544,25 @@
                                         IsResizable="False"
                                         AutomationProperties.Name="HAR JSON"
                                     />
-                                    <arc:Button
-                                        Content="导入粘贴的 HAR"
-                                        Variant="Primary"
-                                        HorizontalAlignment="Left"
-                                        Command="{Binding Import.ImportHarTextCommand}"
-                                        IsEnabled="{Binding Import.IsNotImporting}"
-                                        IsLoading="{Binding Import.IsImporting}"
-                                        AutomationProperties.Name="导入粘贴的 HAR"
-                                    />
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <arc:Button
+                                            Content="导入粘贴的 HAR"
+                                            Variant="Primary"
+                                            Command="{Binding Import.ImportHarTextCommand}"
+                                            IsEnabled="{Binding Import.IsNotImporting}"
+                                            IsLoading="{Binding Import.IsImporting}"
+                                            AutomationProperties.Name="导入粘贴的 HAR"
+                                        />
+                                        <arc:Button
+                                            Content="预览会话"
+                                            Variant="Secondary"
+                                            Command="{Binding Import.PreviewHarSessionCommand}"
+                                            IsEnabled="{Binding Import.CanPreviewHarSession}"
+                                            ToolTip.Tip="先核对、筛选 HAR 条目，再导入或生成套件"
+                                            ToolTip.ShowOnDisabled="True"
+                                            AutomationProperties.Name="预览粘贴的 HAR 会话"
+                                        />
+                                    </StackPanel>
                                 </StackPanel>
 
                                 <StackPanel
