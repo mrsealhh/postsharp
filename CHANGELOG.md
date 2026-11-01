@@ -1,5 +1,14 @@
 # 更新日志
 
+## v1.11.3（待发布）
+
+### CI 与无头模式
+
+- 新增 `--headless`：只启动 MCP 和内置 Mock，不创建窗口和托盘，供容器和 CI 使用。
+- 新增根目录 `Dockerfile` 和 `.dockerignore`：多阶段构建 Linux 自包含包，Xvfb 运行，数据目录挂载到 `/data`。
+- CI 新增 Ubuntu headless 冒烟：发布 Linux 包，`xvfb-run` 启动后用 `initialize` + `tools/list` 校验 84 个工具；新增 Docker job 构建并验证容器内健康端点和工具列表。
+- 新增 `docs/ci.md`：无头启动、Docker、GitHub Actions 示例、数据目录准备和限制。
+
 ## v1.11.2 — 2026-11-01
 
 ### MCP 长任务 job

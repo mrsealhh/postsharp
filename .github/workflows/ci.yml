@@ -126,6 +126,28 @@ jobs:
           print(f"{len(tools)} tools")
           PY
 
+      - name: Run demo suite
+        run: |
+          mcp_call() {
+            local id="$1" name="$2" arguments="$3" output="$4"
+            printf '{"jsonrpc":"2.0","id":%s,"method":"tools/call","params":{"name":"%s","arguments":%s}}' \
+              "$id" "$name" "$arguments" > request.json
+            curl -fsS -H 'Content-Type: application/json' -H 'Accept: application/json' \
+              --data-binary @request.json http://127.0.0.1:5199/mcp > "$output"
+          }
+
+          mcp_call 3 list_suites '{}' suites.json
+          SUITE_ID=$(python3 -c 'import json; d=json.load(open("suites.json")); s=json.loads(d["result"]["content"][0]["text"]); print(s[0]["id"])')
+          mcp_call 4 run_suite "{\"id\":\"$SUITE_ID\"}" run.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("run.json"))
+          result = json.loads(data["result"]["content"][0]["text"])
+          assert result["total"] >= 1, result
+          assert result["failed"] == 0, result
+          print(f"suite passed {result['passed']}/{result['total']}")
+          PY
+
       - name: Stop headless service
         if: always()
         run: |
@@ -139,3 +161,68 @@ jobs:
           name: headless-log
           path: headless.log
           if-no-files-found: ignore
+
+  docker-headless:
+    name: Docker headless image
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build image
+        run: docker build -t postsharp-headless:ci .
+
+      - name: Start container
+        run: |
+          docker run -d --name postsharp-headless postsharp-headless:ci
+          ready=0
+          for i in $(seq 1 90); do
+            if docker exec postsharp-headless curl -fsS http://127.0.0.1:5199/api/health >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            if [ "$(docker inspect --format '{{.State.Status}}' postsharp-headless)" != "running" ]; then
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Container headless MCP did not become ready"
+            docker logs postsharp-headless
+            exit 1
+          fi
+
+      - name: Check MCP tools
+        run: |
+          cat > initialize.json <<'JSON'
+          {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1.0"}}}
+          JSON
+          docker exec -i postsharp-headless curl -fsS \
+            -H 'Content-Type: application/json' -H 'Accept: application/json' \
+            --data-binary @- http://127.0.0.1:5199/mcp < initialize.json > /dev/null
+          cat > tools-request.json <<'JSON'
+          {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+          JSON
+          docker exec -i postsharp-headless curl -fsS \
+            -H 'Content-Type: application/json' -H 'Accept: application/json' \
+            --data-binary @- http://127.0.0.1:5199/mcp < tools-request.json > tools.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("tools.json"))
+          tools = [tool["name"] for tool in data["result"]["tools"]]
+          assert "verify_endpoint" in tools
+          assert "start_sequence_run" in tools
+          assert "start_import" in tools
+          assert len(tools) >= 84
+          print(f"{len(tools)} tools")
+          PY
+
+      - name: Dump container log
+        if: failure()
+        run: docker logs postsharp-headless
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f postsharp-headless

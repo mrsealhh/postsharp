@@ -16,6 +16,7 @@
 - [内置 Mock API](#内置-mock-api)
 - [MCP 接入](#mcp-接入)
 - [命令行 CLI](docs/cli.md)
+- [无头模式与 CI](docs/ci.md)
 - [分发与包管理器](docs/distribution.md)
 - [启动与内存基线](docs/performance.md)
 - [AI 审计与自动化](#ai-审计与自动化)
@@ -50,6 +51,7 @@ PostSharp 的定位是：
 
 - **MCP 工具**：集合/请求、环境变量、历史与回收站、审计与回收站、自动化套件、系统配置、存储配置/同步/切换、导入导出等语义操作均可由 MCP 调用（窗口尺寸、剪贴板等纯界面动作除外）；`verify_endpoint` / `generate_suite` / `diff_runs` / `explain_failure` / `export_report` 把常见意图压到 1–2 次调用并返回结构化结论。
 - **命令行 CLI**：`postsharp-cli` 通过本机 MCP 端点执行套件列表、预检、后台运行、运行历史、失败重跑、请求发送和审计查询；支持 `--json`、`--junit`、`--markdown`、`--html` 和稳定退出码，适合终端与 CI。`postsharp-cli mcp-stdio` 可把 stdin/stdout MCP 桥接到 HTTP MCP，兼容只支持 stdio 的 harness。CLI 是独立下载包，不随桌面安装包分发；应用内「指南 → 命令行 CLI」卡片提供常用命令、MCP 地址复制和下载入口。
+- **无头与容器**：`--headless` 只启动 MCP 和内置 Mock，不创建窗口和托盘；Linux 配合 Xvfb 可在 CI 和容器中运行。仓库提供 `Dockerfile`、`--headless` Linux 冒烟和 GitHub Actions 示例，见 [无头模式与 CI](docs/ci.md)。
 - **完整审计**：来源 `UI` / `MCP`、MCP 客户端名称、工具名、时间、状态、耗时、大小、cURL、请求头和请求/响应预览。
 - **SSE / AI 输出聚合**：自动解析 `text/event-stream`，聚合常见 AI 协议的 thinking 与 content，接收中增量刷新，取消后保留已接收内容。
 - **自动化套件**：统一套件编排器，左侧集合/接口浏览器、中间画布、右侧节点明细；支持依赖 DAG、条件分支与汇合、失败重试、输入映射、断言、定时运行与失败停止；运行结果进入审计，画布实时显示节点与连线状态。
@@ -1012,7 +1014,7 @@ docs/
 | 授权复制与解析 | 临时控制台验证：`RequestAuth.Clone()` 后修改副本的 access_token 不影响原对象；`AuthResolver` 对「集合 A Bearer → 子集合 B 继承 → 请求」解析到集合 A，子集合 C 配 API Key 时请求 2 解析到集合 C |
 | 构建 | Debug / Release 均 0 警告、0 错误；`csharpier check .` 通过 |
 | 托盘与最小化 | Windows 托盘改用原生 `Shell_NotifyIcon` + `TrackPopupMenu`，右键菜单在 Windows 11 溢出区也能正常显示（实测菜单出现在光标处，含显示主页面/最大化/退出）；菜单动作延迟到 `Dispatcher` 执行；退出、切到后台和后台服务停止时显式 `Dispose` 托盘图标，减少残留；托盘图标使用 `.ico`；最小化按钮在托盘可用时隐藏到托盘，恢复时保留最大化状态；Debug 构建 0 警告 0 错误，265 个测试通过 |
-| CI | 新增 `.github/workflows/ci.yml`：Windows runner 上安装 .NET 10 和 CSharpier 1.3.0，依次执行格式检查、Debug 构建和 265 个测试；推送到 master/dev 或提交 PR 时运行 |
+| CI | 新增 `.github/workflows/ci.yml`：Windows runner 上安装 .NET 10 和 CSharpier 1.3.0，依次执行格式检查、Debug 构建、packaging 清单校验和测试；Ubuntu runner 发布 Linux 自包含包，用 `xvfb-run PostSharp --headless` 启动 MCP 并校验 84 个工具；Docker job 构建镜像并在容器内校验健康端点和工具列表 |
 | MCP 意图工具 | 新增 `verify_endpoint` / `generate_suite` / `export_report` / `diff_runs` / `explain_failure`，工具总数 75；只读模式暴露 `export_report` / `diff_runs` / `explain_failure`，隐藏发送和生成；`verify_endpoint` 记录审计；单测覆盖检查项、期望状态推断、四种报告、diff 分类、失败定位和 source-generated JSON；259 个测试通过。本机已有 PostSharp 实例占用单实例锁，未做 GUI/MCP 实机联调 |
 | 集合树状态 | `CollectionDto.IsExpanded` 与 `SelectedCollectionId` / `SelectedRequestId` 随工作区落盘；启动恢复展开状态和选中节点，节点被删除时回退第一个请求，空工作区保持「新建请求」；旧工作区默认展开；选中/展开变化合并为一次延迟保存（单测） |
 | 复制集合 | 右键「复制集合」递归复制子集合与请求，参数、请求头、表单、上传、授权都复制为独立对象；所有节点换新 id，套件仍指向原请求；副本不继承 OpenAPI 来源和收藏；成功后 Toast「已复制集合」，失败走顶部提示条；单测覆盖深拷贝、id 与授权隔离、原树不变 |
@@ -1021,6 +1023,7 @@ docs/
 | MCP 长任务 job | `start_sequence_run` / `start_import` / `start_storage_sync` 立即返回 jobId；实测顺序任务同 key 返回同一 jobId、2/2 步完成，导入任务完成并返回结果；进度、取消和终态由统一 `McpJob` 管理 |
 | MCP 细粒度权限 | 设置页可分别开启发送/修改/管理；单测确认 `AllowSend=false` 隐藏 `send_request`/`run_suite` 但保留 `delete_request`，`AllowAdmin=false` 隐藏 `update_settings`/`sync_storage`；越权调用返回 `-32003` |
 | 首次启动引导 | 首次启动弹出 3 步欢迎对话框（发送请求 / 接入 MCP / 运行套件）；「打开指南」完成引导并切到指南页，「跳过」只标记已读；Debug 构建 0 警告 0 错误 |
+| 无头模式 | Windows 实机 `PostSharp.exe --headless` 启动后健康端点 `200`，无主窗口；Linux CI 用 `xvfb-run` 启动自包含包，`initialize` 后 `tools/list` 返回 84 个工具；Docker 镜像构建与容器内健康检查由 CI 验证 |
 | 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.1，Windows/macOS 哈希与发布资产一致 |
 | 重置演示工作区 | 指南页「一分钟上手」增加入口；确认弹窗说明会清空集合、环境、套件、历史和回收站并恢复内置 Mock 示例，审计和设置保留；`Ctrl+Enter` 确认、`Esc` 取消；Debug 构建 0 警告 0 错误 |
 | 启动与内存基线 | 新增 `scripts/perf-smoke.ps1` 和 `docs/performance.md`；1.11.1 本机复测 JIT 2328 ms / 87 MB，AOT 2285 ms / 66 MB（到健康端点就绪）；目标 1.5s / 150MB，JIT 冷启动仍未达标 |
