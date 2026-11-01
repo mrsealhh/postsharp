@@ -286,14 +286,15 @@ public sealed partial class McpServer
         {
             var name = Path.GetFileName(path);
             resources.Add(
-                new JsonObject
-                {
-                    ["uri"] = ReportsResourcePrefix + Uri.EscapeDataString(name),
-                    ["name"] = name,
-                    ["description"] =
-                        $"PostSharp 报告 · {File.GetLastWriteTime(path):yyyy-MM-dd HH:mm:ss}",
-                    ["mimeType"] = MimeTypeFor(name),
-                }
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["uri"] = ReportsResourcePrefix + Uri.EscapeDataString(name),
+                        ["name"] = name,
+                        ["description"] =
+                            $"PostSharp 报告 · {File.GetLastWriteTime(path):yyyy-MM-dd HH:mm:ss}",
+                        ["mimeType"] = MimeTypeFor(name),
+                    }
             );
         }
 
