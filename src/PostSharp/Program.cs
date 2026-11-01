@@ -31,14 +31,20 @@ internal static class Program
             );
         }
 
-        var isMcpService = args.Any(argument =>
-            string.Equals(
-                argument,
-                McpBackgroundService.Argument,
-                StringComparison.OrdinalIgnoreCase
-            )
+        var isHeadless = args.Any(argument =>
+            string.Equals(argument, "--headless", StringComparison.OrdinalIgnoreCase)
         );
+        var isMcpService =
+            isHeadless
+            || args.Any(argument =>
+                string.Equals(
+                    argument,
+                    McpBackgroundService.Argument,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            );
         App.IsMcpService = isMcpService;
+        App.IsHeadless = isHeadless;
 
         using var singleInstance = SingleInstanceGuard.Acquire(
             isMcpService ? ServiceInstanceMutexName : SingleInstanceMutexName

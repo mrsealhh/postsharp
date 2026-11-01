@@ -55,3 +55,79 @@ jobs:
 
       - name: Test
         run: dotnet test tests/PostSharp.Tests/PostSharp.Tests.csproj -c Debug --no-build
+
+  headless-linux:
+    name: Headless Linux MCP smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install Xvfb and Avalonia dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb curl libx11-6 libice6 libsm6 libfontconfig1 libfreetype6 \
+            libxrandr2 libxi6 libgl1 libegl1 libdbus-1-3 libgtk-3-0
+
+      - name: Publish Linux package
+        run: |
+          dotnet publish src/PostSharp/PostSharp.csproj \
+            -c Release -r linux-x64 --self-contained true \
+            -p:Version=0.0.0-ci -o artifacts/headless
+
+      - name: Start headless MCP
+        run: |
+          export POSTSHARP_DATA_DIR="$(mktemp -d)"
+          xvfb-run -a artifacts/headless/PostSharp --headless > headless.log 2>&1 &
+          echo $! > headless.pid
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5199/api/health >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Headless MCP did not become ready"
+            cat headless.log
+            exit 1
+          fi
+          curl -fsS http://127.0.0.1:5199/api/health
+
+      - name: Check MCP tools
+        run: |
+          payload='{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+          curl -fsS -H 'Content-Type: application/json' -d "$payload" \
+            http://127.0.0.1:5199/mcp > tools.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("tools.json"))
+          tools = [tool["name"] for tool in data["result"]["tools"]]
+          assert "verify_endpoint" in tools
+          assert "start_sequence_run" in tools
+          assert "start_import" in tools
+          print(f"{len(tools)} tools")
+          PY
+
+      - name: Stop headless service
+        if: always()
+        run: |
+          if [ -f headless.pid ]; then kill "$(cat headless.pid)" 2>/dev/null || true; fi
+          pkill -f 'artifacts/headless/PostSharp' 2>/dev/null || true
+
+      - name: Upload headless log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-log
+          path: headless.log
+          if-no-files-found: ignore

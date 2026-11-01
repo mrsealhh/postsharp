@@ -15,6 +15,9 @@ public partial class App : Application
 {
     public static bool IsMcpService { get; set; }
 
+    /// <summary>MCP-only process for containers/CI; no window or tray icon is created.</summary>
+    public static bool IsHeadless { get; set; }
+
     private MainWindowViewModel? _viewModel;
     private MainWindow? _mainWindow;
     private ITrayIconHost? _trayIcon;
@@ -216,7 +219,15 @@ public partial class App : Application
         await Task.Delay(800);
         _viewModel = new MainWindowViewModel();
         McpBackgroundService.MarkRunning();
-        CreateServiceTrayIcon();
+        if (IsHeadless)
+        {
+            Log.Information("MCP 无头模式已启动，不创建托盘图标");
+        }
+        else
+        {
+            CreateServiceTrayIcon();
+        }
+
         _serviceStopTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _serviceStopTimer.Tick += (_, _) =>
         {
