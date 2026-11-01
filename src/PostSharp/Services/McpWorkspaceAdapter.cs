@@ -113,6 +113,33 @@ public sealed record McpSuiteRunInfo(
     string? Error
 );
 
+/// <summary>Summary of a suite for MCP and the CLI; observable model properties are projected explicitly.</summary>
+public sealed record McpSuiteInfo(
+    Guid Id,
+    string Name,
+    bool StopOnError,
+    bool RunInParallel,
+    int ScheduleMinutes,
+    int MaxParallelism,
+    string LastSummary,
+    int StepCount,
+    int RunCount
+);
+
+/// <summary>Full suite document for MCP, with steps and optional workflow graph.</summary>
+public sealed record McpSuiteDetail(
+    Guid Id,
+    string Name,
+    bool StopOnError,
+    bool RunInParallel,
+    int ScheduleMinutes,
+    int MaxParallelism,
+    string LastSummary,
+    int RunCount,
+    IReadOnlyList<TestStep> Steps,
+    SuiteWorkflow? Workflow
+);
+
 public sealed record McpSuiteValidationIssue(
     string Code,
     string Severity,
@@ -1303,21 +1330,50 @@ public sealed class McpWorkspaceAdapter
         );
     }
 
-    public async Task<IReadOnlyList<TestSuite>> ListSuitesAsync()
+    public async Task<IReadOnlyList<McpSuiteInfo>> ListSuitesAsync()
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
-            (IReadOnlyList<TestSuite>)_viewModel.Suites.ToList()
+            (IReadOnlyList<McpSuiteInfo>)
+                _viewModel
+                    .Suites.Select(suite => new McpSuiteInfo(
+                        suite.Id,
+                        suite.Name,
+                        suite.StopOnError,
+                        suite.RunInParallel,
+                        suite.ScheduleMinutes,
+                        suite.MaxParallelism,
+                        suite.LastSummary,
+                        suite.Steps.Count,
+                        suite.Runs.Count
+                    ))
+                    .ToList()
         );
     }
 
-    public async Task<TestSuite?> GetSuiteAsync(Guid id)
+    public async Task<McpSuiteDetail?> GetSuiteAsync(Guid id)
     {
         return await Dispatcher.UIThread.InvokeAsync(() =>
-            _viewModel.Suites.FirstOrDefault(suite => suite.Id == id)
-        );
+        {
+            var suite = _viewModel.Suites.FirstOrDefault(candidate => candidate.Id == id);
+            return suite is null ? null : ToSuiteDetail(suite);
+        });
     }
 
-    public async Task<TestSuite> CreateSuiteAsync(
+    private static McpSuiteDetail ToSuiteDetail(TestSuite suite) =>
+        new(
+            suite.Id,
+            suite.Name,
+            suite.StopOnError,
+            suite.RunInParallel,
+            suite.ScheduleMinutes,
+            suite.MaxParallelism,
+            suite.LastSummary,
+            suite.Runs.Count,
+            suite.Steps.ToList(),
+            suite.Workflow
+        );
+
+    public async Task<McpSuiteDetail> CreateSuiteAsync(
         string name,
         IReadOnlyList<McpSuiteStepInput> steps,
         bool stopOnError,
@@ -1337,11 +1393,11 @@ public sealed class McpWorkspaceAdapter
             _viewModel.Suites.Add(suite);
             _viewModel.SelectedSuite = suite;
             _viewModel.NotifyWorkspaceChanged();
-            return suite;
+            return ToSuiteDetail(suite);
         });
     }
 
-    public async Task<TestSuite> CreateSuiteFromCollectionsAsync(
+    public async Task<McpSuiteDetail> CreateSuiteFromCollectionsAsync(
         string name,
         IReadOnlyList<Guid> collectionIds,
         int delayMs,
@@ -1385,7 +1441,7 @@ public sealed class McpWorkspaceAdapter
             _viewModel.Suites.Add(suite);
             _viewModel.SelectedSuite = suite;
             _viewModel.NotifyWorkspaceChanged();
-            return suite;
+            return ToSuiteDetail(suite);
         });
     }
 
@@ -1405,7 +1461,7 @@ public sealed class McpWorkspaceAdapter
         }
     }
 
-    public async Task<TestSuite> UpdateSuiteAsync(
+    public async Task<McpSuiteDetail> UpdateSuiteAsync(
         Guid id,
         string? name,
         bool? stopOnError,
@@ -1451,7 +1507,7 @@ public sealed class McpWorkspaceAdapter
             ApplySuiteWorkflow(suite, workflow, rebuildLinear: steps is not null);
             _viewModel.SelectedSuite = suite;
             _viewModel.NotifyWorkspaceChanged();
-            return suite;
+            return ToSuiteDetail(suite);
         });
     }
 

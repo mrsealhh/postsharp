@@ -268,5 +268,41 @@ public sealed class SourceGeneratedJsonTests
             McpJson.Serialize(job),
             StringComparison.Ordinal
         );
+
+        var suiteInfo = new McpSuiteInfo(
+            Guid.NewGuid(),
+            "冒烟套件",
+            true,
+            false,
+            0,
+            4,
+            "1/1 通过",
+            3,
+            2
+        );
+        Assert.Contains(
+            "\"name\": \"冒烟套件\"",
+            McpJson.Serialize(suiteInfo),
+            StringComparison.Ordinal
+        );
+        Assert.Contains("\"stepCount\": 3", McpJson.Serialize(suiteInfo), StringComparison.Ordinal);
+
+        var suiteDetail = new McpSuiteDetail(
+            suiteInfo.Id,
+            suiteInfo.Name,
+            true,
+            false,
+            0,
+            4,
+            "1/1 通过",
+            2,
+            [new TestStep { RequestName = "健康检查", Url = "http://127.0.0.1:5199/api/health" }],
+            null
+        );
+        Assert.Contains(
+            "\"requestName\": \"健康检查\"",
+            McpJson.Serialize(suiteDetail),
+            StringComparison.Ordinal
+        );
     }
 }
