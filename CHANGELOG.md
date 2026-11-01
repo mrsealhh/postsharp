@@ -1,10 +1,24 @@
 # 更新日志
 
+## v1.11.5（待发布）
+
+### 从导入到套件
+
+- 导入成功对话框新增「生成套件」：HAR / Postman / OpenAPI 导入后可直接打开套件编辑器，并预填导入集合的请求。
+- 集合导入结果新增 `RootId`；无请求、环境导入或集合已删除时不显示按钮或给出提示。
+- 批量导入以最后一个成功导入的集合作为生成目标。
+
+### 运行对比
+
+- 自动化运行历史新增「对比」按钮：选择一次运行后，与更早的一次运行做对比。
+- 对比对话框展示新增失败、修复、状态码变化、耗时回归/改善、目标未运行步骤和节点状态变化；无差异时给出明确提示。
+- 新增 `SuiteRunDiffViewModel` 投影和单元测试。
+
 ## v1.11.4 — 2026-11-01
 
 ### CI Action
 
-- 新增可复用复合 Action `.github/actions/postsharp-mcp`：安装 Xvfb、下载 Linux 包、无头启动并等待健康端点，输出 `endpoint` 和 `log`。
+- 新增可复用复合 Action `.github/actions/postsharp-mcp`：安装 Xvfb、下载 Linux 包、无头启动，等待健康端点和 MCP `initialize` 成功，输出 `endpoint` 和 `log`。
 - CI 增加 action-smoke：用本地 Action 启动 1.11.3 发布包并校验 84 个 MCP 工具。
 - `docs/ci.md` 增加 Action 输入、输出和清理示例。
 

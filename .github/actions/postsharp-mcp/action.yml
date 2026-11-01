@@ -61,9 +61,18 @@ runs:
           echo "POSTSHARP_MCP_TOKEN=$POSTSHARP_TOKEN" >> "$GITHUB_ENV"
         fi
 
+        cat > "$RUNNER_TEMP/postsharp-initialize.json" <<'JSON'
+        {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"postsharp-action","version":"1.0"}}}
+        JSON
+
         nohup xvfb-run -a "$runtime/PostSharp" --headless > "$log" 2>&1 &
         for _ in $(seq 1 "$POSTSHARP_WAIT_SECONDS"); do
-          if curl -fsS http://127.0.0.1:5199/api/health >/dev/null 2>&1; then
+          if curl -fsS http://127.0.0.1:5199/api/health >/dev/null 2>&1 \
+            && curl -fsS \
+              -H 'Content-Type: application/json' \
+              -H 'Accept: application/json' \
+              --data-binary @"$RUNNER_TEMP/postsharp-initialize.json" \
+              http://127.0.0.1:5199/mcp 2>/dev/null | grep -q '"result"'; then
             echo "log=$log" >> "$GITHUB_OUTPUT"
             exit 0
           fi

@@ -91,5 +91,6 @@ public sealed record CollectionImportOutcome(
     string RootName,
     int RequestCount,
     int FolderCount,
-    string? EnvironmentName
+    string? EnvironmentName,
+    Guid RootId
 );
