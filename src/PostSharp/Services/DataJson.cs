@@ -116,6 +116,7 @@ public static class DataJson
 [JsonSerializable(typeof(OpenApiContractDiff))]
 [JsonSerializable(typeof(OpenApiContractChange))]
 [JsonSerializable(typeof(List<OpenApiContractChange>))]
+[JsonSerializable(typeof(DiffReportExport))]
 [JsonSerializable(typeof(SuiteRunStepDiff))]
 [JsonSerializable(typeof(List<SuiteRunStepDiff>))]
 [JsonSerializable(typeof(SuiteRunNodeDiff))]

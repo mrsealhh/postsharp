@@ -107,6 +107,8 @@ public static class McpToolAccess
         "export_report",
         "diff_runs",
         "diff_openapi",
+        "export_run_diff",
+        "export_openapi_diff",
         "explain_failure",
     };
 

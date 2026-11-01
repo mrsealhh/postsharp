@@ -103,6 +103,43 @@ public sealed partial class McpServer
             .ConfigureAwait(false);
     }
 
+    private async Task<object> ExportRunDiffToolAsync(
+        JsonObject arguments,
+        CancellationToken cancellationToken
+    )
+    {
+        return await _workspace
+            .ExportRunDiffAsync(
+                RequireGuid(arguments, "suiteId"),
+                RequireGuid(arguments, "baseRunId"),
+                OptionalGuid(arguments, "targetRunId"),
+                OptionalInt(arguments, "elapsedRegressionPercent") ?? 20,
+                OptionalString(arguments, "format") ?? "markdown",
+                OptionalInt(arguments, "contentLimit") ?? DiffReportService.DefaultContentLimit
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<object> ExportOpenApiDiffToolAsync(
+        JsonObject arguments,
+        CancellationToken cancellationToken
+    )
+    {
+        return await _workspace
+            .ExportOpenApiDiffAsync(
+                OptionalString(arguments, "baseUrl"),
+                OptionalString(arguments, "baseContent"),
+                OptionalString(arguments, "targetUrl"),
+                OptionalString(arguments, "targetContent"),
+                OptionalString(arguments, "baseLabel"),
+                OptionalString(arguments, "targetLabel"),
+                OptionalString(arguments, "format") ?? "markdown",
+                OptionalInt(arguments, "contentLimit") ?? DiffReportService.DefaultContentLimit,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
     private async Task<object> ExplainFailureToolAsync(JsonObject arguments)
     {
         return await _workspace

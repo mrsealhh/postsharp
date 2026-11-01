@@ -2340,7 +2340,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         + "设置/存储：get_settings、update_settings、check_updates、get_storage_config、upsert_storage_profile、delete_storage_profile、set_storage_binding、test_storage_profile、sync_storage、switch_storage；"
         + "导入导出：import_content、export_workspace、send_request、run_sequence、get_curl；"
         + "长任务：start_suite_run、start_sequence_run、start_import、start_storage_sync 及对应 get_*_job / cancel_*；"
-        + "意图：verify_endpoint、generate_suite、export_report、diff_runs、diff_openapi、explain_failure；"
+        + "意图：verify_endpoint、generate_suite、export_report、diff_runs、diff_openapi、export_run_diff、export_openapi_diff、explain_failure；"
         + "权限：读取、发送、修改、管理可独立开关；"
         + "协议：soap_describe、grpc_describe（SOAP / gRPC 一元调用走 send_request）。";
 

@@ -152,7 +152,7 @@
 | 远程存储 | 整份 JSON 文档读写，Revision 由调用方递增，缺少冲突检测 | 多机器/多人同时写入可能静默覆盖 |
 | OLAP | ClickHouse 仅完成连接/失败路径；Doris/StarRocks 无实例验证 | 发布支持矩阵存在未验证项 |
 | 插件 | 进程内 AssemblyLoadContext 加载，无热卸载、无签名校验 | 插件供应链和稳定性风险 |
-| MCP | 仅回环监听；已支持可选本机 token、只读模式和发送/修改/管理细粒度权限；已提供 5 个意图工具和统一 job，工具总数 85 | 本机其他进程可尝试调用（启用 token 后受控）；多客户端隔离、资源化大内容和权限变更审计仍缺 |
+| MCP | 仅回环监听；已支持可选本机 token、只读模式和发送/修改/管理细粒度权限；已提供 5 个意图工具和统一 job，工具总数 87 | 本机其他进程可尝试调用（启用 token 后受控）；多客户端隔离、资源化大内容和权限变更审计仍缺 |
 | 协议深度 | SOAP 仅浅层 WSDL；gRPC 仅一元+反射；WS/SIO/TCP 为单轮消息 | 复杂企业协议和常驻会话场景仍需补课，不能对外承诺“全协议” |
 | 包体与依赖 | 自包含包约 73 MB；新增 gRPC/Google.Protobuf 依赖 | 继续加协议会推高包体和启动成本，必须模块化 |
 | AOT / 裁剪 | 已打通：本地文档与 MCP 结果全部使用 source-generated JSON，`AppSettings` 走显式转换器；Windows 原生 exe 约 63 MB，`scripts/aot-smoke.ps1` 18 项检查通过（启动、当时 70 个 MCP 工具、发送、套件运行、重启后设置持久化），自有代码 0 条 IL 告警；存储插件在 AOT 下自动回退本地 SQLite | 正式发布包仍保持 JIT 自包含；AOT 作为可选通道随版本发布并自更新（只认 `PostSharp-aot-win-x64.zip`），远程存储插件在 AOT 下不可用；新增意图工具后总数 75，冒烟待下一版复跑 |
@@ -370,15 +370,15 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | P1-04 | 导入导出补全 | Apifox 原生格式未适配；Insomnia v5、Hoppscotch 环境、Postman 脚本/测试、HAR 响应体、部分认证不完整 | 有样本才实现，不无样本逆向；导入前预览统计；不支持的字段逐项提示；导出后可回导 | M/L |
 | P1-05 | Multipart 大文件 | 已支持多文件、64KB 流式、进度和取消；无断点续传、分片协议、超大文件预检 | 可配置分片/重试；磁盘空间与文件大小预检；取消后清理临时文件；断点恢复有明确限制 | M |
 | P1-06 | 套件与无人值守 | 已支持依赖 DAG、条件分支、All/Any 汇合、结构化条件表达式、最大并行和统一执行器；自动化工具栏可显式预检，保存后自动预检；无循环/任意跳转、数据驱动；CLI 已支持 JUnit/Markdown/HTML 报告；已提供 `--headless`、Dockerfile、可复用 Action 和 CI 示例，定时仍无内置调度器 | 支持 CSV/JSON 数据驱动；内置定时或外部调度接入说明 | XL |
-| P1-07 | MCP 强化 | 已支持页面托盘常驻和后台独立进程常驻、客户端切换和单实例，工具 85 个；已支持本机 token、只读模式和细粒度发送/修改/管理权限；已提供意图工具、job 幂等和 dry-run；仍仅回环、无 SSE 通知；多客户端隔离、后台服务注册和权限变更审计未完成 | 多客户端隔离；注册 Windows 服务 / systemd / launchd 和开机自启；工具 schema 校验；SSE 进度/取消；审计关联 requestId；资源化大内容落地 | L |
+| P1-07 | MCP 强化 | 已支持页面托盘常驻和后台独立进程常驻、客户端切换和单实例，工具 87 个；已支持本机 token、只读模式和细粒度发送/修改/管理权限；已提供意图工具、job 幂等和 dry-run；仍仅回环、无 SSE 通知；多客户端隔离、后台服务注册和权限变更审计未完成 | 多客户端隔离；注册 Windows 服务 / systemd / launchd 和开机自启；工具 schema 校验；SSE 进度/取消；审计关联 requestId；资源化大内容落地 | L |
 | P1-08 | UI/UX 与可访问性 | 120%/150% 在 1400 宽窗口可能裁切；多显示器 DPI、焦点、键盘全覆盖仍需验证；深浅主题对比度未自动化 | 最小窗口和 150% 下无不可达控件；Tab 顺序/焦点框可见；图标有 AutomationProperties.Name；浅深色 WCAG AA；标签栏溢出可预测 | L |
 | P1-09 | 插件生态 | 只有开发指南；无 SDK 模板、契约版本、清单签名、兼容矩阵 | 提供插件模板和 CI 示例；契约版本可检查；官方/第三方插件矩阵；不兼容时只禁用插件 | M/L |
 | P1-10 | 性能与规模化 | 已有 `perf-smoke.ps1` 和基线：1.11.3 MCP 就绪 0.6s、空闲内存约 100MB；历史/审计/大树、10k 记录、大响应和长时间运行未做基准；软件渲染默认；启动/内存未纳入 CI 硬门禁 | 建立列表滚动、响应渲染基线；列表虚拟化；大数据集不卡顿；内存上限可诊断 | M |
 | P1-11 | 可维护性拆分 | `MainWindowViewModel`、`MainWindow.axaml` 过大；静态服务和 `async void` 增加测试难度 | 拆分请求编辑、历史、树、套件、OpenAPI、设置子 VM/控件；导入对话框独立 XAML；关键异步有取消和异常出口 | L |
 | P1-12 | 首次使用与文档 | 已有指南页 6 步上手、MCP 配置复制、桌面端三平台包和分发清单；首次启动 3 步欢迎对话框已加入；错误帮助入口和截图自动生成仍缺 | 补齐错误帮助入口；README/截图由演示数据生成 | S/M |
 | P1-13 | 轻量化与分发 | 三平台自包含包约 66 MB；已提供 winget/scoop/brew 模板；无框架依赖/精简包选项；启动/内存已有基线（1.11.3 MCP 就绪 0.6s、空闲约 100MB）；NativeAOT 作为独立产物发布并冒烟 | 冷启动 < 1.5s、空闲内存 < 150MB、Windows 包 ≤ 75MB；提供便携包与包管理器清单（模板已具备）；启动/内存纳入冒烟；AOT 作为可选通道提供独立产物与冒烟脚本（已具备） | M |
-| P1-14 | MCP 意图层与会话 | 已提供 `verify_endpoint`、`generate_suite`、`export_report`、`diff_runs`、`diff_openapi`、`explain_failure`，工具总数 85；顺序发送/导入/存储同步已 job 化并支持幂等键；会话类工具、大内容资源化和多客户端隔离仍缺 | 增加 WebSocket/Socket.IO/TCP 会话、gRPC streaming job、资源化大内容和多客户端隔离；单意图平均调用次数继续下降 | L |
-| P1-15 | 录制回放与回归闭环 | HAR/Postman/OpenAPI 导入后可直接生成套件；HAR 录制会话支持预览、筛选、选择导入和敏感查询参数脱敏；自动化运行历史已支持两次运行对比；OpenAPI 契约 diff 已通过 MCP 提供；内置代理录制仍缺 | 录制 → 回放 → 生成套件 → CI 报告 → 运行 diff 全链路可演示；失败步骤可定位 | L/XL |
+| P1-14 | MCP 意图层与会话 | 已提供 `verify_endpoint`、`generate_suite`、`export_report`、`diff_runs`、`diff_openapi`、`export_run_diff`、`export_openapi_diff`、`explain_failure`，工具总数 87；顺序发送/导入/存储同步已 job 化并支持幂等键；会话类工具、大内容资源化和多客户端隔离仍缺 | 增加 WebSocket/Socket.IO/TCP 会话、gRPC streaming job、资源化大内容和多客户端隔离；单意图平均调用次数继续下降 | L |
+| P1-15 | 录制回放与回归闭环 | HAR/Postman/OpenAPI 导入后可直接生成套件；HAR 录制会话支持预览、筛选、选择导入和敏感查询参数脱敏；自动化运行历史已支持两次运行对比；OpenAPI 契约 diff 和运行/契约 diff 报告导出已通过 MCP 提供；内置代理录制仍缺 | 录制 → 回放 → 生成套件 → CI 报告 → 运行 diff 全链路可演示；失败步骤可定位 | L/XL |
 | P1-16 | 场景模板与分享 | 无场景模板库、无可分享的 `.postsharp` 场景文件；新用户从零搭建 | 内置 8–10 个场景模板；一键导入/导出场景；模板可审计、可版本化 | M |
 
 ## 6. P2：平台化与新场景
@@ -547,7 +547,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | 工作项 | 交付物 | 验收 |
 | --- | --- | --- |
 | MCP 安全与权限（P1-07） | 已完成本机 token、只读/写工具分组、发送/修改/管理细粒度权限和破坏性操作 dry-run | 未带 token 的写调用返回 401；只读模式不能发送/删除；越权工具不出现在 tools/list；审计记录客户端和权限 |
-| MCP 意图层（P1-14） | `verify_endpoint`、`generate_suite`、`export_report`、`diff_runs`、`diff_openapi`、`explain_failure`（已完成，工具总数 85） | 一个意图只调用 1–2 次工具；返回结构化结论；失败可定位到步骤/断言 |
+| MCP 意图层（P1-14） | `verify_endpoint`、`generate_suite`、`export_report`、`diff_runs`、`diff_openapi`、`export_run_diff`、`export_openapi_diff`、`explain_failure`（已完成，工具总数 87） | 一个意图只调用 1–2 次工具；返回结构化结论；失败可定位到步骤/断言 |
 | 长任务与会话 job | 套件、顺序发送、导入和存储同步统一 `start_*` / `get_*_job` / `cancel_*`，带幂等键；SSE 进度仍待补 | 所有耗时操作有 job id、进度、取消和终态；取消后资源释放 |
 | CI / GitHub Action（P1-06） | `--headless`、Dockerfile、Linux CI 冒烟、可复用复合 Action 和 GitHub Actions 示例已完成；CLI 已支持 `--junit/--markdown/--html` | 干净环境一条命令跑套件并产出报告；失败退出码稳定 |
 | 轻量分发（P1-10/P1-13） | 启动/内存/包体基线；Windows 便携包 + winget/scoop；Linux/macOS 包管理器清单；1.11.3 本机 MCP 就绪 0.6s、空闲内存约 100MB（JIT） | 冷启动 < 1.5s、空闲内存 < 150MB、Windows 包 ≤ 75MB；安装后可启动 |
@@ -564,7 +564,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | --- | --- | --- |
 | 流量录制（P1-15） | HAR 导入增强、录制会话预览/筛选/脱敏已完成；内置代理录制（可选）仍缺 | 录制内容可筛选、脱敏、保存；不记录机密明文 |
 | 回放与套件生成 | 导入 HAR/集合/OpenAPI 后可一键打开套件编辑器（已完成）；回放走现有执行器和环境变量；生成结果可再编辑或拒绝保存；预检/运行已有 | 生成套件可预检、可运行；失败步骤可定位；生成结果可拒绝 |
-| 运行 diff / 契约 diff | 两次运行对比 UI 已完成（新增失败/修复/状态码/耗时/目标未运行/节点状态）；OpenAPI 契约 diff 已通过 `diff_openapi` 返回破坏性变更；报告导出走 MCP | 报告标出新增失败、修复、状态变化和耗时回归；可导出 |
+| 运行 diff / 契约 diff | 两次运行对比 UI 已完成（新增失败/修复/状态码/耗时/目标未运行/节点状态）；OpenAPI 契约 diff 已通过 `diff_openapi` 返回破坏性变更；`export_run_diff` / `export_openapi_diff` 可写出 Markdown/HTML/JSON 报告 | 报告标出新增失败、修复、状态变化和耗时回归；可导出 |
 | 常驻 WS/SIO 会话 | 消息列表、订阅/事件过滤、连接保持、手动发送 | 会话可保持 10 分钟以上；消息可搜索/复制/导出；断开可重连 |
 | gRPC 流式 / proto 导入 | server/client/bidi 流；`.proto` 或 descriptor set 导入 | 一元和至少 server streaming 可用；无反射服务可通过文件导入 |
 | 团队 Git 工作流（P2-10） | 工作区/套件/场景 diff、合并、冲突提示 | 两人基于 Git 修改可合并；冲突定位到集合/请求/步骤；不覆盖未提交修改 |
@@ -696,7 +696,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 
 ## 10. MCP 覆盖与 CLI 模式
 
-状态：当前 MCP 覆盖集合/请求 CRUD、发送、DAG 套件、后台运行/进度/取消、结构化预检、运行历史、意图工具（验证/生成/报告/对比/解释）、顺序/导入/存储同步 job、细粒度权限、审计/历史/回收站、设置和存储，工具总数 85；**仍不是 UI 功能 1:1 映射**。详细审核见 `C:\Users\Administrator\Desktop\AICoding\postsharp\PostSharp-MCP覆盖审核与CLI计划-2026-10-28.md`。
+状态：当前 MCP 覆盖集合/请求 CRUD、发送、DAG 套件、后台运行/进度/取消、结构化预检、运行历史、意图工具（验证/生成/报告/对比/解释）、顺序/导入/存储同步 job、细粒度权限、审计/历史/回收站、设置和存储，工具总数 87；**仍不是 UI 功能 1:1 映射**。详细审核见 `C:\Users\Administrator\Desktop\AICoding\postsharp\PostSharp-MCP覆盖审核与CLI计划-2026-10-28.md`。
 
 ### 10.1 工具面原则
 
@@ -727,7 +727,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] 后台任务与进度轮询：`start_suite_run`、`get_suite_run_job`、`cancel_suite_run`；任务只保存在当前进程内。
 - [x] 预检结果以结构化错误返回：`validate_suite` 和后台任务的 `validationIssues` 均带节点 id、错误码、消息和修复建议。
 - [x] 增加审计/历史单条操作：`delete_audit`、`get_history`、`delete_history`。
-- [x] SOAP / gRPC：`soap_describe`、`grpc_describe`，以及 `create_request` / `update_request` / `send_request` 的协议字段；工具总数 85。
+- [x] SOAP / gRPC：`soap_describe`、`grpc_describe`，以及 `create_request` / `update_request` / `send_request` 的协议字段；工具总数 87。
 - [ ] 审计/历史来源、状态、日期筛选与搜索。
 
 ### 10.4 既有 CLI 覆盖：P1 高频能力
