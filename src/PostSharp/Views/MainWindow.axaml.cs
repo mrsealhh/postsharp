@@ -477,6 +477,7 @@ public partial class MainWindow : Window
         nameof(MainWindowViewModel.IsOnboardingOpen),
         nameof(MainWindowViewModel.IsResetDemoDialogOpen),
         nameof(MainWindowViewModel.IsRunDiffOpen),
+        nameof(MainWindowViewModel.IsRecordingSessionOpen),
     ];
 
     private void EnsureAuxiliaryDialogs()
@@ -822,6 +823,49 @@ public partial class MainWindow : Window
             _viewModel.Import.HasImportError = true;
             _viewModel.Import.ImportStatus = "无法打开环境文件选择器，请稍后重试。";
             Log.Error(exception, "打开 Postman 环境文件选择器失败");
+        }
+    }
+
+    private async void OnPreviewHarFileClick(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e
+    )
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "预览 HAR 录制会话",
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("HTTP Archive")
+                        {
+                            Patterns = new[] { "*.har", "*.json" },
+                            MimeTypes = new[] { "application/json", "text/plain" },
+                        },
+                    },
+                }
+            );
+
+            var path = files.FirstOrDefault()?.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                await _viewModel.Import.PreviewHarFileAsync(path);
+            }
+        }
+        catch (Exception exception)
+        {
+            _viewModel.Import.HasImportError = true;
+            _viewModel.Import.ImportStatus =
+                "无法打开 HAR 文件选择器，请稍后重试或把 HAR JSON 粘贴到下方。";
+            Log.Error(exception, "打开 HAR 录制会话选择器失败");
         }
     }
 

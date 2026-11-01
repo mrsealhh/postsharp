@@ -19,5 +19,7 @@ public interface IImportHost
 
     void OpenSuiteBuilderForImportedCollection(Guid collectionId);
 
+    void OpenRecordingSession(string content);
+
     void ShowToast(string title);
 }
