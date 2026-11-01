@@ -6,10 +6,10 @@
 
 ```powershell
 # JIT Windows 包
-.\scripts\perf-smoke.ps1 -Executable .\artifacts\PostSharp-1.11.4\PostSharp.exe
+.\scripts\perf-smoke.ps1 -Executable .\artifacts\PostSharp-1.11.5\PostSharp.exe
 
 # NativeAOT 包
-.\scripts\perf-smoke.ps1 -Executable .\artifacts\PostSharp-1.11.4-aot-win-x64\PostSharp.exe -Json
+.\scripts\perf-smoke.ps1 -Executable .\artifacts\PostSharp-1.11.5-aot-win-x64\PostSharp.exe -Json
 ```
 
 要求：
