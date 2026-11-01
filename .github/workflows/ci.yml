@@ -105,9 +105,17 @@ jobs:
 
       - name: Check MCP tools
         run: |
-          payload='{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
-          curl -fsS -H 'Content-Type: application/json' -d "$payload" \
-            http://127.0.0.1:5199/mcp > tools.json
+          cat > initialize.json <<'JSON'
+          {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1.0"}}}
+          JSON
+          curl -fsS -H 'Content-Type: application/json' -H 'Accept: application/json' \
+            --data-binary @initialize.json http://127.0.0.1:5199/mcp > initialize-response.json
+          cat > tools-request.json <<'JSON'
+          {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+          JSON
+          curl -fsS -H 'Content-Type: application/json' -H 'Accept: application/json' \
+            --data-binary @tools-request.json http://127.0.0.1:5199/mcp > tools.json
+          cat tools.json
           python3 - <<'PY'
           import json
           data = json.load(open("tools.json"))
