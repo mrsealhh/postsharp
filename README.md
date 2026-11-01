@@ -1028,7 +1028,7 @@ docs/
 | MCP 细粒度权限 | 设置页可分别开启发送/修改/管理；单测确认 `AllowSend=false` 隐藏 `send_request`/`run_suite` 但保留 `delete_request`，`AllowAdmin=false` 隐藏 `update_settings`/`sync_storage`；越权调用返回 `-32003` |
 | 首次启动引导 | 首次启动弹出 3 步欢迎对话框（发送请求 / 接入 MCP / 运行套件）；「打开指南」完成引导并切到指南页，「跳过」只标记已读；Debug 构建 0 警告 0 错误 |
 | 无头模式 | Windows 实机 `PostSharp.exe --headless` 启动后健康端点 `200`，无主窗口；Linux CI 用 `xvfb-run` 启动自包含包，`initialize` 后 `tools/list` 返回 85 个工具并跑通演示套件；Docker 镜像构建、容器内健康检查与工具列表通过 |
-| 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.6，Windows/macOS 哈希与发布资产一致 |
+| 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.7，Windows/macOS 哈希与发布资产一致 |
 | 重置演示工作区 | 指南页「一分钟上手」增加入口；确认弹窗说明会清空集合、环境、套件、历史和回收站并恢复内置 Mock 示例，审计和设置保留；`Ctrl+Enter` 确认、`Esc` 取消；Debug 构建 0 警告 0 错误 |
 | 启动与内存基线 | `perf-smoke.ps1` 新增 `McpReadyMs`，改为 HTTP 直连 5199；修复旧端口扫描最多约 1.8s 的测量虚高。1.11.3 本机复测：JIT MCP 就绪 664–690 ms、空闲内存 100–108 MB；AOT 581–590 ms、约 81 MB；均达到 1.5s / 150MB 目标（首次运行新二进制仍受杀毒扫描影响） |
 | 导入即套件 | HAR 导入后成功对话框显示「生成套件」；点击关闭导入窗口并打开套件编辑器，步骤预填导入集合的请求；批量导入取最后一个成功集合；无请求或集合已删除时不显示或提示；单测覆盖命令与主机回调 |
@@ -1107,11 +1107,11 @@ master                 稳定可发布
 发布新版本（三类主包 + 可选 NativeAOT 包）：
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.11.6
-.\scripts\build-linux-release.ps1 -Version 1.11.6
-.\scripts\build-osx-release.ps1 -Version 1.11.6 -RuntimeIdentifier osx-arm64
+.\scripts\build-release.ps1 -Version 1.11.7
+.\scripts\build-linux-release.ps1 -Version 1.11.7
+.\scripts\build-osx-release.ps1 -Version 1.11.7 -RuntimeIdentifier osx-arm64
 # 可选：NativeAOT 单独产物（Windows 上构建）
-.\scripts\build-aot-release.ps1 -Version 1.11.6
+.\scripts\build-aot-release.ps1 -Version 1.11.7
 # CLI 独立发布，不进入上面三个桌面包
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier win-x64 -SelfContained
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier linux-x64 -SelfContained
@@ -1135,7 +1135,7 @@ master                 稳定可发布
 `packaging/` 提供 winget、Scoop 和 Homebrew 清单模板，发布后运行：
 
 ```powershell
-.\scripts\update-packaging.ps1 -Version 1.11.6
+.\scripts\update-packaging.ps1 -Version 1.11.7
 ```
 
 会从 `artifacts/*.sha256` 读取校验值并更新 `packaging/winget/PostSharp.yaml`、`packaging/scoop/postsharp.json`、`packaging/homebrew/postsharp.rb`。安装命令、上游提交方式和已知限制见 [docs/distribution.md](docs/distribution.md)。仓库还提供 `.github/workflows/release.yml`，可在 Actions 页面手动构建全部平台包并创建 draft release。
