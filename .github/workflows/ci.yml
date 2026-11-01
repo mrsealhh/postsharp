@@ -230,3 +230,49 @@ jobs:
       - name: Stop container
         if: always()
         run: docker rm -f postsharp-headless
+
+  action-smoke:
+    name: Composite action smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Start PostSharp MCP
+        id: postsharp
+        uses: ./.github/actions/postsharp-mcp
+        with:
+          version: 1.11.3
+
+      - name: Check MCP tools
+        run: |
+          endpoint="${{ steps.postsharp.outputs.endpoint }}"
+          cat > initialize.json <<'JSON'
+          {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"action-smoke","version":"1.0"}}}
+          JSON
+          curl -fsS -H 'Content-Type: application/json' -H 'Accept: application/json' \
+            --data-binary @initialize.json "$endpoint/mcp" > /dev/null
+          cat > tools-request.json <<'JSON'
+          {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+          JSON
+          curl -fsS -H 'Content-Type: application/json' -H 'Accept: application/json' \
+            --data-binary @tools-request.json "$endpoint/mcp" > tools.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("tools.json"))
+          tools = [tool["name"] for tool in data["result"]["tools"]]
+          assert "start_sequence_run" in tools
+          assert "start_import" in tools
+          assert len(tools) >= 84
+          print(f"{len(tools)} tools")
+          PY
+
+      - name: Dump headless log
+        if: failure()
+        run: cat "${{ steps.postsharp.outputs.log }}" || true
+
+      - name: Stop headless service
+        if: always()
+        run: pkill -f "$RUNNER_TEMP/postsharp-" 2>/dev/null || true
