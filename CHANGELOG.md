@@ -1,5 +1,20 @@
 # 更新日志
 
+## v1.11.4（待发布）
+
+### CI Action
+
+- 新增可复用复合 Action `.github/actions/postsharp-mcp`：安装 Xvfb、下载 Linux 包、无头启动并等待健康端点，输出 `endpoint` 和 `log`。
+- CI 增加 action-smoke：用本地 Action 启动 1.11.3 发布包并校验 84 个 MCP 工具。
+- `docs/ci.md` 增加 Action 输入、输出和清理示例。
+
+### 性能基线
+
+- `scripts/perf-smoke.ps1` 新增 `McpReadyMs`：健康后发送 `initialize` 并记录 MCP 就绪时间。
+- 修复端口扫描导致的测量虚高：改为直连 5199 的 HTTP 轮询，接口未就绪时最多额外等待约 1.8 秒。
+- 1.11.3 复测：JIT MCP 就绪 664–690 ms、空闲内存 100–108 MB；AOT 581–590 ms、约 81 MB。
+- 更新 `docs/performance.md` 的测量方式、基线和首次运行说明。
+
 ## v1.11.3 — 2026-11-01
 
 ### CI 与无头模式

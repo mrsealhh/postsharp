@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Net.Http
 
 $root = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($Executable)) {
@@ -26,30 +27,19 @@ New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
 $env:POSTSHARP_DATA_DIR = $dataDirectory
 
 $process = $null
+$http = $null
 $failure = $null
 $coldStartMs = 0
 $startupMemoryMb = 0
 $idleMemoryMb = 0
 $url = ""
 
-function Test-Port {
-    param([int]$Port)
-    $client = New-Object System.Net.Sockets.TcpClient
-    try {
-        $task = $client.ConnectAsync("127.0.0.1", $Port)
-        return $task.Wait(150) -and $client.Connected
-    }
-    catch {
-        return $false
-    }
-    finally {
-        $client.Dispose()
-    }
-}
-
 try {
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $process = Start-Process -FilePath $Executable -PassThru
+    $http = New-Object System.Net.Http.HttpClient
+    $http.Timeout = [TimeSpan]::FromMilliseconds(500)
+    $baseUrl = "http://127.0.0.1:5199"
     $deadline = (Get-Date).AddSeconds($StartupTimeoutSeconds)
     $ready = $false
     while ((Get-Date) -lt $deadline) {
@@ -57,30 +47,19 @@ try {
             throw "Process exited during startup with code $($process.ExitCode); see $dataDirectory\logs."
         }
 
-        foreach ($port in 5199..5210) {
-            if (-not (Test-Port $port)) {
-                continue
-            }
-
-            $candidate = "http://127.0.0.1:$port"
-            try {
-                $probe = Invoke-WebRequest -Uri "$candidate/api/health" -UseBasicParsing -TimeoutSec 1
-                if ($probe.StatusCode -eq 200) {
-                    $url = $candidate
-                    $ready = $true
-                    break
-                }
-            }
-            catch {
-                # Port is open but the health endpoint is not serving yet.
+        try {
+            $probe = $http.GetAsync("$baseUrl/api/health").GetAwaiter().GetResult()
+            if ($probe.IsSuccessStatusCode) {
+                $url = $baseUrl
+                $ready = $true
+                break
             }
         }
-
-        if ($ready) {
-            break
+        catch {
+            # The listener is not ready yet.
         }
 
-        Start-Sleep -Milliseconds 200
+        Start-Sleep -Milliseconds 50
     }
 
     if (-not $ready) {
@@ -88,6 +67,34 @@ try {
     }
 
     $coldStartMs = $timer.ElapsedMilliseconds
+    $mcpReadyMs = 0
+    $payload =
+        '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"perf-smoke","version":"1.0"}}}'
+    $mcpDeadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $mcpDeadline) {
+        $content = New-Object System.Net.Http.StringContent(
+            $payload,
+            [Text.Encoding]::UTF8,
+            "application/json"
+        )
+        try {
+            $response = $http.PostAsync("$url/mcp", $content).GetAwaiter().GetResult()
+            $text = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            if ($text -match '"result"') {
+                $mcpReadyMs = $timer.ElapsedMilliseconds
+                break
+            }
+        }
+        catch {
+            # MCP is not attached to the mock server yet.
+        }
+        finally {
+            $content.Dispose()
+        }
+
+        Start-Sleep -Milliseconds 50
+    }
+
     $process.Refresh()
     $startupMemoryMb = [Math]::Round($process.PrivateMemorySize64 / 1MB, 1)
     Start-Sleep -Seconds $IdleSeconds
@@ -100,6 +107,15 @@ catch {
 finally {
     if ($process -and -not $process.HasExited) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        $exitDeadline = (Get-Date).AddSeconds(5)
+        while (-not $process.HasExited -and (Get-Date) -lt $exitDeadline) {
+            Start-Sleep -Milliseconds 100
+            $process.Refresh()
+        }
+    }
+
+    if ($http) {
+        $http.Dispose()
     }
 
     Start-Sleep -Milliseconds 500
@@ -109,6 +125,7 @@ $result = [pscustomobject]@{
     Executable     = $Executable
     Url            = $url
     ColdStartMs    = $coldStartMs
+    McpReadyMs     = $mcpReadyMs
     StartupMemoryMb = $startupMemoryMb
     IdleMemoryMb   = $idleMemoryMb
     IdleSeconds    = $IdleSeconds
@@ -130,6 +147,12 @@ if ($failure) {
 Remove-Item $dataDirectory -Recurse -Force -ErrorAction SilentlyContinue
 if ($coldStartMs -gt 1500) {
     Write-Host "Cold start missed the 1.5s target." -ForegroundColor Yellow
+}
+if ($mcpReadyMs -le 0) {
+    Write-Host "MCP did not answer initialize within 15s." -ForegroundColor Yellow
+}
+elseif ($mcpReadyMs -gt 1500) {
+    Write-Host "MCP ready missed the 1.5s target." -ForegroundColor Yellow
 }
 if ($idleMemoryMb -gt 150) {
     Write-Host "Idle memory missed the 150MB target." -ForegroundColor Yellow

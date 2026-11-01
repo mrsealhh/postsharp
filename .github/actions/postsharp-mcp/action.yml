@@ -1,0 +1,75 @@
+name: PostSharp MCP
+description: Start PostSharp in headless mode on a Linux runner and wait for the MCP endpoint.
+
+inputs:
+  version:
+    description: PostSharp release version without the leading v.
+    required: true
+  data-dir:
+    description: Directory used for workspace, settings and logs.
+    required: false
+    default: .postsharp-ci
+  wait-seconds:
+    description: Maximum number of seconds to wait for the health endpoint.
+    required: false
+    default: "60"
+  token:
+    description: Optional MCP token; exported as POSTSHARP_MCP_TOKEN for later steps.
+    required: false
+    default: ""
+
+outputs:
+  endpoint:
+    description: MCP endpoint URL.
+    value: http://127.0.0.1:5199
+  log:
+    description: Path to the headless process log.
+    value: ${{ steps.start.outputs.log }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Xvfb and dependencies
+      shell: bash
+      run: |
+        if ! command -v xvfb-run >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth curl unzip
+        fi
+
+    - name: Download and start PostSharp
+      id: start
+      shell: bash
+      env:
+        POSTSHARP_VERSION: ${{ inputs.version }}
+        POSTSHARP_DATA_DIR: ${{ inputs.data-dir }}
+        POSTSHARP_TOKEN: ${{ inputs.token }}
+        POSTSHARP_WAIT_SECONDS: ${{ inputs.wait-seconds }}
+      run: |
+        set -euo pipefail
+        version="${POSTSHARP_VERSION#v}"
+        runtime="$RUNNER_TEMP/postsharp-$version"
+        log="$RUNNER_TEMP/postsharp-headless.log"
+        rm -rf "$runtime"
+        mkdir -p "$runtime" "$POSTSHARP_DATA_DIR"
+        curl -fsSL -o "$RUNNER_TEMP/postsharp.zip" \
+          "https://github.com/mrsealhh/postsharp/releases/download/v${version}/PostSharp-linux-x64.zip"
+        unzip -q "$RUNNER_TEMP/postsharp.zip" -d "$runtime"
+        chmod +x "$runtime/PostSharp"
+
+        if [ -n "$POSTSHARP_TOKEN" ]; then
+          echo "POSTSHARP_MCP_TOKEN=$POSTSHARP_TOKEN" >> "$GITHUB_ENV"
+        fi
+
+        nohup xvfb-run -a "$runtime/PostSharp" --headless > "$log" 2>&1 &
+        for _ in $(seq 1 "$POSTSHARP_WAIT_SECONDS"); do
+          if curl -fsS http://127.0.0.1:5199/api/health >/dev/null 2>&1; then
+            echo "log=$log" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sleep 1
+        done
+
+        echo "PostSharp did not become ready; log: $log"
+        cat "$log"
+        exit 1

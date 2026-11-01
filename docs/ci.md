@@ -136,6 +136,40 @@ jobs:
 - `--junit` 可被大多数测试报告面板直接读取；退出码 `0` 表示套件通过，`1` 表示套件或请求失败，`2` 表示参数或预检错误，`3` 表示无法连接。
 - 失败时保留 `postsharp.log` 和报告，便于定位启动或断言问题。
 
+## 可复用 Action
+
+仓库内置复合 Action `.github/actions/postsharp-mcp`，把「安装 Xvfb → 下载 Linux 包 → 无头启动 → 等待健康端点」封装为一步，省掉手写启动脚本。
+
+```yaml
+      - name: Start PostSharp MCP
+        id: postsharp
+        uses: mrsealhh/postsharp/.github/actions/postsharp-mcp@v1.11.4
+        with:
+          version: 1.11.4
+          data-dir: ci-data
+
+      - name: Run suite
+        run: |
+          postsharp-cli suite run "$SUITE_ID" --junit test-results/postsharp.xml
+
+      - name: Stop PostSharp
+        if: always()
+        run: pkill -f "$RUNNER_TEMP/postsharp-" 2>/dev/null || true
+```
+
+输入：
+
+| 输入 | 必填 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `version` | 是 |  | PostSharp 版本，不带 `v` |
+| `data-dir` | 否 | `.postsharp-ci` | 工作区、设置和日志目录 |
+| `wait-seconds` | 否 | `60` | 等待健康端点的最长时间 |
+| `token` | 否 |  | 可选 MCP token，导出为 `POSTSHARP_MCP_TOKEN` 供后续步骤使用 |
+
+输出：`endpoint`（`http://127.0.0.1:5199`）和 `log`（无头进程日志路径）。
+
+Action 下载的运行时放在 `$RUNNER_TEMP`，启动的进程会常驻到 job 结束；runner 会自动清理，但建议保留上面的显式停止步骤，便于在同一 job 内重启服务。
+
 ## 准备 CI 数据目录
 
 无头模式不创建新套件，CI 使用的数据目录必须先有集合、环境和套件。两种做法：
