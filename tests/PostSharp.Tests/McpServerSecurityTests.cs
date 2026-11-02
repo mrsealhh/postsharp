@@ -214,7 +214,7 @@ public sealed class McpServerSecurityTests
             .Select(tool => tool.GetProperty("name").GetString())
             .ToList();
 
-        Assert.Equal(87, names.Count);
+        Assert.Equal(89, names.Count);
         Assert.Contains("verify_endpoint", names);
         Assert.Contains("generate_suite", names);
         Assert.Contains("export_report", names);
@@ -222,6 +222,8 @@ public sealed class McpServerSecurityTests
         Assert.Contains("diff_openapi", names);
         Assert.Contains("export_run_diff", names);
         Assert.Contains("export_openapi_diff", names);
+        Assert.Contains("validate_pipeline", names);
+        Assert.Contains("run_pipeline", names);
         Assert.Contains("explain_failure", names);
         Assert.Contains("start_sequence_run", names);
         Assert.Contains("start_import", names);

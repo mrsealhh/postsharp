@@ -6,8 +6,6 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using PostSharp.Models;
-using YamlDotNet.Core;
-using YamlDotNet.RepresentationModel;
 
 namespace PostSharp.Services;
 
@@ -2305,95 +2303,7 @@ public static class OpenApiImportService
         return ParseYaml(content);
     }
 
-    private static JsonNode ParseYaml(string content)
-    {
-        try
-        {
-            var stream = new YamlStream();
-            using var reader = new StringReader(content);
-            stream.Load(reader);
-            if (stream.Documents.Count == 0)
-            {
-                throw new InvalidOperationException("OpenAPI YAML 文档为空。");
-            }
-
-            return ConvertYamlNode(stream.Documents[0].RootNode)
-                ?? throw new InvalidOperationException("OpenAPI YAML 文档没有根节点。");
-        }
-        catch (YamlException exception)
-        {
-            Log.Error(exception, "OpenAPI YAML 解析失败");
-            throw new InvalidOperationException(
-                "无法解析 OpenAPI 文档，请确认文件是合法的 JSON 或 YAML。"
-            );
-        }
-    }
-
-    private static JsonNode? ConvertYamlNode(YamlNode node)
-    {
-        switch (node)
-        {
-            case YamlMappingNode mapping:
-                var result = new JsonObject();
-                foreach (var entry in mapping.Children)
-                {
-                    var key = entry.Key.ToString();
-                    result[key] = ConvertYamlNode(entry.Value);
-                }
-
-                return result;
-
-            case YamlSequenceNode sequence:
-                var array = new JsonArray();
-                foreach (var child in sequence.Children)
-                {
-                    array.Add(ConvertYamlNode(child));
-                }
-
-                return array;
-
-            case YamlScalarNode scalar:
-                return ConvertScalar(scalar);
-
-            default:
-                return null;
-        }
-    }
-
-    private static JsonNode? ConvertScalar(YamlScalarNode scalar)
-    {
-        if (scalar.Value is null)
-        {
-            return null;
-        }
-
-        if (scalar.Style == YamlDotNet.Core.ScalarStyle.Plain)
-        {
-            if (bool.TryParse(scalar.Value, out var boolValue))
-            {
-                return JsonValue.Create(boolValue);
-            }
-
-            if (long.TryParse(scalar.Value, out var longValue))
-            {
-                return JsonValue.Create(longValue);
-            }
-
-            if (
-                double.TryParse(
-                    scalar.Value,
-                    System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out var doubleValue
-                )
-            )
-            {
-                return JsonValue.Create(doubleValue);
-            }
-        }
-
-        return JsonValue.Create(scalar.Value);
-    }
+    private static JsonNode ParseYaml(string content) => YamlJson.Parse(content, "OpenAPI 文档");
 
     private static string? GetText(JsonNode? node)
     {

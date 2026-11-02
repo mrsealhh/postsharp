@@ -442,6 +442,8 @@ http://127.0.0.1:5199/mcp
 | 导出契约对比 | `export_openapi_diff {"baseUrl":"...","targetUrl":"...","format":"markdown"}` | 报告内容、字节数、截断标记和 `reports` 下的文件路径 |
 | 解释失败 | `explain_failure {"suiteId":"<id>","runId":"<runId>"}` | `findings` 带步骤、分类、证据、提示和 `nextAction` |
 | 导出报告 | `export_report {"suiteId":"<id>","format":"junit"}` | 报告内容、字节数、截断标记和 `.postsharp/reports` 下的文件路径 |
+| 校验流水线 | `validate_pipeline {"document":"<YAML>"}` | 名称、是否有效、步骤/数据组数量、逐条问题（含路径与是否错误） |
+| 运行流水线 | `run_pipeline {"document":"<YAML>","format":"junit"}` | 每组数据的步骤结果、状态码、重试次数、断言信息和报告文件 |
 
 `generate_suite` 只固定最近一次成功发送的状态码；最近一次失败时不会把错误状态写成期望值，而是在 `notes` 中提示。报告文件写在数据目录的 `reports/` 下，只读模式也可以导出。
 
@@ -510,6 +512,44 @@ MCP 同时声明 `resources` 能力：`resources/list` 列出 `reports` 下最�
 - **运行前预检**：保存和运行都会检查缺失请求、环、悬空节点/连线、无效映射、无效条件、断言字段和环境变量。错误会阻止保存/运行并在编辑器内按节点列出，可直接定位；提醒不阻止运行，但会在套件详情中持续显示。
 - **运行历史**：每个套件保存最近 20 次运行摘要（节点、连线、步骤结果和取消/停止状态），自动化页可在「运行历史」中切换查看；记录随套件持久化，重启后仍可回看。
 - **失败重跑 / 从节点继续**：失败运行可只重跑失败步骤及其依赖；历史结果中的每个步骤也可从该节点继续运行下游。重跑会补跑上游依赖，避免输入映射因缺少响应而失败。
+
+### 流水线（YAML / JSON）
+
+除了在界面里编排套件，也可以把整条流程写成 YAML/JSON，交给 CLI 或 MCP 直接执行，适合放进新项目或 CI：
+
+```yaml
+name: 订单流程
+baseUrl: http://127.0.0.1:5199
+steps:
+  - id: respA
+    method: POST
+    url: /api/orders
+    json: { item: book }
+    expect:
+      status: 201
+      jsonPath:
+        id: { exists: true }
+  - id: respB
+    method: GET
+    url: /api/orders/${respA.id}
+    expect: { status: 200 }
+  - method: PATCH
+    url: /api/orders/${respA.id}
+    json: { param1: "${respB.id}" }
+    expect: { status: 200 }
+```
+
+- **步骤别名**：`id: respA` 会把该步响应 JSON 注册为 `respA`，后续用 `${respA.id}`、`${respA.items[0].name}` 取值；整串只有一个占位符时保留原始类型（数字、对象、数组），混排时按字符串拼接。
+- **断言**：`expect.status` 支持数字、数组和 `2xx`/`3xx`/`4xx`/`5xx`；`bodyContains` 支持单个或多个文本；`jsonPath` 支持 `exists` / `equals` / `contains`。
+- **重试**：`retry: { count, delayMs, on: [network, 500, 5xx] }` 可写在流水线或单个步骤上，默认重试 408/429/500/502/503/504 与网络错误，最多 10 次。
+- **数据驱动**：`data.rows` 内联对象数组，或用 `data.file` 指向 CSV（首行表头）/JSON 数组；每行跑一遍整条流水线，字段用 `${row.user}` 或直接 `${user}` 读取。
+- **循环节点**：`loop: { over: ${list}, as: item, index: i, max: 1000, steps: [...] }`，`over` 必须是数组，循环体内可用 `${item.xxx}` 和 `${i}`。
+- **失败策略**：`stopOnError` 控制整条流水线，步骤可用 `onFailure: continue` 单独放行；失败步骤的断言和错误原因写入结果与报告。
+- **CLI**：`postsharp-cli pipeline validate <文件>` 只校验；`postsharp-cli pipeline run <文件> [--data 数据文件] [--var k=v] [--base-url URL] [--format junit|json|markdown]` 执行并按退出码（0 通过 / 1 失败 / 2 参数或服务端错误 / 3 连接失败或取消）接入 CI。
+- **MCP**：`validate_pipeline` / `run_pipeline`，`document` 传 YAML/JSON 文本或 `path` 传服务端文件路径；AI 可一次调用跑完整条链路。
+- 示例见 `docs/examples/order-flow.yaml`、`docs/examples/data-driven-loop.yaml`、`docs/examples/data-matrix.yaml` + `docs/examples/order-cases.csv`，完整字段说明见 `docs/pipeline.md`。
+
+流水线当前是 CLI / MCP 优先的能力：不写入套件列表，也没有可视化编辑器；需要长期维护、可视化分支时仍建议用套件编排器。
 
 
 
@@ -983,6 +1023,7 @@ docs/
 | 指南布局 | 左侧说明、右侧竖排操作，按钮宽度和位置统一（1000×660 可滚动） |
 | 套件窗口 | 组装套件/映射窗口按主窗口宽度自适应加宽；映射规则单行五列，滚动区可展示更多规则 |
 | 套件预检 | 用 124 个集合 / 1014 个请求（113 个是子集合）的真实工作区验证：v1.11.9 的 `validate_suite` 抛 `An item with the same key has already been added`，修复后预检通过、后台运行 2/2 通过，编辑器「预检」显示「预检通过」 |
+| YAML 流水线 | 实机 `--headless` + `postsharp-cli pipeline validate/run`：`order-flow.yaml` 3 步链路通过（POST 201 → GET 200 → PATCH 用捕获 id 拼出 `/api/orders/ord_2026_1042`），`data-driven-loop.yaml` 2 组数据 + 循环通过，`data-matrix.yaml` + CSV 2 组通过，JUnit 报告写入 `reports`；单测覆盖 YAML/JSON 解析、未知引用、链式取值、重试、循环、CSV 数据行和断言失败 |
 | 无头标题栏 | 顶部栏空白区域拖拽移动；右上角最小化/最大化还原/关闭；边缘缩放可用 |
 | 回收站对齐 | 方法、名称、状态、时间、恢复/永久删除列固定对齐 |
 | 右键菜单 | 请求/集合菜单可用，复制请求/URL 已验证 |
@@ -1025,7 +1066,7 @@ docs/
 | 授权复制与解析 | 临时控制台验证：`RequestAuth.Clone()` 后修改副本的 access_token 不影响原对象；`AuthResolver` 对「集合 A Bearer → 子集合 B 继承 → 请求」解析到集合 A，子集合 C 配 API Key 时请求 2 解析到集合 C |
 | 构建 | Debug / Release 均 0 警告、0 错误；`csharpier check .` 通过 |
 | 托盘与最小化 | Windows 托盘改用原生 `Shell_NotifyIcon` + `TrackPopupMenu`，右键菜单在 Windows 11 溢出区也能正常显示（实测菜单出现在光标处，含显示主页面/最大化/退出）；菜单动作延迟到 `Dispatcher` 执行；退出、切到后台和后台服务停止时显式 `Dispose` 托盘图标，减少残留；托盘图标使用 `.ico`；最小化按钮在托盘可用时隐藏到托盘，恢复时保留最大化状态；Debug 构建 0 警告 0 错误，265 个测试通过 |
-| CI | `.github/workflows/ci.yml`：Windows 依次执行格式检查、Debug 构建、packaging 清单校验和测试；Ubuntu 发布 Linux 自包含包，用 `--headless` 校验 87 个工具并运行演示套件；Docker job 构建镜像并校验容器内端点；action-smoke 用仓库内复合 Action 启动发布包并校验工具列表 |
+| CI | `.github/workflows/ci.yml`：Windows 依次执行格式检查、Debug 构建、packaging 清单校验和测试；Ubuntu 发布 Linux 自包含包，用 `--headless` 校验 89 个工具并运行演示套件；Docker job 构建镜像并校验容器内端点；action-smoke 用仓库内复合 Action 启动发布包并校验工具列表 |
 | MCP 意图工具 | 新增 `verify_endpoint` / `generate_suite` / `export_report` / `diff_runs` / `explain_failure`，工具总数 75；只读模式暴露 `export_report` / `diff_runs` / `explain_failure`，隐藏发送和生成；`verify_endpoint` 记录审计；单测覆盖检查项、期望状态推断、四种报告、diff 分类、失败定位和 source-generated JSON；259 个测试通过。本机已有 PostSharp 实例占用单实例锁，未做 GUI/MCP 实机联调 |
 | 集合树状态 | `CollectionDto.IsExpanded` 与 `SelectedCollectionId` / `SelectedRequestId` 随工作区落盘；启动恢复展开状态和选中节点，节点被删除时回退第一个请求，空工作区保持「新建请求」；旧工作区默认展开；选中/展开变化合并为一次延迟保存（单测） |
 | 复制集合 | 右键「复制集合」递归复制子集合与请求，参数、请求头、表单、上传、授权都复制为独立对象；所有节点换新 id，套件仍指向原请求；副本不继承 OpenAPI 来源和收藏；成功后 Toast「已复制集合」，失败走顶部提示条；单测覆盖深拷贝、id 与授权隔离、原树不变 |
@@ -1034,7 +1075,7 @@ docs/
 | MCP 长任务 job | `start_sequence_run` / `start_import` / `start_storage_sync` 立即返回 jobId；实测顺序任务同 key 返回同一 jobId、2/2 步完成，导入任务完成并返回结果；进度、取消和终态由统一 `McpJob` 管理 |
 | MCP 细粒度权限 | 设置页可分别开启发送/修改/管理；单测确认 `AllowSend=false` 隐藏 `send_request`/`run_suite` 但保留 `delete_request`，`AllowAdmin=false` 隐藏 `update_settings`/`sync_storage`；越权调用返回 `-32003` |
 | 首次启动引导 | 首次启动弹出 3 步欢迎对话框（发送请求 / 接入 MCP / 运行套件）；「打开指南」完成引导并切到指南页，「跳过」只标记已读；Debug 构建 0 警告 0 错误 |
-| 无头模式 | Windows 实机 `PostSharp.exe --headless` 启动后健康端点 `200`，无主窗口；Linux CI 用 `xvfb-run` 启动自包含包，`initialize` 后 `tools/list` 返回 87 个工具并跑通演示套件；Docker 镜像构建、容器内健康检查与工具列表通过 |
+| 无头模式 | Windows 实机 `PostSharp.exe --headless` 启动后健康端点 `200`，无主窗口；Linux CI 用 `xvfb-run` 启动自包含包，`initialize` 后 `tools/list` 返回 89 个工具并跑通演示套件；Docker 镜像构建、容器内健康检查与工具列表通过 |
 | 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.10，Windows/macOS 哈希与发布资产一致 |
 | 重置演示工作区 | 指南页「一分钟上手」增加入口；确认弹窗说明会清空集合、环境、套件、历史和回收站并恢复内置 Mock 示例，审计和设置保留；`Ctrl+Enter` 确认、`Esc` 取消；Debug 构建 0 警告 0 错误 |
 | 启动与内存基线 | `perf-smoke.ps1` 新增 `McpReadyMs`，改为 HTTP 直连 5199；修复旧端口扫描最多约 1.8s 的测量虚高。1.11.3 本机复测：JIT MCP 就绪 664–690 ms、空闲内存 100–108 MB；AOT 581–590 ms、约 81 MB；均达到 1.5s / 150MB 目标（首次运行新二进制仍受杀毒扫描影响） |

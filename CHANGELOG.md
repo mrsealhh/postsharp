@@ -1,5 +1,22 @@
 # 更新日志
 
+## v1.11.11（待发布）
+
+### YAML/JSON 流水线
+
+- 新增 `validate_pipeline` / `run_pipeline` MCP 工具：一份 YAML 或 JSON 就能描述「请求 A → 取字段 → 请求 B → 用 A/B 结果请求 C」。
+- 步骤别名与占位符：`id: respA` 后可用 `${respA.id}`、`${respA.items[0].id}`；整串占位符保留原始类型，混排按字符串拼接。
+- 断言：状态码（数字/数组/`2xx`）、`bodyContains`、`jsonPath`（exists / equals / contains）。
+- 重试：`retry: { count, delayMs, on }` 可写在流水线或单步，默认重试网络错误与 408/429/500/502/503/504。
+- 数据驱动：`data.rows` 或 `data.file`（CSV/JSON），每行跑一遍；循环节点 `loop: { over, as, index, max, steps }`。
+- 报告：Markdown / JUnit / JSON 写入数据目录 `reports`，可通过 `postsharp://reports/{文件名}` 读取。
+- CLI 新增 `pipeline validate <文件>` 和 `pipeline run <文件> --data ... --var k=v --format junit`，按结果返回退出码。
+- 示例：`docs/examples/order-flow.yaml`、`data-driven-loop.yaml`、`data-matrix.yaml` + `order-cases.csv`；说明见 `docs/pipeline.md`。
+
+### 测试
+
+- 新增流水线解析、引用校验、链式执行、重试、循环、CSV 数据行和断言失败用例；317 个测试通过；MCP 工具总数 89。
+
 ## v1.11.10 — 2026-11-02
 
 ### 套件修复

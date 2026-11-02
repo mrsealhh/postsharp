@@ -1,0 +1,42 @@
+# 用 ${步骤别名.字段} 串起「创建 → 查询 → 更新」三条请求。
+# 运行：postsharp-cli pipeline run docs/examples/order-flow.yaml --format markdown
+name: 订单流程示例
+baseUrl: http://127.0.0.1:5199
+timeoutSeconds: 30
+stopOnError: true
+retry:
+  count: 1
+  delayMs: 300
+  on: [network, 5xx]
+defaults:
+  headers:
+    Accept: application/json
+steps:
+  - id: respA
+    name: 创建订单
+    method: POST
+    url: /api/orders
+    json:
+      item: book
+      qty: 2
+    expect:
+      status: 201
+      jsonPath:
+        id: { exists: true }
+
+  - id: respB
+    name: 查询用户
+    method: GET
+    url: /api/users/1
+    expect:
+      status: 200
+      jsonPath:
+        id: { equals: 1 }
+
+  - name: 更新订单
+    method: PATCH
+    url: /api/orders/${respA.id}
+    json:
+      param1: ${respB.name}
+    expect:
+      status: 200
