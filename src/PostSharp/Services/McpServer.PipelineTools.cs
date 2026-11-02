@@ -150,7 +150,7 @@ public sealed partial class McpServer
     }
 
     private static int CountSteps(IReadOnlyList<PipelineNode> steps) =>
-        steps.Sum(step => step.Kind == PipelineNodeKind.Loop ? CountSteps(step.Children) : 1);
+        steps.Sum(step => step.Kind == PipelineNodeKind.Request ? 1 : CountSteps(step.Children));
 
     private static JsonObject ValidatePipelineSchema() =>
         ObjectSchema(

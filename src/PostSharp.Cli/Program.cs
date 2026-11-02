@@ -441,6 +441,10 @@ internal static class Program
         {
             arguments["format"] = format;
         }
+        else if (options.GetOption("--copy-report", null) is { Length: > 0 })
+        {
+            arguments["format"] = "junit";
+        }
 
         if (options.Variables.Count > 0)
         {
@@ -465,6 +469,7 @@ internal static class Program
         var passed =
             root.TryGetProperty("passed", out var passedNode)
             && passedNode.ValueKind == JsonValueKind.True;
+        CopyPipelineReport(root, options);
         if (options.Json)
         {
             WriteJson(result.Text);
@@ -520,6 +525,32 @@ internal static class Program
         }
 
         return passed ? 0 : 1;
+    }
+
+    private static void CopyPipelineReport(JsonElement root, CliOptions options)
+    {
+        var target = options.GetOption("--copy-report", null);
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            return;
+        }
+
+        var source = ReadString(root, "reportPath");
+        if (source.Length == 0 || !File.Exists(source))
+        {
+            Console.Error.WriteLine("没有可复制的报告文件（服务端未生成报告）。");
+            return;
+        }
+
+        var destination = Path.GetFullPath(target);
+        var directory = Path.GetDirectoryName(destination);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.Copy(source, destination, overwrite: true);
+        Console.Error.WriteLine($"报告已复制：{destination}");
     }
 
     private static JsonObject BuildPipelineArguments(CliOptions options, string path)
@@ -835,7 +866,8 @@ internal sealed record CliOptions(
                 or "--html"
                 or "--data"
                 or "--base-url"
-                or "--format":
+                or "--format"
+                or "--copy-report":
                     options[argument] = ReadValue(args, ref index, argument);
                     break;
                 case "--var":

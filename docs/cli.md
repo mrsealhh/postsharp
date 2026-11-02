@@ -92,7 +92,7 @@ $env:POSTSHARP_MCP_TOKEN = "<token>"; postsharp-cli suite run <suiteId> --junit 
 postsharp-cli --version
 ```
 
-CLI 从独立的 `cli-v1.1.0` Release 下载：Windows 解压后运行 `postsharp-cli.exe`，Linux/macOS 解压后运行 `bash run.sh`（启动脚本已带可执行位）。
+CLI 随主 Release 发布：`PostSharp.Cli-win-x64.zip`、`PostSharp.Cli-linux-x64.zip`、`PostSharp.Cli-osx-arm64.zip`（自包含，无需预装 .NET）。Windows 解压后运行 `postsharp-cli.exe`，Linux/macOS 解压后运行 `bash run.sh`（启动脚本已带可执行位）。Linux CI 也可以直接下载 `PostSharp-headless-linux-x64.zip`，里面同时包含无头应用和 `cli/postsharp-cli`。
 
 `suite run` 使用 `start_suite_run`，随后轮询 `get_suite_run_job`；退出码根据最终状态返回。CLI 不开放删除、清空和切换存储等破坏性操作。
 

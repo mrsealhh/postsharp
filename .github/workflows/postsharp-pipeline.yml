@@ -1,0 +1,140 @@
+name: PostSharp pipeline tests
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: PostSharp release version to download (without the leading v)
+        type: string
+        required: true
+      pipeline:
+        description: Pipeline file path relative to the caller repository
+        type: string
+        required: true
+      data:
+        description: Optional CSV/JSON data file path relative to the caller repository
+        type: string
+        required: false
+        default: ""
+      base-url:
+        description: Overrides the pipeline baseUrl
+        type: string
+        required: false
+        default: ""
+      format:
+        description: Report format written by the pipeline (junit, json, markdown, none)
+        type: string
+        required: false
+        default: junit
+      artifact-name:
+        description: Name of the uploaded JUnit artifact
+        type: string
+        required: false
+        default: postsharp-pipeline-report
+      working-directory:
+        description: Directory that contains the pipeline file
+        type: string
+        required: false
+        default: .
+    outputs:
+      passed:
+        description: "true when every pipeline step passed"
+        value: ${{ jobs.run.outputs.passed }}
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: Run pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      passed: ${{ steps.pipeline.outputs.passed }}
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v5
+
+      - name: Download PostSharp headless bundle
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          url="https://github.com/mrsealhh/postsharp/releases/download/v${VERSION}/PostSharp-headless-linux-x64.zip"
+          curl -fsSL -o headless.zip "$url"
+          unzip -q headless.zip -d postsharp
+          chmod +x postsharp/PostSharp postsharp/cli/postsharp-cli
+
+      - name: Install Xvfb and Avalonia dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb curl libx11-6 libice6 libsm6 libfontconfig1 libfreetype6 \
+            libxrandr2 libxi6 libgl1 libegl1 libdbus-1-3 libgtk-3-0
+
+      - name: Start PostSharp headless
+        env:
+          DATA_DIR: ${{ runner.temp }}/postsharp-data
+        run: |
+          set -euo pipefail
+          mkdir -p "$DATA_DIR"
+          echo "POSTSHARP_DATA_DIR=$DATA_DIR" >> "$GITHUB_ENV"
+          xvfb-run -a ./postsharp/PostSharp --headless > headless.log 2>&1 &
+          echo $! > headless.pid
+          for _ in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:5199/api/health >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "PostSharp did not become ready"
+          cat headless.log
+          exit 1
+
+      - name: Run pipeline
+        id: pipeline
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          PIPELINE: ${{ inputs.pipeline }}
+          DATA: ${{ inputs.data }}
+          BASE_URL: ${{ inputs.base-url }}
+          FORMAT: ${{ inputs.format }}
+        run: |
+          set -euo pipefail
+          cli="${{ github.workspace }}/postsharp/cli/postsharp-cli"
+          args=()
+          if [ -n "$DATA" ]; then args+=(--data "$DATA"); fi
+          if [ -n "$BASE_URL" ]; then args+=(--base-url "$BASE_URL"); fi
+          report="${{ runner.temp }}/postsharp-report.${FORMAT}"
+          if [ "$FORMAT" = "none" ]; then
+            "$cli" pipeline run "$PIPELINE" "${args[@]}"
+          else
+            "$cli" pipeline run "$PIPELINE" "${args[@]}" \
+              --format "$FORMAT" --copy-report "$report"
+          fi
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Collect log
+        if: always()
+        run: |
+          if [ -f "$POSTSHARP_DATA_DIR/logs/"*.log ]; then
+            cat "$POSTSHARP_DATA_DIR/logs/"*.log
+          fi
+          if [ -f headless.log ]; then cat headless.log; fi
+
+      - name: Upload report
+        if: always() && inputs.format != 'none'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ runner.temp }}/postsharp-report.*
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop PostSharp
+        if: always()
+        run: |
+          if [ -f headless.pid ]; then
+            kill "$(cat headless.pid)" 2>/dev/null || true
+          fi
+          pkill -f 'PostSharp --headless' 2>/dev/null || true

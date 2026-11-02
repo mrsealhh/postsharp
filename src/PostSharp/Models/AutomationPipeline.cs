@@ -15,6 +15,9 @@ public sealed class AutomationPipeline
 
     public int TimeoutSeconds { get; init; } = 60;
 
+    /// <summary>并发组默认并行数；1 表示顺序（默认）。</summary>
+    public int MaxParallelism { get; init; } = 4;
+
     public bool StopOnError { get; init; } = true;
 
     public PipelineRetryPolicy Retry { get; init; } = new();
@@ -39,9 +42,10 @@ public enum PipelineNodeKind
 {
     Request,
     Loop,
+    Parallel,
 }
 
-/// <summary>流水线节点：一次 HTTP 请求，或一段对数组逐项执行的循环。</summary>
+/// <summary>流水线节点：一次 HTTP 请求、一段循环，或一组并发步骤。</summary>
 public sealed class PipelineNode
 {
     public PipelineNodeKind Kind { get; init; } = PipelineNodeKind.Request;
@@ -58,6 +62,23 @@ public sealed class PipelineNode
     public IReadOnlyList<KeyValuePair<string, string>> Headers { get; init; } =
         Array.Empty<KeyValuePair<string, string>>();
 
+    /// <summary>查询参数，按顺序追加到 URL 上。</summary>
+    public IReadOnlyList<KeyValuePair<string, string>> Query { get; init; } =
+        Array.Empty<KeyValuePair<string, string>>();
+
+    /// <summary>表单字段；写 `form` 时请求体为 application/x-www-form-urlencoded。</summary>
+    public IReadOnlyList<KeyValuePair<string, string>> Form { get; init; } =
+        Array.Empty<KeyValuePair<string, string>>();
+
+    /// <summary>是否跟随 3xx 重定向，默认 true。</summary>
+    public bool FollowRedirects { get; init; } = true;
+
+    /// <summary>该步骤的超时秒数；0 表示跟随流水线。</summary>
+    public int TimeoutSeconds { get; init; }
+
+    /// <summary>HTTP Basic 认证；会写入 Authorization 头（同名的显式请求头优先）。</summary>
+    public PipelineBasicAuth? BasicAuth { get; init; }
+
     /// <summary>结构化请求体；与 <see cref="RawBody"/> 二选一。</summary>
     public JsonNode? JsonBody { get; init; }
 
@@ -68,6 +89,9 @@ public sealed class PipelineNode
     public PipelineExpectation Expectation { get; init; } = new();
 
     public PipelineRetryPolicy? Retry { get; init; }
+
+    /// <summary>并发组最大并行数；未设置时使用流水线的 maxParallelism。</summary>
+    public int Parallelism { get; init; }
 
     /// <summary>循环数据源表达式，例如 <c>${list.items}</c>，解析结果必须是数组。</summary>
     public string? LoopOver { get; init; }
@@ -96,6 +120,8 @@ public sealed class PipelineExpectation
     public IReadOnlyList<PipelineJsonAssertion> JsonPath { get; init; } =
         Array.Empty<PipelineJsonAssertion>();
 }
+
+public sealed record PipelineBasicAuth(string Username, string Password);
 
 public sealed class PipelineJsonAssertion
 {

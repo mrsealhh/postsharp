@@ -73,6 +73,11 @@ public static class PipelineParser
             Name = Text(document["name"]) ?? "未命名流水线",
             BaseUrl = Text(document["baseUrl"])?.TrimEnd('/'),
             TimeoutSeconds = TimeoutSeconds(document, issues),
+            MaxParallelism = ClampParallelism(
+                Integer(document["maxParallelism"]) ?? 4,
+                "maxParallelism",
+                issues
+            ),
             StopOnError = Bool(document["stopOnError"]) ?? true,
             Retry = retry,
             Variables = ParseScalarMap(document["vars"], "vars", issues),
@@ -189,6 +194,11 @@ public static class PipelineParser
             return ParseLoop(loop, step, path, issues);
         }
 
+        if (step["parallel"] is JsonNode parallelNode)
+        {
+            return ParseParallel(parallelNode, step, path, issues);
+        }
+
         var method = (Text(step["method"]) ?? "GET").ToUpperInvariant();
         if (!Methods.Contains(method))
         {
@@ -211,6 +221,11 @@ public static class PipelineParser
             Method = method,
             Url = url,
             Headers = ParseHeaderList(step["headers"], $"{path}.headers", issues),
+            Query = ParseHeaderList(step["query"], $"{path}.query", issues),
+            Form = ParseHeaderList(step["form"], $"{path}.form", issues),
+            FollowRedirects = Bool(step["redirects"] ?? step["followRedirects"]) ?? true,
+            TimeoutSeconds = Math.Clamp(Integer(step["timeoutSeconds"]) ?? 0, 0, 3600),
+            BasicAuth = ParseBasicAuth(step["auth"], $"{path}.auth", issues),
             JsonBody = step["json"]?.DeepClone(),
             RawBody = Text(step["body"]),
             ContentType = Text(step["contentType"]),
@@ -218,6 +233,90 @@ public static class PipelineParser
             Retry = ParseRetry(step["retry"], $"{path}.retry", issues),
             OnFailure = NormalizeFailure(Text(step["onFailure"])),
         };
+    }
+
+    private static PipelineNode? ParseParallel(
+        JsonNode node,
+        JsonObject step,
+        string path,
+        ICollection<PipelineIssue> issues
+    )
+    {
+        JsonNode? stepsNode;
+        var parallelism = 0;
+        if (node is JsonArray direct)
+        {
+            stepsNode = direct;
+        }
+        else if (node is JsonObject group)
+        {
+            stepsNode = group["steps"] ?? group["do"];
+            parallelism = Integer(group["max"] ?? group["maxParallelism"]) ?? 0;
+        }
+        else
+        {
+            issues.Add(
+                new PipelineIssue($"{path}.parallel", "parallel 必须是步骤数组或对象。", true)
+            );
+            return null;
+        }
+
+        var children = ParseSteps(stepsNode, $"{path}.parallel.steps", issues);
+        if (children.Count == 0)
+        {
+            issues.Add(new PipelineIssue($"{path}.parallel.steps", "并发组不能为空。", true));
+        }
+
+        return new PipelineNode
+        {
+            Kind = PipelineNodeKind.Parallel,
+            Id = NormalizeAlias(Text(step["id"]) ?? Text(step["as"])),
+            Name = Text(step["name"]) ?? "并发组",
+            Parallelism =
+                parallelism == 0
+                    ? 0
+                    : ClampParallelism(parallelism, $"{path}.parallel.max", issues),
+            Children = children,
+            OnFailure = NormalizeFailure(Text(step["onFailure"])),
+        };
+    }
+
+    private static PipelineBasicAuth? ParseBasicAuth(
+        JsonNode? node,
+        string path,
+        ICollection<PipelineIssue> issues
+    )
+    {
+        if (node is null)
+        {
+            return null;
+        }
+
+        if (node is not JsonObject auth)
+        {
+            issues.Add(new PipelineIssue(path, "auth 必须是 { username, password } 对象。", true));
+            return null;
+        }
+
+        var username = Text(auth["username"] ?? auth["user"]);
+        var password = Text(auth["password"]);
+        if (username is null || password is null)
+        {
+            issues.Add(new PipelineIssue(path, "Basic 认证需要 username 和 password。", true));
+            return null;
+        }
+
+        return new PipelineBasicAuth(username, password);
+    }
+
+    private static int ClampParallelism(int value, string path, ICollection<PipelineIssue> issues)
+    {
+        if (value is < 1 or > 64)
+        {
+            issues.Add(new PipelineIssue(path, "并行数必须在 1-64。", true));
+        }
+
+        return Math.Clamp(value, 1, 64);
     }
 
     private static PipelineNode? ParseLoop(
@@ -801,10 +900,56 @@ public static class PipelineParser
                 continue;
             }
 
+            if (node.Kind == PipelineNodeKind.Parallel)
+            {
+                // 并发组内的步骤互不可见：每个子步骤都用组外的同一份作用域校验，
+                // 只有整组结束后，它们声明的别名才对后续步骤可见。
+                var groupAliases = new HashSet<string>(StringComparer.Ordinal);
+                for (var childIndex = 0; childIndex < node.Children.Count; childIndex++)
+                {
+                    var childScope = new HashSet<string>(allowed, StringComparer.Ordinal);
+                    WalkNodes(
+                        new[] { node.Children[childIndex] },
+                        $"{nodePath}.parallel.steps[{childIndex}]",
+                        childScope,
+                        groupAliases,
+                        issues
+                    );
+                }
+
+                foreach (var alias in groupAliases)
+                {
+                    if (!seenAliases.Add(alias))
+                    {
+                        issues.Add(new PipelineIssue(nodePath, $"步骤别名 {alias} 重复。", true));
+                    }
+
+                    allowed.Add(alias);
+                }
+
+                continue;
+            }
+
             ValidateText(node.Url, $"{nodePath}.url", allowed, issues);
             foreach (var header in node.Headers)
             {
                 ValidateText(header.Value, $"{nodePath}.headers.{header.Key}", allowed, issues);
+            }
+
+            foreach (var query in node.Query)
+            {
+                ValidateText(query.Value, $"{nodePath}.query.{query.Key}", allowed, issues);
+            }
+
+            foreach (var form in node.Form)
+            {
+                ValidateText(form.Value, $"{nodePath}.form.{form.Key}", allowed, issues);
+            }
+
+            if (node.BasicAuth is { } auth)
+            {
+                ValidateText(auth.Username, $"{nodePath}.auth.username", allowed, issues);
+                ValidateText(auth.Password, $"{nodePath}.auth.password", allowed, issues);
             }
 
             ValidateBody(node.JsonBody, $"{nodePath}.json", allowed, issues);

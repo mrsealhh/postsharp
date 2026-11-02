@@ -64,7 +64,7 @@ docker exec -i postsharp-ci curl -fsS \
 
 ## GitHub Actions 示例
 
-下面示例在 Ubuntu runner 上启动官方发布包，再用 `postsharp-cli` 运行套件并上传 JUnit、Markdown 和 HTML 报告。`postsharp-cli` 是独立下载包，见 `docs/cli.md`。
+下面示例在 Ubuntu runner 上启动官方发布包，再用 `postsharp-cli` 运行套件并上传 JUnit、Markdown 和 HTML 报告。CLI 自 v1.11.13 起随主 Release 一起发布（`PostSharp.Cli-<平台>.zip`），Linux 也可以直接用一体化无头包 `PostSharp-headless-linux-x64.zip`。
 
 ```yaml
 name: API regression
@@ -87,15 +87,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xvfb xauth curl unzip
 
-      - name: Download PostSharp and CLI
+      - name: Download PostSharp headless bundle
         run: |
           curl -fsSL -o postsharp.zip \
-            https://github.com/mrsealhh/postsharp/releases/download/v1.11.12/PostSharp-linux-x64.zip
+            https://github.com/mrsealhh/postsharp/releases/download/v1.11.13/PostSharp-headless-linux-x64.zip
           unzip -q postsharp.zip -d postsharp
-          curl -fsSL -o cli.zip \
-            https://github.com/mrsealhh/postsharp/releases/download/cli-v1.1.0/PostSharp.Cli-linux-x64.zip
-          unzip -q cli.zip -d cli
-          chmod +x postsharp/PostSharp cli/postsharp-cli
+          chmod +x postsharp/PostSharp postsharp/cli/postsharp-cli
 
       - name: Start headless MCP
         run: |
@@ -111,13 +108,12 @@ jobs:
           cat postsharp.log
           exit 1
 
-      - name: Run suite
+      - name: Run pipeline
         run: |
-          SUITE_ID=$(./cli/postsharp-cli --json suite list | jq -r '.[0].id')
-          ./cli/postsharp-cli suite run "$SUITE_ID" \
-            --junit test-results/postsharp.xml \
-            --markdown reports/suite.md \
-            --html reports/suite.html
+          ./postsharp/cli/postsharp-cli pipeline run qa/order-flow.yaml \
+            --data qa/cases.csv \
+            --format junit \
+            --copy-report test-results/postsharp.xml
 
       - name: Upload reports
         if: always()
@@ -126,15 +122,39 @@ jobs:
           name: postsharp-reports
           path: |
             test-results/
-            reports/
             postsharp.log
 ```
 
 要点：
 
-- 用 tag 固定 PostSharp 和 CLI 版本，避免 runner 上版本漂移。
-- `--junit` 可被大多数测试报告面板直接读取；退出码 `0` 表示套件通过，`1` 表示套件或请求失败，`2` 表示参数或预检错误，`3` 表示无法连接。
+- 用 tag 固定 PostSharp 版本，避免 runner 上版本漂移。
+- `--junit` / `--copy-report` 可被大多数测试报告面板直接读取；退出码 `0` 表示通过，`1` 表示套件/流水线失败，`2` 表示参数或预检错误，`3` 表示无法连接。
 - 失败时保留 `postsharp.log` 和报告，便于定位启动或断言问题。
+- 需要套件（UI 里维护的 DAG）时，用 `suite list` 取 id，再 `suite run <id> --junit ...`。
+
+## 可复用流水线 Workflow
+
+仓库提供 `.github/workflows/postsharp-pipeline.yml`：下载无头包、启动服务、执行调用方仓库里的 YAML 流水线、上传 JUnit，一条 `uses` 就能接入产品线测试。
+
+```yaml
+name: Product line smoke
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  api:
+    uses: mrsealhh/postsharp/.github/workflows/postsharp-pipeline.yml@v1.11.13
+    with:
+      version: 1.11.13
+      pipeline: qa/order-flow.yaml
+      data: qa/cases.csv
+      base-url: https://qa.example.com
+      format: junit
+```
+
+流水线文件和数据文件都放在调用方仓库；`base-url` 会覆盖 YAML 里的 `baseUrl`，方便同一份流水线跑多个环境。
 
 ## 可复用 Action
 

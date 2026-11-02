@@ -218,6 +218,119 @@ public sealed class PipelineTests
     }
 
     [Fact]
+    public async Task RunsParallelGroupWithinConfiguredLimit()
+    {
+        var active = 0;
+        var peak = 0;
+        var gate = new object();
+        var handler = new StubHandler(
+            (_, _) =>
+            {
+                lock (gate)
+                {
+                    active++;
+                    peak = Math.Max(peak, active);
+                }
+
+                Thread.Sleep(60);
+                lock (gate)
+                {
+                    active--;
+                }
+
+                return Json(HttpStatusCode.OK, """{"ok":true}""");
+            }
+        );
+        var runner = new PipelineRunner(new HttpRequestService(new HttpClient(handler)));
+        var parsed = PipelineParser.Parse(
+            """
+            name: 并发
+            baseUrl: http://mock.local
+            steps:
+              - parallel:
+                  max: 2
+                  steps:
+                    - method: GET
+                      url: /api/one
+                    - method: GET
+                      url: /api/two
+                    - method: GET
+                      url: /api/three
+            """
+        );
+
+        var result = await runner.RunAsync(
+            parsed.Pipeline,
+            new PipelineRunOptions(),
+            CancellationToken.None
+        );
+
+        Assert.True(result.Passed, Describe(result));
+        Assert.Equal(3, Assert.Single(result.Cases).Steps.Count);
+        Assert.Equal(2, peak);
+    }
+
+    [Fact]
+    public void RejectsParallelSiblingReferences()
+    {
+        var parsed = PipelineParser.Parse(
+            """
+            steps:
+              - parallel:
+                  - id: first
+                    method: GET
+                    url: /api/first
+                  - method: GET
+                    url: /api/second/${first.id}
+            """
+        );
+
+        Assert.True(parsed.HasErrors);
+        Assert.Contains(
+            parsed.Issues,
+            issue => issue.Message.Contains("first", StringComparison.Ordinal)
+        );
+    }
+
+    [Fact]
+    public async Task SendsQueryFormAndBasicAuth()
+    {
+        var handler = new StubHandler((_, _) => Json(HttpStatusCode.OK, """{"ok":true}"""));
+        var runner = new PipelineRunner(new HttpRequestService(new HttpClient(handler)));
+        var parsed = PipelineParser.Parse(
+            """
+            name: HTTP 常用字段
+            baseUrl: http://mock.local
+            vars:
+              token: abc
+            steps:
+              - method: POST
+                url: /api/echo
+                query: { a: "1", b: "${token}" }
+                form: { name: alice, token: "${token}" }
+                timeoutSeconds: 5
+                redirects: false
+                auth: { username: demo, password: "${token}" }
+            """
+        );
+
+        var result = await runner.RunAsync(
+            parsed.Pipeline,
+            new PipelineRunOptions(),
+            CancellationToken.None
+        );
+
+        Assert.True(result.Passed, Describe(result));
+        var request = Assert.Single(handler.Requests);
+        Assert.Contains("a=1&b=abc", request.Url, StringComparison.Ordinal);
+        Assert.Equal("name=alice&token=abc", request.Body);
+        Assert.Equal(
+            "Basic " + Convert.ToBase64String("demo:abc"u8.ToArray()),
+            request.Authorization
+        );
+    }
+
+    [Fact]
     public async Task RunsEveryDataRow()
     {
         var handler = new StubHandler((_, _) => Json(HttpStatusCode.OK, """{"ok":true}"""));
@@ -319,12 +432,18 @@ public sealed class PipelineTests
                 new RecordedRequest(
                     request.Method.Method,
                     request.RequestUri?.ToString() ?? string.Empty,
-                    body
+                    body,
+                    request.Headers.Authorization?.ToString() ?? string.Empty
                 )
             );
             return _responder(request, _count);
         }
     }
 
-    public sealed record RecordedRequest(string Method, string Url, string Body);
+    public sealed record RecordedRequest(
+        string Method,
+        string Url,
+        string Body,
+        string Authorization
+    );
 }
