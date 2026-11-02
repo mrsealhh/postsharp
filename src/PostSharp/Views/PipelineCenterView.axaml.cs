@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using PostSharp.Services;
 using PostSharp.ViewModels;
 
 namespace PostSharp.Views;
@@ -9,6 +10,31 @@ public partial class PipelineCenterView : UserControl
     public PipelineCenterView()
     {
         InitializeComponent();
+    }
+
+    private void OnVisualizeClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not PipelineCenterViewModel viewModel)
+        {
+            return;
+        }
+
+        var graph = viewModel.BuildGraph();
+        if (graph is null)
+        {
+            return;
+        }
+
+        GraphCanvas.Graph = PipelineWorkflowMapper.ToWorkflowGraph(graph);
+        GraphPanel.IsVisible = true;
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () =>
+            {
+                GraphCanvas.ArrangeNodes(false);
+                GraphCanvas.FitToContent(false);
+            },
+            Avalonia.Threading.DispatcherPriority.Loaded
+        );
     }
 
     private async void OnGraphicalEditClick(object? sender, RoutedEventArgs e)

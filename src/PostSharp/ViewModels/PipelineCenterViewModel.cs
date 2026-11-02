@@ -167,14 +167,29 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
         );
     }
 
-    [RelayCommand]
-    private async Task VisualizePipelineAsync(CancellationToken cancellationToken)
+    /// <summary>Builds the read-only graph for the canvas; shows parse errors in the preview area.</summary>
+    public PipelineGraph? BuildGraph()
     {
-        await EvaluateAsync(
-            "生成流程图",
-            (pipeline, issues) => PipelineVisualization.Build(pipeline, issues).Mermaid,
-            cancellationToken
-        );
+        var parsed = PipelineParser.Parse(YamlText);
+        if (parsed.HasErrors)
+        {
+            StatusText = "无法生成流程图，先修正流水线错误。";
+            PreviewText = string.Join(
+                Environment.NewLine,
+                parsed
+                    .Issues.Where(issue => issue.IsError)
+                    .Take(20)
+                    .Select(issue => $"{issue.Path} {issue.Message}")
+            );
+            OnPropertyChanged(nameof(HasPreview));
+            return null;
+        }
+
+        var graph = PipelineVisualization.Build(parsed.Pipeline, parsed.Issues);
+        PreviewText = string.Empty;
+        OnPropertyChanged(nameof(HasPreview));
+        StatusText = $"已生成流程图：{graph.Nodes.Count} 个节点，{graph.Edges.Count} 条依赖。";
+        return graph;
     }
 
     [RelayCommand]
