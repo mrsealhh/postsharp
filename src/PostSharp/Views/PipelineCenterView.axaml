@@ -131,7 +131,7 @@
             </Border>
         </Grid>
 
-        <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
+        <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*,260,Auto" RowSpacing="8">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                 <TextBlock
                     Text="名称"
@@ -169,7 +169,7 @@
                     Grid.Column="4"
                     Content="生成流程图"
                     Variant="Ghost"
-                    Command="{Binding VisualizePipelineCommand}"
+                    Click="OnVisualizeClick"
                     IsEnabled="{Binding !IsBusy}"
                     AutomationProperties.Name="生成流水线流程图"
                 />
@@ -213,7 +213,35 @@
             />
 
             <Border
+                x:Name="GraphPanel"
                 Grid.Row="3"
+                IsVisible="False"
+                Padding="2"
+                Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                ClipToBounds="True"
+            >
+                <Panel>
+                    <arc:WorkflowCanvas
+                        x:Name="GraphCanvas"
+                        IsEditable="False"
+                        AutoFit="Fit"
+                        MaxZoom="1"
+                        EdgeStyle="Bezier"
+                        BorderThickness="0"
+                        AutomationProperties.Name="流水线流程图"
+                    />
+                    <arc:WorkflowZoomControls
+                        Target="{Binding #GraphCanvas}"
+                        Margin="12"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Bottom"
+                    />
+                </Panel>
+            </Border>
+
+            <Border
+                Grid.Row="4"
                 IsVisible="{Binding HasPreview}"
                 MaxHeight="220"
                 Padding="10"

@@ -1,5 +1,19 @@
 # 更新日志
 
+## v1.11.18（待发布）
+
+### 流水线图原生渲染
+
+- 「生成流程图」改为 Arc 工作流画布：节点卡片、依赖箭头、缩放/平移/适应窗口，不再把 Mermaid 文本贴到预览区。
+- 循环体按顺序串联，并发组从组节点扇出；只读，不可拖拽修改。
+- Mermaid / DOT 仍可通过 CLI `pipeline graph` 和 MCP `visualize_pipeline` 获取，用于文档或 PR。
+- TKCode.Arc 系列组件升级到 `0.3.2-preview.2`（Avalonia / 组件行为保持不变）。
+
+### 验证
+
+- 单测覆盖 `PipelineGraph` → `WorkflowGraph` 映射（节点数、依赖数）。
+- 327 个测试通过；构建 0 警告 0 错误；`csharpier check .` 通过。
+
 ## v1.11.17 — 2026-11-02
 
 ### 流水线页面修复

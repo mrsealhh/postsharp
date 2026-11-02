@@ -95,6 +95,8 @@ postsharp-cli pipeline graph flow.yaml --format dot    # Graphviz DOT
 postsharp-cli pipeline graph flow.yaml --format json   # 节点/边/图文本
 ```
 
+自动化页「流水线」→「生成流程图」会用 Arc 工作流画布直接渲染节点卡片和依赖箭头（可缩放、平移、适应窗口），不再显示 Mermaid 文本。循环体按顺序串联，并发组从组节点扇出；画布只读。
+
 MCP 对应 `visualize_pipeline { document | path }`。输出结构：
 
 - `nodes`：`id`、`kind`（request / loop / parallel）、`label`、`method`、`url`、`parentId`、`order`

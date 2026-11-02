@@ -100,4 +100,33 @@ public sealed class PipelineEditorTests
         Assert.Single(parsed.Pipeline.Steps);
         Assert.Contains("json:", text, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void MapsPipelineGraphToWorkflowCanvas()
+    {
+        const string yaml = """
+            name: 图形
+            baseUrl: http://mock.local
+            steps:
+              - id: list
+                method: GET
+                url: /api/list
+              - loop:
+                  over: ${list}
+                  as: item
+                  steps:
+                    - method: GET
+                      url: /api/items/${item.id}
+              - parallel:
+                  - { method: GET, url: /api/a }
+                  - { method: GET, url: /api/b }
+            """;
+        var parsed = PipelineParser.Parse(yaml);
+        var graph = PipelineVisualization.Build(parsed.Pipeline, parsed.Issues);
+
+        var workflow = PipelineWorkflowMapper.ToWorkflowGraph(graph);
+
+        Assert.Equal(graph.Nodes.Count, workflow.Nodes.Count);
+        Assert.True(workflow.Edges.Count >= graph.Edges.Count);
+    }
 }
