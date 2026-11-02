@@ -1051,6 +1051,7 @@ docs/
 | 流水线图像编辑 | 图像编辑器加载含 vars/data/循环/并发的流水线，改字段后保存仍保留 vars/data；嵌套循环/并发行往返通过单测；编辑结果回填 YAML 后再保存 |
 | 流水线页面渲染 | 实机确认 YAML 编辑区显示 `order-flow` 完整内容、名称与状态正常；文件列表改为 Arc 按钮行并加空状态（与场景模板相同的渲染方式）；图像编辑器节点列表改为扁平缩进列表 |
 | 流水线流程图 | 「生成流程图」改为 Arc `WorkflowCanvas` 只读画布：请求卡片、循环链、并发扇出和依赖箭头；单测验证 `PipelineGraph` → `WorkflowGraph` 节点/依赖映射；Mermaid/DOT 仍由 CLI 与 MCP 输出 |
+| 流水线交互 | 文件列表选中态与搜索过滤；YAML 与图形区之间可拖拽分隔条；未保存提示、切换文件自动保存、草稿保护；`Ctrl+S` / `Ctrl+Enter`；单测覆盖过滤、选中和脏状态 |
 | MCP 工具说明 | 说明按 11 个类别分行展示，包含流水线与客户端工具；不再是一整段连续文本 |
 | 无头 CLI 包 | 本地运行 `build-headless-release.ps1` 生成 `PostSharp-headless-linux-x64.zip`：含 `PostSharp`、`cli/postsharp-cli`、`postsharp-cli.sh`，`PostSharp` 与 CLI 均带 Unix 可执行位；`postsharp-cli pipeline run ... --copy-report` 实测把 JUnit 复制到指定路径 |
 | 无头标题栏 | 顶部栏空白区域拖拽移动；右上角最小化/最大化还原/关闭；边缘缩放可用 |

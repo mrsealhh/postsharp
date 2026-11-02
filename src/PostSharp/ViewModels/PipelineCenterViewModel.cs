@@ -7,7 +7,24 @@ using PostSharp.Services;
 
 namespace PostSharp.ViewModels;
 
-public sealed record PipelineFileItem(string Name, string Path, DateTimeOffset Modified);
+public sealed partial class PipelineFileItem : ObservableObject
+{
+    public PipelineFileItem(string name, string path, DateTimeOffset modified)
+    {
+        Name = name;
+        Path = path;
+        Modified = modified;
+    }
+
+    public string Name { get; }
+
+    public string Path { get; }
+
+    public DateTimeOffset Modified { get; }
+
+    [ObservableProperty]
+    private bool _isSelected;
+}
 
 public sealed record PipelineTemplateItem(string Name, string Description, string Content);
 
@@ -40,11 +57,20 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
 
     public ObservableCollection<PipelineFileItem> Files { get; } = new();
 
+    /// <summary>Filtered view of <see cref="Files"/> for the search box.</summary>
+    public ObservableCollection<PipelineFileItem> VisibleFiles { get; } = new();
+
     public ObservableCollection<PipelineTemplateItem> Templates { get; }
     public string DirectoryPath => _directory;
 
     [ObservableProperty]
     private PipelineFileItem? _selectedFile;
+
+    [ObservableProperty]
+    private string _searchText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasUnsavedChanges;
 
     [ObservableProperty]
     private string _nameText = string.Empty;
@@ -61,16 +87,70 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
     [ObservableProperty]
     private bool _isBusy;
 
+    [ObservableProperty]
+    private bool _hasGraph;
+
+    private bool _suppressDirty;
+
     public bool HasSelection => SelectedFile is not null;
 
     public bool HasFiles => Files.Count > 0;
 
+    public bool HasVisibleFiles => VisibleFiles.Count > 0;
+
+    public bool HasNoMatches => HasFiles && VisibleFiles.Count == 0;
+
     public bool HasPreview => PreviewText.Length > 0;
+
+    partial void OnNameTextChanged(string value) => MarkDirty();
+
+    partial void OnYamlTextChanged(string value) => MarkDirty();
+
+    partial void OnSearchTextChanged(string value) => ApplyFilter();
+
+    private void MarkDirty()
+    {
+        if (!_suppressDirty)
+        {
+            HasUnsavedChanges = true;
+        }
+    }
 
     [RelayCommand]
     private void OpenFile(PipelineFileItem? file)
     {
+        if (file is null || ReferenceEquals(file, SelectedFile))
+        {
+            return;
+        }
+
+        if (HasUnsavedChanges)
+        {
+            if (SelectedFile is null)
+            {
+                StatusText = "当前草稿还没有保存，请先点「保存」再切换文件。";
+                return;
+            }
+
+            SavePipeline();
+        }
+
         SelectedFile = file;
+    }
+
+    [RelayCommand]
+    private void OpenFolder()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(_directory) { UseShellExecute = true }
+            );
+        }
+        catch (Exception exception)
+        {
+            StatusText = $"无法打开目录：{exception.Message}";
+        }
     }
 
     [RelayCommand]
@@ -87,8 +167,11 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
     private void NewPipeline()
     {
         SelectedFile = null;
+        _suppressDirty = true;
         NameText = $"流水线-{DateTime.Now:MMdd-HHmm}";
         YamlText = Templates[0].Content;
+        _suppressDirty = false;
+        HasUnsavedChanges = true;
         PreviewText = string.Empty;
         StatusText = "已新建草稿，保存后写入 pipelines 目录。";
         OnPropertyChanged(nameof(HasSelection));
@@ -103,10 +186,13 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
         }
 
         SelectedFile = null;
+        _suppressDirty = true;
         NameText = template.Name;
         YamlText = template.Content;
+        _suppressDirty = false;
+        HasUnsavedChanges = true;
         PreviewText = string.Empty;
-        StatusText = $"已载入场景模板：{template.Name}";
+        StatusText = $"已载入场景模板：{template.Name}，保存后写入文件。";
         OnPropertyChanged(nameof(HasSelection));
     }
 
@@ -124,10 +210,13 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
 
             var path = Path.Combine(_directory, $"{name}.yaml");
             File.WriteAllText(path, YamlText, new UTF8Encoding(false));
+            _suppressDirty = true;
             Refresh();
             SelectedFile = Files.FirstOrDefault(file =>
                 string.Equals(file.Path, path, StringComparison.OrdinalIgnoreCase)
             );
+            _suppressDirty = false;
+            HasUnsavedChanges = false;
             StatusText = $"已保存：{path}";
         }
         catch (Exception exception)
@@ -188,6 +277,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
         var graph = PipelineVisualization.Build(parsed.Pipeline, parsed.Issues);
         PreviewText = string.Empty;
         OnPropertyChanged(nameof(HasPreview));
+        HasGraph = true;
         StatusText = $"已生成流程图：{graph.Nodes.Count} 个节点，{graph.Edges.Count} 条依赖。";
         return graph;
     }
@@ -208,6 +298,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
             return;
         }
 
+        HasGraph = false;
         IsBusy = true;
         StatusText = "正在运行…";
         try
@@ -262,6 +353,11 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
 
     partial void OnSelectedFileChanged(PipelineFileItem? value)
     {
+        foreach (var file in Files)
+        {
+            file.IsSelected = ReferenceEquals(file, value);
+        }
+
         OnPropertyChanged(nameof(HasSelection));
         if (value is null)
         {
@@ -270,8 +366,11 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
 
         try
         {
+            _suppressDirty = true;
             NameText = value.Name;
             YamlText = File.ReadAllText(value.Path);
+            _suppressDirty = false;
+            HasUnsavedChanges = false;
             PreviewText = string.Empty;
             StatusText = $"已打开 {value.Name}";
             OnPropertyChanged(nameof(HasPreview));
@@ -288,6 +387,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
         CancellationToken cancellationToken
     )
     {
+        HasGraph = false;
         IsBusy = true;
         StatusText = $"正在{action}…";
         try
@@ -337,6 +437,24 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
 
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasFiles));
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        VisibleFiles.Clear();
+        var query = SearchText.Trim();
+        foreach (
+            var file in Files.Where(file =>
+                query.Length == 0 || file.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+            )
+        )
+        {
+            VisibleFiles.Add(file);
+        }
+
+        OnPropertyChanged(nameof(HasVisibleFiles));
+        OnPropertyChanged(nameof(HasNoMatches));
     }
 
     private static string Sanitize(string name)
