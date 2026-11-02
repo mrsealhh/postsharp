@@ -1247,7 +1247,9 @@ master                 稳定可发布
 
 ### 后续路线图
 
-详细的产品化 TODO、验收标准、迭代顺序和交接清单见 [PostSharp 后续产品化 TODO 与开发交接](docs/product-todos.md)。
+当前有效路线见 [PostSharp 产品化路线（v1.11.13 基线）](docs/product-todos.md)：已交付能力、五条产品化验收线、下一阶段的 N 系列事项、P0/P1/P2 与版本节奏。
+
+历史 TODO 与交接细节已归档到 [docs/archive/product-todos-v1.10.24.md](docs/archive/product-todos-v1.10.24.md)。
 
 平台约束：新功能按跨平台方案设计，Windows 专属能力单独开 feature。当前提供 Windows x64 正式包、Linux x64 预览包和 macOS arm64 预览包；CLI 作为独立跨平台包发布。Linux/WSL 启动说明见 [Linux / WSL 运行说明](docs/linux-wsl.md)，macOS 启动与限制见 [macOS 运行说明](docs/macos.md)。Linux 签名安装器/AppImage/deb、macOS 签名公证和统一 CI 仍属于 P2-02 后续工作。
 
