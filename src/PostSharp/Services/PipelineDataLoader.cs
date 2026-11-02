@@ -67,7 +67,7 @@ public static class PipelineDataLoader
                 source[headers[column]] = column < row.Count ? JsonValue.Create(row[column]) : null;
             }
 
-            result.Add(source);
+            result.Add((JsonNode)source);
         }
 
         return result;

@@ -65,34 +65,36 @@ public static class PipelineReport
             foreach (var step in item.Steps)
             {
                 steps.Add(
-                    new JsonObject
-                    {
-                        ["id"] = step.Id,
-                        ["name"] = step.Name,
-                        ["method"] = step.Method,
-                        ["url"] = step.Url,
-                        ["statusCode"] = step.StatusCode,
-                        ["passed"] = step.Passed,
-                        ["attempts"] = step.Attempts,
-                        ["elapsedMs"] = step.ElapsedMs,
-                        ["error"] = step.Error,
-                        ["assertions"] = new JsonArray(
-                            step.Assertions.Select(text => (JsonNode)JsonValue.Create(text)!)
-                                .ToArray()
-                        ),
-                    }
+                    (JsonNode)
+                        new JsonObject
+                        {
+                            ["id"] = step.Id,
+                            ["name"] = step.Name,
+                            ["method"] = step.Method,
+                            ["url"] = step.Url,
+                            ["statusCode"] = step.StatusCode,
+                            ["passed"] = step.Passed,
+                            ["attempts"] = step.Attempts,
+                            ["elapsedMs"] = step.ElapsedMs,
+                            ["error"] = step.Error,
+                            ["assertions"] = new JsonArray(
+                                step.Assertions.Select(text => (JsonNode)JsonValue.Create(text)!)
+                                    .ToArray()
+                            ),
+                        }
                 );
             }
 
             cases.Add(
-                new JsonObject
-                {
-                    ["index"] = item.Index,
-                    ["label"] = item.Label,
-                    ["passed"] = item.Passed,
-                    ["elapsedMs"] = item.ElapsedMs,
-                    ["steps"] = steps,
-                }
+                (JsonNode)
+                    new JsonObject
+                    {
+                        ["index"] = item.Index,
+                        ["label"] = item.Label,
+                        ["passed"] = item.Passed,
+                        ["elapsedMs"] = item.ElapsedMs,
+                        ["steps"] = steps,
+                    }
             );
         }
 
