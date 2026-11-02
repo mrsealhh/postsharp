@@ -1,0 +1,16 @@
+# CSV 数据矩阵：表头即变量名，每行跑一遍整条流水线。
+# 运行：postsharp-cli pipeline run docs/examples/data-matrix.yaml --data docs/examples/order-cases.csv
+name: CSV 数据矩阵
+baseUrl: http://127.0.0.1:5199
+data:
+  file: order-cases.csv
+steps:
+  - id: created
+    name: 按行下单
+    method: POST
+    url: /api/orders
+    json:
+      item: "${item}"
+      qty: "${qty}"
+    expect:
+      status: 201

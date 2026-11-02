@@ -1,0 +1,33 @@
+# 数据驱动（每行跑一遍）+ 循环节点（对数组逐项请求）。
+# 运行：postsharp-cli pipeline run docs/examples/data-driven-loop.yaml
+name: 数据驱动与循环
+baseUrl: http://127.0.0.1:5199
+data:
+  rows:
+    - { item: book, qty: 2, ids: [1, 2] }
+    - { item: pen, qty: 5, ids: [1] }
+steps:
+  - id: created
+    name: 按行下单
+    method: POST
+    url: /api/orders
+    json:
+      item: "${item}"
+      qty: "${qty}"
+    expect:
+      status: 201
+
+  - name: 逐项读取用户
+    loop:
+      over: ${ids}
+      as: uid
+      index: i
+      max: 50
+      steps:
+        - method: GET
+          url: /api/users/${uid}
+          retry: { count: 1, delayMs: 200 }
+          expect:
+            status: 200
+            jsonPath:
+              id: { exists: true }

@@ -1,0 +1,243 @@
+# 流水线（YAML / JSON）
+
+把「请求 A → 取响应字段 → 请求 B → 用 A、B 的结果发请求 C」写成一份文件，直接交给 CLI 或 MCP 执行。
+适合放进新项目做自动化测试，也适合在 CI 里跑冒烟。
+
+## 最小示例
+
+```yaml
+name: 订单流程
+baseUrl: http://127.0.0.1:5199
+steps:
+  - id: respA
+    method: POST
+    url: /api/orders
+    json:
+      item: book
+    expect:
+      status: 201
+      jsonPath:
+        id: { exists: true }
+
+  - id: respB
+    method: GET
+    url: /api/orders/${respA.id}
+    expect:
+      status: 200
+
+  - method: PATCH
+    url: /api/orders/${respA.id}
+    json:
+      param1: "${respB.id}"
+    expect:
+      status: 200
+```
+
+执行顺序：创建订单得到 `respA.id`，用它查询得到 `respB`，再用两者的字段发 PATCH。
+
+## 运行
+
+```bash
+# 只校验（不发送请求）
+postsharp-cli pipeline validate docs/examples/order-flow.yaml
+
+# 执行并打印每组数据的步骤结果
+postsharp-cli pipeline run docs/examples/order-flow.yaml
+
+# 输出 JSON（适合脚本解析），同时写 JUnit 报告
+postsharp-cli pipeline run docs/examples/order-flow.yaml --json --format junit
+
+# 用 CSV 数据矩阵跑多组
+postsharp-cli pipeline run docs/examples/data-matrix.yaml --data docs/examples/order-cases.csv
+```
+
+CLI 通过本机 MCP 端点（默认 `http://127.0.0.1:5199/mcp`）调用 PostSharp，要求 PostSharp 正在运行；
+无界面环境可用 `PostSharp.exe --headless` 或 Docker 镜像。
+
+退出码：
+
+| 退出码 | 含义 |
+| ---: | --- |
+| 0 | 全部通过，或校验通过 |
+| 1 | 有步骤失败 / 校验有错误 |
+| 2 | 参数错误、服务端拒绝（例如流水线校验失败） |
+| 3 | 连接失败或取消 |
+
+### MCP 工具
+
+```jsonc
+// 只校验
+{ "name": "validate_pipeline", "arguments": { "document": "<YAML 文本>" } }
+
+// 执行并写报告
+{ "name": "run_pipeline", "arguments": { "document": "<YAML 文本>", "format": "junit", "vars": { "tenant": "demo" } } }
+
+// 服务端已有的文件
+{ "name": "run_pipeline", "arguments": { "path": "D:/ci/order-flow.yaml" } }
+```
+
+`document` 与 `path` 二选一；跨机器调用时用 `document`，并把数据文件内容通过 `dataContent` + `dataFormat` 一起传。
+
+## 字段参考
+
+### 顶层
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `name` | string | 报告和结果里的名称，默认「未命名流水线」 |
+| `baseUrl` | string | 相对地址的前缀；同时以 `${baseUrl}` 暴露给模板 |
+| `timeoutSeconds` / `timeoutMs` | int | 单次请求超时，默认 60 秒 |
+| `stopOnError` | bool | 失败后是否停止后续步骤，默认 `true` |
+| `retry` | object/int | 默认重试策略，见下文 |
+| `vars` | object | 自定义变量，模板里写 `${名称}` |
+| `defaults.headers` | object | 所有请求共享的请求头 |
+| `data` | object/array | 数据驱动矩阵，见下文 |
+| `steps` | array | 步骤或循环节点 |
+
+### 步骤
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` / `as` / `saveAs` | string | 步骤别名；成功后响应 JSON 注册为它 |
+| `name` | string | 展示名称 |
+| `method` | string | 默认 `GET` |
+| `url` | string | 绝对地址或相对 `baseUrl` 的路径，可含 `${...}` |
+| `headers` | object | 该步骤的请求头，同名覆盖 `defaults.headers` |
+| `json` | any | 结构化请求体，字符串值可含 `${...}`；整串占位符保留原类型 |
+| `body` | string | 原始请求体，与 `json` 二选一 |
+| `contentType` | string | 默认 `application/json`（有 `json` 时） |
+| `expect` | int/string/object | 断言，见下文 |
+| `retry` | object/int | 该步骤的重试策略，覆盖顶层 |
+| `onFailure` | `stop` / `continue` | 该步骤失败后是否继续 |
+
+`id` 只能由字母、数字、下划线等组成（不要带点或空格），后续用 `${id.字段}` 引用。
+
+### 断言 `expect`
+
+```yaml
+expect:
+  status: 201               # 也可以是 [200, 201]，或 "2xx"
+  bodyContains: ["success"] # 单个字符串也可以
+  jsonPath:
+    data.id: { exists: true }
+    data.status: { equals: "ok" }
+    data.name: { contains: "book" }
+```
+
+- 不写 `status` 时接受任意 2xx。
+- `jsonPath` 路径支持 `data.token`、`items[0].id`，也可写 `$.data.token`。
+- 响应不是 JSON 时，`jsonPath` 断言直接失败。
+
+### 重试
+
+```yaml
+retry:
+  count: 2          # 额外重试次数，最多 10
+  delayMs: 500      # 每次重试前等待
+  on: [network, 500, 5xx]   # 触发重试的状态码；network 表示连接失败/超时
+  onNetworkError: true      # 等价于 on 里包含 network
+```
+
+默认触发：网络错误与 408/429/500/502/503/504。重试后仍不满足断言则记为失败。
+
+### 数据驱动
+
+```yaml
+data:
+  rows:
+    - { user: alice, amount: 12 }
+    - { user: bob, amount: 20 }
+```
+
+或指向数据文件：
+
+```yaml
+data:
+  file: cases.csv
+```
+
+CSV 首行是表头，其余每行一组；JSON 是对象数组。每行跑一遍整条流水线：
+
+- `${row.user}` 或直接 `${user}`
+- 行里的数组字段可用于循环，例如 `ids: [1, 2]` → `over: ${ids}`
+
+跨机器执行时，用 CLI `--data <文件>`（会读本地文件并内联传给服务端）或 MCP `dataContent` + `dataFormat`。
+
+### 循环
+
+```yaml
+steps:
+  - id: list
+    method: GET
+    url: /api/items
+
+  - loop:
+      over: ${list}        # 必须是数组
+      as: item             # 循环项变量
+      index: i             # 可选：下标变量
+      max: 1000            # 可选：安全上限，超过直接失败
+      steps:
+        - method: GET
+          url: /api/items/${item.id}?index=${i}
+```
+
+循环可以嵌套；内层循环覆盖同名变量。循环体内步骤失败时按 `stopOnError` / `onFailure` 处理。
+
+## 结果与报告
+
+`run_pipeline` 返回：
+
+```jsonc
+{
+  "name": "订单流程",
+  "passed": true,
+  "elapsedMs": 165,
+  "cases": [
+    {
+      "index": 0,
+      "label": "第 1 组（user=\"alice\"）",
+      "passed": true,
+      "elapsedMs": 160,
+      "steps": [
+        {
+          "id": "respA",
+          "name": "创建订单",
+          "method": "POST",
+          "url": "http://127.0.0.1:5199/api/orders",
+          "statusCode": 201,
+          "passed": true,
+          "attempts": 1,
+          "elapsedMs": 42,
+          "error": null,
+          "assertions": ["状态码 201", "jsonPath id 存在"]
+        }
+      ]
+    }
+  ],
+  "notes": [],
+  "reportFileName": "pipeline-...-20261102-153941.xml",
+  "reportPath": "F:/.../.postsharp/reports/pipeline-...xml"
+}
+```
+
+报告写到数据目录 `reports/`，同时通过 MCP `resources/read` 的 `postsharp://reports/{文件名}` 暴露给 AI。
+`format` 支持 `markdown` / `junit` / `json` / `none`。
+
+## 与套件的区别
+
+| | 套件 | 流水线 |
+| --- | --- | --- |
+| 编辑 | 三栏可视化编排器 | YAML/JSON 文本 |
+| 存储 | 写入工作区，可定时 | 文件，随项目走 |
+| 分支 | DAG、条件边、All/Any 汇合 | 顺序 + 循环 |
+| 断言 | 状态码、bodyContains、DAG 条件 | 状态码、bodyContains、JSONPath |
+| 适用 | 长期维护、需要回看历史 | CI、脚本化冒烟、AI 一次调用 |
+
+需要分支/汇合或可视化维护时仍用套件；需要「一份文件跑完整条业务链」时用流水线。
+
+## 当前限制
+
+- 不支持 multipart 上传、SOAP / gRPC、SSE 聚合；这些仍用套件或单请求。
+- 步骤按顺序执行，暂无并行组。
+- 流水线不写入工作区，因此不会出现在自动化页和运行历史里。
+- `${...}` 引用只支持 `a.b` 与 `a[0].b`，不支持函数或表达式运算。

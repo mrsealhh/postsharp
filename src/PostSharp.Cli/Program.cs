@@ -115,6 +115,12 @@ internal static class Program
             ("suite", "runs") => await ListSuiteRunsAsync(client, options, cancellationToken),
             ("suite", "rerun-failed") => await RerunFailedAsync(client, options, cancellationToken),
             ("suite", "continue") => await ContinueSuiteAsync(client, options, cancellationToken),
+            ("pipeline", "validate") => await ValidatePipelineAsync(
+                client,
+                options,
+                cancellationToken
+            ),
+            ("pipeline", "run") => await RunPipelineAsync(client, options, cancellationToken),
             ("request", "send") => await SendRequestAsync(client, options, cancellationToken),
             ("audit", "list") => await ListAuditAsync(client, options, cancellationToken),
             _ => throw new CliException($"未知命令：{string.Join(' ', command)}。"),
@@ -370,6 +376,183 @@ internal static class Program
         return PrintRunResult(result.Text, options.Json);
     }
 
+    private static async Task<int> ValidatePipelineAsync(
+        McpClient client,
+        CliOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = RequireArgument(options, 2, "pipeline validate <file>");
+        var result = await client.CallToolAsync(
+            "validate_pipeline",
+            BuildPipelineArguments(options, path),
+            cancellationToken
+        );
+        using var document = Parse(result.Text);
+        var root = document.RootElement;
+        var valid =
+            root.TryGetProperty("valid", out var validNode)
+            && validNode.ValueKind == JsonValueKind.True;
+        if (options.Json)
+        {
+            WriteJson(result.Text);
+            return valid ? 0 : 1;
+        }
+
+        Console.WriteLine($"{ReadString(root, "name")}：{(valid ? "校验通过" : "有问题")}");
+        Console.WriteLine(
+            $"步骤 {ReadInt(root, "stepCount")} 个，数据组 {ReadInt(root, "caseCount")} 组"
+        );
+        if (
+            root.TryGetProperty("issues", out var issues)
+            && issues.ValueKind == JsonValueKind.Array
+        )
+        {
+            foreach (var issue in issues.EnumerateArray())
+            {
+                var level =
+                    issue.TryGetProperty("isError", out var isError)
+                    && isError.ValueKind == JsonValueKind.True
+                        ? "错误"
+                        : "提醒";
+                Console.WriteLine(
+                    $"  [{level}] {ReadString(issue, "path")} {ReadString(issue, "message")}"
+                );
+            }
+        }
+
+        return valid ? 0 : 1;
+    }
+
+    private static async Task<int> RunPipelineAsync(
+        McpClient client,
+        CliOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = RequireArgument(options, 2, "pipeline run <file>");
+        var arguments = BuildPipelineArguments(options, path);
+        if (options.GetOption("--base-url", null) is { Length: > 0 } baseUrl)
+        {
+            arguments["baseUrl"] = baseUrl;
+        }
+
+        if (options.GetOption("--format", null) is { Length: > 0 } format)
+        {
+            arguments["format"] = format;
+        }
+
+        if (options.Variables.Count > 0)
+        {
+            var variables = new JsonObject();
+            foreach (var pair in options.Variables)
+            {
+                var index = pair.IndexOf('=');
+                if (index <= 0)
+                {
+                    throw new CliException($"--var 需要 key=value 形式：{pair}");
+                }
+
+                variables[pair[..index]] = pair[(index + 1)..];
+            }
+
+            arguments["vars"] = variables;
+        }
+
+        var result = await client.CallToolAsync("run_pipeline", arguments, cancellationToken);
+        using var document = Parse(result.Text);
+        var root = document.RootElement;
+        var passed =
+            root.TryGetProperty("passed", out var passedNode)
+            && passedNode.ValueKind == JsonValueKind.True;
+        if (options.Json)
+        {
+            WriteJson(result.Text);
+            return passed ? 0 : 1;
+        }
+
+        Console.WriteLine(
+            $"{ReadString(root, "name")}：{(passed ? "通过" : "失败")}（{ReadInt(root, "elapsedMs")} ms）"
+        );
+        if (root.TryGetProperty("cases", out var cases) && cases.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var testCase in cases.EnumerateArray())
+            {
+                var casePassed =
+                    testCase.TryGetProperty("passed", out var caseNode)
+                    && caseNode.ValueKind == JsonValueKind.True;
+                Console.WriteLine(
+                    $"  {ReadString(testCase, "label")}：{(casePassed ? "通过" : "失败")}"
+                );
+                if (
+                    !testCase.TryGetProperty("steps", out var steps)
+                    || steps.ValueKind != JsonValueKind.Array
+                )
+                {
+                    continue;
+                }
+
+                foreach (var step in steps.EnumerateArray())
+                {
+                    var stepPassed =
+                        step.TryGetProperty("passed", out var stepNode)
+                        && stepNode.ValueKind == JsonValueKind.True;
+                    var status =
+                        step.TryGetProperty("statusCode", out var statusNode)
+                        && statusNode.ValueKind == JsonValueKind.Number
+                            ? statusNode.GetInt32().ToString(CultureInfo.InvariantCulture)
+                            : "-";
+                    Console.WriteLine(
+                        $"    {(stepPassed ? "✓" : "✗")} {ReadString(step, "name")} "
+                            + $"{ReadString(step, "method")} {ReadString(step, "url")} → {status}"
+                    );
+                    if (ReadString(step, "error") is { Length: > 0 } error)
+                    {
+                        Console.WriteLine($"        {error}");
+                    }
+                }
+            }
+        }
+
+        if (ReadString(root, "reportFileName") is { Length: > 0 } report)
+        {
+            Console.WriteLine($"报告：{report}");
+        }
+
+        return passed ? 0 : 1;
+    }
+
+    private static JsonObject BuildPipelineArguments(CliOptions options, string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        if (!File.Exists(fullPath))
+        {
+            throw new CliException($"流水线文件不存在：{fullPath}");
+        }
+
+        var arguments = new JsonObject { ["document"] = File.ReadAllText(fullPath) };
+        var dataOption = options.GetOption("--data", null);
+        if (string.IsNullOrWhiteSpace(dataOption))
+        {
+            return arguments;
+        }
+
+        var dataPath = Path.GetFullPath(dataOption);
+        if (!File.Exists(dataPath))
+        {
+            throw new CliException($"数据文件不存在：{dataPath}");
+        }
+
+        arguments["dataContent"] = File.ReadAllText(dataPath);
+        arguments["dataFormat"] = PipelineFormatOf(dataPath);
+        return arguments;
+    }
+
+    private static string PipelineFormatOf(string path) =>
+        string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase)
+            ? "json"
+            : "csv";
+
     private static async Task<int> SendRequestAsync(
         McpClient client,
         CliOptions options,
@@ -523,6 +706,11 @@ internal static class Program
 
     private static void WriteJson(string text) => Console.WriteLine(text);
 
+    private static int ReadInt(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number
+            ? value.GetInt32()
+            : 0;
+
     private static void PrintHelp()
     {
         Console.WriteLine(
@@ -540,6 +728,8 @@ internal static class Program
               suite runs <suiteId>
               suite rerun-failed <suiteId> <runId>
               suite continue <suiteId> <runId> <stepId>
+              pipeline validate <文件>
+              pipeline run <文件> [--data 数据文件] [--var k=v] [--base-url URL] [--format junit|json|markdown]
               request send <requestId>
               audit list [--source UI|MCP] [--limit 数量]
               mcp-stdio（把 stdin/stdout 的 MCP JSON-RPC 转发到 HTTP 端点）
@@ -561,6 +751,8 @@ internal static class Program
               postsharp-cli suite list
               postsharp-cli suite run <suiteId> --json --html report.html
               postsharp-cli suite validate <suiteId> --json
+              postsharp-cli pipeline validate flow.yaml
+              postsharp-cli pipeline run flow.yaml --data cases.csv --format junit
               postsharp-cli audit list --source MCP --limit 20
               $env:POSTSHARP_MCP_TOKEN='...'; postsharp-cli suite list
             """
@@ -577,7 +769,8 @@ internal sealed record CliOptions(
     bool ShowHelp,
     bool ShowVersion,
     IReadOnlyList<string> Arguments,
-    IReadOnlyDictionary<string, string> Options
+    IReadOnlyDictionary<string, string> Options,
+    IReadOnlyList<string> Variables
 )
 {
     public static string CurrentVersion =>
@@ -594,6 +787,7 @@ internal sealed record CliOptions(
         var version = false;
         var arguments = new List<string>();
         var options = new Dictionary<string, string>(StringComparer.Ordinal);
+        var variables = new List<string>();
 
         for (var index = 0; index < args.Count; index++)
         {
@@ -634,8 +828,18 @@ internal sealed record CliOptions(
                 case "--client":
                     clientName = ReadValue(args, ref index, argument);
                     break;
-                case "--limit" or "--source" or "--junit" or "--markdown" or "--html":
+                case "--limit"
+                or "--source"
+                or "--junit"
+                or "--markdown"
+                or "--html"
+                or "--data"
+                or "--base-url"
+                or "--format":
                     options[argument] = ReadValue(args, ref index, argument);
+                    break;
+                case "--var":
+                    variables.Add(ReadValue(args, ref index, argument));
                     break;
                 default:
                     if (argument.StartsWith("--", StringComparison.Ordinal))
@@ -657,7 +861,8 @@ internal sealed record CliOptions(
             help,
             version,
             arguments,
-            options
+            options,
+            variables
         );
     }
 

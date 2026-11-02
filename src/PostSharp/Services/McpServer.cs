@@ -869,6 +869,7 @@ public sealed partial class McpServer
                 "validate_suite" => await _workspace
                     .ValidateSuiteAsync(RequireGuid(arguments, "id"))
                     .ConfigureAwait(false),
+                "validate_pipeline" => ValidatePipelineTool(arguments),
                 "list_suites" => await _workspace.ListSuitesAsync().ConfigureAwait(false),
                 "run_suite" => await _workspace
                     .RunSuiteAsync(
@@ -876,6 +877,8 @@ public sealed partial class McpServer
                         new McpCallContext("run_suite", _clientName, policy.PermissionLabel),
                         cancellationToken
                     )
+                    .ConfigureAwait(false),
+                "run_pipeline" => await RunPipelineToolAsync(arguments, cancellationToken)
                     .ConfigureAwait(false),
                 "start_suite_run" => await _workspace
                     .StartSuiteRunAsync(
@@ -1768,6 +1771,11 @@ public sealed partial class McpServer
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("套件 id") }, "id")
             ),
             Tool(
+                "validate_pipeline",
+                "校验 YAML/JSON 流水线：步骤、断言、循环、数据驱动和 ${步骤别名.字段} 引用是否合法，不发送请求",
+                ValidatePipelineSchema()
+            ),
+            Tool(
                 "update_suite",
                 "修改套件名称/策略；传入 steps 或 workflow 可整体替换步骤和 DAG，可用于增删、重排或分支编排",
                 ObjectSchema(
@@ -1794,6 +1802,11 @@ public sealed partial class McpServer
                 "run_suite",
                 "运行自动化套件并返回每个步骤的断言、延迟、映射执行结果和运行 id",
                 ObjectSchema(new JsonObject { ["id"] = StringSchema("套件 id") }, "id")
+            ),
+            Tool(
+                "run_pipeline",
+                "执行 YAML/JSON 流水线（步骤间用 ${别名.字段} 取上一步响应），支持数据行、循环、重试和状态/JSON 断言，可直接写报告",
+                RunPipelineSchema()
             ),
             Tool(
                 "start_suite_run",
