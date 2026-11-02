@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Avalonia;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PostSharp.Services;
@@ -92,6 +93,15 @@ public sealed partial class PipelineEditorNode : ObservableObject
     [ObservableProperty]
     private string _parallelMaxText = "0";
 
+    [ObservableProperty]
+    private bool _isSelected;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Indent))]
+    private int _depth;
+
+    public Thickness Indent => new(Depth * 14, 0, 0, 0);
+
     public bool IsRequest => Kind == "request";
 
     public bool IsLoop => Kind == "loop";
@@ -147,9 +157,15 @@ public sealed partial class PipelineEditorViewModel : ObservableObject
         }
 
         SelectedNode = Nodes.FirstOrDefault();
+        RebuildFlatNodes();
     }
 
     public ObservableCollection<PipelineEditorNode> Nodes { get; } = new();
+
+    /// <summary>Pre-order list for the flat editor list; keeps nesting readable without TreeView theming.</summary>
+    public ObservableCollection<PipelineEditorNode> FlatNodes { get; } = new();
+
+    public bool HasNodes => FlatNodes.Count > 0;
 
     [ObservableProperty]
     private PipelineEditorNode? _selectedNode;
@@ -163,8 +179,42 @@ public sealed partial class PipelineEditorViewModel : ObservableObject
     [ObservableProperty]
     private string _statusText = "选择左侧节点编辑；分组可以继续添加子步骤。";
 
-    partial void OnSelectedNodeChanged(PipelineEditorNode? value) =>
+    partial void OnSelectedNodeChanged(PipelineEditorNode? value)
+    {
+        foreach (var node in FlatNodes)
+        {
+            node.IsSelected = ReferenceEquals(node, value);
+        }
+
         OnPropertyChanged(nameof(HasSelection));
+    }
+
+    [RelayCommand]
+    private void SelectNode(PipelineEditorNode? node)
+    {
+        SelectedNode = node;
+    }
+
+    private void RebuildFlatNodes()
+    {
+        FlatNodes.Clear();
+        foreach (var node in Nodes)
+        {
+            AddFlat(node, 0);
+        }
+
+        OnPropertyChanged(nameof(HasNodes));
+    }
+
+    private void AddFlat(PipelineEditorNode node, int depth)
+    {
+        node.Depth = depth;
+        FlatNodes.Add(node);
+        foreach (var child in node.Children)
+        {
+            AddFlat(child, depth + 1);
+        }
+    }
 
     public bool HasSelection => SelectedNode is not null;
 
@@ -205,6 +255,7 @@ public sealed partial class PipelineEditorViewModel : ObservableObject
         var index = list.IndexOf(node);
         list.Remove(node);
         SelectedNode = list.Count == 0 ? null : list[Math.Clamp(index, 0, list.Count - 1)];
+        AfterStructureChanged();
         StatusText = "已删除节点。";
     }
 
@@ -221,6 +272,7 @@ public sealed partial class PipelineEditorViewModel : ObservableObject
         if (index > 0)
         {
             list.Move(index, index - 1);
+            AfterStructureChanged();
         }
     }
 
@@ -237,6 +289,16 @@ public sealed partial class PipelineEditorViewModel : ObservableObject
         if (index >= 0 && index < list.Count - 1)
         {
             list.Move(index, index + 1);
+            AfterStructureChanged();
+        }
+    }
+
+    private void AfterStructureChanged()
+    {
+        RebuildFlatNodes();
+        if (SelectedNode is not null && !FlatNodes.Contains(SelectedNode))
+        {
+            SelectedNode = null;
         }
     }
 
@@ -247,6 +309,7 @@ public sealed partial class PipelineEditorViewModel : ObservableObject
         {
             group.Children.Add(new PipelineEditorNode { Kind = "request", Name = "子步骤" });
             group.RefreshDetail();
+            AfterStructureChanged();
         }
     }
 
@@ -264,6 +327,7 @@ public sealed partial class PipelineEditorViewModel : ObservableObject
                 }
             );
             group.RefreshDetail();
+            AfterStructureChanged();
         }
     }
 
@@ -274,6 +338,7 @@ public sealed partial class PipelineEditorViewModel : ObservableObject
         {
             group.Children.Add(new PipelineEditorNode { Kind = "parallel" });
             group.RefreshDetail();
+            AfterStructureChanged();
         }
     }
 
@@ -344,6 +409,7 @@ public sealed partial class PipelineEditorViewModel : ObservableObject
         }
 
         SelectedNode = node;
+        AfterStructureChanged();
         StatusText = $"已添加{node.Title}。";
     }
 

@@ -71,30 +71,55 @@
                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                 Padding="4"
             >
-                <TreeView
-                    ItemsSource="{Binding Nodes}"
-                    SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
-                >
-                    <TreeView.ItemTemplate>
-                        <TreeDataTemplate
-                            ItemsSource="{Binding Children}"
-                            x:DataType="vm:PipelineEditorNode"
-                        >
-                            <StackPanel Spacing="2" Margin="2,4">
-                                <TextBlock
-                                    Text="{Binding Title}"
-                                    FontSize="{arc:ArcDesignTokenResource TypeSM}"
-                                />
-                                <TextBlock
-                                    Text="{Binding Detail}"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                    TextTrimming="CharacterEllipsis"
-                                />
-                            </StackPanel>
-                        </TreeDataTemplate>
-                    </TreeView.ItemTemplate>
-                </TreeView>
+                <Panel>
+                    <ScrollViewer>
+                        <ItemsControl ItemsSource="{Binding FlatNodes}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PipelineEditorNode">
+                                    <arc:Button
+                                        Variant="Ghost"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Left"
+                                        Padding="8,6"
+                                        Margin="0,1"
+                                        Command="{Binding $parent[Window].DataContext.SelectNodeCommand}"
+                                        CommandParameter="{Binding}"
+                                        AutomationProperties.Name="{Binding Title}"
+                                    >
+                                        <StackPanel Spacing="2" Margin="{Binding Indent}">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock
+                                                    Text="●"
+                                                    IsVisible="{Binding IsSelected}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                    Foreground="{arc:ArcDesignTokenResource Accent}"
+                                                />
+                                                <TextBlock
+                                                    Text="{Binding Title}"
+                                                    FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                                                    Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                />
+                                            </StackPanel>
+                                            <TextBlock
+                                                Text="{Binding Detail}"
+                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                                TextTrimming="CharacterEllipsis"
+                                            />
+                                        </StackPanel>
+                                    </arc:Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock
+                        Text="还没有节点，点击上方「添加步骤」。"
+                        IsVisible="{Binding !HasNodes}"
+                        Margin="12"
+                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                    />
+                </Panel>
             </Border>
 
             <ScrollViewer Grid.Column="2">
@@ -125,26 +150,28 @@
                             FontSize="{arc:ArcDesignTokenResource TypeXS}"
                             Foreground="{arc:ArcDesignTokenResource TextMuted}"
                         />
-                        <TextBox
+                        <arc:Textarea
                             Text="{Binding SelectedNode.HeadersText, Mode=TwoWay}"
-                            AcceptsReturn="True"
-                            TextWrapping="NoWrap"
+                            IsLabelVisible="False"
+                            FrameHeight="70"
+                            MinHeight="52"
                             FontFamily="Consolas, monospace"
                             FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                            MinHeight="56"
+                            AutomationProperties.Name="请求头（每行 Key: Value）"
                         />
                         <TextBlock
                             Text="查询参数（每行 Key: Value）"
                             FontSize="{arc:ArcDesignTokenResource TypeXS}"
                             Foreground="{arc:ArcDesignTokenResource TextMuted}"
                         />
-                        <TextBox
+                        <arc:Textarea
                             Text="{Binding SelectedNode.QueryText, Mode=TwoWay}"
-                            AcceptsReturn="True"
-                            TextWrapping="NoWrap"
+                            IsLabelVisible="False"
+                            FrameHeight="70"
+                            MinHeight="52"
                             FontFamily="Consolas, monospace"
                             FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                            MinHeight="56"
+                            AutomationProperties.Name="查询参数（每行 Key: Value）"
                         />
                         <arc:Select
                             Label="请求体"
@@ -154,14 +181,14 @@
                             <arc:SelectItem Content="JSON" Value="json" />
                             <arc:SelectItem Content="原始文本" Value="raw" />
                         </arc:Select>
-                        <TextBox
+                        <arc:Textarea
                             Text="{Binding SelectedNode.BodyText, Mode=TwoWay}"
-                            AcceptsReturn="True"
-                            TextWrapping="NoWrap"
+                            IsLabelVisible="False"
+                            FrameHeight="140"
+                            MinHeight="52"
                             FontFamily="Consolas, monospace"
                             FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                            MinHeight="90"
-                            MaxHeight="180"
+                            AutomationProperties.Name="请求体内容"
                         />
                         <arc:Input
                             Label="期望状态（如 200 / 2xx / 200,201）"
@@ -176,13 +203,14 @@
                             FontSize="{arc:ArcDesignTokenResource TypeXS}"
                             Foreground="{arc:ArcDesignTokenResource TextMuted}"
                         />
-                        <TextBox
+                        <arc:Textarea
                             Text="{Binding SelectedNode.JsonPathText, Mode=TwoWay}"
-                            AcceptsReturn="True"
-                            TextWrapping="NoWrap"
+                            IsLabelVisible="False"
+                            FrameHeight="70"
+                            MinHeight="52"
                             FontFamily="Consolas, monospace"
                             FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                            MinHeight="56"
+                            AutomationProperties.Name="JSONPath 断言"
                         />
                         <Grid ColumnDefinitions="1*,1*" ColumnSpacing="8">
                             <arc:Input

@@ -17,7 +17,7 @@ public sealed class PipelineCenterTests
             Assert.Equal(4, center.Templates.Count);
 
             center.NameText = "demo-flow";
-            center.Content = center.Templates[0].Content;
+            center.YamlText = center.Templates[0].Content;
             center.SavePipelineCommand.Execute(null);
 
             var saved = Assert.Single(center.Files);

@@ -40,29 +40,48 @@
                 CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
                 Padding="4"
             >
-                <ListBox
-                    ItemsSource="{Binding Files}"
-                    SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
-                    Background="Transparent"
-                    BorderThickness="0"
-                >
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:PipelineFileItem">
-                            <StackPanel Spacing="2" Margin="4,6">
-                                <TextBlock
-                                    Text="{Binding Name}"
-                                    FontSize="{arc:ArcDesignTokenResource TypeSM}"
-                                    TextTrimming="CharacterEllipsis"
-                                />
-                                <TextBlock
-                                    Text="{Binding Modified, StringFormat={}{0:MM-dd HH:mm}}"
-                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                />
-                            </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                <Panel>
+                    <ScrollViewer>
+                        <ItemsControl ItemsSource="{Binding Files}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PipelineFileItem">
+                                    <arc:Button
+                                        Variant="Ghost"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Left"
+                                        Padding="8,6"
+                                        Margin="0,2"
+                                        Command="{Binding $parent[UserControl].DataContext.OpenFileCommand}"
+                                        CommandParameter="{Binding}"
+                                        AutomationProperties.Name="{Binding Name}"
+                                    >
+                                        <StackPanel Spacing="2">
+                                            <TextBlock
+                                                Text="{Binding Name}"
+                                                FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                                                Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                                TextTrimming="CharacterEllipsis"
+                                            />
+                                            <TextBlock
+                                                Text="{Binding Modified, StringFormat={}{0:MM-dd HH:mm}}"
+                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            />
+                                        </StackPanel>
+                                    </arc:Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock
+                        Text="还没有流水线文件。点击「新建」，或从下方场景模板开始。"
+                        IsVisible="{Binding !HasFiles}"
+                        Margin="12"
+                        TextWrapping="Wrap"
+                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                        Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                    />
+                </Panel>
             </Border>
 
             <Border
@@ -120,13 +139,15 @@
                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
                     Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                 />
-                <TextBox
+                <arc:Input
                     Grid.Column="1"
                     Text="{Binding NameText, Mode=TwoWay}"
-                    PlaceholderText="流水线名称"
+                    Placeholder="流水线名称"
+                    IsLabelVisible="False"
                     MaxWidth="320"
                     HorizontalAlignment="Left"
                     MinWidth="220"
+                    AutomationProperties.Name="流水线名称"
                 />
                 <arc:Button
                     Grid.Column="2"
@@ -178,26 +199,18 @@
                 TextTrimming="CharacterEllipsis"
             />
 
-            <Border
+            <arc:Textarea
                 Grid.Row="2"
-                Background="{arc:ArcDesignTokenResource SurfaceMuted}"
-                CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
-                Padding="2"
-            >
-                <TextBox
-                    Text="{Binding Content, Mode=TwoWay}"
-                    AcceptsReturn="True"
-                    AcceptsTab="True"
-                    TextWrapping="NoWrap"
-                    FontFamily="Consolas, monospace"
-                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    VerticalContentAlignment="Top"
-                    PlaceholderText="在这里粘贴或编辑 YAML"
-                    AutomationProperties.Name="流水线 YAML"
-                />
-            </Border>
+                Text="{Binding YamlText, Mode=TwoWay}"
+                IsLabelVisible="False"
+                IsResizable="True"
+                FrameHeight="520"
+                MinHeight="220"
+                FontFamily="Consolas, monospace"
+                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                Placeholder="在这里粘贴或编辑 YAML"
+                AutomationProperties.Name="流水线 YAML"
+            />
 
             <Border
                 Grid.Row="3"
