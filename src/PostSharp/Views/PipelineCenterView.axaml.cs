@@ -1,5 +1,7 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
+using PostSharp.Controls;
 using PostSharp.Services;
 using PostSharp.ViewModels;
 
@@ -10,6 +12,40 @@ public partial class PipelineCenterView : UserControl
     public PipelineCenterView()
     {
         InitializeComponent();
+        AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+    }
+
+    private void OnKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (DataContext is not PipelineCenterViewModel viewModel)
+        {
+            return;
+        }
+
+        if (e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control))
+        {
+            if (e.Key == Avalonia.Input.Key.S)
+            {
+                viewModel.SavePipelineCommand.Execute(null);
+                e.Handled = true;
+            }
+            else if (e.Key == Avalonia.Input.Key.Enter)
+            {
+                viewModel.RunPipelineCommand.Execute(null);
+                e.Handled = true;
+            }
+        }
+    }
+
+    private void OnFileRowClick(object? sender, RoutedEventArgs e)
+    {
+        if (
+            DataContext is PipelineCenterViewModel viewModel
+            && sender is SelectableRow { DataContext: PipelineFileItem file }
+        )
+        {
+            viewModel.OpenFileCommand.Execute(file);
+        }
     }
 
     private void OnVisualizeClick(object? sender, RoutedEventArgs e)
@@ -26,7 +62,6 @@ public partial class PipelineCenterView : UserControl
         }
 
         GraphCanvas.Graph = PipelineWorkflowMapper.ToWorkflowGraph(graph);
-        GraphPanel.IsVisible = true;
         Avalonia.Threading.Dispatcher.UIThread.Post(
             () =>
             {
