@@ -148,6 +148,47 @@ jobs:
           print(f"suite passed {result['passed']}/{result['total']}")
           PY
 
+      - name: Publish CLI
+        run: |
+          dotnet publish src/PostSharp.Cli/PostSharp.Cli.csproj \
+            -c Release -r linux-x64 --self-contained false \
+            -p:Version=0.0.0-ci -o artifacts/cli
+
+      - name: Run pipeline examples
+        run: |
+          set -euo pipefail
+          chmod +x artifacts/cli/postsharp-cli
+          mkdir -p test-results
+
+          run_pipeline() {
+            local name="$1"
+            shift
+            artifacts/cli/postsharp-cli pipeline run "$@" \
+              --format junit --copy-report "test-results/$name.xml" --json > "test-results/$name.json"
+            python3 - "$name" <<'PY'
+          import json
+          import sys
+
+          name = sys.argv[1]
+          data = json.load(open(f"test-results/{name}.json"))
+          assert data["passed"], data
+          print(f"{name}: passed, {len(data['cases'])} case(s)")
+          PY
+          }
+
+          run_pipeline order-flow docs/examples/order-flow.yaml
+          run_pipeline parallel docs/examples/parallel.yaml
+          run_pipeline data-driven-loop docs/examples/data-driven-loop.yaml
+          run_pipeline data-matrix docs/examples/data-matrix.yaml --data docs/examples/order-cases.csv
+
+      - name: Upload pipeline reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-reports
+          path: test-results
+          if-no-files-found: ignore
+
       - name: Stop headless service
         if: always()
         run: |

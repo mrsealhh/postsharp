@@ -1,5 +1,27 @@
 # 更新日志
 
+## v1.11.13（待发布）
+
+### 流水线并发与 HTTP
+
+- 新增并发组 `parallel: { max, steps: [...] }`：组内步骤同时执行，`max` 控制并发度，默认取流水线 `maxParallelism`（4）。
+- 组内步骤互不可见，整组结束后别名才对后续步骤可见；某步失败且 `stopOnError` 时会取消同组未完成的请求。
+- 新增常用 HTTP 字段：`query`、`form`、`redirects`、`timeoutSeconds`、`auth: { username, password }`（Basic）。
+- 循环、并发组可以互相嵌套。
+
+### CI 与无头 CLI
+
+- 主 Release 起同时发布 `PostSharp.Cli-win-x64.zip`、`PostSharp.Cli-linux-x64.zip`、`PostSharp.Cli-osx-arm64.zip`（自包含）。
+- 新增 Linux 一体化无头包 `PostSharp-headless-linux-x64.zip`：应用 + `cli/postsharp-cli` + `postsharp-cli.sh`。
+- 新增可复用 workflow `.github/workflows/postsharp-pipeline.yml`：一条 `uses` 下载无头包、启动服务、运行调用方的 YAML 流水线并上传 JUnit。
+- CI 增加流水线自测：`order-flow`、`parallel`、数据循环、CSV 矩阵四份示例全部执行并上传报告。
+- CLI `pipeline run` 新增 `--copy-report <路径>`，把服务端生成的报告复制到 CI 工作区。
+- 旧的 `cli-v1.1.0` pre-release 由主 Release 中的 CLI 包取代。
+
+### 测试
+
+- 新增并发组并发度、并发组内引用拒绝、query/form/Basic 认证用例；320 个测试通过。
+
 ## v1.11.12 — 2026-11-02
 
 ### 更新提示卡

@@ -544,10 +544,13 @@ steps:
 - **重试**：`retry: { count, delayMs, on: [network, 500, 5xx] }` 可写在流水线或单个步骤上，默认重试 408/429/500/502/503/504 与网络错误，最多 10 次。
 - **数据驱动**：`data.rows` 内联对象数组，或用 `data.file` 指向 CSV（首行表头）/JSON 数组；每行跑一遍整条流水线，字段用 `${row.user}` 或直接 `${user}` 读取。
 - **循环节点**：`loop: { over: ${list}, as: item, index: i, max: 1000, steps: [...] }`，`over` 必须是数组，循环体内可用 `${item.xxx}` 和 `${i}`。
-- **失败策略**：`stopOnError` 控制整条流水线，步骤可用 `onFailure: continue` 单独放行；失败步骤的断言和错误原因写入结果与报告。
-- **CLI**：`postsharp-cli pipeline validate <文件>` 只校验；`postsharp-cli pipeline run <文件> [--data 数据文件] [--var k=v] [--base-url URL] [--format junit|json|markdown]` 执行并按退出码（0 通过 / 1 失败 / 2 参数或服务端错误 / 3 连接失败或取消）接入 CI。
+- **并发组**：`parallel: { max: 3, steps: [...] }` 同时发起多个请求，`max` 控制并发度（默认取 `maxParallelism`）；组内步骤互不可见，组结束后别名才对后续可见。
+- **HTTP 常用字段**：`query`、`form`、`json` / `body`、`headers`、`redirects`、`timeoutSeconds`、`auth: { username, password }`。
+- **失败策略**：`stopOnError` 控制整条流水线，步骤可用 `onFailure: continue` 单独放行；并发组内失败会取消同组未完成的请求。
+- **CLI**：`postsharp-cli pipeline validate <文件>` 只校验；`postsharp-cli pipeline run <文件> [--data 数据文件] [--var k=v] [--base-url URL] [--format junit|json|markdown] [--copy-report 路径]` 执行并按退出码（0 通过 / 1 失败 / 2 参数或服务端错误 / 3 连接失败或取消）接入 CI。
 - **MCP**：`validate_pipeline` / `run_pipeline`，`document` 传 YAML/JSON 文本或 `path` 传服务端文件路径；AI 可一次调用跑完整条链路。
-- 示例见 `docs/examples/order-flow.yaml`、`docs/examples/data-driven-loop.yaml`、`docs/examples/data-matrix.yaml` + `docs/examples/order-cases.csv`，完整字段说明见 `docs/pipeline.md`。
+- **CI**：`.github/workflows/postsharp-pipeline.yml` 是可复用 workflow，产品线仓库一条 `uses` 即可下载无头包、启动服务、跑流水线并上传 JUnit。
+- 示例见 `docs/examples/order-flow.yaml`、`parallel.yaml`、`data-driven-loop.yaml`、`data-matrix.yaml` + `order-cases.csv`，完整字段说明见 `docs/pipeline.md`。
 
 流水线当前是 CLI / MCP 优先的能力：不写入套件列表，也没有可视化编辑器；需要长期维护、可视化分支时仍建议用套件编排器。
 
@@ -1025,6 +1028,8 @@ docs/
 | 套件窗口 | 组装套件/映射窗口按主窗口宽度自适应加宽；映射规则单行五列，滚动区可展示更多规则 |
 | 套件预检 | 用 124 个集合 / 1014 个请求（113 个是子集合）的真实工作区验证：v1.11.9 的 `validate_suite` 抛 `An item with the same key has already been added`，修复后预检通过、后台运行 2/2 通过，编辑器「预检」显示「预检通过」 |
 | YAML 流水线 | 实机 `--headless` + `postsharp-cli pipeline validate/run`：`order-flow.yaml` 3 步链路通过（POST 201 → GET 200 → PATCH 用捕获 id 拼出 `/api/orders/ord_2026_1042`），`data-driven-loop.yaml` 2 组数据 + 循环通过，`data-matrix.yaml` + CSV 2 组通过，JUnit 报告写入 `reports`；单测覆盖 YAML/JSON 解析、未知引用、链式取值、重试、循环、CSV 数据行和断言失败 |
+| 流水线并发 | 实机 `parallel.yaml`：先创建订单，再并发 3 个请求（`max: 3`）后汇总，5 个步骤全部通过；单测用 3 个 60ms 请求验证峰值并发为 2，并确认并发组内引用同组别名会被预检拒绝 |
+| 无头 CLI 包 | 本地运行 `build-headless-release.ps1` 生成 `PostSharp-headless-linux-x64.zip`：含 `PostSharp`、`cli/postsharp-cli`、`postsharp-cli.sh`，`PostSharp` 与 CLI 均带 Unix 可执行位；`postsharp-cli pipeline run ... --copy-report` 实测把 JUnit 复制到指定路径 |
 | 无头标题栏 | 顶部栏空白区域拖拽移动；右上角最小化/最大化还原/关闭；边缘缩放可用 |
 | 回收站对齐 | 方法、名称、状态、时间、恢复/永久删除列固定对齐 |
 | 右键菜单 | 请求/集合菜单可用，复制请求/URL 已验证 |
@@ -1176,6 +1181,8 @@ master                 稳定可发布
 - `artifacts/PostSharp-linux-x64.zip` / `.sha256`：Linux x64 自包含包，根目录 `run.sh` 已具备可执行位；不启用 Windows 自动更新。
 - `artifacts/PostSharp-osx-arm64.zip` / `.sha256`：macOS arm64 自包含包，根目录 `run.command` 已具备可执行位；未签名、未公证，不启用 Windows 自动更新。
 - `artifacts/PostSharp-aot-win-x64.zip` / `.sha256`：Windows x64 NativeAOT 单文件包，约 63 MB；不含存储插件（AOT 下自动回退本地 SQLite）；带 `.postsharp-aot` 与更新标记，只从 `PostSharp-aot-win-x64.zip` 自更新，不会和 JIT 包混装。
+- `artifacts/PostSharp.Cli-<平台>.zip` / `.sha256`：Windows / Linux / macOS 自包含 CLI，解压后运行 `postsharp-cli`（Windows 为 `postsharp-cli.exe`）。
+- `artifacts/PostSharp-headless-linux-x64.zip` / `.sha256`：Linux 一体化无头包，包含无头应用、`cli/postsharp-cli` 和 `postsharp-cli.sh` 启动脚本，CI 一次下载即可跑流水线。
 - `artifacts/plugins/PostSharp.Storage.*.zip`：默认四类与 ClickHouse / Doris / StarRocks 插件包，可作为 Release 附加资产单独上传。
 
 三个 ZIP 由 `scripts/zip-directory.ps1` 统一生成：条目使用 `/`，启动脚本为 LF，`PostSharp`、`run.sh`、`run.command` 带 Unix `0100755` 可执行位。打包脚本会删除插件里的 `win-x64` / `linux-x64` / `osx-*` 自包含 RID 目录，以及 `runtimes` 中非目标平台的子目录；1.10.19 的体积约为 Windows 73 MB、Linux 72 MB、macOS 73 MB。CLI 单独打包，不写入这些包。
@@ -1234,7 +1241,7 @@ master                 稳定可发布
 - 授权只支持请求与集合两级（含多级集合继承），没有工作区级或环境级默认授权；同一集合的授权由该集合对象持有，未单独覆盖的下级请求共用同一个令牌，刷新后同步生效。
 - 单点登录使用系统默认浏览器；复制请求会复制一份独立的授权与令牌，副本重新登录或刷新不会影响原请求；删除集合/请求时其授权配置一起移除。
 - MCP 仅本地回环并拒绝网页来源；已支持可选本机 token 和只读模式，但仍无 OAuth、SSE 通知和按工具细粒度权限。后台独立服务是一个隐藏的同程序进程，不是注册为 Windows 服务 / systemd / launchd，也不支持开机自启；服务进程异常退出后端点会停止。MCP 套件已支持任意 DAG、结构化预检、后台运行/进度轮询/取消、运行历史和失败重跑；后台任务只保存在当前进程内，应用退出后需通过运行历史查看已完成结果。
-- CLI 不再随桌面安装包分发，需要从独立 `cli-v1.1.0` Release 下载；CLI 调用时要求桌面端正在运行或保持 MCP 托盘常驻。
+- CLI 不再随桌面安装包分发，改为在主 Release 下载 `PostSharp.Cli-<平台>.zip`；Linux 自动化测试可直接用一体化包 `PostSharp-headless-linux-x64.zip`（应用 + CLI）。CLI 调用时要求桌面端正在运行或保持 MCP 托盘常驻（无头包自带启动脚本）。
 - Windows 尚未 Authenticode 签名；Linux/macOS 预览包未签名，macOS 未公证，Gatekeeper 可能需要手动允许或执行 `xattr -dr com.apple.quarantine`。真正的签名/公证需要证书、Apple 账号和对应构建环境。
 - 删除环境仍为直接删除，尚未进入回收站。
 

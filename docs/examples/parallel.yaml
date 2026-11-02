@@ -1,0 +1,43 @@
+# 并发组：同一批接口并行请求，最多 3 个同时进行；组结束后别名才可见。
+# 运行：postsharp-cli pipeline run docs/examples/parallel.yaml --format junit --copy-report test-results/pipeline.xml
+name: 并发冒烟
+baseUrl: http://127.0.0.1:5199
+maxParallelism: 4
+steps:
+  - id: order
+    name: 先创建订单
+    method: POST
+    url: /api/orders
+    json:
+      item: book
+    expect:
+      status: 201
+
+  - name: 并行检查
+    parallel:
+      max: 3
+      steps:
+        - id: health
+          method: GET
+          url: /api/health
+          expect: { status: 200 }
+        - id: users
+          method: GET
+          url: /api/users
+          expect: { status: 200 }
+        - id: userOne
+          method: GET
+          url: /api/users/1
+          query: { id: "1" }
+          expect:
+            status: 200
+            jsonPath:
+              id: { equals: 1 }
+
+  - name: 汇总
+    method: POST
+    url: /api/echo
+    json:
+      orderId: ${order.id}
+      health: ok
+    expect: { status: 200 }

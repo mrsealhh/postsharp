@@ -1805,7 +1805,7 @@ public sealed partial class McpServer
             ),
             Tool(
                 "run_pipeline",
-                "执行 YAML/JSON 流水线（步骤间用 ${别名.字段} 取上一步响应），支持数据行、循环、重试和状态/JSON 断言，可直接写报告",
+                "执行 YAML/JSON 流水线（步骤间用 ${别名.字段} 取上一步响应），支持数据行、循环、并发组、重试和状态/JSON 断言，可直接写报告",
                 RunPipelineSchema()
             ),
             Tool(

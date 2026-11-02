@@ -158,6 +158,19 @@ public sealed class PipelineRunner
             );
         }
 
+        if (node.Kind == PipelineNodeKind.Parallel)
+        {
+            return await ExecuteParallelAsync(
+                pipeline,
+                options,
+                node,
+                roots,
+                baseUrl,
+                location,
+                cancellationToken
+            );
+        }
+
         var result = await ExecuteRequestAsync(
             pipeline,
             options,
@@ -168,6 +181,133 @@ public sealed class PipelineRunner
             cancellationToken
         );
         return (new[] { result }, !result.Passed);
+    }
+
+    private async Task<(
+        IReadOnlyList<PipelineStepResult> Results,
+        bool Failed
+    )> ExecuteParallelAsync(
+        AutomationPipeline pipeline,
+        PipelineRunOptions options,
+        PipelineNode node,
+        Dictionary<string, JsonNode?> roots,
+        string? baseUrl,
+        string location,
+        CancellationToken cancellationToken
+    )
+    {
+        var parallelism = Math.Clamp(
+            node.Parallelism > 0 ? node.Parallelism : pipeline.MaxParallelism,
+            1,
+            64
+        );
+        var count = node.Children.Count;
+        var resultsByIndex = new List<PipelineStepResult>[count];
+        var failedByIndex = new bool[count];
+        var capturesByIndex = new Dictionary<string, JsonNode?>[count];
+        var originalKeys = roots.Keys.ToHashSet(StringComparer.Ordinal);
+        using var gate = new SemaphoreSlim(parallelism, parallelism);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var tasks = new List<Task>(count);
+        for (var index = 0; index < count; index++)
+        {
+            var childIndex = index;
+            var child = node.Children[childIndex];
+            tasks.Add(
+                Task.Run(
+                    async () =>
+                    {
+                        try
+                        {
+                            await gate.WaitAsync(linked.Token).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            resultsByIndex[childIndex] = new List<PipelineStepResult>
+                            {
+                                FailedStep(child, child.Url ?? string.Empty, 0, "已取消。"),
+                            };
+                            failedByIndex[childIndex] = true;
+                            return;
+                        }
+
+                        try
+                        {
+                            var localRoots = new Dictionary<string, JsonNode?>(
+                                roots,
+                                StringComparer.Ordinal
+                            );
+                            var (childResults, childFailed) = await ExecuteNodeAsync(
+                                    pipeline,
+                                    options,
+                                    child,
+                                    localRoots,
+                                    baseUrl,
+                                    $"{location}.parallel.steps[{childIndex}]",
+                                    linked.Token
+                                )
+                                .ConfigureAwait(false);
+                            resultsByIndex[childIndex] = childResults.ToList();
+                            failedByIndex[childIndex] = childFailed;
+                            capturesByIndex[childIndex] = localRoots;
+                            if (
+                                childFailed
+                                && pipeline.StopOnError
+                                && child.OnFailure != "continue"
+                            )
+                            {
+                                linked.Cancel();
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            resultsByIndex[childIndex] = new List<PipelineStepResult>
+                            {
+                                FailedStep(child, child.Url ?? string.Empty, 0, "已取消。"),
+                            };
+                            failedByIndex[childIndex] = true;
+                        }
+                        catch (Exception exception)
+                        {
+                            resultsByIndex[childIndex] = new List<PipelineStepResult>
+                            {
+                                FailedStep(child, child.Url ?? string.Empty, 0, exception.Message),
+                            };
+                            failedByIndex[childIndex] = true;
+                        }
+                        finally
+                        {
+                            gate.Release();
+                        }
+                    },
+                    CancellationToken.None
+                )
+            );
+        }
+
+        await Task.WhenAll(tasks).ConfigureAwait(false);
+
+        var results = new List<PipelineStepResult>();
+        for (var index = 0; index < count; index++)
+        {
+            if (resultsByIndex[index] is { } childResults)
+            {
+                results.AddRange(childResults);
+            }
+
+            if (capturesByIndex[index] is { } localRoots)
+            {
+                foreach (var entry in localRoots)
+                {
+                    if (!originalKeys.Contains(entry.Key))
+                    {
+                        roots[entry.Key] = entry.Value;
+                    }
+                }
+            }
+        }
+
+        return (results, failedByIndex.Any(failed => failed));
     }
 
     private async Task<(IReadOnlyList<PipelineStepResult> Results, bool Failed)> ExecuteLoopAsync(
@@ -270,8 +410,14 @@ public sealed class PipelineRunner
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var url = ResolveUrl(node.Url ?? string.Empty, baseUrl, roots, $"{location}.url");
+            var url = AppendQuery(
+                ResolveUrl(node.Url ?? string.Empty, baseUrl, roots, $"{location}.url"),
+                node.Query,
+                roots,
+                $"{location}.query"
+            );
             var headers = ResolveHeaders(pipeline, node, roots, $"{location}.headers");
+            headers = ApplyBasicAuth(node, headers, roots, $"{location}.auth");
             var body = BuildBody(node, roots, location, out var contentType);
             if (options.DryRun)
             {
@@ -291,6 +437,8 @@ public sealed class PipelineRunner
 
             var retry = node.Retry ?? pipeline.Retry;
             var maxAttempts = 1 + retry.Count;
+            var timeoutSeconds =
+                node.TimeoutSeconds > 0 ? node.TimeoutSeconds : pipeline.TimeoutSeconds;
             HttpResult? response = null;
             var attempts = 0;
             IReadOnlyList<PipelineAssertionOutcome> outcomes =
@@ -299,9 +447,17 @@ public sealed class PipelineRunner
             {
                 attempts++;
                 response = await _http.SendAsync(
-                    new ComposedRequest(node.Method, url, headers, body, contentType, null),
+                    new ComposedRequest(
+                        node.Method,
+                        url,
+                        headers,
+                        body,
+                        contentType,
+                        null,
+                        FollowRedirects: node.FollowRedirects
+                    ),
                     cancellationToken,
-                    pipeline.TimeoutSeconds
+                    timeoutSeconds
                 );
                 outcomes = EvaluateAssertions(node, response);
                 var accepted = outcomes.All(outcome => outcome.Passed);
@@ -420,6 +576,59 @@ public sealed class PipelineRunner
         return $"{baseUrl!.TrimEnd('/')}/{resolved.TrimStart('/')}";
     }
 
+    private static string AppendQuery(
+        string url,
+        IReadOnlyList<KeyValuePair<string, string>> query,
+        IReadOnlyDictionary<string, JsonNode?> roots,
+        string location
+    )
+    {
+        if (query.Count == 0)
+        {
+            return url;
+        }
+
+        var parts = query
+            .Select(item =>
+                $"{Uri.EscapeDataString(PipelineTemplate.ResolveText(item.Key, roots, location))}"
+                + $"={Uri.EscapeDataString(PipelineTemplate.ResolveText(item.Value, roots, location))}"
+            )
+            .ToList();
+        var separator = url.Contains('?', StringComparison.Ordinal) ? "&" : "?";
+        return $"{url}{separator}{string.Join("&", parts)}";
+    }
+
+    private static IReadOnlyList<KeyValuePair<string, string>> ApplyBasicAuth(
+        PipelineNode node,
+        IReadOnlyList<KeyValuePair<string, string>> headers,
+        IReadOnlyDictionary<string, JsonNode?> roots,
+        string location
+    )
+    {
+        if (node.BasicAuth is not { } auth)
+        {
+            return headers;
+        }
+
+        if (
+            headers.Any(header =>
+                header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+            )
+        )
+        {
+            return headers;
+        }
+
+        var username = PipelineTemplate.ResolveText(auth.Username, roots, $"{location}.username");
+        var password = PipelineTemplate.ResolveText(auth.Password, roots, $"{location}.password");
+        var token = Convert.ToBase64String(
+            System.Text.Encoding.UTF8.GetBytes($"{username}:{password}")
+        );
+        return headers
+            .Concat(new[] { new KeyValuePair<string, string>("Authorization", $"Basic {token}") })
+            .ToList();
+    }
+
     private static IReadOnlyList<KeyValuePair<string, string>> ResolveHeaders(
         AutomationPipeline pipeline,
         PipelineNode node,
@@ -463,10 +672,26 @@ public sealed class PipelineRunner
             return resolved?.ToJsonString(CompactJson) ?? "null";
         }
 
+        if (node.RawBody is not null)
+        {
+            contentType = node.ContentType;
+            return PipelineTemplate.ResolveText(node.RawBody, roots, $"{location}.body");
+        }
+
+        if (node.Form.Count > 0)
+        {
+            contentType = node.ContentType ?? "application/x-www-form-urlencoded";
+            return string.Join(
+                "&",
+                node.Form.Select(field =>
+                    $"{Uri.EscapeDataString(PipelineTemplate.ResolveText(field.Key, roots, $"{location}.form"))}"
+                    + $"={Uri.EscapeDataString(PipelineTemplate.ResolveText(field.Value, roots, $"{location}.form"))}"
+                )
+            );
+        }
+
         contentType = node.ContentType;
-        return node.RawBody is null
-            ? null
-            : PipelineTemplate.ResolveText(node.RawBody, roots, $"{location}.body");
+        return null;
     }
 
     private static JsonNode? ParseBody(HttpResult response)

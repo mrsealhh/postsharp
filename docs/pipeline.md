@@ -47,6 +47,9 @@ postsharp-cli pipeline run docs/examples/order-flow.yaml
 # 输出 JSON（适合脚本解析），同时写 JUnit 报告
 postsharp-cli pipeline run docs/examples/order-flow.yaml --json --format junit
 
+# 把报告复制到 CI 工作区（服务端与 CLI 同一台机器时）
+postsharp-cli pipeline run docs/examples/order-flow.yaml --format junit --copy-report test-results/postsharp.xml
+
 # 用 CSV 数据矩阵跑多组
 postsharp-cli pipeline run docs/examples/data-matrix.yaml --data docs/examples/order-cases.csv
 ```
@@ -87,6 +90,7 @@ CLI 通过本机 MCP 端点（默认 `http://127.0.0.1:5199/mcp`）调用 PostSh
 | `name` | string | 报告和结果里的名称，默认「未命名流水线」 |
 | `baseUrl` | string | 相对地址的前缀；同时以 `${baseUrl}` 暴露给模板 |
 | `timeoutSeconds` / `timeoutMs` | int | 单次请求超时，默认 60 秒 |
+| `maxParallelism` | int | 并发组默认并行数，默认 4，范围 1-64 |
 | `stopOnError` | bool | 失败后是否停止后续步骤，默认 `true` |
 | `retry` | object/int | 默认重试策略，见下文 |
 | `vars` | object | 自定义变量，模板里写 `${名称}` |
@@ -105,7 +109,13 @@ CLI 通过本机 MCP 端点（默认 `http://127.0.0.1:5199/mcp`）调用 PostSh
 | `headers` | object | 该步骤的请求头，同名覆盖 `defaults.headers` |
 | `json` | any | 结构化请求体，字符串值可含 `${...}`；整串占位符保留原类型 |
 | `body` | string | 原始请求体，与 `json` 二选一 |
-| `contentType` | string | 默认 `application/json`（有 `json` 时） |
+| `form` | object | 表单字段；写 `form` 时请求体为 `application/x-www-form-urlencoded` |
+| `query` | object | 查询参数，自动追加到 URL（含中文与特殊字符时按 URL 编码） |
+| `headers` | object | 该步骤的请求头，同名覆盖 `defaults.headers` |
+| `contentType` | string | 默认 `application/json`（有 `json` 时）或 `application/x-www-form-urlencoded`（有 `form` 时） |
+| `redirects` | bool | 是否跟随 3xx，默认 `true` |
+| `timeoutSeconds` | int | 该步骤的超时秒数；省略时跟随流水线 |
+| `auth` | object | `{ username, password }`，自动生成 `Authorization: Basic ...`；显式 `headers.Authorization` 优先 |
 | `expect` | int/string/object | 断言，见下文 |
 | `retry` | object/int | 该步骤的重试策略，覆盖顶层 |
 | `onFailure` | `stop` / `continue` | 该步骤失败后是否继续 |
@@ -183,6 +193,36 @@ steps:
 
 循环可以嵌套；内层循环覆盖同名变量。循环体内步骤失败时按 `stopOnError` / `onFailure` 处理。
 
+### 并发
+
+```yaml
+maxParallelism: 4        # 并发组默认并行数，1-64
+
+steps:
+  - id: login
+    method: POST
+    url: /api/login
+    json: { user: demo }
+
+  - parallel:
+      max: 3             # 本组最多 3 个同时执行
+      steps:
+        - id: health
+          method: GET
+          url: /api/health
+        - id: users
+          method: GET
+          url: /api/users
+        - id: detail
+          method: GET
+          url: /api/users/1
+```
+
+- 组内步骤同时发起，`max` 控制并发度；省略时用流水线的 `maxParallelism`。
+- 组内步骤**互不可见**：不能引用同组其他步骤的别名；整组结束后，它们的别名才对后续步骤可见。
+- 组内某步失败且 `stopOnError: true` 时，会取消尚未完成的同组请求；已完成的步骤结果仍保留。
+- 并发组可以嵌套在循环里，也可以包含循环。
+
 ## 结果与报告
 
 `run_pipeline` 返回：
@@ -238,6 +278,6 @@ steps:
 ## 当前限制
 
 - 不支持 multipart 上传、SOAP / gRPC、SSE 聚合；这些仍用套件或单请求。
-- 步骤按顺序执行，暂无并行组。
+- 并发只支持显式 `parallel` 组，暂不支持「步骤级 parallel 标记自动分组」。
 - 流水线不写入工作区，因此不会出现在自动化页和运行历史里。
 - `${...}` 引用只支持 `a.b` 与 `a[0].b`，不支持函数或表达式运算。

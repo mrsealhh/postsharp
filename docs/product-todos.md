@@ -369,7 +369,7 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 | P1-03 | 授权补全 | 已支持 OAuth 2.0 授权码 + PKCE 和客户端凭据；无设备码、隐式、密码模式、工作区级/环境级默认授权 | 补设备码和隐式；授权默认值层级明确；刷新并发只更新一次；令牌过期/撤销有清晰提示 | M/L |
 | P1-04 | 导入导出补全 | Apifox 原生格式未适配；Insomnia v5、Hoppscotch 环境、Postman 脚本/测试、HAR 响应体、部分认证不完整 | 有样本才实现，不无样本逆向；导入前预览统计；不支持的字段逐项提示；导出后可回导 | M/L |
 | P1-05 | Multipart 大文件 | 已支持多文件、64KB 流式、进度和取消；无断点续传、分片协议、超大文件预检 | 可配置分片/重试；磁盘空间与文件大小预检；取消后清理临时文件；断点恢复有明确限制 | M |
-| P1-06 | 套件与无人值守 | 已支持依赖 DAG、条件分支、All/Any 汇合、结构化条件表达式、最大并行和统一执行器；自动化工具栏可显式预检，保存后自动预检；YAML/JSON 流水线已支持 CSV/JSON 数据驱动、循环节点和失败重试，可经 CLI/MCP 直接执行；套件编辑器内暂未内置循环/数据矩阵；CLI 已支持 JUnit/Markdown/HTML 报告；已提供 `--headless`、Dockerfile、可复用 Action 和 CI 示例，定时仍无内置调度器 | 把数据驱动/循环接到套件编辑器；内置定时或外部调度接入说明 | XL |
+| P1-06 | 套件与无人值守 | 已支持依赖 DAG、条件分支、All/Any 汇合、结构化条件表达式、最大并行和统一执行器；自动化工具栏可显式预检，保存后自动预检；YAML/JSON 流水线已支持 CSV/JSON 数据驱动、循环、并发组和失败重试，可经 CLI/MCP 直接执行；CLI 与 Linux 无头包随主 Release 发布，并提供可复用 `postsharp-pipeline` workflow；套件编辑器内暂未内置循环/数据矩阵；定时仍无内置调度器 | 把数据驱动/循环接到套件编辑器；内置定时或外部调度接入说明 | XL |
 | P1-07 | MCP 强化 | 已支持页面托盘常驻和后台独立进程常驻、客户端切换和单实例，工具 89 个；已支持本机 token、只读模式和细粒度发送/修改/管理权限；已提供意图工具、job 幂等和 dry-run；仍仅回环、无 SSE 通知；多客户端隔离、后台服务注册和权限变更审计未完成 | 多客户端隔离；注册 Windows 服务 / systemd / launchd 和开机自启；工具 schema 校验；SSE 进度/取消；审计关联 requestId；资源化大内容落地 | L |
 | P1-08 | UI/UX 与可访问性 | 120%/150% 在 1400 宽窗口可能裁切；多显示器 DPI、焦点、键盘全覆盖仍需验证；深浅主题对比度未自动化 | 最小窗口和 150% 下无不可达控件；Tab 顺序/焦点框可见；图标有 AutomationProperties.Name；浅深色 WCAG AA；标签栏溢出可预测 | L |
 | P1-09 | 插件生态 | 只有开发指南；无 SDK 模板、契约版本、清单签名、兼容矩阵 | 提供插件模板和 CI 示例；契约版本可检查；官方/第三方插件矩阵；不兼容时只禁用插件 | M/L |
@@ -745,7 +745,8 @@ Serilog 文件和顶部提示条能覆盖部分错误，但没有统一崩溃处
 - [x] 新增 `src/PostSharp.Cli`，默认连接 `http://127.0.0.1:5199/mcp`，支持 `--json`、超时和退出码。
 - [x] 第一批命令：`suite list/get/validate/run`。
 - [x] 第二批命令：`suite runs/rerun-failed/continue`、`request send`、`audit list`。
-- [x] 流水线命令：`pipeline validate/run`，支持 `--data`、`--var`、`--base-url`、`--format`，按结果返回退出码。
+- [x] 流水线命令：`pipeline validate/run`，支持 `--data`、`--var`、`--base-url`、`--format`、`--copy-report`，按结果返回退出码。
+- [x] CLI 随主 Release 发布（win/linux/osx 自包含），并提供 Linux 一体化无头包与可复用 `postsharp-pipeline` workflow。
 - [x] `mcp-stdio` 桥接：兼容只支持 stdio MCP 的 harness。
 - [x] JUnit XML：`suite run/rerun-failed/continue --junit <文件>`。
 - [x] 桌面端「指南」页增加 CLI 说明、常用命令复制、MCP 地址复制和下载/说明入口。
