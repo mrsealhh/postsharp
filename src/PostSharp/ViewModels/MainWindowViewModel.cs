@@ -661,13 +661,31 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [ObservableProperty]
     private bool _hasPendingUpdate;
 
+    [ObservableProperty]
+    private bool _isUpdatePromptOpen;
+
+    [ObservableProperty]
+    private string _updatePromptVersionText = string.Empty;
+
+    [ObservableProperty]
+    private string _updatePromptNotes = string.Empty;
+
+    [ObservableProperty]
+    private string _updatePromptReleaseUrl = string.Empty;
+
+    private string? _promptedUpdateVersion;
+
+    public bool HasUpdateNotes => UpdatePromptNotes.Length > 0;
+
+    public bool HasUpdateReleaseUrl => UpdatePromptReleaseUrl.Length > 0;
+
     public string UpdateButtonText =>
-        HasPendingUpdate ? "安装"
+        HasPendingUpdate ? "更新"
         : IsCheckingUpdates ? "检查中"
         : "更新";
 
     public string UpdateButtonTooltip =>
-        HasPendingUpdate ? $"安装已下载的 {UpdateService.PendingVersion ?? "新版本"}"
+        HasPendingUpdate ? $"查看并安装已下载的 {UpdateService.PendingVersion ?? "新版本"}"
         : IsCheckingUpdates ? "正在检查更新…"
         : "检查更新";
 
@@ -2550,6 +2568,23 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         OnPropertyChanged(nameof(UpdateButtonText));
         OnPropertyChanged(nameof(UpdateButtonTooltip));
+        RefreshUpdatePrompt();
+        var version = UpdateService.PendingVersion;
+        if (value && !string.IsNullOrWhiteSpace(version) && version != _promptedUpdateVersion)
+        {
+            _promptedUpdateVersion = version;
+            // 构造阶段设置 IsOpen=true 时对话框还没有挂到窗口上，推迟到 UI 就绪后再打开。
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (HasPendingUpdate)
+                    {
+                        IsUpdatePromptOpen = true;
+                    }
+                },
+                DispatcherPriority.Background
+            );
+        }
     }
 
     [RelayCommand]
@@ -2557,21 +2592,116 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         if (HasPendingUpdate)
         {
-            if (!UpdateService.TryApplyPendingUpdate())
-            {
-                HasPendingUpdate = UpdateService.PendingVersion is not null;
-                DataNotice.Warn("无法启动更新器，请检查更新目录权限或重新下载更新。");
-                return;
-            }
-
-            Log.Information("用户确认安装已下载更新，正在退出以安装新版本");
-            (
-                Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime
-            )?.Shutdown();
+            RefreshUpdatePrompt();
+            IsUpdatePromptOpen = true;
             return;
         }
 
         await CheckForUpdatesAsync();
+    }
+
+    [RelayCommand]
+    private async Task InstallUpdateAsync()
+    {
+        if (!UpdateService.TryApplyPendingUpdate())
+        {
+            HasPendingUpdate = UpdateService.PendingVersion is not null;
+            RefreshUpdatePrompt();
+            DataNotice.Warn("无法启动更新器，请检查更新目录权限或重新下载更新。");
+            IsUpdatePromptOpen = HasPendingUpdate;
+            return;
+        }
+
+        IsUpdatePromptOpen = false;
+        Log.Information("用户确认安装已下载更新，正在退出以安装新版本");
+        (
+            Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime
+        )?.Shutdown();
+        await Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private void CloseUpdatePrompt() => IsUpdatePromptOpen = false;
+
+    [RelayCommand]
+    private void OpenReleaseNotes()
+    {
+        if (string.IsNullOrWhiteSpace(UpdatePromptReleaseUrl))
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(UpdatePromptReleaseUrl) { UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "打开发行说明失败");
+            DataNotice.Warn("无法打开浏览器，请手动访问 GitHub Release 页面查看更新说明。");
+        }
+    }
+
+    private void RefreshUpdatePrompt()
+    {
+        UpdatePromptVersionText = UpdateService.PendingVersion is { Length: > 0 } version
+            ? $"v{version} 已准备就绪。"
+            : "新版本已准备就绪。";
+        UpdatePromptNotes = TrimReleaseNotes(UpdateService.PendingReleaseNotes);
+        UpdatePromptReleaseUrl = UpdateService.PendingReleaseUrl;
+        OnPropertyChanged(nameof(HasUpdateNotes));
+        OnPropertyChanged(nameof(HasUpdateReleaseUrl));
+    }
+
+    private static string TrimReleaseNotes(string notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            return string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder(notes.Length);
+        var lastBlank = false;
+        foreach (var rawLine in notes.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            var line = rawLine.TrimEnd().TrimStart();
+            if (line.StartsWith('#'))
+            {
+                line = line.TrimStart('#').Trim();
+            }
+            else if (
+                line.StartsWith("- ", StringComparison.Ordinal)
+                || line.StartsWith("* ", StringComparison.Ordinal)
+            )
+            {
+                line = "• " + line[2..];
+            }
+
+            line = line.Replace("**", string.Empty, StringComparison.Ordinal)
+                .Replace("`", string.Empty, StringComparison.Ordinal);
+            if (line.Length == 0)
+            {
+                if (!lastBlank && builder.Length > 0)
+                {
+                    builder.Append('\n');
+                }
+
+                lastBlank = true;
+                continue;
+            }
+
+            builder.AppendLine(line);
+            lastBlank = false;
+        }
+
+        var text = builder.ToString().Trim();
+        const int limit = 1200;
+        if (text.Length <= limit)
+        {
+            return text;
+        }
+
+        return text[..limit].TrimEnd() + "\n…";
     }
 
     [RelayCommand]
