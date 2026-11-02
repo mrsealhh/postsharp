@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.singleton.1.10.0.schema.json
 PackageIdentifier: Mrsealhh.PostSharp
-PackageVersion: 1.11.10
+PackageVersion: 1.11.11
 PackageLocale: en-US
 Publisher: mrsealhh
 PublisherUrl: https://github.com/mrsealhh/postsharp
@@ -27,5 +27,5 @@ Installers:
     NestedInstallerFiles:
       - RelativeFilePath: PostSharp.exe
         PortableCommandAlias: postsharp
-    InstallerUrl: https://github.com/mrsealhh/postsharp/releases/download/v1.11.10/PostSharp-win-x64.zip
-    InstallerSha256: ED9DC1FAF32AD89E8DFEC64AF3D902D746D31CEF421BB355677E7DFA7063F82D
+    InstallerUrl: https://github.com/mrsealhh/postsharp/releases/download/v1.11.11/PostSharp-win-x64.zip
+    InstallerSha256: 7A164534F84C87D3FF47FB52558ED631E5BB302BC5384BE29A213C07E43578B7
