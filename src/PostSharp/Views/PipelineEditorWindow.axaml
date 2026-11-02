@@ -1,0 +1,285 @@
+<Window
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+    xmlns:controls="using:PostSharp.Controls"
+    xmlns:vm="using:PostSharp.ViewModels"
+    x:Class="PostSharp.Views.PipelineEditorWindow"
+    x:DataType="vm:PipelineEditorViewModel"
+    Title="流水线图像编辑"
+    Width="1180"
+    Height="820"
+    MinWidth="980"
+    MinHeight="640"
+    WindowStartupLocation="CenterOwner"
+>
+    <Grid RowDefinitions="Auto,*,Auto" Margin="16" RowSpacing="10">
+        <Grid
+            Grid.Row="0"
+            ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto"
+            ColumnSpacing="8"
+        >
+            <TextBlock
+                Text="流水线"
+                FontSize="{arc:ArcDesignTokenResource TypeLG}"
+                FontWeight="SemiBold"
+                VerticalAlignment="Center"
+            />
+            <arc:Button
+                Grid.Column="1"
+                Content="添加步骤"
+                Variant="Secondary"
+                Command="{Binding AddRequestCommand}"
+            />
+            <arc:Button
+                Grid.Column="2"
+                Content="添加循环"
+                Variant="Secondary"
+                Command="{Binding AddLoopCommand}"
+            />
+            <arc:Button
+                Grid.Column="3"
+                Content="添加并发"
+                Variant="Secondary"
+                Command="{Binding AddParallelCommand}"
+            />
+            <arc:Button
+                Grid.Column="4"
+                Content="上移"
+                Variant="Ghost"
+                Command="{Binding MoveUpCommand}"
+            />
+            <arc:Button
+                Grid.Column="5"
+                Content="下移"
+                Variant="Ghost"
+                Command="{Binding MoveDownCommand}"
+            />
+            <arc:Button
+                Grid.Column="7"
+                Content="删除节点"
+                Variant="Ghost"
+                Command="{Binding RemoveNodeCommand}"
+                IsEnabled="{Binding HasSelection}"
+            />
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnDefinitions="360,8,*">
+            <Border
+                Grid.Column="0"
+                Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                Padding="4"
+            >
+                <TreeView
+                    ItemsSource="{Binding Nodes}"
+                    SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                >
+                    <TreeView.ItemTemplate>
+                        <TreeDataTemplate
+                            ItemsSource="{Binding Children}"
+                            x:DataType="vm:PipelineEditorNode"
+                        >
+                            <StackPanel Spacing="2" Margin="2,4">
+                                <TextBlock
+                                    Text="{Binding Title}"
+                                    FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                                />
+                                <TextBlock
+                                    Text="{Binding Detail}"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                    TextTrimming="CharacterEllipsis"
+                                />
+                            </StackPanel>
+                        </TreeDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+            </Border>
+
+            <ScrollViewer Grid.Column="2">
+                <StackPanel Spacing="10">
+                    <arc:Input Label="流水线名称" Text="{Binding Name, Mode=TwoWay}" />
+                    <arc:Input Label="baseUrl" Text="{Binding BaseUrl, Mode=TwoWay}" />
+                    <Border Height="1" Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+
+                    <StackPanel Spacing="8" IsVisible="{Binding SelectedNode.IsRequest}">
+                        <arc:Input Label="名称" Text="{Binding SelectedNode.Name, Mode=TwoWay}" />
+                        <arc:Input
+                            Label="步骤别名（id）"
+                            Text="{Binding SelectedNode.Id, Mode=TwoWay}"
+                        />
+                        <arc:Select
+                            Label="方法"
+                            SelectedValue="{Binding SelectedNode.Method, Mode=TwoWay}"
+                        >
+                            <arc:SelectItem Content="GET" Value="GET" />
+                            <arc:SelectItem Content="POST" Value="POST" />
+                            <arc:SelectItem Content="PUT" Value="PUT" />
+                            <arc:SelectItem Content="PATCH" Value="PATCH" />
+                            <arc:SelectItem Content="DELETE" Value="DELETE" />
+                        </arc:Select>
+                        <arc:Input Label="URL" Text="{Binding SelectedNode.Url, Mode=TwoWay}" />
+                        <TextBlock
+                            Text="请求头（每行 Key: Value）"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                        />
+                        <TextBox
+                            Text="{Binding SelectedNode.HeadersText, Mode=TwoWay}"
+                            AcceptsReturn="True"
+                            TextWrapping="NoWrap"
+                            FontFamily="Consolas, monospace"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            MinHeight="56"
+                        />
+                        <TextBlock
+                            Text="查询参数（每行 Key: Value）"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                        />
+                        <TextBox
+                            Text="{Binding SelectedNode.QueryText, Mode=TwoWay}"
+                            AcceptsReturn="True"
+                            TextWrapping="NoWrap"
+                            FontFamily="Consolas, monospace"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            MinHeight="56"
+                        />
+                        <arc:Select
+                            Label="请求体"
+                            SelectedValue="{Binding SelectedNode.BodyKind, Mode=TwoWay}"
+                        >
+                            <arc:SelectItem Content="无" Value="none" />
+                            <arc:SelectItem Content="JSON" Value="json" />
+                            <arc:SelectItem Content="原始文本" Value="raw" />
+                        </arc:Select>
+                        <TextBox
+                            Text="{Binding SelectedNode.BodyText, Mode=TwoWay}"
+                            AcceptsReturn="True"
+                            TextWrapping="NoWrap"
+                            FontFamily="Consolas, monospace"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            MinHeight="90"
+                            MaxHeight="180"
+                        />
+                        <arc:Input
+                            Label="期望状态（如 200 / 2xx / 200,201）"
+                            Text="{Binding SelectedNode.ExpectStatus, Mode=TwoWay}"
+                        />
+                        <arc:Input
+                            Label="响应包含文本"
+                            Text="{Binding SelectedNode.BodyContains, Mode=TwoWay}"
+                        />
+                        <TextBlock
+                            Text="JSONPath 断言（每行 path exists / path = 值 / path ~ 文本）"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                        />
+                        <TextBox
+                            Text="{Binding SelectedNode.JsonPathText, Mode=TwoWay}"
+                            AcceptsReturn="True"
+                            TextWrapping="NoWrap"
+                            FontFamily="Consolas, monospace"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            MinHeight="56"
+                        />
+                        <Grid ColumnDefinitions="1*,1*" ColumnSpacing="8">
+                            <arc:Input
+                                Label="重试次数"
+                                Text="{Binding SelectedNode.RetryCountText, Mode=TwoWay}"
+                            />
+                            <arc:Input
+                                Grid.Column="1"
+                                Label="重试间隔 ms"
+                                Text="{Binding SelectedNode.RetryDelayText, Mode=TwoWay}"
+                            />
+                        </Grid>
+                        <arc:Select
+                            Label="失败后"
+                            SelectedValue="{Binding SelectedNode.OnFailure, Mode=TwoWay}"
+                        >
+                            <arc:SelectItem Content="停止" Value="stop" />
+                            <arc:SelectItem Content="继续" Value="continue" />
+                        </arc:Select>
+                    </StackPanel>
+
+                    <StackPanel Spacing="8" IsVisible="{Binding SelectedNode.IsLoop}">
+                        <arc:Input
+                            Label="循环数据源（如 ${list}）"
+                            Text="{Binding SelectedNode.LoopOver, Mode=TwoWay}"
+                        />
+                        <arc:Input
+                            Label="循环项变量（as）"
+                            Text="{Binding SelectedNode.LoopAs, Mode=TwoWay}"
+                        />
+                        <arc:Input
+                            Label="下标变量（可选）"
+                            Text="{Binding SelectedNode.LoopIndex, Mode=TwoWay}"
+                        />
+                        <arc:Input
+                            Label="最大循环数"
+                            Text="{Binding SelectedNode.LoopMaxText, Mode=TwoWay}"
+                        />
+                    </StackPanel>
+
+                    <StackPanel Spacing="8" IsVisible="{Binding SelectedNode.IsParallel}">
+                        <arc:Input
+                            Label="并发数（0 表示跟随 maxParallelism）"
+                            Text="{Binding SelectedNode.ParallelMaxText, Mode=TwoWay}"
+                        />
+                    </StackPanel>
+
+                    <StackPanel Spacing="8" IsVisible="{Binding SelectedNode.IsGroup}">
+                        <TextBlock
+                            Text="分组内节点"
+                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                        />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <arc:Button
+                                Content="添加子步骤"
+                                Variant="Secondary"
+                                Command="{Binding AddChildRequestCommand}"
+                            />
+                            <arc:Button
+                                Content="添加子循环"
+                                Variant="Secondary"
+                                Command="{Binding AddChildLoopCommand}"
+                            />
+                            <arc:Button
+                                Content="添加子并发"
+                                Variant="Secondary"
+                                Command="{Binding AddChildParallelCommand}"
+                            />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <TextBlock
+                Text="{Binding StatusText}"
+                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                VerticalAlignment="Center"
+                TextTrimming="CharacterEllipsis"
+            />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <arc:Button
+                    Content="取消"
+                    Variant="Secondary"
+                    Click="OnCancelClick"
+                    AutomationProperties.Name="取消流水线编辑"
+                />
+                <arc:Button
+                    Content="保存"
+                    Variant="Primary"
+                    Click="OnSaveClick"
+                    AutomationProperties.Name="保存流水线"
+                />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

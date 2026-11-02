@@ -249,15 +249,6 @@
                                     </arc:Button>
                                     <arc:Button
                                         Variant="Secondary"
-                                        Command="{Binding OpenManagementCommand}"
-                                    >
-                                        <controls:IconLabel
-                                            Icon="{x:Static arc:ArcIcons.SlidersHorizontal}"
-                                            Text="管理层"
-                                        />
-                                    </arc:Button>
-                                    <arc:Button
-                                        Variant="Secondary"
                                         Click="OnOpenSettingsClick"
                                         AutomationProperties.Name="打开设置"
                                     >

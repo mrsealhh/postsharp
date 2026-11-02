@@ -113,7 +113,7 @@
         </Grid>
 
         <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                 <TextBlock
                     Text="名称"
                     VerticalAlignment="Center"
@@ -154,6 +154,14 @@
                 />
                 <arc:Button
                     Grid.Column="5"
+                    Content="图像编辑"
+                    Variant="Secondary"
+                    Click="OnGraphicalEditClick"
+                    IsEnabled="{Binding !IsBusy}"
+                    AutomationProperties.Name="图像编辑流水线"
+                />
+                <arc:Button
+                    Grid.Column="6"
                     Content="运行"
                     Variant="Primary"
                     Command="{Binding RunPipelineCommand}"

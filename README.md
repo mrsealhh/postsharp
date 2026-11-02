@@ -1048,6 +1048,7 @@ docs/
 | 客户端管理 | 实机 `initialize`（codex-test）后运行 `run_pipeline`，`list_clients` 显示 `codex-test calls=1 tools=run_pipeline`，`get_client_activity` 返回 1 条成功记录；`create_client_token` 返回 43 字符明文，`list_client_tokens` 不含明文，`revoke_client_token` 后列表为空；单测验证受限 token 的 `tools/list` 不含发送/管理工具、错误 token 返回 401 |
 | 自动化前台与流水线中心 | 顶栏新增「自动化」按钮；自动化页新增「流水线」页签：4 个场景模板、YAML 编辑、保存/校验/生成流程图/运行；单测在临时目录保存并重载流水线文件成功 |
 | 画布布局记忆 | 拖拽结束与「自动布局」都会把节点 X/Y 写回工作流并持久化；打开时按保存位置还原，只有从未保存过位置时顺序排布 |
+| 流水线图像编辑 | 图像编辑器加载含 vars/data/循环/并发的流水线，改字段后保存仍保留 vars/data；嵌套循环/并发行往返通过单测；编辑结果回填 YAML 后再保存 |
 | 无头 CLI 包 | 本地运行 `build-headless-release.ps1` 生成 `PostSharp-headless-linux-x64.zip`：含 `PostSharp`、`cli/postsharp-cli`、`postsharp-cli.sh`，`PostSharp` 与 CLI 均带 Unix 可执行位；`postsharp-cli pipeline run ... --copy-report` 实测把 JUnit 复制到指定路径 |
 | 无头标题栏 | 顶部栏空白区域拖拽移动；右上角最小化/最大化还原/关闭；边缘缩放可用 |
 | 回收站对齐 | 方法、名称、状态、时间、恢复/永久删除列固定对齐 |
