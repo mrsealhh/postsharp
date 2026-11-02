@@ -32,6 +32,9 @@ public sealed class PendingUpdate
     public string Sha256 { get; init; } = string.Empty;
 
     public string ReleaseUrl { get; init; } = string.Empty;
+
+    /// <summary>GitHub 发行说明原文（Markdown），用于更新提示卡展示。</summary>
+    public string ReleaseNotes { get; init; } = string.Empty;
 }
 
 /// <summary>
@@ -110,6 +113,28 @@ public static class UpdateService
                 Log.Debug(exception, "读取待安装更新信息失败");
                 return null;
             }
+        }
+    }
+
+    /// <summary>已暂存更新的发行说明原文；没有待安装更新时为空。</summary>
+    public static string PendingReleaseNotes =>
+        TryReadPending(pending => pending.ReleaseNotes) ?? string.Empty;
+
+    /// <summary>已暂存更新对应的 GitHub Release 页面。</summary>
+    public static string PendingReleaseUrl =>
+        TryReadPending(pending => pending.ReleaseUrl) ?? string.Empty;
+
+    private static string? TryReadPending(Func<PendingUpdate, string> selector)
+    {
+        try
+        {
+            var pending = LoadPending();
+            return pending is null ? null : selector(pending);
+        }
+        catch (Exception exception)
+        {
+            Log.Debug(exception, "读取待安装更新信息失败");
+            return null;
         }
     }
 
@@ -387,6 +412,7 @@ public static class UpdateService
                 StagingDirectory = staging,
                 Sha256 = actual,
                 ReleaseUrl = release.ReleaseUrl,
+                ReleaseNotes = release.ReleaseNotes,
             };
             var json = DataJson.Serialize(pending);
             File.WriteAllText(PendingFilePath, json, new UTF8Encoding(false));
@@ -445,7 +471,10 @@ public static class UpdateService
                 ? htmlElement.GetString() ?? string.Empty
                 : string.Empty,
             selection.AssetUrl,
-            selection.ChecksumUrl
+            selection.ChecksumUrl,
+            root.TryGetProperty("body", out var bodyElement)
+                ? bodyElement.GetString() ?? string.Empty
+                : string.Empty
         );
     }
 
@@ -608,7 +637,8 @@ public static class UpdateService
         Version Version,
         string ReleaseUrl,
         string AssetUrl,
-        string ChecksumUrl
+        string ChecksumUrl,
+        string ReleaseNotes
     );
 
     private const string UpdaterScript = """
