@@ -40,13 +40,13 @@ public sealed partial class WorkflowEditorViewModel : ObservableObject
 
         if (draft is not null)
         {
-            _defaultName = string.IsNullOrWhiteSpace(draft.Name) ? "套件" : draft.Name;
+            _defaultName = string.IsNullOrWhiteSpace(draft.Name) ? "测试工作流" : draft.Name;
             LoadDraft(draft);
         }
         else
         {
-            _defaultName = "套件";
-            SuiteName = "套件";
+            _defaultName = "测试工作流";
+            SuiteName = "测试工作流";
             ScheduleMinutesText = "0";
             StopOnError = true;
             MaxParallelismText = "4";
@@ -82,6 +82,13 @@ public sealed partial class WorkflowEditorViewModel : ObservableObject
     public Func<TestRunResult, Task>? RunRecorder { get; init; }
 
     public event EventHandler? ContentChanged;
+
+    /// <summary>Raised after a drag or auto-layout so the host can persist node positions.</summary>
+    public event EventHandler? LayoutChanged;
+
+    public void NotifyLayoutChanged() => LayoutChanged?.Invoke(this, EventArgs.Empty);
+
+    public SuiteWorkflow CaptureLayout() => CaptureWorkflow();
 
     public ObservableCollection<SuiteBuilderStep> Steps { get; } = new();
 
@@ -119,7 +126,7 @@ public sealed partial class WorkflowEditorViewModel : ObservableObject
         new[] { new SuiteChoice("All", "全部满足"), new SuiteChoice("Any", "任一满足") };
 
     [ObservableProperty]
-    private string _suiteName = "套件";
+    private string _suiteName = "测试工作流";
 
     [ObservableProperty]
     private string _scheduleMinutesText = "0";
@@ -137,7 +144,7 @@ public sealed partial class WorkflowEditorViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(RunButtonText))]
     private bool _isSuiteRunning;
 
-    public string RunButtonText => IsSuiteRunning ? "运行中…" : "运行套件";
+    public string RunButtonText => IsSuiteRunning ? "运行中…" : "运行测试工作流";
 
     private CancellationTokenSource? _runCts;
 
@@ -436,7 +443,7 @@ public sealed partial class WorkflowEditorViewModel : ObservableObject
         var ordered = TopologicalSteps();
         if (ordered.Count == 0)
         {
-            StatusText = "至少加入一个接口后才能保存套件";
+            StatusText = "至少加入一个接口后才能保存测试工作流";
             return null;
         }
 
@@ -525,7 +532,7 @@ public sealed partial class WorkflowEditorViewModel : ObservableObject
 
         if (SuiteRunner is null)
         {
-            StatusText = "当前窗口没有接入运行器，无法运行套件";
+            StatusText = "当前窗口没有接入运行器，无法运行测试工作流";
             return;
         }
 
@@ -561,7 +568,7 @@ public sealed partial class WorkflowEditorViewModel : ObservableObject
                 {
                     Log.Error(
                         exception,
-                        "保存套件编辑器运行历史失败 {SuiteName}",
+                        "保存测试工作流编辑器运行历史失败 {SuiteName}",
                         built.Suite.Name
                     );
                 }
@@ -573,7 +580,7 @@ public sealed partial class WorkflowEditorViewModel : ObservableObject
         }
         catch (Exception exception)
         {
-            Log.Error(exception, "套件编辑器运行失败 {SuiteName}", built.Suite.Name);
+            Log.Error(exception, "测试工作流编辑器运行失败 {SuiteName}", built.Suite.Name);
             StatusText = "运行失败，请查看日志后重试";
         }
         finally
@@ -1040,6 +1047,9 @@ public sealed partial class WorkflowEditorViewModel : ObservableObject
 
         if (draft.Workflow is { HasStepGraph: true } workflow)
         {
+            var hasSavedPositions = workflow.Nodes.Any(node =>
+                !double.IsNaN(node.X) && !double.IsNaN(node.Y) && (node.X != 0 || node.Y != 0)
+            );
             foreach (var saved in workflow.Nodes)
             {
                 if (!_steps.TryGetValue(saved.StepId, out var wrapper))
@@ -1047,15 +1057,11 @@ public sealed partial class WorkflowEditorViewModel : ObservableObject
                     continue;
                 }
 
-                var node = CreateNode(wrapper, new Point(saved.X, saved.Y), raiseEdited: false);
-                if (
-                    double.IsNaN(saved.X)
-                    || double.IsNaN(saved.Y)
-                    || (saved.X == 0 && saved.Y == 0)
-                )
-                {
-                    node.Position = new Point(80, 60 + (Graph.Nodes.Count - 1) * 110);
-                }
+                var position =
+                    hasSavedPositions && !double.IsNaN(saved.X) && !double.IsNaN(saved.Y)
+                        ? new Point(saved.X, saved.Y)
+                        : new Point(80, 60 + Graph.Nodes.Count * 110);
+                CreateNode(wrapper, position, raiseEdited: false);
             }
 
             foreach (var saved in workflow.Edges)

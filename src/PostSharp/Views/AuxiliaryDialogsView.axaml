@@ -34,11 +34,11 @@
             <arc:Dialog.Actions>
                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                     <arc:Button
-                        Content="生成套件"
+                        Content="生成测试工作流"
                         Variant="Secondary"
                         IsVisible="{Binding Import.CanGenerateSuiteFromImport}"
                         Command="{Binding Import.GenerateSuiteFromImportCommand}"
-                        AutomationProperties.Name="从导入结果生成套件"
+                        AutomationProperties.Name="从导入结果生成测试工作流"
                     />
                     <arc:Button
                         Content="知道了"
@@ -54,7 +54,7 @@
             Opened="OnDialogOpened"
             IsOpen="{Binding IsRunDiffOpen, Mode=TwoWay}"
             Title="运行对比"
-            Description="对比同一套件的两次运行，标出新增失败、修复、状态码变化和耗时回归。"
+            Description="对比同一测试工作流的两次运行，标出新增失败、修复、状态码变化和耗时回归。"
             Size="Large"
         >
             <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="10">
@@ -419,11 +419,11 @@
                         AutomationProperties.Name="导入选中的录制请求"
                     />
                     <arc:Button
-                        Content="导入并生成套件"
+                        Content="导入并生成测试工作流"
                         Variant="Primary"
                         Command="{Binding RecordingSession.ImportAndGenerateSuiteCommand}"
                         IsEnabled="{Binding RecordingSession.CanImport}"
-                        AutomationProperties.Name="导入选中并生成套件"
+                        AutomationProperties.Name="导入选中并生成测试工作流"
                     />
                 </StackPanel>
             </arc:Dialog.Actions>
@@ -604,7 +604,7 @@
                             Foreground="{arc:ArcDesignTokenResource Foreground}"
                         />
                         <TextBlock
-                            Text="把本机 MCP 地址或完整客户端配置复制到 Cursor、Claude Code、Cline 等客户端，AI 即可管理请求、运行套件并查看审计。"
+                            Text="把本机 MCP 地址或完整客户端配置复制到 Cursor、Claude Code、Cline 等客户端，AI 即可管理请求、运行测试工作流并查看审计。"
                             FontSize="{arc:ArcDesignTokenResource TypeSM}"
                             Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                             TextWrapping="Wrap"
@@ -615,7 +615,7 @@
                     <arc:Badge Content="3" Tone="Neutral" Size="Small" VerticalAlignment="Top" />
                     <StackPanel Grid.Column="1" Spacing="3">
                         <TextBlock
-                            Text="运行第一个套件"
+                            Text="运行第一个测试工作流"
                             FontWeight="SemiBold"
                             Foreground="{arc:ArcDesignTokenResource Foreground}"
                         />
@@ -649,7 +649,7 @@
             Opened="OnDialogOpened"
             IsOpen="{Binding IsResetDemoDialogOpen, Mode=TwoWay}"
             Title="重置为演示工作区？"
-            Description="当前集合、请求、环境变量、套件、发送历史和回收站会被清空，并恢复内置 Mock 示例；审计记录和系统设置保留。该操作不可撤销。"
+            Description="当前集合、请求、环境变量、测试工作流、发送历史和回收站会被清空，并恢复内置 Mock 示例；审计记录和系统设置保留。该操作不可撤销。"
             Size="Small"
         >
             <TextBlock
@@ -1213,7 +1213,7 @@
             x:Name="McpDialog"
             IsOpen="{Binding IsMcpDialogOpen, Mode=TwoWay}"
             Title="MCP 接入"
-            Description="把 PostSharp 作为本地 MCP 服务器，让 AI 自由整理集合与请求、设计自动化套件并执行回归。"
+            Description="把 PostSharp 作为本地 MCP 服务器，让 AI 自由整理集合与请求、设计自动化测试工作流并执行回归。"
             Size="Large"
             Width="1000"
             MaxWidth="1120"
@@ -1290,7 +1290,7 @@
                 />
 
                 <TextBlock
-                    Text="MCP 发送请求同样会写入历史记录；套件支持步骤延迟、上一步响应字段映射、状态码和响应文本断言，AI 可创建后反复 update_suite / run_suite 迭代。"
+                    Text="MCP 发送请求同样会写入历史记录；测试工作流支持步骤延迟、上一步响应字段映射、状态码和响应文本断言，AI 可创建后反复 update_suite / run_suite 迭代。"
                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
                     Foreground="{arc:ArcDesignTokenResource TextMuted}"
                     TextWrapping="Wrap"

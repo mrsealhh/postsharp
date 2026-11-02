@@ -44,10 +44,12 @@ public partial class WorkflowEditorWindow : Window
         );
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         viewModel.ContentChanged += OnContentChanged;
+        viewModel.LayoutChanged += OnViewModelLayoutChanged;
         Closed += (_, _) =>
         {
             viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             viewModel.ContentChanged -= OnContentChanged;
+            viewModel.LayoutChanged -= OnViewModelLayoutChanged;
             HeapTrim.Request();
         };
         Opened += (_, _) =>
@@ -59,6 +61,14 @@ public partial class WorkflowEditorWindow : Window
             );
         };
     }
+
+    public event EventHandler? LayoutChanged;
+
+    /// <summary>Current node positions, for persisting the layout without closing the editor.</summary>
+    public SuiteWorkflow CaptureLayout() => _viewModel.CaptureLayout();
+
+    private void OnViewModelLayoutChanged(object? sender, EventArgs e) =>
+        LayoutChanged?.Invoke(this, EventArgs.Empty);
 
     /// <summary>Clamps the editor to the current screen so the save/run footer stays reachable.</summary>
     public void FitToWorkingArea()
@@ -127,13 +137,25 @@ public partial class WorkflowEditorWindow : Window
     {
         if (e.Kind == WorkflowEditKind.Move)
         {
+            // 拖拽结束后把位置写回套件，下次打开保持用户摆放的样子。
+            Dispatcher.UIThread.Post(
+                () => _viewModel.NotifyLayoutChanged(),
+                DispatcherPriority.Background
+            );
             return;
         }
 
         _viewModel.SyncGraphEdits();
     }
 
-    private void OnAutoLayoutClick(object? sender, RoutedEventArgs e) => Canvas.ArrangeNodes();
+    private void OnAutoLayoutClick(object? sender, RoutedEventArgs e)
+    {
+        Canvas.ArrangeNodes(false);
+        Dispatcher.UIThread.Post(
+            () => _viewModel.NotifyLayoutChanged(),
+            DispatcherPriority.Background
+        );
+    }
 
     private void OnToggleLeftPaneClick(object? sender, RoutedEventArgs e)
     {

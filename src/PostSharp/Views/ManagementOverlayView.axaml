@@ -59,6 +59,7 @@
                     >
                         <arc:SegmentedOption Value="审计" Label="审计" />
                         <arc:SegmentedOption Value="自动化" Label="自动化" />
+                        <arc:SegmentedOption Value="流水线" Label="流水线" />
                         <arc:SegmentedOption Value="指南" Label="指南" />
                     </arc:SegmentedControl>
 
@@ -534,7 +535,7 @@
                                     >
                                         <controls:IconLabel
                                             Icon="{x:Static arc:ArcIcons.ListChecks}"
-                                            Text="组装套件"
+                                            Text="组装测试工作流"
                                             IconSize="13"
                                         />
                                     </arc:Button>
@@ -545,7 +546,7 @@
                                     >
                                         <controls:IconLabel
                                             Icon="{x:Static arc:ArcIcons.Trash2}"
-                                            Text="删除套件"
+                                            Text="删除测试工作流"
                                             IconSize="13"
                                         />
                                     </arc:Button>
@@ -641,7 +642,7 @@
                                             </ItemsControl>
                                         </arc:ScrollArea>
                                         <TextBlock
-                                            Text="还没有套件，点击「组装套件」开始"
+                                            Text="还没有测试工作流，点击「组装测试工作流」开始"
                                             IsVisible="{Binding !HasSuites}"
                                             HorizontalAlignment="Center"
                                             VerticalAlignment="Center"
@@ -652,7 +653,7 @@
                                 </Border>
                                 <TextBlock
                                     Grid.Row="2"
-                                    Text="「组装套件」打开编排器：左侧勾选集合或接口，中间画布搭依赖与分支，右侧调整节点。运行结果会写入审计。"
+                                    Text="「组装测试工作流」打开编排器：左侧勾选集合或接口，中间画布搭依赖与分支，右侧调整节点。运行结果会写入审计。"
                                     FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                     Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                     TextWrapping="Wrap"
@@ -990,8 +991,8 @@
                                             <arc:EmptyState
                                                 IsVisible="{Binding !HasSelectedSuiteResult}"
                                                 Title="尚未运行"
-                                                Description="点击「运行套件」查看每个步骤的断言结果；结果同时写入审计。"
-                                                Label="套件结果"
+                                                Description="点击「运行测试工作流」查看每个步骤的断言结果；结果同时写入审计。"
+                                                Label="测试工作流结果"
                                             />
                                         </Grid>
                                     </Border>
@@ -1019,12 +1020,12 @@
                                     <arc:Button
                                         Variant="Secondary"
                                         Click="OnEditSuiteClick"
-                                        ToolTip.Tip="打开套件编排：集合与接口、画布、节点明细"
-                                        AutomationProperties.Name="编辑套件"
+                                        ToolTip.Tip="打开测试工作流编排：集合与接口、画布、节点明细"
+                                        AutomationProperties.Name="编辑测试工作流"
                                     >
                                         <controls:IconLabel
                                             Icon="{x:Static arc:ArcIcons.ListChecks}"
-                                            Text="编排套件"
+                                            Text="编排测试工作流"
                                         />
                                     </arc:Button>
                                     <arc:Button
@@ -1033,7 +1034,7 @@
                                         Command="{Binding ValidateSelectedSuiteCommand}"
                                         ToolTip.Tip="检查空步骤、缺失请求、连线、条件、断言和变量；错误会阻止运行"
                                         ToolTip.ShowOnDisabled="True"
-                                        AutomationProperties.Name="预检套件"
+                                        AutomationProperties.Name="预检测试工作流"
                                     >
                                         <controls:IconLabel
                                             Icon="{x:Static arc:ArcIcons.CircleCheck}"
@@ -1044,9 +1045,9 @@
                                         Variant="Secondary"
                                         IsEnabled="{Binding IsRunningSuite}"
                                         Command="{Binding CancelSuiteRunCommand}"
-                                        ToolTip.Tip="套件运行中可取消：正在发送的请求会被中止，后续步骤不再执行"
+                                        ToolTip.Tip="测试工作流运行中可取消：正在发送的请求会被中止，后续步骤不再执行"
                                         ToolTip.ShowOnDisabled="True"
-                                        AutomationProperties.Name="取消运行套件"
+                                        AutomationProperties.Name="取消运行测试工作流"
                                     >
                                         <controls:IconLabel
                                             Icon="{x:Static arc:ArcIcons.Square}"
@@ -1068,6 +1069,10 @@
                             </Grid>
                         </Grid>
 
+                        <Grid IsVisible="{Binding IsPipelineTab}">
+                            <views:PipelineCenterView DataContext="{Binding Pipelines}" />
+                        </Grid>
+
                         <Grid IsVisible="{Binding IsGuideTab}" RowDefinitions="*" Margin="0,6,0,0">
                             <arc:ScrollArea>
                                 <StackPanel
@@ -1082,7 +1087,7 @@
                                         Foreground="{arc:ArcDesignTokenResource Foreground}"
                                     />
                                     <TextBlock
-                                        Text="PostSharp 的核心链路是：AI 通过 MCP 触发请求 → 审计留痕 → 自动化套件回归。下面每一步都可以直接点开示例。"
+                                        Text="PostSharp 的核心链路是：AI 通过 MCP 触发请求 → 审计留痕 → 自动化测试工作流回归。下面每一步都可以直接点开示例。"
                                         FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                         TextWrapping="Wrap"
@@ -1100,7 +1105,7 @@
                                             />
                                         </arc:Button>
                                         <TextBlock
-                                            Text="清空当前集合、环境、套件、历史和回收站，恢复内置 Mock 示例；审计和设置保留。"
+                                            Text="清空当前集合、环境、测试工作流、历史和回收站，恢复内置 Mock 示例；审计和设置保留。"
                                             FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                             Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                             VerticalAlignment="Center"
@@ -1254,7 +1259,7 @@
                                                     Foreground="{arc:ArcDesignTokenResource Foreground}"
                                                 />
                                                 <TextBlock
-                                                    Text="所有 UI 和 MCP 发送都会写入审计，记录来源、客户端、工具、状态、耗时、cURL 和请求/响应预览。自动化套件支持状态码和响应体断言，运行结果也会进入审计。"
+                                                    Text="所有 UI 和 MCP 发送都会写入审计，记录来源、客户端、工具、状态、耗时、cURL 和请求/响应预览。自动化测试工作流支持状态码和响应体断言，运行结果也会进入审计。"
                                                     FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                                     Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                                     TextWrapping="Wrap"
@@ -1380,7 +1385,7 @@
                                                     Foreground="{arc:ArcDesignTokenResource Foreground}"
                                                 />
                                                 <TextBlock
-                                                    Text="把下面的地址添加到支持 Streamable HTTP 的 MCP 客户端，AI 就可以自由管理集合与请求、编排带延迟和字段映射的套件、运行回归并查看审计。"
+                                                    Text="把下面的地址添加到支持 Streamable HTTP 的 MCP 客户端，AI 就可以自由管理集合与请求、编排带延迟和字段映射的测试工作流、运行回归并查看审计。"
                                                     FontSize="{arc:ArcDesignTokenResource TypeSM}"
                                                     Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                                     TextWrapping="Wrap"

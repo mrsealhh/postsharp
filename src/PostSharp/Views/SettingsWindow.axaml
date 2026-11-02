@@ -609,7 +609,7 @@
                                         <arc:NumberField
                                             Grid.Column="1"
                                             Label="审计最多保留"
-                                            Description="0 = 不限（默认）；设置后超出自动丢弃最早记录，套件执行仍正常写入审计"
+                                            Description="0 = 不限（默认）；设置后超出自动丢弃最早记录，测试工作流执行仍正常写入审计"
                                             Minimum="0"
                                             Maximum="1000000"
                                             Step="1"
@@ -675,7 +675,7 @@
                                         AutomationProperties.Name="MCP 只读模式"
                                     />
                                     <arc:Switch
-                                        Content="允许发送请求（send / run_sequence / 套件运行）"
+                                        Content="允许发送请求（send / run_sequence / 测试工作流运行）"
                                         IsChecked="{Binding Draft.McpAllowSend, Mode=TwoWay}"
                                         IsEnabled="{Binding !Draft.McpReadOnly}"
                                         AutomationProperties.Name="MCP 允许发送请求"
@@ -924,14 +924,14 @@
                                         </StackPanel>
                                         <StackPanel Grid.Column="2" Spacing="4">
                                             <TextBlock
-                                                Text="套件自动化"
+                                                Text="测试工作流自动化"
                                                 FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                                 Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                             />
                                             <arc:Select
                                                 ItemsSource="{Binding StorageProfiles}"
                                                 SelectedItem="{Binding SuitesStorageProfile, Mode=TwoWay}"
-                                                AutomationProperties.Name="套件自动化存储"
+                                                AutomationProperties.Name="测试工作流自动化存储"
                                             />
                                         </StackPanel>
                                     </Grid>
@@ -1038,7 +1038,7 @@
                                         TextWrapping="Wrap"
                                     />
                                     <TextBlock
-                                        Text="系统配置、集合与接口记录、套件自动化和审计保存在本地 SQLite；默认位于项目目录 .postsharp 下。远程数据库仅按上方分类绑定使用，连接串以当前 Windows 用户加密保存。"
+                                        Text="系统配置、集合与接口记录、测试工作流自动化和审计保存在本地 SQLite；默认位于项目目录 .postsharp 下。远程数据库仅按上方分类绑定使用，连接串以当前 Windows 用户加密保存。"
                                         FontSize="{arc:ArcDesignTokenResource TypeXS}"
                                         Foreground="{arc:ArcDesignTokenResource TextMuted}"
                                         TextWrapping="Wrap"

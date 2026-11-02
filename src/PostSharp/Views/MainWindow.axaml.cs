@@ -513,6 +513,8 @@ public partial class MainWindow : Window
             editor.FitToWorkingArea();
             editor.SuiteCreated += (_, result) =>
                 _viewModel.ApplySuiteEditorResult(result.Suite, existing);
+            editor.LayoutChanged += (_, _) =>
+                _viewModel.ApplySuiteLayout(existing, editor.CaptureLayout());
             _ = editor.ShowDialog(this);
         }
         catch (Exception exception)
