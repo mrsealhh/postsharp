@@ -24,6 +24,24 @@ public sealed class SuiteReliabilityTests
     }
 
     [Fact]
+    public void PreflightToleratesNestedCollectionsInFlatWorkspaceList()
+    {
+        var root = new RequestCollection { Name = "根集合" };
+        var child = new RequestCollection { Name = "子集合", Parent = root };
+        root.Children.Add(child);
+        var suite = new TestSuite();
+        AddStep(suite, root, "根接口", "https://example.test/root");
+        AddStep(suite, child, "子接口", "https://example.test/child");
+        suite.Workflow = BuildWorkflow(suite);
+
+        // 主窗口的 Collections 同时包含父集合和子集合，子集合的请求会被遍历两次。
+        var result = SuitePreflight.Validate(suite, new[] { root, child }, null);
+
+        Assert.False(result.HasErrors);
+        Assert.DoesNotContain(result.Issues, issue => issue.Code == "step.requestMissing");
+    }
+
+    [Fact]
     public void PreflightDetectsCycleAndDanglingEdge()
     {
         var collection = new RequestCollection { Name = "Demo" };

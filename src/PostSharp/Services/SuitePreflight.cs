@@ -52,7 +52,14 @@ public static class SuitePreflight
     )
     {
         var issues = new List<SuiteValidationIssue>();
-        var requests = FlattenRequests(collections).ToDictionary(request => request.Id);
+        // 工作区的集合列表是“扁平 + 子集合挂到父集合”的结构，直接遍历会把
+        // 子集合里的请求统计两次；这里按请求 ID 去重，避免 ToDictionary 抛异常。
+        var requests = new Dictionary<Guid, RequestItem>();
+        foreach (var request in FlattenRequests(collections))
+        {
+            requests.TryAdd(request.Id, request);
+        }
+
         if (suite.Steps.Count == 0)
         {
             issues.Add(
