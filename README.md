@@ -1008,7 +1008,7 @@ docs/
 | MCP 访问控制 | 启用 token 后无 token/错误 token 返回 401，正确 Bearer 返回 200；只读模式 `tools/list` 只剩 21 个读工具，`send_request` 返回 403；审计记录 `permission=ReadWrite`；CLI `--token` 调用成功 |
 | 远程存储错误 | 用不可达 PostgreSQL / MongoDB 配置测试连接，返回 `success=false` 和面向用户的失败原因，未阻塞本地 SQLite |
 | 自动更新入口 | 顶栏「更新」按钮和设置窗口「检查更新」均可主动触发；下载完成后按钮变为「更新」，点击打开「可用更新」卡片，由用户确认后才应用；版本标签解析、包名/校验文件和开发目录禁用逻辑通过单测 |
-| 更新提示卡 | 用临时 `pending.json`（含版本、Release 链接和 Markdown 发行说明）启动实机：自动弹出「可用更新」，显示「v1.11.16 已准备就绪。」、会话不中断说明、去掉 Markdown 标记的发行说明，以及「打开发行说明 / 稍后更新 / 立即更新」三个操作 |
+| 更新提示卡 | 用临时 `pending.json`（含版本、Release 链接和 Markdown 发行说明）启动实机：自动弹出「可用更新」，显示「v1.11.17 已准备就绪。」、会话不中断说明、去掉 Markdown 标记的发行说明，以及「打开发行说明 / 稍后更新 / 立即更新」三个操作 |
 | 发送 loading | 慢响应发送中切换到创建订单，发送按钮不显示其他请求的 loading；两个请求均完成并写入历史 |
 | 审计 SQLite | 旧 `audit.json` 55 条启动导入 `postsharp.db`，新请求写入数据库；`audit.json` 时间戳不再变化；SQLite 读写单测通过 |
 | 审核修复 | 套件映射后的机密不再写入历史；授权查询令牌与 API Key 请求头不进入审计、MCP 返回或日志；授权刷新超时显示错误而不崩溃（单测/构建） |
@@ -1104,7 +1104,7 @@ docs/
 | MCP 细粒度权限 | 设置页可分别开启发送/修改/管理；单测确认 `AllowSend=false` 隐藏 `send_request`/`run_suite` 但保留 `delete_request`，`AllowAdmin=false` 隐藏 `update_settings`/`sync_storage`；越权调用返回 `-32003` |
 | 首次启动引导 | 首次启动弹出 3 步欢迎对话框（发送请求 / 接入 MCP / 运行套件）；「打开指南」完成引导并切到指南页，「跳过」只标记已读；Debug 构建 0 警告 0 错误 |
 | 无头模式 | Windows 实机 `PostSharp.exe --headless` 启动后健康端点 `200`，无主窗口；Linux CI 用 `xvfb-run` 启动自包含包，`initialize` 后 `tools/list` 返回 95 个工具并跑通演示套件；Docker 镜像构建、容器内健康检查与工具列表通过 |
-| 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.16，Windows/macOS 哈希与发布资产一致 |
+| 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.17，Windows/macOS 哈希与发布资产一致 |
 | 重置演示工作区 | 指南页「一分钟上手」增加入口；确认弹窗说明会清空集合、环境、套件、历史和回收站并恢复内置 Mock 示例，审计和设置保留；`Ctrl+Enter` 确认、`Esc` 取消；Debug 构建 0 警告 0 错误 |
 | 启动与内存基线 | `perf-smoke.ps1` 新增 `McpReadyMs`，改为 HTTP 直连 5199；修复旧端口扫描最多约 1.8s 的测量虚高。1.11.3 本机复测：JIT MCP 就绪 664–690 ms、空闲内存 100–108 MB；AOT 581–590 ms、约 81 MB；均达到 1.5s / 150MB 目标（首次运行新二进制仍受杀毒扫描影响） |
 | 导入即套件 | HAR 导入后成功对话框显示「生成套件」；点击关闭导入窗口并打开套件编辑器，步骤预填导入集合的请求；批量导入取最后一个成功集合；无请求或集合已删除时不显示或提示；单测覆盖命令与主机回调 |
@@ -1186,11 +1186,11 @@ master                 稳定可发布
 发布新版本（三类主包 + 可选 NativeAOT 包）：
 
 ```powershell
-.\scripts\build-release.ps1 -Version 1.11.16
-.\scripts\build-linux-release.ps1 -Version 1.11.16
-.\scripts\build-osx-release.ps1 -Version 1.11.16 -RuntimeIdentifier osx-arm64
+.\scripts\build-release.ps1 -Version 1.11.17
+.\scripts\build-linux-release.ps1 -Version 1.11.17
+.\scripts\build-osx-release.ps1 -Version 1.11.17 -RuntimeIdentifier osx-arm64
 # 可选：NativeAOT 单独产物（Windows 上构建）
-.\scripts\build-aot-release.ps1 -Version 1.11.16
+.\scripts\build-aot-release.ps1 -Version 1.11.17
 # CLI 独立发布，不进入上面三个桌面包
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier win-x64 -SelfContained
 .\scripts\build-cli-release.ps1 -Version 1.1.0 -RuntimeIdentifier linux-x64 -SelfContained
@@ -1216,7 +1216,7 @@ master                 稳定可发布
 `packaging/` 提供 winget、Scoop 和 Homebrew 清单模板，发布后运行：
 
 ```powershell
-.\scripts\update-packaging.ps1 -Version 1.11.16
+.\scripts\update-packaging.ps1 -Version 1.11.17
 ```
 
 会从 `artifacts/*.sha256` 读取校验值并更新 `packaging/winget/PostSharp.yaml`、`packaging/scoop/postsharp.json`、`packaging/homebrew/postsharp.rb`。安装命令、上游提交方式和已知限制见 [docs/distribution.md](docs/distribution.md)。仓库还提供 `.github/workflows/release.yml`，可在 Actions 页面手动构建全部平台包并创建 draft release。
@@ -1269,7 +1269,7 @@ master                 稳定可发布
 
 ### 后续路线图
 
-当前有效路线见 [PostSharp 产品化路线（v1.11.16 基线）](docs/product-todos.md)：已交付能力、五条产品化验收线、下一阶段的 N 系列事项、P0/P1/P2 与版本节奏。
+当前有效路线见 [PostSharp 产品化路线（v1.11.17 基线）](docs/product-todos.md)：已交付能力、五条产品化验收线、下一阶段的 N 系列事项、P0/P1/P2 与版本节奏。
 
 历史 TODO 与交接细节已归档到 [docs/archive/product-todos-v1.10.24.md](docs/archive/product-todos-v1.10.24.md)。
 
