@@ -285,7 +285,7 @@ jobs:
         id: postsharp
         uses: ./.github/actions/postsharp-mcp
         with:
-          version: 1.11.15
+          version: 1.11.16
 
       - name: Check MCP tools
         run: |
