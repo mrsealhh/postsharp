@@ -561,7 +561,10 @@ public sealed class PipelineRunner
     )
     {
         var resolved = PipelineTemplate.ResolveText(template, roots, location).Trim();
-        if (Uri.TryCreate(resolved, UriKind.Absolute, out _))
+        if (
+            Uri.TryCreate(resolved, UriKind.Absolute, out var absolute)
+            && (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps)
+        )
         {
             return resolved;
         }
