@@ -127,6 +127,15 @@ public sealed class AppSettingsJsonConverter : JsonConverter<AppSettings>
                 case nameof(AppSettings.McpTokenCipher):
                     settings.McpTokenCipher = reader.GetString() ?? settings.McpTokenCipher;
                     break;
+                case nameof(AppSettings.McpClientTokens):
+                    settings.McpClientTokens.Clear();
+                    settings.McpClientTokens.AddRange(
+                        JsonSerializer.Deserialize(
+                            ref reader,
+                            DataJsonContext.Default.ListMcpClientToken
+                        ) ?? new List<McpClientToken>()
+                    );
+                    break;
                 default:
                     reader.Skip();
                     break;
@@ -179,6 +188,12 @@ public sealed class AppSettingsJsonConverter : JsonConverter<AppSettings>
         writer.WriteBoolean(nameof(AppSettings.McpAllowAdmin), value.McpAllowAdmin);
         writer.WriteBoolean(nameof(AppSettings.HasSeenOnboarding), value.HasSeenOnboarding);
         writer.WriteString(nameof(AppSettings.McpTokenCipher), value.McpTokenCipher);
+        writer.WritePropertyName(nameof(AppSettings.McpClientTokens));
+        JsonSerializer.Serialize(
+            writer,
+            value.McpClientTokens,
+            DataJsonContext.Default.ListMcpClientToken
+        );
         writer.WriteEndObject();
     }
 }

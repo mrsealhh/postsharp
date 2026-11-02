@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using PostSharp.Models;
 
 namespace PostSharp.Services;
 
@@ -10,12 +11,45 @@ public sealed record McpAccessPolicy(
     bool ReadOnly,
     bool AllowSend = true,
     bool AllowWrite = true,
-    bool AllowAdmin = true
+    bool AllowAdmin = true,
+    IReadOnlyList<McpClientToken>? ClientTokens = null
 )
 {
     public static McpAccessPolicy Local { get; } = new(false, string.Empty, false);
 
     public string PermissionLabel => ReadOnly ? "ReadOnly" : "ReadWrite";
+
+    /// <summary>尝试用客户端 token 解析出受限策略；匹配不到返回 false。</summary>
+    public bool TryResolveClient(string token, out McpAccessPolicy policy)
+    {
+        policy = this;
+        if (!RequireToken || string.IsNullOrEmpty(token) || ClientTokens is null)
+        {
+            return false;
+        }
+
+        var hash = McpTokenService.Hash(token);
+        foreach (var client in ClientTokens)
+        {
+            if (
+                !string.IsNullOrEmpty(client.TokenHash)
+                && McpTokenService.FixedEquals(client.TokenHash, hash)
+            )
+            {
+                policy = this with
+                {
+                    Token = string.Empty,
+                    ReadOnly = false,
+                    AllowSend = client.AllowSend,
+                    AllowWrite = client.AllowWrite,
+                    AllowAdmin = client.AllowAdmin,
+                };
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public bool Allows(string tool)
     {
@@ -46,6 +80,10 @@ public static class McpTokenService
         var bytes = RandomNumberGenerator.GetBytes(32);
         return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
+
+    /// <summary>客户端 token 只落盘哈希，用于比对而不保存明文。</summary>
+    public static string Hash(string token) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
 
     public static bool FixedEquals(string expected, string provided)
     {
@@ -87,6 +125,10 @@ public static class McpToolAccess
         "get_suite",
         "validate_suite",
         "validate_pipeline",
+        "visualize_pipeline",
+        "list_clients",
+        "get_client_activity",
+        "list_client_tokens",
         "list_suite_runs",
         "get_suite_run",
         "get_suite_run_job",
@@ -132,6 +174,8 @@ public static class McpToolAccess
     {
         "update_settings",
         "check_updates",
+        "create_client_token",
+        "revoke_client_token",
         "upsert_storage_profile",
         "delete_storage_profile",
         "set_storage_binding",

@@ -2343,7 +2343,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Settings.McpReadOnly,
             Settings.McpAllowSend,
             Settings.McpAllowWrite,
-            Settings.McpAllowAdmin
+            Settings.McpAllowAdmin,
+            Settings.McpClientTokens.ToList()
         );
     }
 
@@ -4843,6 +4844,106 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         var saved = _settingsStore.Save(Settings);
         Persist();
         return saved;
+    }
+
+    /// <summary>把一次 MCP 流水线运行写入审计，客户端管理页才能看到调用记录。</summary>
+    public void RecordPipelineAuditForMcp(
+        PipelineRunResult result,
+        string? client,
+        string permission
+    )
+    {
+        var steps = result.Cases.Sum(item => item.Steps.Count);
+        var failed = result
+            .Cases.SelectMany(item => item.Steps)
+            .FirstOrDefault(step => !step.Passed);
+        var entry = new AuditEntry
+        {
+            Source = "MCP",
+            Tool = "run_pipeline",
+            Client = client,
+            Permission = permission,
+            RequestName = result.Name,
+            Method = "PIPELINE",
+            Url = $"{result.Cases.Count} 组 / {steps} 步",
+            StatusCode = result.Passed ? 200 : 500,
+            StatusText = result.Passed ? "通过" : "失败",
+            ElapsedMs = result.ElapsedMs,
+            IsSuccess = result.Passed,
+            Error = failed?.Error,
+        };
+        WireAuditEntry(entry);
+        Audit.Insert(0, entry);
+        if (_auditLimit > 0)
+        {
+            while (Audit.Count > _auditLimit)
+            {
+                Audit.RemoveAt(Audit.Count - 1);
+            }
+        }
+
+        PersistAudit();
+    }
+
+    /// <summary>按客户端签发 MCP token；明文只在创建时返回一次。</summary>
+    public McpClientTokenSecret CreateClientTokenForMcp(
+        string name,
+        bool allowSend,
+        bool allowWrite,
+        bool allowAdmin
+    )
+    {
+        var token = McpTokenService.Generate();
+        var entry = new McpClientToken
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = name.Trim(),
+            TokenHash = McpTokenService.Hash(token),
+            AllowSend = allowSend,
+            AllowWrite = allowWrite,
+            AllowAdmin = allowAdmin,
+            CreatedAt = DateTimeOffset.Now,
+        };
+        Settings.McpClientTokens.Add(entry);
+        SaveSettingsForMcp();
+        if (_mcpServer is not null)
+        {
+            _mcpServer.Policy = BuildMcpPolicy();
+        }
+
+        return new McpClientTokenSecret(
+            entry.Id,
+            entry.Name,
+            token,
+            entry.AllowSend,
+            entry.AllowWrite,
+            entry.AllowAdmin
+        );
+    }
+
+    /// <summary>按 id 或名称吊销客户端 token；返回是否删除了条目。</summary>
+    public bool RevokeClientTokenForMcp(string? id, string? name)
+    {
+        var match = Settings.McpClientTokens.FirstOrDefault(token =>
+            (!string.IsNullOrWhiteSpace(id) && token.Id == id)
+            || (
+                !string.IsNullOrWhiteSpace(name)
+                && token.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+            )
+        );
+        if (match is null)
+        {
+            return false;
+        }
+
+        Settings.McpClientTokens.Remove(match);
+        SaveSettingsForMcp();
+        if (_mcpServer is not null)
+        {
+            _mcpServer.Policy = BuildMcpPolicy();
+        }
+
+        return true;
     }
 
     public EnvironmentModel CreateEnvironmentForMcp(string name)

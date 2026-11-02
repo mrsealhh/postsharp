@@ -1,5 +1,25 @@
 # 更新日志
 
+## v1.11.14（待发布）
+
+### 流水线可视化（只读）
+
+- 新增 `visualize_pipeline`：返回节点/边、层级、Mermaid 和 DOT，不发送请求。
+- CLI 新增 `pipeline graph <文件> --format mermaid|dot|json`。
+- 循环与并发组渲染为子图；并发组内不生成兄弟依赖边；节点标签带方法与地址。
+
+### 客户端管理
+
+- 新增 `list_clients`：聚合最近 MCP 审计，显示调用次数、失败数、最近活动、常用工具、绑定 token 和当前客户端。
+- 新增 `get_client_activity`：查看单个客户端最近的工具、接口、状态、耗时和成功与否。
+- 新增按客户端的 token：`create_client_token` / `list_client_tokens` / `revoke_client_token`；只保存 SHA256，明文只返回一次，可分别限定发送/修改/管理权限。
+- 客户端 token 与全局 token 并存；吊销立即生效，审计记录客户端名称。
+- `run_pipeline` 现在写入审计（`Tool=run_pipeline`），客户端活动可统计流水线运行。
+
+### 测试
+
+- 新增流水线图、客户端 token 权限用例；322 个测试通过；MCP 工具总数 95。
+
 ## v1.11.13 — 2026-11-02
 
 ### 流水线并发与 HTTP

@@ -41,6 +41,10 @@ steps:
 # 只校验（不发送请求）
 postsharp-cli pipeline validate docs/examples/order-flow.yaml
 
+# 输出只读流程图（Mermaid / DOT / JSON）
+postsharp-cli pipeline graph docs/examples/parallel.yaml
+postsharp-cli pipeline graph docs/examples/parallel.yaml --format dot
+
 # 执行并打印每组数据的步骤结果
 postsharp-cli pipeline run docs/examples/order-flow.yaml
 
@@ -80,6 +84,24 @@ CLI 通过本机 MCP 端点（默认 `http://127.0.0.1:5199/mcp`）调用 PostSh
 ```
 
 `document` 与 `path` 二选一；跨机器调用时用 `document`，并把数据文件内容通过 `dataContent` + `dataFormat` 一起传。
+
+只读可视化用 `visualize_pipeline`：返回节点/边、层级、Mermaid 和 DOT，不发送请求。Mermaid 可直接贴进 Markdown 或 PR 描述。
+
+## 可视化（只读）
+
+```bash
+postsharp-cli pipeline graph flow.yaml                 # Mermaid
+postsharp-cli pipeline graph flow.yaml --format dot    # Graphviz DOT
+postsharp-cli pipeline graph flow.yaml --format json   # 节点/边/图文本
+```
+
+MCP 对应 `visualize_pipeline { document | path }`。输出结构：
+
+- `nodes`：`id`、`kind`（request / loop / parallel）、`label`、`method`、`url`、`parentId`、`order`
+- `edges`：顺序依赖；并发组内不生成兄弟边
+- `mermaid` / `dot`：可直接渲染的文本
+
+可视化是只读的：不执行请求，也不替代 YAML。需要拖拽编辑时仍用套件编排器（流水线转套件的导入尚未实现）。
 
 ## 字段参考
 

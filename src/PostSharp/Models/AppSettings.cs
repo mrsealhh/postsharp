@@ -188,6 +188,9 @@ public partial class AppSettings : ObservableObject
     [ObservableProperty]
     private string _mcpTokenCipher = string.Empty;
 
+    /// <summary>按客户端签发、只保存哈希的额外 MCP token；全局 token 仍是主凭据。</summary>
+    public List<McpClientToken> McpClientTokens { get; } = new();
+
     public string GetMcpToken()
     {
         var token = McpTokenService.Unprotect(McpTokenCipher);

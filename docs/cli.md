@@ -23,6 +23,9 @@ postsharp-cli suite run <suiteId>
 postsharp-cli suite runs <suiteId>
 postsharp-cli suite rerun-failed <suiteId> <runId>
 postsharp-cli suite continue <suiteId> <runId> <stepId>
+postsharp-cli pipeline validate <file>
+postsharp-cli pipeline graph <file> [--format mermaid|dot|json]
+postsharp-cli pipeline run <file> [--data <file>] [--var k=v] [--base-url URL] [--format junit|json|markdown] [--copy-report <path>]
 postsharp-cli request send <requestId>
 postsharp-cli audit list --source MCP --limit 20
 postsharp-cli mcp-stdio

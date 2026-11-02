@@ -120,6 +120,7 @@ internal static class Program
                 options,
                 cancellationToken
             ),
+            ("pipeline", "graph") => await PipelineGraphAsync(client, options, cancellationToken),
             ("pipeline", "run") => await RunPipelineAsync(client, options, cancellationToken),
             ("request", "send") => await SendRequestAsync(client, options, cancellationToken),
             ("audit", "list") => await ListAuditAsync(client, options, cancellationToken),
@@ -422,6 +423,41 @@ internal static class Program
         }
 
         return valid ? 0 : 1;
+    }
+
+    private static async Task<int> PipelineGraphAsync(
+        McpClient client,
+        CliOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        var path = RequireArgument(options, 2, "pipeline graph <file>");
+        var format = (options.GetOption("--format", null) ?? "mermaid").Trim().ToLowerInvariant();
+        var result = await client.CallToolAsync(
+            "visualize_pipeline",
+            BuildPipelineArguments(options, path),
+            cancellationToken
+        );
+        using var document = Parse(result.Text);
+        var root = document.RootElement;
+        if (options.Json || format == "json")
+        {
+            WriteJson(result.Text);
+            return 0;
+        }
+
+        var text = format switch
+        {
+            "dot" => ReadString(root, "dot"),
+            _ => ReadString(root, "mermaid"),
+        };
+        if (text.Length == 0)
+        {
+            throw new CliException("服务端没有返回图数据。");
+        }
+
+        Console.WriteLine(text);
+        return 0;
     }
 
     private static async Task<int> RunPipelineAsync(
@@ -760,6 +796,7 @@ internal static class Program
               suite rerun-failed <suiteId> <runId>
               suite continue <suiteId> <runId> <stepId>
               pipeline validate <文件>
+              pipeline graph <文件> [--format mermaid|dot|json]
               pipeline run <文件> [--data 数据文件] [--var k=v] [--base-url URL] [--format junit|json|markdown]
               request send <requestId>
               audit list [--source UI|MCP] [--limit 数量]

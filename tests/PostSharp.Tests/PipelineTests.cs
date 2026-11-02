@@ -220,32 +220,16 @@ public sealed class PipelineTests
     [Fact]
     public async Task RunsParallelGroupWithinConfiguredLimit()
     {
-        var active = 0;
-        var peak = 0;
-        var gate = new object();
-        var handler = new StubHandler(
-            (_, _) =>
-            {
-                lock (gate)
-                {
-                    active++;
-                    peak = Math.Max(peak, active);
-                }
-
-                Thread.Sleep(60);
-                lock (gate)
-                {
-                    active--;
-                }
-
-                return Json(HttpStatusCode.OK, """{"ok":true}""");
-            }
-        );
+        // CI 的线程池可能被其它测试占满，先抬高最小线程数，避免并发任务排队导致误判。
+        ThreadPool.GetMinThreads(out var workers, out var io);
+        ThreadPool.SetMinThreads(Math.Max(workers, 16), Math.Max(io, 16));
+        var handler = new ConcurrencyHandler();
         var runner = new PipelineRunner(new HttpRequestService(new HttpClient(handler)));
         var parsed = PipelineParser.Parse(
             """
             name: 并发
             baseUrl: http://mock.local
+            maxParallelism: 4
             steps:
               - parallel:
                   max: 2
@@ -267,7 +251,7 @@ public sealed class PipelineTests
 
         Assert.True(result.Passed, Describe(result));
         Assert.Equal(3, Assert.Single(result.Cases).Steps.Count);
-        Assert.Equal(2, peak);
+        Assert.Equal(2, handler.Peak);
     }
 
     [Fact]
@@ -328,6 +312,40 @@ public sealed class PipelineTests
             "Basic " + Convert.ToBase64String("demo:abc"u8.ToArray()),
             request.Authorization
         );
+    }
+
+    [Fact]
+    public void BuildsMermaidAndDotForLoopsAndParallelGroups()
+    {
+        var parsed = PipelineParser.Parse(
+            """
+            name: 图
+            baseUrl: http://mock.local
+            steps:
+              - id: list
+                method: GET
+                url: /api/list
+              - loop:
+                  over: ${list}
+                  as: item
+                  steps:
+                    - method: GET
+                      url: /api/items/${item.id}
+              - parallel:
+                  - { method: GET, url: /api/a }
+                  - { method: GET, url: /api/b }
+            """
+        );
+
+        var graph = PipelineVisualization.Build(parsed.Pipeline, parsed.Issues);
+
+        Assert.Contains("flowchart TD", graph.Mermaid, StringComparison.Ordinal);
+        Assert.Contains("subgraph loop", graph.Mermaid, StringComparison.Ordinal);
+        Assert.Contains("subgraph par", graph.Mermaid, StringComparison.Ordinal);
+        Assert.Contains("digraph pipeline", graph.Dot, StringComparison.Ordinal);
+        Assert.Equal(4, graph.StepCount);
+        Assert.Contains(graph.Nodes, node => node.Kind == "loop");
+        Assert.Contains(graph.Nodes, node => node.Kind == "parallel");
     }
 
     [Fact]
@@ -406,6 +424,41 @@ public sealed class PipelineTests
 
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+
+    private sealed class ConcurrencyHandler : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource _handshake = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _active;
+        private int _peak;
+
+        public int Peak => _peak;
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            var active = Interlocked.Increment(ref _active);
+            if (active > _peak)
+            {
+                _peak = active;
+            }
+
+            if (active >= 2)
+            {
+                _handshake.TrySetResult();
+            }
+
+            await Task.WhenAny(
+                _handshake.Task,
+                Task.Delay(TimeSpan.FromSeconds(2), cancellationToken)
+            );
+            Interlocked.Decrement(ref _active);
+            return Json(HttpStatusCode.OK, """{"ok":true}""");
+        }
+    }
 
     private sealed class StubHandler : HttpMessageHandler
     {
