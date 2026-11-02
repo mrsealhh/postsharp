@@ -34,14 +34,13 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
         else
         {
             NameText = "新建流水线";
-            Content = Templates[0].Content;
+            YamlText = Templates[0].Content;
         }
     }
 
     public ObservableCollection<PipelineFileItem> Files { get; } = new();
 
     public ObservableCollection<PipelineTemplateItem> Templates { get; }
-
     public string DirectoryPath => _directory;
 
     [ObservableProperty]
@@ -51,7 +50,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
     private string _nameText = string.Empty;
 
     [ObservableProperty]
-    private string _content = string.Empty;
+    private string _yamlText = string.Empty;
 
     [ObservableProperty]
     private string _statusText = "选择左侧流水线，或从场景模板开始。";
@@ -64,7 +63,15 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
 
     public bool HasSelection => SelectedFile is not null;
 
+    public bool HasFiles => Files.Count > 0;
+
     public bool HasPreview => PreviewText.Length > 0;
+
+    [RelayCommand]
+    private void OpenFile(PipelineFileItem? file)
+    {
+        SelectedFile = file;
+    }
 
     [RelayCommand]
     private void RefreshFiles()
@@ -81,7 +88,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
     {
         SelectedFile = null;
         NameText = $"流水线-{DateTime.Now:MMdd-HHmm}";
-        Content = Templates[0].Content;
+        YamlText = Templates[0].Content;
         PreviewText = string.Empty;
         StatusText = "已新建草稿，保存后写入 pipelines 目录。";
         OnPropertyChanged(nameof(HasSelection));
@@ -97,7 +104,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
 
         SelectedFile = null;
         NameText = template.Name;
-        Content = template.Content;
+        YamlText = template.Content;
         PreviewText = string.Empty;
         StatusText = $"已载入场景模板：{template.Name}";
         OnPropertyChanged(nameof(HasSelection));
@@ -116,7 +123,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
             }
 
             var path = Path.Combine(_directory, $"{name}.yaml");
-            File.WriteAllText(path, Content, new UTF8Encoding(false));
+            File.WriteAllText(path, YamlText, new UTF8Encoding(false));
             Refresh();
             SelectedFile = Files.FirstOrDefault(file =>
                 string.Equals(file.Path, path, StringComparison.OrdinalIgnoreCase)
@@ -173,7 +180,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
     [RelayCommand]
     private async Task RunPipelineAsync(CancellationToken cancellationToken)
     {
-        var parsed = PipelineParser.Parse(Content);
+        var parsed = PipelineParser.Parse(YamlText);
         var errors = parsed.Issues.Where(issue => issue.IsError).ToList();
         if (errors.Count > 0)
         {
@@ -249,7 +256,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
         try
         {
             NameText = value.Name;
-            Content = File.ReadAllText(value.Path);
+            YamlText = File.ReadAllText(value.Path);
             PreviewText = string.Empty;
             StatusText = $"已打开 {value.Name}";
             OnPropertyChanged(nameof(HasPreview));
@@ -272,7 +279,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
         {
             await Task.Yield();
             cancellationToken.ThrowIfCancellationRequested();
-            var parsed = PipelineParser.Parse(Content);
+            var parsed = PipelineParser.Parse(YamlText);
             PreviewText = render(parsed.Pipeline, parsed.Issues);
             StatusText = parsed.HasErrors ? $"{action}完成，存在错误。" : $"{action}完成。";
         }
@@ -314,6 +321,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(HasFiles));
     }
 
     private static string Sanitize(string name)

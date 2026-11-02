@@ -21,7 +21,7 @@ public partial class PipelineCenterView : UserControl
         PipelineEditorWindow editor;
         try
         {
-            editor = new PipelineEditorWindow(new PipelineEditorViewModel(viewModel.Content));
+            editor = new PipelineEditorWindow(new PipelineEditorViewModel(viewModel.YamlText));
         }
         catch (Exception exception)
         {
@@ -31,7 +31,7 @@ public partial class PipelineCenterView : UserControl
 
         editor.Saved += (_, yaml) =>
         {
-            viewModel.Content = yaml;
+            viewModel.YamlText = yaml;
             viewModel.StatusText = "图像编辑结果已应用到 YAML，点击「保存」写入文件。";
         };
         var owner = TopLevel.GetTopLevel(this) as Window;

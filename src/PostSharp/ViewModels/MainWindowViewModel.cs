@@ -2362,19 +2362,21 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     }
 
     public string McpToolSummary =>
-        "集合/请求：list_collections、create_collection、update_collection、move_collection、delete_collection、"
-        + "get_request、create_request、update_request、move_request、delete_request、duplicate_request；"
-        + "测试工作流：list_suites、get_suite、create_suite、create_suite_from_collections、update_suite、run_suite、delete_suite；"
-        + "环境与历史：list_environments、create_environment、rename_environment、delete_environment、activate_environment、set_variable、delete_variable、"
-        + "list_history、clear_history、list_history_trash、restore_history、purge_history、empty_history_trash；"
-        + "审计/回收站：list_audit、get_audit、clear_audit、list_audit_trash、restore_audit、purge_audit、empty_audit_trash、"
-        + "list_collection_trash、restore_collection_trash、purge_collection_trash、empty_collection_trash；"
-        + "设置/存储：get_settings、update_settings、check_updates、get_storage_config、upsert_storage_profile、delete_storage_profile、set_storage_binding、test_storage_profile、sync_storage、switch_storage；"
-        + "导入导出：import_content、export_workspace、send_request、run_sequence、get_curl；"
-        + "长任务：start_suite_run、start_sequence_run、start_import、start_storage_sync 及对应 get_*_job / cancel_*；"
-        + "意图：verify_endpoint、generate_suite、export_report、diff_runs、diff_openapi、export_run_diff、export_openapi_diff、explain_failure；"
-        + "权限：读取、发送、修改、管理可独立开关；"
-        + "协议：soap_describe、grpc_describe（SOAP / gRPC 一元调用走 send_request）。";
+        string.Join(
+            Environment.NewLine,
+            "集合 / 请求：list_collections、create_collection、update_collection、move_collection、delete_collection、get_request、create_request、update_request、move_request、delete_request、duplicate_request",
+            "测试工作流：list_suites、get_suite、create_suite、create_suite_from_collections、update_suite、run_suite、delete_suite、start_suite_run、rerun_failed_suite、continue_suite_from_step",
+            "环境与历史：list_environments、create_environment、rename_environment、delete_environment、activate_environment、set_variable、delete_variable、list_history、clear_history、list_history_trash、restore_history、purge_history、empty_history_trash",
+            "审计与回收站：list_audit、get_audit、clear_audit、list_audit_trash、restore_audit、purge_audit、empty_audit_trash、list_collection_trash、restore_collection_trash、purge_collection_trash、empty_collection_trash",
+            "设置与存储：get_settings、update_settings、check_updates、get_storage_config、upsert_storage_profile、delete_storage_profile、set_storage_binding、test_storage_profile、sync_storage、switch_storage",
+            "导入导出与调试：import_content、export_workspace、send_request、run_sequence、get_curl",
+            "长任务：start_suite_run、start_sequence_run、start_import、start_storage_sync，以及对应的 get_*_job / cancel_*",
+            "意图工具：verify_endpoint、generate_suite、export_report、diff_runs、diff_openapi、export_run_diff、export_openapi_diff、explain_failure",
+            "流水线：validate_pipeline、visualize_pipeline、run_pipeline",
+            "客户端：list_clients、get_client_activity、list_client_tokens、create_client_token、revoke_client_token",
+            "协议：soap_describe、grpc_describe（SOAP / gRPC 一元调用走 send_request）",
+            "权限：读取、发送、修改、管理可独立开关；越权工具不会出现在 tools/list"
+        );
 
     public string EditorHint =>
         IsCollectionSelected ? "已选中集合 · 「授权」标签页正在配置集合授权"
