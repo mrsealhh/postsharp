@@ -237,6 +237,17 @@
                                         />
                                     </arc:Button>
                                     <arc:Button
+                                        Variant="Primary"
+                                        Command="{Binding OpenAutomationCommand}"
+                                        ToolTip.Tip="打开测试工作流、流水线和场景模板"
+                                        AutomationProperties.Name="自动化"
+                                    >
+                                        <controls:IconLabel
+                                            Icon="{x:Static arc:ArcIcons.Play}"
+                                            Text="自动化"
+                                        />
+                                    </arc:Button>
+                                    <arc:Button
                                         Variant="Secondary"
                                         Command="{Binding OpenManagementCommand}"
                                     >
@@ -2952,7 +2963,7 @@
                                         >
                                             <controls:IconLabel
                                                 Icon="{x:Static arc:ArcIcons.ListChecks}"
-                                                Text="套件设置"
+                                                Text="测试工作流设置"
                                                 IconSize="13"
                                             />
                                         </arc:Button>
@@ -3558,7 +3569,7 @@
                                             Variant="Secondary"
                                             Command="{Binding Import.PreviewHarSessionCommand}"
                                             IsEnabled="{Binding Import.CanPreviewHarSession}"
-                                            ToolTip.Tip="先核对、筛选 HAR 条目，再导入或生成套件"
+                                            ToolTip.Tip="先核对、筛选 HAR 条目，再导入或生成测试工作流"
                                             ToolTip.ShowOnDisabled="True"
                                             AutomationProperties.Name="预览粘贴的 HAR 会话"
                                         />

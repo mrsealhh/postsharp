@@ -140,7 +140,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
 
         var suiteLoad = _suiteStore.Load();
-        DataNotice.Report(suiteLoad, "套件文档 ", "套件列表从空白开始");
+        DataNotice.Report(suiteLoad, "测试工作流文档 ", "测试工作流列表从空白开始");
         if (StorageCoordinator.Current.Config.BlockedRemoteCategories.Count > 0)
         {
             DataNotice.Warn(
@@ -285,6 +285,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         ScrubAuditSecrets();
 
         Import = new ImportViewModel(this);
+        Pipelines = new PipelineCenterViewModel();
         RefreshAuditView();
         BindEditingTracking();
         RefreshAuthState();
@@ -334,6 +335,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     public ObservableCollection<SessionCookie> SessionCookies { get; } = new();
 
     public ImportViewModel Import { get; }
+
+    public PipelineCenterViewModel Pipelines { get; }
 
     public IReadOnlyList<string> Methods { get; } =
         new[] { "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS" };
@@ -755,13 +758,23 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public bool IsAutomationTab => ManagementTab == "自动化";
 
+    public bool IsPipelineTab => ManagementTab == "流水线";
+
     public bool IsGuideTab => ManagementTab == "指南";
 
     partial void OnManagementTabChanged(string value)
     {
         OnPropertyChanged(nameof(IsAuditTab));
         OnPropertyChanged(nameof(IsAutomationTab));
+        OnPropertyChanged(nameof(IsPipelineTab));
         OnPropertyChanged(nameof(IsGuideTab));
+    }
+
+    [RelayCommand]
+    private void OpenAutomation()
+    {
+        ManagementTab = "自动化";
+        IsManagementOpen = true;
     }
 
     [RelayCommand]
@@ -774,7 +787,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [RelayCommand]
     private void SetManagementTab(string tab)
     {
-        if (tab is "审计" or "自动化" or "指南")
+        if (tab is "审计" or "自动化" or "流水线" or "指南")
         {
             ManagementTab = tab;
         }
@@ -795,7 +808,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return;
         }
 
-        ShowToast("导入的集合已不存在，无法生成套件");
+        ShowToast("导入的集合已不存在，无法生成测试工作流");
     }
 
     public void OpenRecordingSession(string content)
@@ -2351,7 +2364,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     public string McpToolSummary =>
         "集合/请求：list_collections、create_collection、update_collection、move_collection、delete_collection、"
         + "get_request、create_request、update_request、move_request、delete_request、duplicate_request；"
-        + "套件：list_suites、get_suite、create_suite、create_suite_from_collections、update_suite、run_suite、delete_suite；"
+        + "测试工作流：list_suites、get_suite、create_suite、create_suite_from_collections、update_suite、run_suite、delete_suite；"
         + "环境与历史：list_environments、create_environment、rename_environment、delete_environment、activate_environment、set_variable、delete_variable、"
         + "list_history、clear_history、list_history_trash、restore_history、purge_history、empty_history_trash；"
         + "审计/回收站：list_audit、get_audit、clear_audit、list_audit_trash、restore_audit、purge_audit、empty_audit_trash、"
@@ -4005,7 +4018,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (IsRunningSuite || HasActiveSuiteRunJob())
         {
             IsResetDemoDialogOpen = false;
-            ShowToast("套件正在运行，请先等待或取消后再重置");
+            ShowToast("测试工作流正在运行，请先等待或取消后再重置");
             return;
         }
 
@@ -5213,7 +5226,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         var suite = new TestSuite
         {
-            Name = $"套件 {Suites.Count + 1}",
+            Name = $"测试工作流 {Suites.Count + 1}",
             StopOnError = true,
             ScheduleMinutes = 0,
             MaxParallelism = 4,
@@ -5241,6 +5254,36 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         return suite;
     }
 
+    public void ApplySuiteLayout(TestSuite? suite, SuiteWorkflow workflow)
+    {
+        if (suite is null || suite.Workflow is not { } targetWorkflow)
+        {
+            return;
+        }
+
+        var changed = false;
+        foreach (var node in workflow.Nodes)
+        {
+            var target = targetWorkflow.Nodes.FirstOrDefault(candidate => candidate.Id == node.Id);
+            if (target is null)
+            {
+                continue;
+            }
+
+            if (Math.Abs(target.X - node.X) > 0.5 || Math.Abs(target.Y - node.Y) > 0.5)
+            {
+                target.X = node.X;
+                target.Y = node.Y;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            Persist();
+        }
+    }
+
     public TestSuite CreateSuiteDraftForEditing(TestSuite suite) => CloneSuite(suite);
 
     public void ApplySuiteEditorResult(TestSuite incoming, TestSuite? existing)
@@ -5256,8 +5299,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             ShowSuiteValidation(createdValidation);
             ShowToast(
                 createdValidation.HasErrors
-                    ? $"已创建套件，但预检发现 {createdValidation.ErrorCount} 个错误"
-                    : $"已创建套件（{incoming.Steps.Count} 个步骤），预检通过"
+                    ? $"已创建测试工作流，但预检发现 {createdValidation.ErrorCount} 个错误"
+                    : $"已创建测试工作流（{incoming.Steps.Count} 个步骤），预检通过"
             );
             return;
         }
@@ -5291,8 +5334,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         ShowSuiteValidation(updatedValidation);
         ShowToast(
             updatedValidation.HasErrors
-                ? $"套件已更新，但预检发现 {updatedValidation.ErrorCount} 个错误"
-                : $"套件已更新（{existing.Steps.Count} 个步骤），预检通过"
+                ? $"测试工作流已更新，但预检发现 {updatedValidation.ErrorCount} 个错误"
+                : $"测试工作流已更新（{existing.Steps.Count} 个步骤），预检通过"
         );
     }
 
@@ -5453,7 +5496,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         var suite =
             Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
-            ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的测试工作流。");
         return ValidateSuite(suite);
     }
 
@@ -5580,7 +5623,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         SelectedSuite = Suites.FirstOrDefault();
         ClearSuiteValidation();
         Persist();
-        ShowToast("套件已删除");
+        ShowToast("测试工作流已删除");
     }
 
     [RelayCommand]
@@ -5616,7 +5659,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             );
             SelectedSuiteResult = result;
             ShowToast(
-                result.Cancelled ? $"套件已取消：{result.Outcome}" : $"套件完成：{result.Outcome}"
+                result.Cancelled
+                    ? $"测试工作流已取消：{result.Outcome}"
+                    : $"测试工作流完成：{result.Outcome}"
             );
         }
         finally
@@ -5649,14 +5694,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         if (IsRunningSuite)
         {
-            ShowToast("套件正在运行，请等待当前运行结束");
+            ShowToast("测试工作流正在运行，请等待当前运行结束");
             return;
         }
 
         var stepIds = SuiteRunPlanner.SelectFromStepWithDependencies(suite, stepResult.StepId);
         if (stepIds.Count == 0)
         {
-            ShowToast("该步骤已从套件中移除，无法继续运行");
+            ShowToast("该步骤已从测试工作流中移除，无法继续运行");
             return;
         }
 
@@ -5719,7 +5764,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [RelayCommand]
     private void CancelSuiteRun() => _suiteCts?.Cancel();
 
-    public string RunSuiteButtonText => IsRunningSuite ? "运行中…" : "运行套件";
+    public string RunSuiteButtonText => IsRunningSuite ? "运行中…" : "运行测试工作流";
 
     partial void OnIsRunningSuiteChanged(bool value) =>
         OnPropertyChanged(nameof(RunSuiteButtonText));
@@ -5734,13 +5779,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         {
             var suite =
                 Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
-                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的测试工作流。");
             var validation = ValidateSuite(suite);
             ShowSuiteValidation(validation);
             if (validation.HasErrors)
             {
                 throw new InvalidOperationException(
-                    $"{validation.Summary}，请先在桌面端修复套件。"
+                    $"{validation.Summary}，请先在桌面端修复测试工作流。"
                 );
             }
 
@@ -5759,10 +5804,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         {
             var suite =
                 Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
-                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的测试工作流。");
             var run =
                 suite.Runs.FirstOrDefault(candidate => candidate.Id == runId)
-                ?? throw new KeyNotFoundException($"套件中没有 id 为 {runId} 的运行记录。");
+                ?? throw new KeyNotFoundException($"测试工作流中没有 id 为 {runId} 的运行记录。");
             var stepIds = SuiteRunPlanner.SelectFailedWithDependencies(suite, run);
             if (stepIds.Count == 0)
             {
@@ -5791,10 +5836,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         {
             var suite =
                 Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
-                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+                ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的测试工作流。");
             var run =
                 suite.Runs.FirstOrDefault(candidate => candidate.Id == runId)
-                ?? throw new KeyNotFoundException($"套件中没有 id 为 {runId} 的运行记录。");
+                ?? throw new KeyNotFoundException($"测试工作流中没有 id 为 {runId} 的运行记录。");
             if (run.Steps.All(step => step.StepId != stepId))
             {
                 throw new KeyNotFoundException($"运行记录中没有 id 为 {stepId} 的步骤。");
@@ -5803,7 +5848,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             var stepIds = SuiteRunPlanner.SelectFromStepWithDependencies(suite, stepId);
             if (stepIds.Count == 0)
             {
-                throw new InvalidOperationException("该步骤已从套件中移除，无法继续运行。");
+                throw new InvalidOperationException("该步骤已从测试工作流中移除，无法继续运行。");
             }
 
             return await RunSuiteSubsetForMcpAsync(
@@ -5826,7 +5871,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         if (IsRunningSuite)
         {
-            throw new InvalidOperationException("桌面端正在运行套件，请等待当前运行结束。");
+            throw new InvalidOperationException("桌面端正在运行测试工作流，请等待当前运行结束。");
         }
 
         var subset = SuiteRunPlanner.CreateSubset(owner, stepIds);
@@ -5838,7 +5883,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         var validation = ValidateSuite(subset);
         if (validation.HasErrors)
         {
-            throw new InvalidOperationException($"{validation.Summary}，请先在桌面端修复套件。");
+            throw new InvalidOperationException(
+                $"{validation.Summary}，请先在桌面端修复测试工作流。"
+            );
         }
 
         return await RunSuiteCoreAsync(
@@ -5864,7 +5911,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             if (existing.SuiteId != suiteId)
             {
                 throw new InvalidOperationException(
-                    $"idempotencyKey「{idempotencyKey}」已用于另一个套件，请换一个 key。"
+                    $"idempotencyKey「{idempotencyKey}」已用于另一个测试工作流，请换一个 key。"
                 );
             }
 
@@ -5873,10 +5920,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         var suite =
             Suites.FirstOrDefault(candidate => candidate.Id == suiteId)
-            ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的套件。");
+            ?? throw new KeyNotFoundException($"没有找到 id 为 {suiteId} 的测试工作流。");
         if (IsRunningSuite)
         {
-            throw new InvalidOperationException("桌面端正在运行套件，请等待当前运行结束。");
+            throw new InvalidOperationException("桌面端正在运行测试工作流，请等待当前运行结束。");
         }
 
         if (
@@ -5885,7 +5932,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             )
         )
         {
-            throw new InvalidOperationException("该套件已有一个 MCP 运行任务，请先等待或取消。");
+            throw new InvalidOperationException(
+                "该测试工作流已有一个 MCP 运行任务，请先等待或取消。"
+            );
         }
 
         SuiteWorkflowFactory.EnsureLinear(suite);
@@ -6002,7 +6051,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         }
         catch (Exception exception)
         {
-            Log.Error(exception, "MCP 套件任务失败 {SuiteName}", suite.Name);
+            Log.Error(exception, "MCP 测试工作流任务失败 {SuiteName}", suite.Name);
             lock (job.SyncRoot)
             {
                 job.Status = "Failed";
@@ -6215,7 +6264,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                 }
                 catch (OperationCanceledException exception)
                 {
-                    Log.Debug(exception, "套件运行被取消 {SuiteName}", suite.Name);
+                    Log.Debug(exception, "测试工作流运行被取消 {SuiteName}", suite.Name);
                     stopped = true;
                     cancelled = true;
                     break;
@@ -6322,7 +6371,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         TestSuite? historySuite = null
     )
     {
-        Log.Warning("套件启用并行执行，步骤延迟和映射依赖将被忽略 {SuiteName}", suite.Name);
+        Log.Warning("测试工作流启用并行执行，步骤延迟和映射依赖将被忽略 {SuiteName}", suite.Name);
         var tasks = suite.Steps.Select(step =>
             ExecuteSuiteStepAsync(
                 suite,
@@ -6438,7 +6487,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             {
                 Log.Error(
                     exception,
-                    "套件入参映射失败 {SuiteName} {StepName}",
+                    "测试工作流入参映射失败 {SuiteName} {StepName}",
                     suite.Name,
                     step.RequestName
                 );
@@ -6499,7 +6548,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             {
                 Log.Error(
                     exception,
-                    "套件步骤发送失败 {SuiteName} {StepName}",
+                    "测试工作流步骤发送失败 {SuiteName} {StepName}",
                     suite.Name,
                     step.RequestName
                 );
@@ -6518,7 +6567,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                         Method = request.Method,
                         Url = request.Url,
                         StatusText = "已取消",
-                        Error = "套件已取消",
+                        Error = "测试工作流已取消",
                         Passed = false,
                     },
                     null
@@ -6583,7 +6632,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
                     Method = request.Method,
                     Url = request.Url,
                     StatusText = "已取消",
-                    Error = "套件已取消",
+                    Error = "测试工作流已取消",
                     Passed = false,
                 },
                 null
@@ -7484,7 +7533,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             if (validation.HasErrors)
             {
                 Log.Warning(
-                    "定时套件预检未通过，已跳过本次运行 {SuiteName} {Summary}",
+                    "定时测试工作流预检未通过，已跳过本次运行 {SuiteName} {Summary}",
                     suite.Name,
                     validation.Summary
                 );
@@ -7498,7 +7547,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             }
             catch (Exception exception)
             {
-                Log.Error(exception, "定时运行套件失败 {SuiteName}", suite.Name);
+                Log.Error(exception, "定时运行测试工作流失败 {SuiteName}", suite.Name);
             }
             finally
             {

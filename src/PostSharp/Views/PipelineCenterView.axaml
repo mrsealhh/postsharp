@@ -1,0 +1,213 @@
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+    xmlns:controls="using:PostSharp.Controls"
+    xmlns:vm="using:PostSharp.ViewModels"
+    x:Class="PostSharp.Views.PipelineCenterView"
+    x:DataType="vm:PipelineCenterViewModel"
+>
+    <Grid ColumnDefinitions="300,12,*" Margin="0,6,0,0">
+        <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" RowSpacing="8">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                <TextBlock
+                    Text="流水线"
+                    FontSize="{arc:ArcDesignTokenResource TypeLG}"
+                    FontWeight="SemiBold"
+                    VerticalAlignment="Center"
+                />
+                <arc:Button
+                    Grid.Column="1"
+                    Content="新建"
+                    Variant="Secondary"
+                    Size="Small"
+                    Command="{Binding NewPipelineCommand}"
+                    AutomationProperties.Name="新建流水线"
+                />
+                <arc:Button
+                    Grid.Column="2"
+                    Content="刷新"
+                    Variant="Ghost"
+                    Size="Small"
+                    Command="{Binding RefreshFilesCommand}"
+                    AutomationProperties.Name="刷新流水线列表"
+                />
+            </Grid>
+
+            <Border
+                Grid.Row="1"
+                Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                Padding="4"
+            >
+                <ListBox
+                    ItemsSource="{Binding Files}"
+                    SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
+                    Background="Transparent"
+                    BorderThickness="0"
+                >
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PipelineFileItem">
+                            <StackPanel Spacing="2" Margin="4,6">
+                                <TextBlock
+                                    Text="{Binding Name}"
+                                    FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                                    TextTrimming="CharacterEllipsis"
+                                />
+                                <TextBlock
+                                    Text="{Binding Modified, StringFormat={}{0:MM-dd HH:mm}}"
+                                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <Border
+                Grid.Row="2"
+                Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                Padding="10"
+            >
+                <StackPanel Spacing="6">
+                    <TextBlock
+                        Text="场景模板"
+                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                        FontWeight="Medium"
+                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                    />
+                    <ItemsControl ItemsSource="{Binding Templates}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PipelineTemplateItem">
+                                <Button
+                                    Margin="0,2"
+                                    Padding="8,6"
+                                    HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Left"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Command="{Binding $parent[UserControl].DataContext.ApplyTemplateCommand}"
+                                    CommandParameter="{Binding}"
+                                    AutomationProperties.Name="{Binding Name}"
+                                >
+                                    <StackPanel Spacing="2">
+                                        <TextBlock
+                                            Text="{Binding Name}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                                        />
+                                        <TextBlock
+                                            Text="{Binding Description}"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                                            TextWrapping="Wrap"
+                                        />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                <TextBlock
+                    Text="名称"
+                    VerticalAlignment="Center"
+                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                    Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                />
+                <TextBox
+                    Grid.Column="1"
+                    Text="{Binding NameText, Mode=TwoWay}"
+                    PlaceholderText="流水线名称"
+                    MaxWidth="320"
+                    HorizontalAlignment="Left"
+                    MinWidth="220"
+                />
+                <arc:Button
+                    Grid.Column="2"
+                    Content="保存"
+                    Variant="Secondary"
+                    Command="{Binding SavePipelineCommand}"
+                    IsEnabled="{Binding !IsBusy}"
+                    AutomationProperties.Name="保存流水线"
+                />
+                <arc:Button
+                    Grid.Column="3"
+                    Content="校验"
+                    Variant="Ghost"
+                    Command="{Binding ValidatePipelineCommand}"
+                    IsEnabled="{Binding !IsBusy}"
+                    AutomationProperties.Name="校验流水线"
+                />
+                <arc:Button
+                    Grid.Column="4"
+                    Content="生成流程图"
+                    Variant="Ghost"
+                    Command="{Binding VisualizePipelineCommand}"
+                    IsEnabled="{Binding !IsBusy}"
+                    AutomationProperties.Name="生成流水线流程图"
+                />
+                <arc:Button
+                    Grid.Column="5"
+                    Content="运行"
+                    Variant="Primary"
+                    Command="{Binding RunPipelineCommand}"
+                    IsEnabled="{Binding !IsBusy}"
+                    AutomationProperties.Name="运行流水线"
+                />
+            </Grid>
+
+            <TextBlock
+                Grid.Row="1"
+                Text="{Binding StatusText}"
+                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                TextTrimming="CharacterEllipsis"
+            />
+
+            <Border
+                Grid.Row="2"
+                Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                Padding="2"
+            >
+                <TextBox
+                    Text="{Binding Content, Mode=TwoWay}"
+                    AcceptsReturn="True"
+                    AcceptsTab="True"
+                    TextWrapping="NoWrap"
+                    FontFamily="Consolas, monospace"
+                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    VerticalContentAlignment="Top"
+                    PlaceholderText="在这里粘贴或编辑 YAML"
+                    AutomationProperties.Name="流水线 YAML"
+                />
+            </Border>
+
+            <Border
+                Grid.Row="3"
+                IsVisible="{Binding HasPreview}"
+                MaxHeight="220"
+                Padding="10"
+                Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+            >
+                <ScrollViewer>
+                    <SelectableTextBlock
+                        Text="{Binding PreviewText}"
+                        FontFamily="Consolas, monospace"
+                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                        TextWrapping="Wrap"
+                    />
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

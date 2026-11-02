@@ -7,7 +7,7 @@
     xmlns:models="using:PostSharp.Models"
     xmlns:vm="using:PostSharp.ViewModels"
     x:DataType="vm:WorkflowEditorViewModel"
-    Title="套件编排"
+    Title="测试工作流编排"
     Width="1420"
     Height="900"
     MinWidth="1120"
@@ -92,7 +92,7 @@
                     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="16">
                         <StackPanel Spacing="3">
                             <TextBlock
-                                Text="套件编排"
+                                Text="测试工作流编排"
                                 FontSize="{arc:ArcDesignTokenResource TypeXL}"
                                 FontWeight="SemiBold"
                                 Foreground="{arc:ArcDesignTokenResource Foreground}"
@@ -118,15 +118,15 @@
                             >
                                 <arc:Input
                                     Grid.Column="1"
-                                    Label="套件名称"
+                                    Label="测试工作流名称"
                                     Text="{Binding SuiteName, Mode=TwoWay}"
-                                    AutomationProperties.Name="套件名称"
+                                    AutomationProperties.Name="测试工作流名称"
                                 />
                                 <arc:Input
                                     Grid.Column="3"
                                     Label="定时（分钟）"
                                     Text="{Binding ScheduleMinutesText, Mode=TwoWay}"
-                                    AutomationProperties.Name="套件定时分钟数"
+                                    AutomationProperties.Name="测试工作流定时分钟数"
                                 />
                                 <arc:Switch
                                     Grid.Column="4"
@@ -201,7 +201,7 @@
                                 Size="Small"
                                 Command="{Binding ValidateWorkflowCommand}"
                                 ToolTip.Tip="检查缺失请求、环、悬空连线、无效映射和环境变量"
-                                AutomationProperties.Name="套件预检"
+                                AutomationProperties.Name="测试工作流预检"
                             >
                                 <controls:IconLabel
                                     Icon="{x:Static arc:ArcIcons.Check}"
@@ -215,8 +215,8 @@
                                 MinWidth="96"
                                 Command="{Binding RunWorkflowCommand}"
                                 IsEnabled="{Binding !IsSuiteRunning}"
-                                ToolTip.Tip="按画布依赖运行套件，节点和连线会显示执行状态"
-                                AutomationProperties.Name="运行套件"
+                                ToolTip.Tip="按画布依赖运行测试工作流，节点和连线会显示执行状态"
+                                AutomationProperties.Name="运行测试工作流"
                             >
                                 <controls:IconLabel
                                     Icon="{x:Static arc:ArcIcons.Play}"
@@ -322,7 +322,7 @@
                                         BorderThickness="0"
                                         SelectionChanged="OnCanvasSelectionChanged"
                                         GraphEdited="OnCanvasGraphEdited"
-                                        AutomationProperties.Name="套件工作流画布"
+                                        AutomationProperties.Name="测试工作流工作流画布"
                                     />
                                     <arc:WorkflowZoomControls
                                         Target="{Binding #Canvas}"
@@ -334,7 +334,7 @@
                                         IsVisible="{Binding !HasSteps}"
                                         Title="把接口加入画布"
                                         Description="在左侧勾选集合或接口，集合会展开为多个节点；拖动节点端口连接依赖，选中连线设置分支条件。"
-                                        Label="套件编排"
+                                        Label="测试工作流编排"
                                         Margin="40"
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"
@@ -664,17 +664,17 @@
                                 Content="取消"
                                 Variant="Secondary"
                                 Click="OnCloseClick"
-                                AutomationProperties.Name="取消套件编排"
+                                AutomationProperties.Name="取消测试工作流编排"
                             />
                             <arc:Button
                                 Variant="Primary"
                                 Click="OnSaveClick"
                                 IsEnabled="{Binding !IsSuiteRunning}"
-                                AutomationProperties.Name="保存套件"
+                                AutomationProperties.Name="保存测试工作流"
                             >
                                 <controls:IconLabel
                                     Icon="{x:Static arc:ArcIcons.Check}"
-                                    Text="保存套件"
+                                    Text="保存测试工作流"
                                 />
                             </arc:Button>
                         </StackPanel>
@@ -1002,7 +1002,7 @@
                 <arc:Dialog
                     x:Name="ValidationDialog"
                     IsOpen="{Binding IsValidationOpen, Mode=TwoWay}"
-                    Title="套件预检"
+                    Title="测试工作流预检"
                     Description="{Binding ValidationSummary}"
                     Size="Large"
                 >
