@@ -1,7 +1,7 @@
 # PostSharp 产品化路线（v1.11.13 基线）
 
 > 基线版本：**v1.11.13**（2026-11-02）
-> 基线能力：桌面三平台（Windows / Linux / macOS arm64）+ Windows NativeAOT + CLI 三平台 + Linux 无头包；MCP 89 个工具；320 个测试通过
+> 基线能力：桌面三平台（Windows / Linux / macOS arm64）+ Windows NativeAOT + CLI 三平台 + Linux 无头包；MCP 95 个工具；320 个测试通过
 > 本文件是**当前有效**的产品化路线。2026-10-31 的历史 TODO、P0 详案和交接清单已归档到 [`docs/archive/product-todos-v1.10.24.md`](archive/product-todos-v1.10.24.md)。
 > 文档性质：路线与验收标准，不是已承诺的排期；P0 先做，P1/P2 由产品负责人确认后启动。
 
@@ -15,7 +15,7 @@
 | 数据 | 本地 SQLite 兜底；PostgreSQL / MySQL / SQL Server / MongoDB 默认插件；ClickHouse / Doris / StarRocks 可选插件 |
 | 自动化 | 套件 DAG、分支/汇合、断言、重试、映射、并行、预检、运行历史、失败重跑、从节点继续 |
 | 流水线 | YAML/JSON：`${步骤别名.字段}`、数据行、循环、并发组、重试、JSONPath 断言、JUnit/JSON/Markdown 报告 |
-| AI / MCP | 89 个工具、意图工具、job 幂等、资源化报告、token 与只读/发送/修改/管理四类权限 |
+| AI / MCP | 95 个工具、意图工具、job 幂等、资源化报告、token 与只读/发送/修改/管理四类权限 |
 | CI | 无头模式、Docker、CLI、Linux 一体化无头包、可复用 `postsharp-pipeline` workflow |
 | 发布 | 每版自动构建 8 类资产 + SHA256；桌面自动更新（带发行说明卡片）；winget / Scoop / Homebrew 清单模板 |
 
@@ -72,6 +72,17 @@
 | N-04 | 诊断包：版本、系统、设置（去机密）、插件清单、日志尾部、最近失败运行 | 一键导出 ZIP；MCP/CLI 也能触发；不含令牌与请求体 | M |
 | N-05 | 性能/稳定性门禁进 CI：启动时间、空闲内存、包体、无头就绪时间 | 超阈值 CI 失败；基线写入文档 | S/M |
 | N-06 | 发布检查单自动化：资产齐全、SHA256、AOT 冒烟、CLI 版本、无头包结构 | 发布 workflow 缺项即失败 | S |
+
+已完成（v1.11.14）：
+
+| ID | 事项 | 结果 |
+| --- | --- | --- |
+| N-07 | 流水线只读可视化 | `visualize_pipeline` + `pipeline graph --format mermaid\|dot\|json`；节点/边/子图，不执行请求 |
+| N-08 | MCP 客户端可见性 | `list_clients` / `get_client_activity`；`run_pipeline` 写入审计，可看到调用与失败 |
+| N-09 | 按客户端 token | `create_client_token` / `list_client_tokens` / `revoke_client_token`；只存哈希、可限权、可单独吊销 |
+
+> 完整的可视化编辑器与多客户端隔离仍不做：前者与套件编辑器重复，后者等真实“多人/多 AI 同端点”需求。
+
 
 > 签名与安装器（P0-01）依赖证书采购，先做“可签名”的流水线开关与文档，证书到位后当天可启用。
 

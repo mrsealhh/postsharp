@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PostSharp.Models;
 using PostSharp.Services;
 
 namespace PostSharp.Tests;
@@ -101,6 +102,59 @@ public sealed class McpServerSecurityTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public async Task ClientTokenLimitsToolsToItsScopes()
+    {
+        var clientToken = "client-secret";
+        _server.Policy = new McpAccessPolicy(
+            RequireToken: true,
+            Token: "master-secret",
+            ReadOnly: false,
+            ClientTokens: new[]
+            {
+                new McpClientToken
+                {
+                    Id = "c1",
+                    Name = "cursor",
+                    TokenHash = McpTokenService.Hash(clientToken),
+                    AllowSend = false,
+                    AllowWrite = false,
+                    AllowAdmin = false,
+                    CreatedAt = DateTimeOffset.Now,
+                },
+            }
+        );
+        const string toolsBody = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""";
+
+        var master = await SendAsync("POST", toolsBody, null, "127.0.0.1:5199", "master-secret");
+        Assert.Equal(200, master.StatusCode);
+        Assert.NotNull(master.Body);
+        var masterNames = ToolNames(master.Body);
+        Assert.Contains("run_suite", masterNames);
+
+        var client = await SendAsync("POST", toolsBody, null, "127.0.0.1:5199", clientToken);
+        Assert.Equal(200, client.StatusCode);
+        Assert.NotNull(client.Body);
+        var clientNames = ToolNames(client.Body);
+        Assert.Contains("list_suites", clientNames);
+        Assert.DoesNotContain("run_suite", clientNames);
+        Assert.DoesNotContain("create_client_token", clientNames);
+
+        var rejected = await SendAsync("POST", toolsBody, null, "127.0.0.1:5199", "wrong");
+        Assert.Equal(401, rejected.StatusCode);
+    }
+
+    private static List<string> ToolNames(string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        return document
+            .RootElement.GetProperty("result")
+            .GetProperty("tools")
+            .EnumerateArray()
+            .Select(tool => tool.GetProperty("name").GetString() ?? string.Empty)
+            .ToList();
     }
 
     [Fact]
@@ -214,7 +268,7 @@ public sealed class McpServerSecurityTests
             .Select(tool => tool.GetProperty("name").GetString())
             .ToList();
 
-        Assert.Equal(89, names.Count);
+        Assert.Equal(95, names.Count);
         Assert.Contains("verify_endpoint", names);
         Assert.Contains("generate_suite", names);
         Assert.Contains("export_report", names);
@@ -224,6 +278,12 @@ public sealed class McpServerSecurityTests
         Assert.Contains("export_openapi_diff", names);
         Assert.Contains("validate_pipeline", names);
         Assert.Contains("run_pipeline", names);
+        Assert.Contains("visualize_pipeline", names);
+        Assert.Contains("list_clients", names);
+        Assert.Contains("get_client_activity", names);
+        Assert.Contains("list_client_tokens", names);
+        Assert.Contains("create_client_token", names);
+        Assert.Contains("revoke_client_token", names);
         Assert.Contains("explain_failure", names);
         Assert.Contains("start_sequence_run", names);
         Assert.Contains("start_import", names);

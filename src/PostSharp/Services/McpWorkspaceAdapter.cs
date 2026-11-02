@@ -2434,6 +2434,36 @@ public sealed class McpWorkspaceAdapter
         });
     }
 
+    public async Task<McpClientTokenSecret> CreateClientTokenAsync(
+        string name,
+        bool allowSend,
+        bool allowWrite,
+        bool allowAdmin
+    )
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            _viewModel.CreateClientTokenForMcp(name, allowSend, allowWrite, allowAdmin)
+        );
+    }
+
+    public async Task<bool> RevokeClientTokenAsync(string? id, string? name)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(() =>
+            _viewModel.RevokeClientTokenForMcp(id, name)
+        );
+    }
+
+    public async Task RecordPipelineAuditAsync(
+        PipelineRunResult result,
+        string? client,
+        string permission
+    )
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+            _viewModel.RecordPipelineAuditForMcp(result, client, permission)
+        );
+    }
+
     public async Task<UpdateCheckResult> CheckForUpdatesAsync(
         CancellationToken cancellationToken = default
     ) =>

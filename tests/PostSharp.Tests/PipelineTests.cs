@@ -331,6 +331,40 @@ public sealed class PipelineTests
     }
 
     [Fact]
+    public void BuildsMermaidAndDotForLoopsAndParallelGroups()
+    {
+        var parsed = PipelineParser.Parse(
+            """
+            name: 图
+            baseUrl: http://mock.local
+            steps:
+              - id: list
+                method: GET
+                url: /api/list
+              - loop:
+                  over: ${list}
+                  as: item
+                  steps:
+                    - method: GET
+                      url: /api/items/${item.id}
+              - parallel:
+                  - { method: GET, url: /api/a }
+                  - { method: GET, url: /api/b }
+            """
+        );
+
+        var graph = PipelineVisualization.Build(parsed.Pipeline, parsed.Issues);
+
+        Assert.Contains("flowchart TD", graph.Mermaid, StringComparison.Ordinal);
+        Assert.Contains("subgraph loop", graph.Mermaid, StringComparison.Ordinal);
+        Assert.Contains("subgraph par", graph.Mermaid, StringComparison.Ordinal);
+        Assert.Contains("digraph pipeline", graph.Dot, StringComparison.Ordinal);
+        Assert.Equal(4, graph.StepCount);
+        Assert.Contains(graph.Nodes, node => node.Kind == "loop");
+        Assert.Contains(graph.Nodes, node => node.Kind == "parallel");
+    }
+
+    [Fact]
     public async Task RunsEveryDataRow()
     {
         var handler = new StubHandler((_, _) => Json(HttpStatusCode.OK, """{"ok":true}"""));

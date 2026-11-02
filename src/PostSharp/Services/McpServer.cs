@@ -65,28 +65,39 @@ public sealed partial class McpServer
         }
 
         var policy = Policy;
-        if (policy.RequireToken && !HasValidToken(headers, policy.Token))
+        if (policy.RequireToken)
         {
-            Log.Warning("MCP 请求缺少有效 token");
-            var unauthorizedHeaders = new Dictionary<string, string>(
-                cors,
-                StringComparer.OrdinalIgnoreCase
-            )
+            var provided = ReadToken(headers);
+            var master =
+                provided is not null && McpTokenService.FixedEquals(policy.Token, provided);
+            if (!master)
             {
-                ["WWW-Authenticate"] = "Bearer realm=\"PostSharp\"",
-            };
-            return new RawHttpResponse(
-                401,
-                "Unauthorized",
-                "application/json",
-                Error(
-                        null,
-                        -32001,
-                        "MCP 需要本机 token。请在客户端配置 Authorization: Bearer <token>。"
+                if (provided is null || !policy.TryResolveClient(provided, out var clientPolicy))
+                {
+                    Log.Warning("MCP 请求缺少有效 token");
+                    var unauthorizedHeaders = new Dictionary<string, string>(
+                        cors,
+                        StringComparer.OrdinalIgnoreCase
                     )
-                    .ToJsonString(McpJson.SerializerOptions),
-                unauthorizedHeaders
-            );
+                    {
+                        ["WWW-Authenticate"] = "Bearer realm=\"PostSharp\"",
+                    };
+                    return new RawHttpResponse(
+                        401,
+                        "Unauthorized",
+                        "application/json",
+                        Error(
+                                null,
+                                -32001,
+                                "MCP 需要本机 token。请在客户端配置 Authorization: Bearer <token>。"
+                            )
+                            .ToJsonString(McpJson.SerializerOptions),
+                        unauthorizedHeaders
+                    );
+                }
+
+                policy = clientPolicy;
+            }
         }
 
         if (method != "POST")
@@ -192,13 +203,18 @@ public sealed partial class McpServer
             return false;
         }
 
+        var provided = ReadToken(headers);
+        return provided is not null && McpTokenService.FixedEquals(expected, provided);
+    }
+
+    private static string? ReadToken(IReadOnlyDictionary<string, string> headers)
+    {
         var authorization = HeaderValue(headers, "Authorization");
         var provided =
             authorization?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true
                 ? authorization[7..].Trim()
                 : null;
-        provided ??= HeaderValue(headers, "X-PostSharp-Token");
-        return provided is not null && McpTokenService.FixedEquals(expected, provided);
+        return provided ?? HeaderValue(headers, "X-PostSharp-Token");
     }
 
     private static string? HeaderValue(IReadOnlyDictionary<string, string> headers, string name)
@@ -870,6 +886,15 @@ public sealed partial class McpServer
                     .ValidateSuiteAsync(RequireGuid(arguments, "id"))
                     .ConfigureAwait(false),
                 "validate_pipeline" => ValidatePipelineTool(arguments),
+                "visualize_pipeline" => VisualizePipelineTool(arguments),
+                "list_clients" => await ListClientsToolAsync().ConfigureAwait(false),
+                "get_client_activity" => await GetClientActivityToolAsync(arguments)
+                    .ConfigureAwait(false),
+                "list_client_tokens" => ListClientTokensTool(),
+                "create_client_token" => await CreateClientTokenToolAsync(arguments)
+                    .ConfigureAwait(false),
+                "revoke_client_token" => await RevokeClientTokenToolAsync(arguments)
+                    .ConfigureAwait(false),
                 "list_suites" => await _workspace.ListSuitesAsync().ConfigureAwait(false),
                 "run_suite" => await _workspace
                     .RunSuiteAsync(
@@ -878,7 +903,11 @@ public sealed partial class McpServer
                         cancellationToken
                     )
                     .ConfigureAwait(false),
-                "run_pipeline" => await RunPipelineToolAsync(arguments, cancellationToken)
+                "run_pipeline" => await RunPipelineToolAsync(
+                        arguments,
+                        policy.PermissionLabel,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false),
                 "start_suite_run" => await _workspace
                     .StartSuiteRunAsync(
@@ -1774,6 +1803,36 @@ public sealed partial class McpServer
                 "validate_pipeline",
                 "校验 YAML/JSON 流水线：步骤、断言、循环、数据驱动和 ${步骤别名.字段} 引用是否合法，不发送请求",
                 ValidatePipelineSchema()
+            ),
+            Tool(
+                "visualize_pipeline",
+                "把 YAML/JSON 流水线渲染成只读流程图：返回节点/边、Mermaid 和 DOT 文本，适合文档、评审和 AI 解释",
+                VisualizePipelineSchema()
+            ),
+            Tool(
+                "list_clients",
+                "列出最近调用过 MCP 的客户端：调用次数、失败数、最近活动、常用工具和已绑定的客户端 token",
+                ListClientsSchema()
+            ),
+            Tool(
+                "get_client_activity",
+                "查看某个 MCP 客户端最近的调用记录（工具、接口、状态、耗时、成功与否）",
+                GetClientActivitySchema()
+            ),
+            Tool(
+                "list_client_tokens",
+                "列出按客户端签发的 MCP token（只返回 id/名称/权限/创建时间，不返回明文）",
+                ListClientTokensSchema()
+            ),
+            Tool(
+                "create_client_token",
+                "为指定客户端签发独立 MCP token；明文只返回这一次，之后只保存哈希。可限定发送/修改/管理权限",
+                CreateClientTokenSchema()
+            ),
+            Tool(
+                "revoke_client_token",
+                "按 id 或客户端名称吊销 MCP token；吊销后该 token 立即失效",
+                RevokeClientTokenSchema()
             ),
             Tool(
                 "update_suite",

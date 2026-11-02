@@ -32,8 +32,15 @@ public sealed partial class McpServer
         );
     }
 
-    private static async Task<object> RunPipelineToolAsync(
+    private static object VisualizePipelineTool(JsonObject arguments)
+    {
+        var parsed = ParsePipelineDocument(arguments);
+        return PipelineVisualization.Build(parsed.Pipeline, parsed.Issues);
+    }
+
+    private async Task<object> RunPipelineToolAsync(
         JsonObject arguments,
+        string permission,
         CancellationToken cancellationToken
     )
     {
@@ -67,6 +74,12 @@ public sealed partial class McpServer
             result.Cases.Count,
             result.ElapsedMs
         );
+        if (!options.DryRun)
+        {
+            await _workspace
+                .RecordPipelineAuditAsync(result, _clientName, permission)
+                .ConfigureAwait(false);
+        }
 
         var format = (OptionalString(arguments, "format") ?? "none").Trim().ToLowerInvariant();
         if (!PipelineReportFormats.Contains(format))
@@ -160,6 +173,15 @@ public sealed partial class McpServer
                 ["path"] = StringSchema("服务端可读的流水线文件路径"),
                 ["dataContent"] = StringSchema("内联数据文件内容（CSV/JSON），覆盖流水线里的 data"),
                 ["dataFormat"] = EnumSchema("数据格式", "csv", "json"),
+            }
+        );
+
+    private static JsonObject VisualizePipelineSchema() =>
+        ObjectSchema(
+            new JsonObject
+            {
+                ["document"] = StringSchema("YAML 或 JSON 流水线文本；与 path 二选一"),
+                ["path"] = StringSchema("服务端可读的流水线文件路径"),
             }
         );
 

@@ -444,10 +444,22 @@ http://127.0.0.1:5199/mcp
 | 导出报告 | `export_report {"suiteId":"<id>","format":"junit"}` | 报告内容、字节数、截断标记和 `.postsharp/reports` 下的文件路径 |
 | 校验流水线 | `validate_pipeline {"document":"<YAML>"}` | 名称、是否有效、步骤/数据组数量、逐条问题（含路径与是否错误） |
 | 运行流水线 | `run_pipeline {"document":"<YAML>","format":"junit"}` | 每组数据的步骤结果、状态码、重试次数、断言信息和报告文件 |
+| 可视化流水线 | `visualize_pipeline {"document":"<YAML>"}` | 节点/边、层级、Mermaid 和 DOT 文本，不发送请求 |
+| 客户端列表 | `list_clients {}` | 调用次数、失败数、最近活动、常用工具、已绑定 token、当前客户端 |
+| 客户端活动 | `get_client_activity {"client":"codex","limit":20}` | 该客户端最近调用（工具、接口、状态、耗时、成功与否） |
+| 客户端 token | `create_client_token {"name":"cursor","allowSend":false}` / `revoke_client_token {"name":"cursor"}` | 明文只返回一次；权限可限定；吊销立即生效 |
 
 `generate_suite` 只固定最近一次成功发送的状态码；最近一次失败时不会把错误状态写成期望值，而是在 `notes` 中提示。报告文件写在数据目录的 `reports/` 下，只读模式也可以导出。
 
 MCP 同时声明 `resources` 能力：`resources/list` 列出 `reports` 下最近 50 个报告，`resources/read` 读取 `postsharp://reports/{文件名}`（最大 1 MB，拒绝路径穿越）。AI 可以直接读取已生成的报告，不必重复调用 diff 工具。
+
+**客户端管理与按客户端 token**
+
+- `list_clients` 汇总最近 300 条 MCP 审计：调用次数、失败数、最近活动、常用工具、是否绑定 token、当前客户端。
+- `get_client_activity` 查看单个客户端最近的工具、接口、状态码、耗时和成功与否。
+- `create_client_token {"name":"cursor","allowSend":false}` 为客户端签发独立 token：明文只返回一次，落盘只保存 SHA256；可分别限定发送/修改/管理权限。
+- `revoke_client_token {"id":"..."}` 或按名称吊销，立即失效；全局 token 仍作为主凭据，客户端 token 是额外的受限凭据。
+- `run_pipeline` 等自动化运行会写入审计（`Tool=run_pipeline`），客户端活动据此统计。
 
 ### 安全
 
@@ -547,8 +559,9 @@ steps:
 - **并发组**：`parallel: { max: 3, steps: [...] }` 同时发起多个请求，`max` 控制并发度（默认取 `maxParallelism`）；组内步骤互不可见，组结束后别名才对后续可见。
 - **HTTP 常用字段**：`query`、`form`、`json` / `body`、`headers`、`redirects`、`timeoutSeconds`、`auth: { username, password }`。
 - **失败策略**：`stopOnError` 控制整条流水线，步骤可用 `onFailure: continue` 单独放行；并发组内失败会取消同组未完成的请求。
-- **CLI**：`postsharp-cli pipeline validate <文件>` 只校验；`postsharp-cli pipeline run <文件> [--data 数据文件] [--var k=v] [--base-url URL] [--format junit|json|markdown] [--copy-report 路径]` 执行并按退出码（0 通过 / 1 失败 / 2 参数或服务端错误 / 3 连接失败或取消）接入 CI。
+- **CLI**：`postsharp-cli pipeline validate <文件>` 只校验；`postsharp-cli pipeline graph <文件> [--format mermaid|dot|json]` 输出只读流程图；`postsharp-cli pipeline run <文件> [--data 数据文件] [--var k=v] [--base-url URL] [--format junit|json|markdown] [--copy-report 路径]` 执行并按退出码（0 通过 / 1 失败 / 2 参数或服务端错误 / 3 连接失败或取消）接入 CI。
 - **MCP**：`validate_pipeline` / `run_pipeline`，`document` 传 YAML/JSON 文本或 `path` 传服务端文件路径；AI 可一次调用跑完整条链路。
+- **可视化**：`visualize_pipeline` 和 `pipeline graph` 输出只读流程图（节点/边 + Mermaid + DOT），不执行请求；适合文档、评审和让 AI 解释流程。
 - **CI**：`.github/workflows/postsharp-pipeline.yml` 是可复用 workflow，产品线仓库一条 `uses` 即可下载无头包、启动服务、跑流水线并上传 JUnit。
 - 示例见 `docs/examples/order-flow.yaml`、`parallel.yaml`、`data-driven-loop.yaml`、`data-matrix.yaml` + `order-cases.csv`，完整字段说明见 `docs/pipeline.md`。
 
@@ -1029,6 +1042,8 @@ docs/
 | 套件预检 | 用 124 个集合 / 1014 个请求（113 个是子集合）的真实工作区验证：v1.11.9 的 `validate_suite` 抛 `An item with the same key has already been added`，修复后预检通过、后台运行 2/2 通过，编辑器「预检」显示「预检通过」 |
 | YAML 流水线 | 实机 `--headless` + `postsharp-cli pipeline validate/run`：`order-flow.yaml` 3 步链路通过（POST 201 → GET 200 → PATCH 用捕获 id 拼出 `/api/orders/ord_2026_1042`），`data-driven-loop.yaml` 2 组数据 + 循环通过，`data-matrix.yaml` + CSV 2 组通过，JUnit 报告写入 `reports`；单测覆盖 YAML/JSON 解析、未知引用、链式取值、重试、循环、CSV 数据行和断言失败 |
 | 流水线并发 | 实机 `parallel.yaml`：先创建订单，再并发 3 个请求（`max: 3`）后汇总，5 个步骤全部通过；单测用 3 个 60ms 请求验证峰值并发为 2，并确认并发组内引用同组别名会被预检拒绝 |
+| 流水线可视化 | 实机 `pipeline graph parallel.yaml` 输出 Mermaid：`subgraph par1` 内含 3 个节点且无兄弟边，`n0 --> par1 --> n5`；`--format dot` 输出 Graphviz；单测覆盖循环/并发子图与节点计数 |
+| 客户端管理 | 实机 `initialize`（codex-test）后运行 `run_pipeline`，`list_clients` 显示 `codex-test calls=1 tools=run_pipeline`，`get_client_activity` 返回 1 条成功记录；`create_client_token` 返回 43 字符明文，`list_client_tokens` 不含明文，`revoke_client_token` 后列表为空；单测验证受限 token 的 `tools/list` 不含发送/管理工具、错误 token 返回 401 |
 | 无头 CLI 包 | 本地运行 `build-headless-release.ps1` 生成 `PostSharp-headless-linux-x64.zip`：含 `PostSharp`、`cli/postsharp-cli`、`postsharp-cli.sh`，`PostSharp` 与 CLI 均带 Unix 可执行位；`postsharp-cli pipeline run ... --copy-report` 实测把 JUnit 复制到指定路径 |
 | 无头标题栏 | 顶部栏空白区域拖拽移动；右上角最小化/最大化还原/关闭；边缘缩放可用 |
 | 回收站对齐 | 方法、名称、状态、时间、恢复/永久删除列固定对齐 |
@@ -1072,7 +1087,7 @@ docs/
 | 授权复制与解析 | 临时控制台验证：`RequestAuth.Clone()` 后修改副本的 access_token 不影响原对象；`AuthResolver` 对「集合 A Bearer → 子集合 B 继承 → 请求」解析到集合 A，子集合 C 配 API Key 时请求 2 解析到集合 C |
 | 构建 | Debug / Release 均 0 警告、0 错误；`csharpier check .` 通过 |
 | 托盘与最小化 | Windows 托盘改用原生 `Shell_NotifyIcon` + `TrackPopupMenu`，右键菜单在 Windows 11 溢出区也能正常显示（实测菜单出现在光标处，含显示主页面/最大化/退出）；菜单动作延迟到 `Dispatcher` 执行；退出、切到后台和后台服务停止时显式 `Dispose` 托盘图标，减少残留；托盘图标使用 `.ico`；最小化按钮在托盘可用时隐藏到托盘，恢复时保留最大化状态；Debug 构建 0 警告 0 错误，265 个测试通过 |
-| CI | `.github/workflows/ci.yml`：Windows 依次执行格式检查、Debug 构建、packaging 清单校验和测试；Ubuntu 发布 Linux 自包含包，用 `--headless` 校验 89 个工具并运行演示套件；Docker job 构建镜像并校验容器内端点；action-smoke 用仓库内复合 Action 启动发布包并校验工具列表 |
+| CI | `.github/workflows/ci.yml`：Windows 依次执行格式检查、Debug 构建、packaging 清单校验和测试；Ubuntu 发布 Linux 自包含包，用 `--headless` 校验 95 个工具并运行演示套件；Docker job 构建镜像并校验容器内端点；action-smoke 用仓库内复合 Action 启动发布包并校验工具列表 |
 | MCP 意图工具 | 新增 `verify_endpoint` / `generate_suite` / `export_report` / `diff_runs` / `explain_failure`，工具总数 75；只读模式暴露 `export_report` / `diff_runs` / `explain_failure`，隐藏发送和生成；`verify_endpoint` 记录审计；单测覆盖检查项、期望状态推断、四种报告、diff 分类、失败定位和 source-generated JSON；259 个测试通过。本机已有 PostSharp 实例占用单实例锁，未做 GUI/MCP 实机联调 |
 | 集合树状态 | `CollectionDto.IsExpanded` 与 `SelectedCollectionId` / `SelectedRequestId` 随工作区落盘；启动恢复展开状态和选中节点，节点被删除时回退第一个请求，空工作区保持「新建请求」；旧工作区默认展开；选中/展开变化合并为一次延迟保存（单测） |
 | 复制集合 | 右键「复制集合」递归复制子集合与请求，参数、请求头、表单、上传、授权都复制为独立对象；所有节点换新 id，套件仍指向原请求；副本不继承 OpenAPI 来源和收藏；成功后 Toast「已复制集合」，失败走顶部提示条；单测覆盖深拷贝、id 与授权隔离、原树不变 |
@@ -1081,7 +1096,7 @@ docs/
 | MCP 长任务 job | `start_sequence_run` / `start_import` / `start_storage_sync` 立即返回 jobId；实测顺序任务同 key 返回同一 jobId、2/2 步完成，导入任务完成并返回结果；进度、取消和终态由统一 `McpJob` 管理 |
 | MCP 细粒度权限 | 设置页可分别开启发送/修改/管理；单测确认 `AllowSend=false` 隐藏 `send_request`/`run_suite` 但保留 `delete_request`，`AllowAdmin=false` 隐藏 `update_settings`/`sync_storage`；越权调用返回 `-32003` |
 | 首次启动引导 | 首次启动弹出 3 步欢迎对话框（发送请求 / 接入 MCP / 运行套件）；「打开指南」完成引导并切到指南页，「跳过」只标记已读；Debug 构建 0 警告 0 错误 |
-| 无头模式 | Windows 实机 `PostSharp.exe --headless` 启动后健康端点 `200`，无主窗口；Linux CI 用 `xvfb-run` 启动自包含包，`initialize` 后 `tools/list` 返回 89 个工具并跑通演示套件；Docker 镜像构建、容器内健康检查与工具列表通过 |
+| 无头模式 | Windows 实机 `PostSharp.exe --headless` 启动后健康端点 `200`，无主窗口；Linux CI 用 `xvfb-run` 启动自包含包，`initialize` 后 `tools/list` 返回 95 个工具并跑通演示套件；Docker 镜像构建、容器内健康检查与工具列表通过 |
 | 分发清单 | `scripts/update-packaging.ps1` 生成 winget/scoop/brew 清单；`winget validate` 通过，Scoop JSON 可解析；版本 1.11.13，Windows/macOS 哈希与发布资产一致 |
 | 重置演示工作区 | 指南页「一分钟上手」增加入口；确认弹窗说明会清空集合、环境、套件、历史和回收站并恢复内置 Mock 示例，审计和设置保留；`Ctrl+Enter` 确认、`Esc` 取消；Debug 构建 0 警告 0 错误 |
 | 启动与内存基线 | `perf-smoke.ps1` 新增 `McpReadyMs`，改为 HTTP 直连 5199；修复旧端口扫描最多约 1.8s 的测量虚高。1.11.3 本机复测：JIT MCP 就绪 664–690 ms、空闲内存 100–108 MB；AOT 581–590 ms、约 81 MB；均达到 1.5s / 150MB 目标（首次运行新二进制仍受杀毒扫描影响） |
