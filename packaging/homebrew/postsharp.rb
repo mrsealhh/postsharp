@@ -1,6 +1,6 @@
 cask "postsharp" do
-  version "1.11.18"
-  sha256 "c985998881c18ba4ab1c8b5ce94b8ae6977711282e66d122bf7bc51e5dc36a5a"
+  version "1.11.19"
+  sha256 "e7c286c11d0f6cb017c35a385987877bc7059e719a2077aa1405b12865aa8d31"
 
   url "https://github.com/mrsealhh/postsharp/releases/download/v#{version}/PostSharp-osx-arm64.zip"
   name "PostSharp"
