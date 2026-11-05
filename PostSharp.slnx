@@ -1,5 +1,6 @@
 <Solution>
     <Folder Name="/src/">
+        <Project Path="src/PostSharp.Core/PostSharp.Core.csproj" />
         <Project Path="src/PostSharp.Storage.Abstractions/PostSharp.Storage.Abstractions.csproj" />
         <Project Path="src/PostSharp/PostSharp.csproj" />
         <Project Path="src/PostSharp.Cli/PostSharp.Cli.csproj" />

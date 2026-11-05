@@ -26,11 +26,11 @@ public sealed class PipelineRunner
 {
     private static readonly JsonSerializerOptions CompactJson = new() { WriteIndented = false };
 
-    private readonly HttpRequestService _http;
+    private readonly IPipelineHttpClient _http;
 
-    public PipelineRunner(HttpRequestService? http = null)
+    public PipelineRunner(IPipelineHttpClient? http = null)
     {
-        _http = http ?? new HttpRequestService();
+        _http = http ?? new HttpPipelineClient();
     }
 
     public async Task<PipelineRunResult> RunAsync(
@@ -439,7 +439,7 @@ public sealed class PipelineRunner
             var maxAttempts = 1 + retry.Count;
             var timeoutSeconds =
                 node.TimeoutSeconds > 0 ? node.TimeoutSeconds : pipeline.TimeoutSeconds;
-            HttpResult? response = null;
+            PipelineHttpResponse? response = null;
             var attempts = 0;
             IReadOnlyList<PipelineAssertionOutcome> outcomes =
                 Array.Empty<PipelineAssertionOutcome>();
@@ -447,17 +447,16 @@ public sealed class PipelineRunner
             {
                 attempts++;
                 response = await _http.SendAsync(
-                    new ComposedRequest(
+                    new PipelineHttpRequest(
                         node.Method,
                         url,
                         headers,
                         body,
                         contentType,
-                        null,
-                        FollowRedirects: node.FollowRedirects
+                        node.FollowRedirects
                     ),
-                    cancellationToken,
-                    timeoutSeconds
+                    timeoutSeconds,
+                    cancellationToken
                 );
                 outcomes = EvaluateAssertions(node, response);
                 var accepted = outcomes.All(outcome => outcome.Passed);
@@ -697,7 +696,7 @@ public sealed class PipelineRunner
         return null;
     }
 
-    private static JsonNode? ParseBody(HttpResult response)
+    private static JsonNode? ParseBody(PipelineHttpResponse response)
     {
         if (!response.HasResponse || string.IsNullOrWhiteSpace(response.Body))
         {
@@ -716,7 +715,7 @@ public sealed class PipelineRunner
 
     private static List<PipelineAssertionOutcome> EvaluateAssertions(
         PipelineNode node,
-        HttpResult response
+        PipelineHttpResponse response
     )
     {
         var messages = new List<PipelineAssertionOutcome>();
@@ -822,7 +821,7 @@ public sealed class PipelineRunner
         }
     }
 
-    private static bool ShouldRetry(PipelineRetryPolicy retry, HttpResult response)
+    private static bool ShouldRetry(PipelineRetryPolicy retry, PipelineHttpResponse response)
     {
         if (!response.HasResponse)
         {

@@ -38,6 +38,9 @@ steps:
 ## 运行
 
 ```bash
+# 纯 CLI：不启动 PostSharp，直接在本机执行
+postsharp-cli pipeline run docs/examples/order-flow.yaml --local --format junit
+
 # 只校验（不发送请求）
 postsharp-cli pipeline validate docs/examples/order-flow.yaml
 

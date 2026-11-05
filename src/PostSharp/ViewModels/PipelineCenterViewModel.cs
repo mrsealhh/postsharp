@@ -303,7 +303,7 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
         StatusText = "正在运行…";
         try
         {
-            var runner = new PipelineRunner();
+            var runner = new PipelineRunner(new HttpRequestService());
             var result = await runner.RunAsync(
                 parsed.Pipeline,
                 new PipelineRunOptions(),

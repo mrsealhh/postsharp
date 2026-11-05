@@ -40,8 +40,36 @@ public sealed record HttpResult(
     bool IsTruncated = false
 );
 
-public sealed class HttpRequestService
+public sealed class HttpRequestService : IPipelineHttpClient
 {
+    /// <summary>
+    /// 流水线执行器的最小接口：复用桌面端的代理、证书、重定向与超时行为。
+    /// </summary>
+    async Task<PipelineHttpResponse> IPipelineHttpClient.SendAsync(
+        PipelineHttpRequest request,
+        int timeoutSeconds,
+        CancellationToken cancellationToken
+    )
+    {
+        var composed = new ComposedRequest(
+            request.Method,
+            request.Url,
+            request.Headers,
+            request.Body,
+            request.ContentType,
+            null,
+            FollowRedirects: request.FollowRedirects
+        );
+        var result = await SendAsync(composed, cancellationToken, timeoutSeconds)
+            .ConfigureAwait(false);
+        return new PipelineHttpResponse(
+            result.HasResponse,
+            result.StatusCode,
+            result.Body,
+            result.Error
+        );
+    }
+
     private const int MaxFormatLength = 256 * 1024;
     private const int SseProgressIntervalMs = 150;
     private const int SseTextLimit = 2 * 1024 * 1024;

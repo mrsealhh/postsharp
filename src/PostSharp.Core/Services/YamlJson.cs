@@ -23,9 +23,8 @@ public static class YamlJson
             return ConvertNode(stream.Documents[0].RootNode)
                 ?? throw new InvalidOperationException($"{documentLabel} YAML 文档没有根节点。");
         }
-        catch (YamlException exception)
+        catch (YamlException)
         {
-            Log.Error(exception, "YAML 解析失败");
             throw new InvalidOperationException(
                 $"无法解析 {documentLabel}：请确认内容是合法的 JSON 或 YAML。"
             );

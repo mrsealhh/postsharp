@@ -62,6 +62,26 @@ docker exec -i postsharp-ci curl -fsS \
   --data-binary @tools-request.json http://127.0.0.1:5199/mcp > tools.json
 ```
 
+## 纯 CLI：不启动无头应用
+
+只跑 YAML 流水线时，不需要 PostSharp 进程、Xvfb 或 MCP token，下载 CLI 包直接执行：
+
+```yaml
+- uses: actions/checkout@v5
+- name: Download PostSharp CLI
+  run: |
+    curl -fsSL -o cli.zip \
+      https://github.com/mrsealhh/postsharp/releases/latest/download/PostSharp.Cli-linux-x64.zip
+    unzip -q cli.zip -d cli
+    chmod +x cli/postsharp-cli
+- name: Run pipeline
+  run: |
+    ./cli/postsharp-cli pipeline run qa/order-flow.yaml --local \
+      --format junit --copy-report test-results/postsharp.xml
+```
+
+这套方式只依赖连通被测服务的网络，适合 SSH 终端、容器 job 和没有 X11 的 Linux 机器。需要集合、套件或审计时再用下面的无头模式。
+
 ## GitHub Actions 示例
 
 下面示例在 Ubuntu runner 上启动官方发布包，再用 `postsharp-cli` 运行套件并上传 JUnit、Markdown 和 HTML 报告。CLI 自 v1.11.19 起随主 Release 一起发布（`PostSharp.Cli-<平台>.zip`），Linux 也可以直接用一体化无头包 `PostSharp-headless-linux-x64.zip`。
