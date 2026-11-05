@@ -47,8 +47,8 @@ curl -fsS -H 'Content-Type: application/json' \
 仓库根目录提供 `Dockerfile`：多阶段构建 Linux x64 自包含包，运行镜像只安装 Xvfb、字体和 X11 依赖，入口脚本先启动 Xvfb，再运行 `./PostSharp --headless`。
 
 ```bash
-docker build -t postsharp-headless:1.11.19 .
-docker run -d --name postsharp-ci -v "$PWD/ci-data:/data" postsharp-headless:1.11.19
+docker build -t postsharp-headless:1.11.20 .
+docker run -d --name postsharp-ci -v "$PWD/ci-data:/data" postsharp-headless:1.11.20
 docker exec postsharp-ci curl -fsS http://127.0.0.1:5199/api/health
 ```
 
@@ -84,7 +84,7 @@ docker exec -i postsharp-ci curl -fsS \
 
 ## GitHub Actions 示例
 
-下面示例在 Ubuntu runner 上启动官方发布包，再用 `postsharp-cli` 运行套件并上传 JUnit、Markdown 和 HTML 报告。CLI 自 v1.11.19 起随主 Release 一起发布（`PostSharp.Cli-<平台>.zip`），Linux 也可以直接用一体化无头包 `PostSharp-headless-linux-x64.zip`。
+下面示例在 Ubuntu runner 上启动官方发布包，再用 `postsharp-cli` 运行套件并上传 JUnit、Markdown 和 HTML 报告。CLI 自 v1.11.20 起随主 Release 一起发布（`PostSharp.Cli-<平台>.zip`），Linux 也可以直接用一体化无头包 `PostSharp-headless-linux-x64.zip`。
 
 ```yaml
 name: API regression
@@ -110,7 +110,7 @@ jobs:
       - name: Download PostSharp headless bundle
         run: |
           curl -fsSL -o postsharp.zip \
-            https://github.com/mrsealhh/postsharp/releases/download/v1.11.19/PostSharp-headless-linux-x64.zip
+            https://github.com/mrsealhh/postsharp/releases/download/v1.11.20/PostSharp-headless-linux-x64.zip
           unzip -q postsharp.zip -d postsharp
           chmod +x postsharp/PostSharp postsharp/cli/postsharp-cli
 
@@ -165,9 +165,9 @@ on:
 
 jobs:
   api:
-    uses: mrsealhh/postsharp/.github/workflows/postsharp-pipeline.yml@v1.11.19
+    uses: mrsealhh/postsharp/.github/workflows/postsharp-pipeline.yml@v1.11.20
     with:
-      version: 1.11.19
+      version: 1.11.20
       pipeline: qa/order-flow.yaml
       data: qa/cases.csv
       base-url: https://qa.example.com
@@ -183,9 +183,9 @@ jobs:
 ```yaml
       - name: Start PostSharp MCP
         id: postsharp
-        uses: mrsealhh/postsharp/.github/actions/postsharp-mcp@v1.11.19
+        uses: mrsealhh/postsharp/.github/actions/postsharp-mcp@v1.11.20
         with:
-          version: 1.11.19
+          version: 1.11.20
           data-dir: ci-data
 
       - name: Run suite
