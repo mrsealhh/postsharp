@@ -1,5 +1,14 @@
 # 更新日志
 
+## 未发布
+
+### 纯 CLI 流水线
+
+- 新增 `PostSharp.Core`：把流水线模型、YAML/JSON 解析、执行、模板、可视化和报告从 Avalonia 应用中拆出，桌面端与 CLI 共用同一套引擎。
+- `postsharp-cli pipeline validate|graph|run` 新增 `--local`：不连接 PostSharp 服务，直接在 SSH 终端、Linux 服务器或 CI 里执行。
+- 新增 `postsharp-cli mcp serve --stdio`：本地 MCP 服务器，暴露 `validate_pipeline` / `run_pipeline` / `visualize_pipeline`，不需要桌面进程。
+- 纯 CLI 模式支持流水线的请求头、查询参数、JSON/表单/原始请求体、Basic 认证、超时、重定向、重试和 JUnit/JSON/Markdown 报告。
+
 ## v1.11.19 — 2026-11-02
 
 ### 流水线页交互优化

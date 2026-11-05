@@ -62,6 +62,20 @@ internal static class Program
                 );
             }
 
+            if (
+                options.Arguments.Count > 1
+                && string.Equals(options.Arguments[0], "mcp", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(options.Arguments[1], "serve", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return await LocalPipelineMcpServer.RunAsync(cancellation.Token);
+            }
+
+            if (options.Local)
+            {
+                return await LocalCommands.RunAsync(options, cancellation.Token);
+            }
+
             using var client = new McpClient(
                 options.Endpoint,
                 options.ClientName,
@@ -782,10 +796,10 @@ internal static class Program
     {
         Console.WriteLine(
             """
-            PostSharp CLI（要求 PostSharp 正在运行）
+            PostSharp CLI（默认连接 PostSharp；--local 直接执行流水线）
 
             用法：
-              postsharp-cli [--endpoint URL] [--token TOKEN] [--json] [--timeout 秒] [--client 名称] <命令>
+              postsharp-cli [--endpoint URL] [--token TOKEN] [--json] [--local] [--timeout 秒] [--client 名称] <命令>
 
             命令：
               suite list
@@ -795,12 +809,13 @@ internal static class Program
               suite runs <suiteId>
               suite rerun-failed <suiteId> <runId>
               suite continue <suiteId> <runId> <stepId>
-              pipeline validate <文件>
-              pipeline graph <文件> [--format mermaid|dot|json]
-              pipeline run <文件> [--data 数据文件] [--var k=v] [--base-url URL] [--format junit|json|markdown]
+              pipeline validate <文件> [--local] [--data 数据文件]
+              pipeline graph <文件> [--local] [--format mermaid|dot|json]
+              pipeline run <文件> [--local] [--data 数据文件] [--var k=v] [--base-url URL] [--format junit|json|markdown] [--copy-report 路径]
               request send <requestId>
               audit list [--source UI|MCP] [--limit 数量]
               mcp-stdio（把 stdin/stdout 的 MCP JSON-RPC 转发到 HTTP 端点）
+              mcp serve --stdio（本地 MCP 服务，直接执行流水线，不需要 PostSharp 进程）
 
             报告：
               suite run/rerun-failed/continue 支持 --junit <文件>
@@ -821,6 +836,8 @@ internal static class Program
               postsharp-cli suite validate <suiteId> --json
               postsharp-cli pipeline validate flow.yaml
               postsharp-cli pipeline run flow.yaml --data cases.csv --format junit
+              postsharp-cli pipeline run flow.yaml --local --format junit --copy-report test-results/postsharp.xml
+              postsharp-cli mcp serve --stdio
               postsharp-cli audit list --source MCP --limit 20
               $env:POSTSHARP_MCP_TOKEN='...'; postsharp-cli suite list
             """
@@ -832,6 +849,7 @@ internal sealed record CliOptions(
     Uri Endpoint,
     string? Token,
     bool Json,
+    bool Local,
     TimeSpan Timeout,
     string ClientName,
     bool ShowHelp,
@@ -849,6 +867,7 @@ internal sealed record CliOptions(
         var endpoint = new Uri("http://127.0.0.1:5199/mcp");
         var token = Environment.GetEnvironmentVariable("POSTSHARP_MCP_TOKEN");
         var json = false;
+        var local = false;
         var timeout = TimeSpan.FromSeconds(30);
         var clientName = "PostSharp.Cli";
         var help = false;
@@ -870,6 +889,9 @@ internal sealed record CliOptions(
                     break;
                 case "--json":
                     json = true;
+                    break;
+                case "--local":
+                    local = true;
                     break;
                 case "--endpoint":
                     endpoint = ParseEndpoint(ReadValue(args, ref index, argument));
@@ -907,6 +929,9 @@ internal sealed record CliOptions(
                 or "--copy-report":
                     options[argument] = ReadValue(args, ref index, argument);
                     break;
+                case "--dry-run" or "--stdio":
+                    options[argument] = "true";
+                    break;
                 case "--var":
                     variables.Add(ReadValue(args, ref index, argument));
                     break;
@@ -925,6 +950,7 @@ internal sealed record CliOptions(
             endpoint,
             token,
             json,
+            local,
             timeout,
             clientName,
             help,

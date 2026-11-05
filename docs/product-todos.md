@@ -88,11 +88,21 @@
 | N-15 | 流水线与说明修复 | 流水线列表/YAML 改用 Arc 控件并加空状态；MCP 工具说明按类别换行 |
 | N-16 | 流水线图原生渲染 | 「生成流程图」改为 Arc 工作流画布（卡片/箭头/缩放），Mermaid 仍由 CLI/MCP 输出；Arc 升级到 0.3.2-preview.2 |
 | N-17 | 流水线页交互 | 文件选中态、搜索、可拖拽上下分栏、未保存提示、切换自动保存、Ctrl+S/Ctrl+Enter、打开目录 |
+| N-18 | 纯 CLI 流水线 | `PostSharp.Core` 抽出流水线引擎；`pipeline validate/graph/run --local` 无服务执行；`mcp serve --stdio` 本地 MCP |
 
 > 自由拖拽式流水线编辑器不做：流水线是顺序/循环/并发树，树形编辑比任意 DAG 更贴合语义；需要分支/汇合时用测试工作流。多客户端隔离继续等真实“多人/多 AI 同端点”需求。
 
 
 > 签名与安装器（P0-01）依赖证书采购，先做“可签名”的流水线开关与文档，证书到位后当天可启用。
+
+### 3.1.1 纯 CLI 与 SSH 终端
+
+| ID | 事项 | 验收 | 规模 |
+| --- | --- | --- | --- |
+| V-01 | Linux 单文件 CLI | `linux-x64` / `linux-arm64` 自包含单文件，scp 到服务器即可跑；不需要 Xvfb | M |
+| V-02 | 工作区只读模式 | `workspace.json` 或 `--collection` 提供集合/套件，支持 `list_collections` / `send_request` / `run_suite` | M |
+| V-03 | CLI 发布 | tag 时构建 `postsharp-cli-linux-*` / `win-x64`，附 SHA256 与安装说明 | S |
+| V-04 | AI 接入 | `mcp serve --stdio` 的配置示例与 Claude/Cursor/OpenCode 验证 | S |
 
 ### 3.2 P0：发布可信（证书到位即启动）
 

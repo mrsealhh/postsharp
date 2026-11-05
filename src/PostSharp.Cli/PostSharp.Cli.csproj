@@ -11,4 +11,7 @@
     <ItemGroup>
         <InternalsVisibleTo Include="PostSharp.Tests" />
     </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\PostSharp.Core\PostSharp.Core.csproj" />
+    </ItemGroup>
 </Project>

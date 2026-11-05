@@ -54,6 +54,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\PostSharp.Core\PostSharp.Core.csproj" />
         <ProjectReference Include="..\PostSharp.Storage.Abstractions\PostSharp.Storage.Abstractions.csproj" />
         <StoragePluginProject Include="..\Plugins\PostSharp.Storage.PostgreSql\PostSharp.Storage.PostgreSql.csproj">
             <PluginFolder>PostSharp.Storage.PostgreSql</PluginFolder>

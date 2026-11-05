@@ -63,7 +63,7 @@ public sealed partial class McpServer
             Variables = ReadPipelineVariables(arguments),
             DryRun = OptionalBool(arguments, "dryRun") ?? false,
         };
-        var runner = new PipelineRunner();
+        var runner = new PipelineRunner(new HttpRequestService());
         var result = await runner
             .RunAsync(parsed.Pipeline, options, cancellationToken)
             .ConfigureAwait(false);
@@ -92,7 +92,11 @@ public sealed partial class McpServer
             return result;
         }
 
-        var report = PipelineReport.Write(result, format == "md" ? "markdown" : format);
+        var report = PipelineReport.Write(
+            result,
+            format == "md" ? "markdown" : format,
+            AppPaths.ReportDirectory
+        );
         return new PipelineRunResult
         {
             Name = result.Name,

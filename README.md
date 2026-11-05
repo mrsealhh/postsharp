@@ -52,6 +52,7 @@ PostSharp 的定位是：
 - **MCP 工具**：集合/请求、环境变量、历史与回收站、审计与回收站、自动化套件、系统配置、存储配置/同步/切换、导入导出等语义操作均可由 MCP 调用（窗口尺寸、剪贴板等纯界面动作除外）；`verify_endpoint` / `generate_suite` / `diff_runs` / `diff_openapi` / `explain_failure` / `export_report` 把常见意图压到 1–2 次调用并返回结构化结论。
 - **命令行 CLI**：`postsharp-cli` 通过本机 MCP 端点执行套件列表、预检、后台运行、运行历史、失败重跑、请求发送和审计查询；支持 `--json`、`--junit`、`--markdown`、`--html` 和稳定退出码，适合终端与 CI。`postsharp-cli mcp-stdio` 可把 stdin/stdout MCP 桥接到 HTTP MCP，兼容只支持 stdio 的 harness。CLI 是独立下载包，不随桌面安装包分发；应用内「指南 → 命令行 CLI」卡片提供常用命令、MCP 地址复制和下载入口。
 - **无头与容器**：`--headless` 只启动 MCP 和内置 Mock，不创建窗口和托盘；Linux 配合 Xvfb 可在 CI 和容器中运行。仓库提供 `Dockerfile`、`--headless` Linux 冒烟、GitHub Actions 示例和可复用复合 Action，见 [无头模式与 CI](docs/ci.md)。
+- **纯 CLI 流水线**：`postsharp-cli pipeline run <file> --local` 不依赖桌面进程或 MCP 服务，直接在 SSH 终端 / CI 里执行 YAML 流水线；`postsharp-cli mcp serve --stdio` 把同一套流水线能力暴露给 AI 客户端。
 - **完整审计**：来源 `UI` / `MCP`、MCP 客户端名称、工具名、时间、状态、耗时、大小、cURL、请求头和请求/响应预览。
 - **SSE / AI 输出聚合**：自动解析 `text/event-stream`，聚合常见 AI 协议的 thinking 与 content，接收中增量刷新，取消后保留已接收内容。
 - **自动化套件**：统一套件编排器，左侧集合/接口浏览器、中间画布、右侧节点明细；支持依赖 DAG、条件分支与汇合、失败重试、输入映射、断言、定时运行与失败停止；运行结果进入审计，画布实时显示节点与连线状态。工具栏可显式「预检」，保存后自动预检；运行历史支持与更早一次运行对比，标出新增失败、修复、状态码变化和耗时回归。
@@ -789,6 +790,9 @@ src/PostSharp/
     ToolTipStyles.axaml   全局 Tooltip 浮层卡片样式
   App.cs                  全局样式与主窗口启动
   Program.cs               Arc 启动注册
+src/PostSharp.Core/
+  Models/AutomationPipeline.cs 流水线模型
+  Services/Pipeline*.cs   解析、执行、模板、可视化与报告（无 Avalonia 依赖）
 src/PostSharp.Storage.Abstractions/
   StorageContracts.cs      插件契约：IStorageProviderPlugin / IDocumentBackend / 选项与结果
   SqlDocumentBackend.cs    ADO.NET 插件共用的分类文档表实现
@@ -1052,6 +1056,7 @@ docs/
 | 流水线页面渲染 | 实机确认 YAML 编辑区显示 `order-flow` 完整内容、名称与状态正常；文件列表改为 Arc 按钮行并加空状态（与场景模板相同的渲染方式）；图像编辑器节点列表改为扁平缩进列表 |
 | 流水线流程图 | 「生成流程图」改为 Arc `WorkflowCanvas` 只读画布：请求卡片、循环链、并发扇出和依赖箭头；单测验证 `PipelineGraph` → `WorkflowGraph` 节点/依赖映射；Mermaid/DOT 仍由 CLI 与 MCP 输出 |
 | 流水线交互 | 文件列表选中态与搜索过滤；YAML 与图形区之间可拖拽分隔条；未保存提示、切换文件自动保存、草稿保护；`Ctrl+S` / `Ctrl+Enter`；单测覆盖过滤、选中和脏状态 |
+| 纯 CLI 流水线 | `postsharp-cli pipeline run --local` 在无桌面进程时直接执行 YAML；`pipeline validate --local` / `graph --local` 不需要 MCP 服务；`mcp serve --stdio` 提供本地流水线工具 |
 | MCP 工具说明 | 说明按 11 个类别分行展示，包含流水线与客户端工具；不再是一整段连续文本 |
 | 无头 CLI 包 | 本地运行 `build-headless-release.ps1` 生成 `PostSharp-headless-linux-x64.zip`：含 `PostSharp`、`cli/postsharp-cli`、`postsharp-cli.sh`，`PostSharp` 与 CLI 均带 Unix 可执行位；`postsharp-cli pipeline run ... --copy-report` 实测把 JUnit 复制到指定路径 |
 | 无头标题栏 | 顶部栏空白区域拖拽移动；右上角最小化/最大化还原/关闭；边缘缩放可用 |

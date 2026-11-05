@@ -1,6 +1,11 @@
 # PostSharp CLI
 
-`postsharp-cli` 通过本机 MCP 端点调用正在运行的 PostSharp，适合终端、CI 和 AI 客户端封装。
+`postsharp-cli` 有两种工作方式：
+
+- **服务模式（默认）**：通过本机 MCP 端点调用正在运行的 PostSharp，可访问集合、套件、审计和工作区。
+- **纯 CLI 模式（`--local`）**：不连接任何 PostSharp 进程，直接在本机执行 YAML/JSON 流水线；适合 SSH 终端、Linux 服务器和 CI。
+
+两种模式共用同一套流水线引擎（`PostSharp.Core`），断言、变量、数据行、循环、并发、重试和报告格式完全一致。
 
 ## 桌面端入口
 
@@ -13,6 +18,72 @@
 3. 自包含 CLI 包不需要额外运行时。
 4. 如果设置中启用了「MCP 访问控制 → 要求本机 token」，需要加 `--token <token>` 或设置环境变量 `POSTSHARP_MCP_TOKEN`；只读模式下发送/修改类命令会被拒绝。
 
+## 纯 CLI 模式（--local）
+
+不需要启动 PostSharp，也不需要 MCP token：
+
+```bash
+postsharp-cli pipeline validate smoke.yaml --local
+postsharp-cli pipeline graph smoke.yaml --local --format mermaid
+postsharp-cli pipeline run smoke.yaml --local --format junit \
+  --copy-report test-results/postsharp.xml
+```
+
+- 只支持 `pipeline validate / graph / run`；集合、套件、审计等命令仍然需要服务模式。
+- 支持 `--data`、`--var k=v`、`--base-url`、`--format`、`--copy-report`，与 MCP 服务端的流水线参数一致。
+- 报告默认写到当前目录的 `reports/`；`--copy-report <路径>` 直接写到指定位置，适合 CI 归档。
+- 退出码：`0` 全部通过；`1` 有步骤失败或校验失败；`2` 参数错误；`3` 连接失败或取消。
+
+### SSH 终端 / Linux 服务器
+
+从 Release 下载 `PostSharp.Cli-linux-x64.zip`，解压后把 `postsharp-cli` 放到服务器：
+
+```bash
+scp postsharp-cli user@server:/usr/local/bin/
+ssh user@server
+chmod +x /usr/local/bin/postsharp-cli
+postsharp-cli pipeline run /srv/api/smoke.yaml --local --format junit \
+  --copy-report /srv/api/test-results/postsharp.xml
+```
+
+CLI 是自包含单文件（含 .NET 运行时），不需要在服务器安装 .NET，也不需要 Xvfb、Avalonia 或桌面环境。Alpine 等 musl 系统需要单独构建 `linux-musl-x64` 版本。
+
+没有 Release 包时可以在仓库里交叉编译：
+
+```powershell
+dotnet publish src/PostSharp.Cli/PostSharp.Cli.csproj -c Release -r linux-x64 `
+  --self-contained true -p:PublishSingleFile=true -o artifacts/cli-linux
+```
+
+把 `artifacts/cli-linux/postsharp-cli` 传到服务器即可。
+
+### 本地 MCP 服务（AI 客户端）
+
+```bash
+postsharp-cli mcp serve --stdio
+```
+
+它只暴露流水线工具，直接在本机执行，不需要 PostSharp 进程：
+
+- `validate_pipeline`
+- `run_pipeline`
+- `visualize_pipeline`
+
+Claude Desktop / Cursor / OpenCode 等只支持 stdio 的客户端可以这样配置：
+
+```json
+{
+  "mcpServers": {
+    "postsharp": {
+      "command": "postsharp-cli",
+      "args": ["mcp", "serve", "--stdio"]
+    }
+  }
+}
+```
+
+Windows 把 `command` 改成 `postsharp-cli.exe` 的绝对路径。需要集合/套件工具时，改用服务模式或 `mcp-stdio` 桥接。
+
 ## 命令
 
 ```bash
@@ -23,12 +94,13 @@ postsharp-cli suite run <suiteId>
 postsharp-cli suite runs <suiteId>
 postsharp-cli suite rerun-failed <suiteId> <runId>
 postsharp-cli suite continue <suiteId> <runId> <stepId>
-postsharp-cli pipeline validate <file>
-postsharp-cli pipeline graph <file> [--format mermaid|dot|json]
-postsharp-cli pipeline run <file> [--data <file>] [--var k=v] [--base-url URL] [--format junit|json|markdown] [--copy-report <path>]
+postsharp-cli pipeline validate <file> [--local] [--data <file>]
+postsharp-cli pipeline graph <file> [--local] [--format mermaid|dot|json]
+postsharp-cli pipeline run <file> [--local] [--data <file>] [--var k=v] [--base-url URL] [--format junit|json|markdown] [--copy-report <path>]
 postsharp-cli request send <requestId>
 postsharp-cli audit list --source MCP --limit 20
 postsharp-cli mcp-stdio
+postsharp-cli mcp serve --stdio
 ```
 
 `mcp-stdio` 把 stdin/stdout 的 MCP JSON-RPC 转发到 PostSharp HTTP MCP，适合只支持 stdio MCP 的 harness：
@@ -51,6 +123,7 @@ Windows 可把 `command` 改为 `postsharp-cli.exe` 的绝对路径。桥接本�
 ```text
 --endpoint URL     默认 http://127.0.0.1:5199/mcp
 --token TOKEN      MCP 访问控制要求的本机 token；也可用 POSTSHARP_MCP_TOKEN
+--local            流水线命令直接在本机执行，不连接 PostSharp
 --json             输出原始 JSON；进度信息写 stderr
 --timeout 秒       单次请求超时，默认 30 秒
 --client 名称      写入 MCP clientInfo

@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using PostSharp.Models;
 
@@ -8,6 +10,12 @@ namespace PostSharp.Services;
 /// <summary>把流水线运行结果写成 Markdown / JUnit / JSON，供 CI 与报告页直接读取。</summary>
 public static class PipelineReport
 {
+    private static readonly JsonSerializerOptions ReportJsonOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
     public static string Create(PipelineRunResult result, string format)
     {
         return format.ToLowerInvariant() switch
@@ -33,7 +41,7 @@ public static class PipelineReport
         };
         var fileName =
             $"pipeline-{SafeName(result.Name)}-{DateTime.Now:yyyyMMdd-HHmmss}.{extension}";
-        var target = directory ?? AppPaths.ReportDirectory;
+        var target = directory ?? Path.Combine(Environment.CurrentDirectory, "reports");
         Directory.CreateDirectory(target);
         var path = Path.Combine(target, fileName);
         File.WriteAllText(
@@ -108,7 +116,7 @@ public static class PipelineReport
                 result.Notes.Select(text => (JsonNode)JsonValue.Create(text)!).ToArray()
             ),
         };
-        return document.ToJsonString(DataJson.NodeOptions);
+        return document.ToJsonString(ReportJsonOptions);
     }
 
     private static string CreateMarkdown(PipelineRunResult result)
