@@ -74,6 +74,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     {
         Interval = TimeSpan.FromMilliseconds(400),
     };
+    private readonly DispatcherTimer _previewTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(120),
+    };
     private readonly Dictionary<Guid, DateTimeOffset> _lastScheduledRuns = new();
     private Guid? _restoredSelectedCollectionId;
     private Guid? _restoredSelectedRequestId;
@@ -82,6 +86,11 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     public MainWindowViewModel()
     {
         _workspacePersistTimer.Tick += OnWorkspacePersistTick;
+        _previewTimer.Tick += (_, _) =>
+        {
+            _previewTimer.Stop();
+            RefreshPreviews();
+        };
         AuditPage = new PagedCollection<AuditEntry>(VisibleAudit);
         TreePage = new PagedCollection<TreeDisplayNode>(TreeNodes, 80);
         TreeTrash = new TreeTrashViewModel(Collections, OnTreeTrashChanged, ShowToast);
@@ -95,6 +104,14 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         );
         Settings = _settingsStore.Load();
         FontService.Initialize(Settings);
+        // 启动时先应用保存的外观与强调色，否则设置里的深色/强调色要等一次改动才生效。
+        _ = ThemeService.ApplyAsync(
+            Settings.Theme,
+            isStartup: true,
+            cornerScale: Settings.CornerScale,
+            accent: Settings.Accent,
+            motion: Settings.Motion
+        );
         AppLog.Reconfigure(Settings.LogDirectory, Settings.LogLevel);
         Log.Information(
             "设置已加载 {SettingsFile}，主题 {Theme}，日志目录 {LogDirectory}，日志级别 {LogLevel}",
@@ -172,6 +189,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Environments.Add(environment);
             ActiveEnvironment = environment;
         }
+
+        Environments.CollectionChanged += (_, _) => SyncEnvironmentOptions();
+        SyncEnvironmentOptions();
 
         var firstRequest = Collections
             .SelectMany(collection => collection.Requests)
@@ -395,6 +415,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [ObservableProperty]
     private EnvironmentModel? _activeEnvironment;
 
+    /// <summary>顶部与对话框环境下拉框的数据源：名称变化时整体重建，避免 Arc Select 缓存旧文本。</summary>
+    public ObservableCollection<EnvironmentOption> EnvironmentOptions { get; } = new();
+
+    [ObservableProperty]
+    private EnvironmentOption? _selectedEnvironmentOption;
+
     [ObservableProperty]
     private bool _isDraft;
 
@@ -435,6 +461,24 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [ObservableProperty]
     private bool _hasCookies;
 
+    [ObservableProperty]
+    private bool _hasSiteCookies;
+
+    [ObservableProperty]
+    private int _siteCookieCount;
+
+    [ObservableProperty]
+    private string _siteCookiePreview = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SiteCookieHint))]
+    private bool _hasCookieHeaderConflict;
+
+    public string SiteCookieHint =>
+        HasCookieHeaderConflict
+            ? "已手写 Cookie 头，发送时会与站点 Cookie 并存；建议只保留一种"
+            : "由当前站点的 Cookie 自动附加，不需要手写";
+
     private Uri? _cookieUri;
 
     [ObservableProperty]
@@ -468,6 +512,8 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowRequestBodyJsonViewer))]
     [NotifyPropertyChangedFor(nameof(ShowRequestBodyEditor))]
+    [NotifyPropertyChangedFor(nameof(RequestBodyJsonText))]
+    [NotifyPropertyChangedFor(nameof(CanFormatRequestBody))]
     private bool _isRequestBodyJsonView;
 
     [ObservableProperty]
@@ -580,6 +626,12 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
     [NotifyPropertyChangedFor(nameof(ShowEmptyResponse))]
     [NotifyPropertyChangedFor(nameof(ShowLargeResponseBanner))]
+    [NotifyPropertyChangedFor(nameof(ResponseJsonText))]
+    [NotifyPropertyChangedFor(nameof(ResponseCopyText))]
+    [NotifyPropertyChangedFor(nameof(ShowResponseTextTools))]
+    [NotifyPropertyChangedFor(nameof(ShowResponseViewToggle))]
+    [NotifyPropertyChangedFor(nameof(CanFormatResponse))]
+    [NotifyPropertyChangedFor(nameof(CanMinifyResponse))]
     private bool _hasResponse;
 
     [ObservableProperty]
@@ -597,17 +649,31 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [NotifyPropertyChangedFor(nameof(ShowJsonResponse))]
     [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
     [NotifyPropertyChangedFor(nameof(ShowEmptyResponse))]
+    [NotifyPropertyChangedFor(nameof(ResponseJsonText))]
+    [NotifyPropertyChangedFor(nameof(ResponseCopyText))]
+    [NotifyPropertyChangedFor(nameof(ShowResponseTextTools))]
+    [NotifyPropertyChangedFor(nameof(ShowResponseViewToggle))]
+    [NotifyPropertyChangedFor(nameof(CanFormatResponse))]
+    [NotifyPropertyChangedFor(nameof(CanMinifyResponse))]
     private bool _isJsonResponse;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowJsonResponse))]
     [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
+    [NotifyPropertyChangedFor(nameof(ResponseJsonText))]
+    [NotifyPropertyChangedFor(nameof(ResponseCopyText))]
+    [NotifyPropertyChangedFor(nameof(CanFormatResponse))]
     private bool _isResponseJsonView = true;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowJsonResponse))]
     [NotifyPropertyChangedFor(nameof(ShowRawResponse))]
     [NotifyPropertyChangedFor(nameof(ShowLargeResponseBanner))]
+    [NotifyPropertyChangedFor(nameof(ResponseJsonText))]
+    [NotifyPropertyChangedFor(nameof(ResponseCopyText))]
+    [NotifyPropertyChangedFor(nameof(CanFormatResponse))]
+    [NotifyPropertyChangedFor(nameof(CanMinifyResponse))]
+    [NotifyPropertyChangedFor(nameof(ShowResponseViewToggle))]
     private bool _isLargeResponse;
 
     [ObservableProperty]
@@ -616,6 +682,10 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [NotifyPropertyChangedFor(nameof(ShowSseRaw))]
     [NotifyPropertyChangedFor(nameof(SseSummary))]
     [NotifyPropertyChangedFor(nameof(CanTransformSse))]
+    [NotifyPropertyChangedFor(nameof(ShowResponseTextTools))]
+    [NotifyPropertyChangedFor(nameof(ShowResponseViewToggle))]
+    [NotifyPropertyChangedFor(nameof(CanFormatResponse))]
+    [NotifyPropertyChangedFor(nameof(CanMinifyResponse))]
     private bool _isSseResponse;
 
     [ObservableProperty]
@@ -717,12 +787,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ResponseTextWidth))]
+    [NotifyPropertyChangedFor(nameof(ResponseJsonText))]
+    [NotifyPropertyChangedFor(nameof(ResponseCopyText))]
     private string _responseBody = string.Empty;
 
     [ObservableProperty]
     private string _fullResponseBody = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResponseCopyText))]
     private string _responseClipboardText = string.Empty;
 
     [ObservableProperty]
@@ -742,7 +815,16 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ResponseStatusIcon))]
+    [NotifyPropertyChangedFor(nameof(IsResponseSuccess))]
+    [NotifyPropertyChangedFor(nameof(IsResponseWarning))]
+    [NotifyPropertyChangedFor(nameof(IsResponseDanger))]
     private BadgeTone _responseTone = BadgeTone.Neutral;
+
+    public bool IsResponseSuccess => ResponseTone == BadgeTone.Success;
+
+    public bool IsResponseWarning => ResponseTone == BadgeTone.Warning;
+
+    public bool IsResponseDanger => ResponseTone == BadgeTone.Danger;
 
     [ObservableProperty]
     private string _mockStatus = string.Empty;
@@ -1611,6 +1693,38 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public string AuthScopeSummary { get; private set; } = string.Empty;
 
+    /// <summary>请求头页签顶部授权卡片：展开后显示类型与凭据字段。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AuthSectionToggleLabel))]
+    private bool _isAuthSectionExpanded;
+
+    public string AuthSectionToggleLabel => IsAuthSectionExpanded ? "收起配置" : "配置授权";
+
+    /// <summary>折叠态的一句话：当前实际生效的认证（含继承）。</summary>
+    public string AuthEffectiveSummary { get; private set; } = "不附加认证";
+
+    /// <summary>发送时会由授权生成的请求头；附加到查询参数时为 false。</summary>
+    public bool HasInjectedAuthHeader { get; private set; }
+
+    public string InjectedAuthHeaderName { get; private set; } = string.Empty;
+
+    /// <summary>脱敏后的值预览，只用来提示“这一行来自授权”。</summary>
+    public string InjectedAuthHeaderValue { get; private set; } = string.Empty;
+
+    /// <summary>手写了同名请求头：请求头优先，授权那一行不会发送。</summary>
+    public bool HasAuthHeaderConflict { get; private set; }
+
+    public string InjectedAuthHeaderHint =>
+        HasAuthHeaderConflict
+            ? "已手写同名请求头，发送时以你填写的那一行为准"
+            : "由授权配置生成，不需要在下方重复添加";
+
+    [RelayCommand]
+    private void ToggleAuthSection() => IsAuthSectionExpanded = !IsAuthSectionExpanded;
+
+    [RelayCommand]
+    private void OpenAuthSection() => IsAuthSectionExpanded = true;
+
     public void RefreshAuthState()
     {
         InheritedAuthSource = AuthCollectionTarget is { } collection
@@ -1628,6 +1742,44 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         OnPropertyChanged(nameof(AuthScopeDetail));
         OnPropertyChanged(nameof(AuthScopeSummary));
         RefreshDerivedState();
+    }
+
+    /// <summary>算出发送时会注入的那一行授权，并检查手写同名请求头造成的覆盖。</summary>
+    private void RefreshAuthInjectionState()
+    {
+        var effective = AuthCollectionTarget is { } collection
+            ? AuthResolver.Resolve(collection)
+            : AuthResolver.Resolve(Editing);
+        AuthEffectiveSummary = effective is null ? "不附加认证" : AuthResolver.Describe(effective);
+
+        var injection = ResolveAuth(Editing);
+        HasInjectedAuthHeader =
+            injection is { InQuery: false } && !string.IsNullOrWhiteSpace(injection.Key);
+        InjectedAuthHeaderName = HasInjectedAuthHeader ? injection!.Key : string.Empty;
+        InjectedAuthHeaderValue = HasInjectedAuthHeader
+            ? MaskInjectedValue(injection!)
+            : string.Empty;
+        HasAuthHeaderConflict =
+            HasInjectedAuthHeader
+            && Editing.Headers.ActiveRows.Any(row =>
+                row.IsEnabled
+                && row.Key.Trim().Equals(InjectedAuthHeaderName, StringComparison.OrdinalIgnoreCase)
+            );
+
+        OnPropertyChanged(nameof(AuthEffectiveSummary));
+        OnPropertyChanged(nameof(HasInjectedAuthHeader));
+        OnPropertyChanged(nameof(InjectedAuthHeaderName));
+        OnPropertyChanged(nameof(InjectedAuthHeaderValue));
+        OnPropertyChanged(nameof(HasAuthHeaderConflict));
+        OnPropertyChanged(nameof(InjectedAuthHeaderHint));
+    }
+
+    private static string MaskInjectedValue(AuthInjection injection)
+    {
+        var space = injection.Value.IndexOf(' ');
+        return space is > 0 and < 16
+            ? string.Concat(injection.Value.AsSpan(0, space), " ••••••")
+            : "••••••";
     }
 
     /// <summary>授权窗口与标签页共用这段说明：写清保存后到底影响谁。</summary>
@@ -1823,10 +1975,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         if (
             e.PropertyName == nameof(AppSettings.Theme)
+            || e.PropertyName == nameof(AppSettings.Accent)
+            || e.PropertyName == nameof(AppSettings.Motion)
             || e.PropertyName == nameof(AppSettings.CornerScale)
         )
         {
-            _ = ThemeService.ApplyAsync(Settings.Theme, cornerScale: Settings.CornerScale);
+            _ = ThemeService.ApplyAsync(
+                Settings.Theme,
+                cornerScale: Settings.CornerScale,
+                accent: Settings.Accent,
+                motion: Settings.Motion
+            );
         }
 
         if (
@@ -2118,6 +2277,25 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
     public double ResponseTextWidth => EstimateTextWidth(ResponseBody);
 
+    /// <summary>响应体的彩色 JSON 展示文本：非 JSON 或大响应折叠时为空，交给原始文本视图。</summary>
+    public string ResponseJsonText =>
+        ShowJsonResponse ? JsonDisplay.Beautify(ResponseBody) : string.Empty;
+
+    /// <summary>「复制响应」与当前视图保持一致：高亮视图给美化文本，原文视图给完整文本。</summary>
+    public string ResponseCopyText => ShowJsonResponse ? ResponseJsonText : ResponseClipboardText;
+
+    /// <summary>响应体的「格式化」「压缩」只在 JSON 响应下出现，非 JSON 与 SSE 不提供该操作。</summary>
+    public bool ShowResponseTextTools => HasResponse && IsJsonResponse && !IsSseResponse;
+
+    /// <summary>大响应折叠时不提供高亮视图，避免开关点了没有任何变化。</summary>
+    public bool ShowResponseViewToggle =>
+        HasResponse && IsJsonResponse && !IsLargeResponse && !IsSseResponse;
+
+    /// <summary>高亮视图本身已美化，重排文本只对原文视图有意义。</summary>
+    public bool CanFormatResponse => ShowResponseTextTools && !IsLargeResponse && !ShowJsonResponse;
+
+    public bool CanMinifyResponse => ShowResponseTextTools && !IsLargeResponse;
+
     public double SseContentTextWidth => EstimateTextWidth(SseContent);
 
     public double SseThinkingTextWidth => EstimateTextWidth(SseThinking);
@@ -2260,6 +2438,40 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     public bool ShowRequestBodyJsonViewer => IsJsonBody && IsRequestBodyJsonView;
 
     public bool ShowRequestBodyEditor => IsTextBody && !ShowRequestBodyJsonViewer;
+
+    /// <summary>请求体的彩色 JSON 展示文本：JSON 视图打开时才解析，关闭时不产生开销。</summary>
+    public string RequestBodyJsonText
+    {
+        get
+        {
+            if (!ShowRequestBodyJsonViewer)
+            {
+                return string.Empty;
+            }
+
+            var body = Editing.Body ?? string.Empty;
+            if (!ReferenceEquals(body, _requestBodyJsonSource))
+            {
+                _requestBodyJsonSource = body;
+                _requestBodyJsonText = JsonDisplay.Beautify(body);
+            }
+
+            return _requestBodyJsonText;
+        }
+    }
+
+    private string _requestBodyJsonSource = string.Empty;
+    private string _requestBodyJsonText = string.Empty;
+    private bool _syncingEnvironmentOptions;
+    private readonly List<EnvironmentModel> _watchedEnvironments = new();
+
+    /// <summary>请求体的「格式化」「压缩」只在文本类请求体下出现（表单上传与 GraphQL 另有编辑区）。</summary>
+    public bool ShowBodyTextTools => IsTextBody;
+
+    /// <summary>高亮视图是只读美化输出，重排文本要先回到编辑区才看得见结果。</summary>
+    public bool CanFormatRequestBody => ShowBodyTextTools && !ShowRequestBodyJsonViewer;
+
+    public bool CanMinifyRequestBody => ShowBodyTextTools;
 
     public bool HasUploadFile => Editing.UploadFiles.Count > 0;
 
@@ -2422,6 +2634,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         OnPropertyChanged(nameof(IsTextBody));
         OnPropertyChanged(nameof(ShowRequestBodyJsonViewer));
         OnPropertyChanged(nameof(ShowRequestBodyEditor));
+        OnPropertyChanged(nameof(ShowBodyTextTools));
+        OnPropertyChanged(nameof(CanFormatRequestBody));
+        OnPropertyChanged(nameof(CanMinifyRequestBody));
     }
 
     partial void OnSelectedCodeLanguageChanged(CodeLanguageOption value)
@@ -2454,22 +2669,21 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         RequestTabOptions.Clear();
         RequestTabOptions.Add(new RequestTabOption(0, "参数"));
         RequestTabOptions.Add(new RequestTabOption(1, "请求头"));
-        RequestTabOptions.Add(new RequestTabOption(2, "授权"));
-        RequestTabOptions.Add(new RequestTabOption(3, RequestBodyTabHeader));
+        RequestTabOptions.Add(new RequestTabOption(2, RequestBodyTabHeader));
         if (IsHttpLikeProtocol)
         {
-            RequestTabOptions.Add(new RequestTabOption(4, "cURL"));
+            RequestTabOptions.Add(new RequestTabOption(3, "cURL"));
             if (ShowOpenApiDocTab)
             {
-                RequestTabOptions.Add(new RequestTabOption(5, "接口文档"));
+                RequestTabOptions.Add(new RequestTabOption(4, "接口文档"));
             }
 
-            RequestTabOptions.Add(new RequestTabOption(6, "调用代码"));
+            RequestTabOptions.Add(new RequestTabOption(5, "调用代码"));
         }
 
         RequestTabIndex =
             RequestTabOptions.FirstOrDefault(option => option.Index == current)?.Index
-            ?? (IsHttpLikeProtocol ? 0 : 3);
+            ?? (IsHttpLikeProtocol ? 0 : 2);
         foreach (var option in RequestTabOptions)
         {
             option.IsSelected = option.Index == RequestTabIndex;
@@ -2522,7 +2736,62 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             Persist();
         }
 
+        SyncEnvironmentOptions();
         RefreshDerivedState();
+    }
+
+    private void SyncEnvironmentOptions()
+    {
+        foreach (var environment in _watchedEnvironments)
+        {
+            environment.PropertyChanged -= OnWatchedEnvironmentPropertyChanged;
+        }
+
+        _watchedEnvironments.Clear();
+        _syncingEnvironmentOptions = true;
+        try
+        {
+            EnvironmentOptions.Clear();
+            foreach (var environment in Environments)
+            {
+                environment.PropertyChanged += OnWatchedEnvironmentPropertyChanged;
+                _watchedEnvironments.Add(environment);
+                EnvironmentOptions.Add(new EnvironmentOption(environment.Id, environment.Name));
+            }
+
+            SelectedEnvironmentOption = ActiveEnvironment is { } active
+                ? EnvironmentOptions.FirstOrDefault(option => option.Id == active.Id)
+                : null;
+        }
+        finally
+        {
+            _syncingEnvironmentOptions = false;
+        }
+    }
+
+    private void OnWatchedEnvironmentPropertyChanged(
+        object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e
+    )
+    {
+        if (e.PropertyName == nameof(EnvironmentModel.Name))
+        {
+            SyncEnvironmentOptions();
+        }
+    }
+
+    partial void OnSelectedEnvironmentOptionChanged(EnvironmentOption? value)
+    {
+        if (_syncingEnvironmentOptions || value is null)
+        {
+            return;
+        }
+
+        var environment = Environments.FirstOrDefault(candidate => candidate.Id == value.Id);
+        if (environment is not null && !ReferenceEquals(environment, ActiveEnvironment))
+        {
+            ActiveEnvironment = environment;
+        }
     }
 
     partial void OnSelectedAuditEntryChanged(AuditEntry? value)
@@ -4159,33 +4428,86 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     private void RefreshCookieState()
     {
         SessionCookies.Clear();
-        _cookieUri = null;
+        _cookieUri = ResolveCookieUri();
+        if (_cookieUri is { } uri)
+        {
+            foreach (var cookie in SessionCookieJar.GetCookies(uri))
+            {
+                SessionCookies.Add(cookie);
+            }
+        }
+
+        HasCookies = SessionCookies.Count > 0;
+        ApplyCookieSummary(_cookieUri, SessionCookies);
+        ClearCookiesCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// 只刷新“当前站点有多少 Cookie”这类摘要，供顶栏按钮和请求头页签使用；
+    /// 不重建 Cookie 列表，避免每次输入地址都刷新对话框。
+    /// </summary>
+    private void RefreshCookieRowState()
+    {
+        _cookieUri = ResolveCookieUri();
+        ApplyCookieSummary(
+            _cookieUri,
+            _cookieUri is { } uri ? SessionCookieJar.GetCookies(uri) : Array.Empty<SessionCookie>()
+        );
+    }
+
+    private void ApplyCookieSummary(Uri? uri, IReadOnlyList<SessionCookie> cookies)
+    {
+        SiteCookieCount = cookies.Count;
+        HasSiteCookies = cookies.Count > 0;
+        SiteCookiePreview =
+            cookies.Count == 0
+                ? string.Empty
+                : string.Join("、", cookies.Take(3).Select(cookie => cookie.Name))
+                    + (cookies.Count > 3 ? " 等" : string.Empty);
+        HasCookieHeaderConflict = Editing.Headers.ActiveRows.Any(row =>
+            row.IsEnabled && row.Key.Trim().Equals("Cookie", StringComparison.OrdinalIgnoreCase)
+        );
+        CookieHostText =
+            uri is null ? "当前请求地址无法解析为绝对地址，无法读取 Cookie"
+            : cookies.Count > 0
+                ? $"{uri.GetLeftPart(UriPartial.Authority)} · {cookies.Count} 个 Cookie"
+            : $"{uri.GetLeftPart(UriPartial.Authority)} · 当前站点没有 Cookie";
+    }
+
+    private Uri? ResolveCookieUri()
+    {
         try
         {
             var url = RequestComposer
                 .Compose(Editing, ActiveEnvironment, validateUploadFiles: false)
                 .Url;
-            if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            {
-                _cookieUri = uri;
-                foreach (var cookie in SessionCookieJar.GetCookies(uri))
-                {
-                    SessionCookies.Add(cookie);
-                }
-            }
+            return Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri : null;
         }
         catch (Exception exception)
         {
-            Log.Warning(exception, "读取当前请求地址失败，无法刷新 Cookie");
+            Log.Debug(exception, "解析当前请求站点失败，无法统计 Cookie");
+            return null;
+        }
+    }
+
+    /// <summary>手写的 Cookie 头会和站点 Cookie 一起发送，这里统一停用它，改用 Cookie 容器。</summary>
+    [RelayCommand]
+    private void DisableManualCookieHeaders()
+    {
+        var rows = Editing
+            .Headers.ActiveRows.Where(row =>
+                row.IsEnabled && row.Key.Trim().Equals("Cookie", StringComparison.OrdinalIgnoreCase)
+            )
+            .ToList();
+        foreach (var row in rows)
+        {
+            row.IsEnabled = false;
         }
 
-        HasCookies = SessionCookies.Count > 0;
-        CookieHostText =
-            _cookieUri is null ? "当前请求地址无法解析为绝对地址，无法读取 Cookie"
-            : HasCookies
-                ? $"{_cookieUri.GetLeftPart(UriPartial.Authority)} · {SessionCookies.Count} 个 Cookie"
-            : $"{_cookieUri.GetLeftPart(UriPartial.Authority)} · 当前站点没有 Cookie";
-        ClearCookiesCommand.NotifyCanExecuteChanged();
+        RefreshDerivedState();
+        ShowToast(
+            rows.Count == 0 ? "没有启用的手写 Cookie 头" : $"已停用 {rows.Count} 行手写 Cookie 头"
+        );
     }
 
     [RelayCommand]
@@ -7065,10 +7387,16 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
     [RelayCommand]
     private void FormatBody()
     {
+        if (ShowRequestBodyJsonViewer)
+        {
+            ShowToast("高亮视图只做只读展示；需要重排请求体请先切回编辑区");
+            return;
+        }
+
         var body = Editing.Body;
         if (string.IsNullOrWhiteSpace(body))
         {
-            ShowToast("请求体为空");
+            ShowToast("请求体为空，没有可格式化的内容");
             return;
         }
 
@@ -7106,6 +7434,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         var body = Editing.Body;
         if (string.IsNullOrWhiteSpace(body))
         {
+            ShowToast("请求体为空，没有可压缩的内容");
             return;
         }
 
@@ -7113,7 +7442,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         {
             using var document = System.Text.Json.JsonDocument.Parse(body);
             Editing.Body = DataJson.Format(document.RootElement, false, true);
-            ShowToast("JSON 已压缩为单行");
+            if (IsRequestBodyJsonView)
+            {
+                IsRequestBodyJsonView = false;
+                ShowToast("JSON 已压缩为单行，并切回编辑区");
+            }
+            else
+            {
+                ShowToast("JSON 已压缩为单行");
+            }
         }
         catch (Exception exception)
         {
@@ -7192,6 +7529,24 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             return;
         }
 
+        if (!IsJsonResponse)
+        {
+            ShowToast("当前响应不是 JSON，没有可重排的内容");
+            return;
+        }
+
+        if (IsLargeResponse)
+        {
+            ShowToast("响应过大已折叠，请在「查看完整响应」中处理后再格式化");
+            return;
+        }
+
+        if (indented && ShowJsonResponse)
+        {
+            ShowToast("高亮视图已按缩进展示；需要重排响应文本请先切回原文");
+            return;
+        }
+
         try
         {
             using var document = JsonDocument.Parse(FullResponseBody);
@@ -7200,9 +7555,15 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
             FullResponseBody = text;
             ResponseClipboardText = text;
             IsJsonResponse = true;
-            IsLargeResponse = false;
-            IsResponseJsonView = indented;
-            ShowToast(indented ? "响应 JSON 已格式化" : "响应 JSON 已压缩");
+            if (!indented)
+            {
+                IsResponseJsonView = false;
+                ShowToast("响应 JSON 已压缩为单行，并切到原文");
+            }
+            else
+            {
+                ShowToast("响应 JSON 已格式化");
+            }
         }
         catch (JsonException exception)
         {
@@ -7302,6 +7663,13 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         if (e.PropertyName == nameof(RequestItem.Name))
         {
             RefreshAuthState();
+            NotifyTreeChanged();
+            return;
+        }
+
+        if (e.PropertyName == nameof(RequestItem.Method))
+        {
+            RefreshDerivedState();
             return;
         }
 
@@ -7427,6 +7795,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         NotifyProtocolState();
         OnPropertyChanged(nameof(HasUploadFile));
+        OnPropertyChanged(nameof(RequestBodyJsonText));
+        RefreshAuthInjectionState();
+        SchedulePreviews();
 
         var duplicates = Editing
             .Headers.ActiveRows.Where(row => !string.IsNullOrWhiteSpace(row.Key))
@@ -7439,9 +7810,23 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         HeaderWarningText = HasHeaderWarning
             ? $"重复请求头：{string.Join("、", duplicates)}；发送时会按行依次附加。"
             : string.Empty;
+    }
 
+    /// <summary>
+    /// cURL 预览、调用代码和站点 Cookie 统计都要各自组装一次请求，逐字符输入时开销明显；
+    /// 停顿 120ms 再算，交互仍然是即时的，但不会在每次按键上重复做三份工作。
+    /// </summary>
+    private void SchedulePreviews()
+    {
+        _previewTimer.Stop();
+        _previewTimer.Start();
+    }
+
+    private void RefreshPreviews()
+    {
         CurlPreview = RequestComposer.BuildCurl(Editing, ActiveEnvironment, ResolveAuth(Editing));
         RefreshCodePreview();
+        RefreshCookieRowState();
     }
 
     private static string Truncate(string text, int limit)
@@ -7460,6 +7845,7 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         _suiteScheduleTimer.Tick -= OnSuiteScheduleTick;
         _workspacePersistTimer.Stop();
         _workspacePersistTimer.Tick -= OnWorkspacePersistTick;
+        _previewTimer.Stop();
         UpdateService.PendingChanged -= OnPendingUpdateChanged;
         _updateCts?.Cancel();
         _updateCts?.Dispose();
@@ -7700,6 +8086,9 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
         {
             ResponseHeaders.Add(header);
         }
+
+        // 响应里的 Set-Cookie 已经写入共享容器，顶部按钮与请求头提示要跟着更新。
+        RefreshCookieRowState();
     }
 
     private void ClearResponse()

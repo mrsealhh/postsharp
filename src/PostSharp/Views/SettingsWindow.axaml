@@ -188,7 +188,7 @@
                                         FontWeight="Medium"
                                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                                     />
-                                    <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">
+                                    <Grid ColumnDefinitions="1*,1*,1*" ColumnSpacing="12">
                                         <arc:Select
                                             Label="主题"
                                             Description="跟随系统会读取 Windows 当前主题，并在系统切换时同步。"
@@ -198,11 +198,48 @@
                                         />
                                         <arc:Select
                                             Grid.Column="1"
+                                            Label="强调色"
+                                            Description="按钮、选中态、焦点框和链接的品牌色。"
+                                            SelectedValue="{Binding Draft.Accent, Mode=TwoWay}"
+                                            AutomationProperties.Name="强调色"
+                                        >
+                                            <arc:SelectItem Content="中性" Value="Neutral" />
+                                            <arc:SelectItem Content="紫罗兰" Value="Violet" />
+                                            <arc:SelectItem Content="蓝" Value="Blue" />
+                                            <arc:SelectItem Content="绿" Value="Green" />
+                                            <arc:SelectItem Content="琥珀" Value="Amber" />
+                                            <arc:SelectItem Content="橙" Value="Orange" />
+                                            <arc:SelectItem Content="珊瑚" Value="Coral" />
+                                            <arc:SelectItem Content="玫红" Value="Rose" />
+                                        </arc:Select>
+                                        <arc:Select
+                                            Grid.Column="2"
                                             Label="界面字体"
                                             Description="界面文字、按钮和菜单使用的字体。"
                                             ItemsSource="{Binding FontOptions}"
                                             SelectedItem="{Binding Draft.UiFont, Mode=TwoWay}"
                                             AutomationProperties.Name="界面字体"
+                                        />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="1*,1*,1*" ColumnSpacing="12">
+                                        <arc:Select
+                                            Label="动效"
+                                            Description="完整保留 Arc 的弹簧动效；减少只保留短淡入；关闭则立即切换，适合低性能或远程桌面。"
+                                            SelectedValue="{Binding Draft.Motion, Mode=TwoWay}"
+                                            AutomationProperties.Name="动效"
+                                        >
+                                            <arc:SelectItem Content="完整" Value="Full" />
+                                            <arc:SelectItem Content="减少" Value="Reduced" />
+                                            <arc:SelectItem Content="关闭" Value="Off" />
+                                        </arc:Select>
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Grid.ColumnSpan="2"
+                                            Text="若按钮和面板切换仍有明显迟滞，可先把「渲染模式」改为「自动（GPU）」，再把动效设为「减少」。"
+                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                            TextWrapping="Wrap"
+                                            VerticalAlignment="Center"
                                         />
                                     </Grid>
                                     <Grid ColumnDefinitions="1*,1*" ColumnSpacing="12">

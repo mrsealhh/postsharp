@@ -32,6 +32,12 @@ public sealed class AppSettingsJsonConverter : JsonConverter<AppSettings>
                 case nameof(AppSettings.Theme):
                     settings.Theme = reader.GetString() ?? settings.Theme;
                     break;
+                case nameof(AppSettings.Accent):
+                    settings.Accent = reader.GetString() ?? settings.Accent;
+                    break;
+                case nameof(AppSettings.Motion):
+                    settings.Motion = reader.GetString() ?? settings.Motion;
+                    break;
                 case nameof(AppSettings.UiScale):
                     settings.UiScale = reader.GetDouble();
                     break;
@@ -153,6 +159,8 @@ public sealed class AppSettingsJsonConverter : JsonConverter<AppSettings>
     {
         writer.WriteStartObject();
         writer.WriteString(nameof(AppSettings.Theme), value.Theme);
+        writer.WriteString(nameof(AppSettings.Accent), value.Accent);
+        writer.WriteString(nameof(AppSettings.Motion), value.Motion);
         writer.WriteNumber(nameof(AppSettings.UiScale), value.UiScale);
         writer.WriteString(nameof(AppSettings.UiLayout), value.UiLayout);
         writer.WriteString(nameof(AppSettings.TabOverflow), value.TabOverflow);

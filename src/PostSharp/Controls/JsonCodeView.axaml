@@ -1,0 +1,90 @@
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+    x:Class="PostSharp.Controls.JsonCodeView"
+    KeyBrush="{arc:ArcDesignTokenResource Accent}"
+    StringBrush="{arc:ArcDesignTokenResource Success}"
+    NumberBrush="{arc:ArcDesignTokenResource Warning}"
+    LiteralBrush="{arc:ArcDesignTokenResource TextSecondary}"
+    PunctuationBrush="{arc:ArcDesignTokenResource TextMuted}"
+    HighlightBrush="{arc:ArcDesignTokenResource Accent}"
+>
+    <Grid RowDefinitions="Auto,*" RowSpacing="8" Margin="12,10,12,12">
+        <Grid
+            x:Name="SearchRow"
+            Grid.Row="0"
+            ColumnDefinitions="Auto,Auto,Auto,Auto"
+            ColumnSpacing="6"
+            HorizontalAlignment="Right"
+        >
+            <arc:SearchField
+                x:Name="SearchBox"
+                Width="220"
+                Placeholder="搜索响应内容"
+                AutomationProperties.Name="搜索 JSON 内容"
+            />
+            <TextBlock
+                x:Name="MatchText"
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                Foreground="{arc:ArcDesignTokenResource TextMuted}"
+            />
+            <arc:Button
+                x:Name="PreviousButton"
+                Grid.Column="2"
+                Variant="Ghost"
+                Size="Small"
+                Padding="6"
+                ToolTip.Tip="上一个匹配"
+                AutomationProperties.Name="上一个匹配"
+            >
+                <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ChevronUp}" Size="14" />
+            </arc:Button>
+            <arc:Button
+                x:Name="NextButton"
+                Grid.Column="3"
+                Variant="Ghost"
+                Size="Small"
+                Padding="6"
+                ToolTip.Tip="下一个匹配"
+                AutomationProperties.Name="下一个匹配"
+            >
+                <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ChevronDown}" Size="14" />
+            </arc:Button>
+        </Grid>
+
+        <ScrollViewer
+            x:Name="Scroller"
+            Grid.Row="1"
+            HorizontalScrollBarVisibility="Auto"
+            VerticalScrollBarVisibility="Auto"
+        >
+            <Grid ColumnDefinitions="Auto,Auto">
+                <TextBlock
+                    x:Name="Gutter"
+                    Margin="0,0,12,0"
+                    TextAlignment="Right"
+                    TextWrapping="NoWrap"
+                    VerticalAlignment="Top"
+                    FontFamily="{DynamicResource PostSharpCodeFont}"
+                    FontSize="{DynamicResource PostSharpCodeFontSize}"
+                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
+                    IsVisible="False"
+                />
+                <SelectableTextBlock
+                    x:Name="Code"
+                    Grid.Column="1"
+                    TextWrapping="NoWrap"
+                    FontFamily="{DynamicResource PostSharpCodeFont}"
+                    FontSize="{DynamicResource PostSharpCodeFontSize}"
+                    Foreground="{arc:ArcDesignTokenResource Foreground}"
+                    SelectionBrush="{arc:ArcDesignTokenResource Accent}"
+                    SelectionForegroundBrush="{arc:ArcDesignTokenResource AccentForeground}"
+                    AutomationProperties.Name="JSON 内容"
+                />
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

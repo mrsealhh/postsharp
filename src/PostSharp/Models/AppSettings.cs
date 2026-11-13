@@ -53,6 +53,14 @@ public partial class AppSettings : ObservableObject
     [ObservableProperty]
     private string _theme = "跟随系统";
 
+    /// <summary>Arc accent preset: Neutral / Violet / Blue / Green / Amber / Orange / Coral / Rose.</summary>
+    [ObservableProperty]
+    private string _accent = Accents.Default;
+
+    /// <summary>Arc motion level: Full / Reduced / Off. Reduced keeps short fades only.</summary>
+    [ObservableProperty]
+    private string _motion = "Full";
+
     /// <summary>Whole-window zoom; 0.8 is the default for denser information on small screens.</summary>
     [ObservableProperty]
     private double _uiScale = 0.8;
@@ -70,7 +78,7 @@ public partial class AppSettings : ObservableObject
     /// The value is read before the Avalonia app builder is created, so a change needs a restart.
     /// </summary>
     [ObservableProperty]
-    private string _renderingMode = RenderingModes.Software;
+    private string _renderingMode = RenderingModes.Auto;
 
     /// <summary>Global corner multiplier: 0 is square, 1 keeps Arc defaults, 2 doubles the radii.</summary>
     [ObservableProperty]

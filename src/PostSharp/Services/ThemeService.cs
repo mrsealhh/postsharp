@@ -2,7 +2,9 @@ using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using PostSharp.Models;
 using TKCode.Arc;
+using TKCode.Arc.Motion;
 using TKCode.Arc.Themes.Corners;
 
 namespace PostSharp.Services;
@@ -20,16 +22,29 @@ public static class ThemeService
     public static IReadOnlyList<string> Options { get; } = new[] { FollowSystem, Light, Dark };
 
     private static string _preference = FollowSystem;
+    private static string _accent = Accents.Default;
+    private static string _motion = "Full";
     private static bool _watching;
 
     public static Task ApplyAsync(
         string? preference,
         bool isStartup = false,
         CancellationToken cancellationToken = default,
-        double cornerScale = 1
+        double cornerScale = 1,
+        string? accent = null,
+        string? motion = null
     )
     {
         _preference = preference is Light or Dark ? preference : FollowSystem;
+        if (accent is not null)
+        {
+            _accent = Accents.All.Contains(accent) ? accent : Accents.Default;
+        }
+
+        if (motion is not null)
+        {
+            _motion = motion is "Reduced" or "Off" ? motion : "Full";
+        }
 
         if (Application.Current is not { } application)
         {
@@ -51,6 +66,17 @@ public static class ThemeService
                         Dark => ArcAppearance.Dark,
                         _ => ArcAppearance.System,
                     }
+                );
+
+                theme.Accent(
+                    Enum.TryParse<ArcAccentPreset>(_accent, ignoreCase: true, out var preset)
+                        ? preset
+                        : ArcAccentPreset.Blue
+                );
+                theme.MotionLevel(
+                    Enum.TryParse<ArcMotionLevel>(_motion, ignoreCase: true, out var level)
+                        ? level
+                        : ArcMotionLevel.Full
                 );
 
                 if (double.IsFinite(cornerScale) && Math.Abs(cornerScale - 1) > 0.0001)

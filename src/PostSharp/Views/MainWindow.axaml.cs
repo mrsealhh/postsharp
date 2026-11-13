@@ -67,28 +67,10 @@ public partial class MainWindow : Window
             handledEventsToo: true
         );
         PropertyChanged += OnWindowPropertyChanged;
-        ResponseTabs.SizeChanged += (_, _) =>
-        {
-            JsonResponseViewer.MaxTreeHeight = Math.Clamp(
-                ResponseTabs.Bounds.Height - 220,
-                140,
-                420
-            );
-        };
-        ResponsePane.SizeChanged += (_, _) =>
-        {
-            // Arc Tabs measures its content without a finite height. Cap the raw viewer so
-            // long responses scroll inside the pane instead of being clipped by its border.
-            var available = Math.Max(120, ResponsePane.Bounds.Height - 220);
-            ResponseRawScroll.MaxHeight = available;
-            ResponseBodyPanel.MaxHeight = available + 80;
-        };
-        RequestTabs.SizeChanged += (_, _) =>
-        {
-            var available = RequestTabs.Bounds.Height;
-            RequestBodyTextarea.FrameHeight = Math.Clamp(available - 170, 80, 560);
-            JsonRequestBodyViewer.MaxTreeHeight = Math.Clamp(available - 190, 80, 520);
-        };
+        ResponsePane.SizeChanged += (_, _) => ResizeResponseArea();
+        ResponsePane.LayoutUpdated += (_, _) => ResizeResponseArea();
+        RequestTabsHost.LayoutUpdated += (_, _) => ResizeRequestBodyArea();
+        RequestTabsHost.SizeChanged += (_, _) => ResizeRequestBodyArea();
         CollectionScrollArea.ScrollChanged += (_, _) =>
         {
             if (IsNearBottom(CollectionScrollArea))
@@ -204,6 +186,99 @@ public partial class MainWindow : Window
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 响应体内容区按自身在面板里的位置撑满剩余高度，超出部分在卡片内部滚动。
+    /// 用实际位置而不是固定偏移，避免状态带高度变化时把页签挤上去。
+    /// </summary>
+    private void ResizeResponseArea()
+    {
+        var paneHeight = ResponsePane.Bounds.Height;
+        if (paneHeight <= 0 || !ResponseBodyPanel.IsVisible)
+        {
+            return;
+        }
+
+        if (ResponseBodyPanel.TranslatePoint(default, ResponsePane) is not { } origin)
+        {
+            return;
+        }
+
+        var height = Math.Max(120, paneHeight - origin.Y);
+        if (
+            double.IsNaN(ResponseBodyPanel.Height)
+            || Math.Abs(ResponseBodyPanel.Height - height) > 0.5
+        )
+        {
+            ResponseBodyPanel.Height = height;
+            ResponseBodyPanel.MaxHeight = height;
+        }
+
+        FitHeight(ResponseHeadersScroll, ResponsePane, reserve: 0);
+    }
+
+    /// <summary>把可滚动内容限制在容器剩余高度内，超出部分出现滚动条。</summary>
+    private static void FitHeight(Control element, Visual container, double reserve = 12)
+    {
+        if (!element.IsVisible || element.TranslatePoint(default, container) is not { } origin)
+        {
+            return;
+        }
+
+        var height = Math.Max(80, container.Bounds.Height - origin.Y - reserve);
+        if (Math.Abs(element.MaxHeight - height) > 0.5)
+        {
+            element.MaxHeight = height;
+        }
+    }
+
+    /// <summary>
+    /// Arc Tabs 不给内容有限高度，请求体编辑区按自身位置算出剩余空间，撑满请求面板；
+    /// 内容超出后由编辑区/高亮视图内部滚动，避免底部留一大片空白。
+    /// </summary>
+    private void ResizeRequestBodyArea()
+    {
+        var hostHeight = RequestTabsHost.Bounds.Height;
+        if (hostHeight <= 0)
+        {
+            return;
+        }
+
+        if (RequestTabs.MinHeight != hostHeight)
+        {
+            RequestTabs.MinHeight = hostHeight;
+        }
+
+        if (
+            RequestBodyJsonView.IsVisible
+            && RequestBodyJsonView.TranslatePoint(default, RequestTabsHost) is { } jsonOrigin
+        )
+        {
+            var height = Math.Max(120, hostHeight - jsonOrigin.Y - 12);
+            if (Math.Abs(RequestBodyJsonView.MaxHeight - height) > 0.5)
+            {
+                RequestBodyJsonView.MaxHeight = height;
+            }
+        }
+        else if (
+            RequestBodyTextarea.IsVisible
+            && RequestBodyTextarea.TranslatePoint(default, RequestTabsHost) is { } editorOrigin
+        )
+        {
+            var height = Math.Max(80, hostHeight - editorOrigin.Y - 12);
+            if (
+                double.IsNaN(RequestBodyTextarea.FrameHeight)
+                || Math.Abs(RequestBodyTextarea.FrameHeight - height) > 0.5
+            )
+            {
+                RequestBodyTextarea.FrameHeight = height;
+            }
+        }
+
+        FitHeight(CurlPreviewScroll, RequestTabsHost);
+        FitHeight(OpenApiDocScroll, RequestTabsHost);
+        FitHeight(CallCodeScroll, RequestTabsHost);
     }
 
     private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
@@ -1896,15 +1971,23 @@ public partial class MainWindow : Window
         rows[3].Height = new GridLength(!sideBySide && !collapsed ? 8 : 0);
         rows[4].Height = new GridLength(!sideBySide && !collapsed ? 1 : 0, GridUnitType.Star);
 
-        Grid.SetRow(RequestTabsHost, 2);
-        Grid.SetColumn(RequestTabsHost, 0);
-        Grid.SetColumnSpan(RequestTabsHost, sideBySide && !collapsed ? 1 : 3);
-        Grid.SetRowSpan(RequestTabsHost, 1);
+        // 上下布局时两张卡片只留分隔条这一道间距，避免 10+8+10 的宽缝。
+        RequestPaneShell.Margin = sideBySide
+            ? new Thickness(0, 10, 0, 10)
+            : new Thickness(0, 10, 0, 0);
+        ResponsePaneShell.Margin = sideBySide
+            ? new Thickness(0, 10, 0, 10)
+            : new Thickness(0, 0, 0, 10);
 
-        Grid.SetRow(ResponsePane, sideBySide ? 2 : 4);
-        Grid.SetColumn(ResponsePane, sideBySide ? 2 : 0);
-        Grid.SetColumnSpan(ResponsePane, sideBySide && !collapsed ? 1 : 3);
-        Grid.SetRowSpan(ResponsePane, 1);
+        Grid.SetRow(RequestPaneShell, 2);
+        Grid.SetColumn(RequestPaneShell, 0);
+        Grid.SetColumnSpan(RequestPaneShell, sideBySide && !collapsed ? 1 : 3);
+        Grid.SetRowSpan(RequestPaneShell, 1);
+
+        Grid.SetRow(ResponsePaneShell, sideBySide ? 2 : 4);
+        Grid.SetColumn(ResponsePaneShell, sideBySide ? 2 : 0);
+        Grid.SetColumnSpan(ResponsePaneShell, sideBySide && !collapsed ? 1 : 3);
+        Grid.SetRowSpan(ResponsePaneShell, 1);
 
         Grid.SetRow(RequestResponseSplitter, sideBySide ? 2 : 3);
         Grid.SetColumn(RequestResponseSplitter, sideBySide ? 1 : 0);
@@ -1916,7 +1999,7 @@ public partial class MainWindow : Window
             : GridResizeDirection.Rows;
         RequestResponseSplitter.Width = sideBySide ? 8 : double.NaN;
         RequestResponseSplitter.Height = sideBySide ? double.NaN : 8;
-        ResponsePane.IsVisible = !collapsed;
+        ResponsePaneShell.IsVisible = !collapsed;
         RequestResponseSplitter.IsVisible = !collapsed;
     }
 

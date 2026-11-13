@@ -442,8 +442,8 @@
                     <arc:Select
                         Grid.Column="0"
                         Label="当前环境"
-                        ItemsSource="{Binding Environments}"
-                        SelectedItem="{Binding ActiveEnvironment, Mode=TwoWay}"
+                        ItemsSource="{Binding EnvironmentOptions}"
+                        SelectedItem="{Binding SelectedEnvironmentOption, Mode=TwoWay}"
                     />
                     <StackPanel
                         Grid.Column="1"

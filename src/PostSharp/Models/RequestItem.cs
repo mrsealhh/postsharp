@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using TKCode.Arc;
 
 namespace PostSharp.Models;
 
@@ -74,7 +75,11 @@ public partial class RequestItem : ObservableObject
     private string _protocol = RequestProtocol.Http;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MethodTone))]
     private string _method = "GET";
+
+    /// <summary>Sidebar and history badges share one method-to-tone mapping.</summary>
+    public BadgeTone MethodTone => MethodTones.Of(Method);
 
     [ObservableProperty]
     private string _url = string.Empty;

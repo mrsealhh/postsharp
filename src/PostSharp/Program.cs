@@ -12,7 +12,7 @@ internal static class Program
 {
     private const string SingleInstanceMutexName = "PostSharp.SingleInstance";
     private const string ServiceInstanceMutexName = "PostSharp.McpService";
-    private static string _renderingMode = RenderingModes.Software;
+    private static string _renderingMode = RenderingModes.Auto;
 
     [STAThread]
     public static void Main(string[] args)

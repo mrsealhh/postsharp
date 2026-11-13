@@ -634,6 +634,8 @@ public partial class SettingsViewModel : ObservableObject
     {
         var defaults = new AppSettings();
         Draft.Theme = defaults.Theme;
+        Draft.Accent = defaults.Accent;
+        Draft.Motion = defaults.Motion;
         Draft.RenderingMode = defaults.RenderingMode;
         Draft.CornerScale = defaults.CornerScale;
         Draft.UiScale = defaults.UiScale;
@@ -1044,6 +1046,8 @@ public partial class SettingsViewModel : ObservableObject
     private void CopyToCurrent()
     {
         _current.Theme = Draft.Theme;
+        _current.Accent = Draft.Accent;
+        _current.Motion = Draft.Motion;
         _current.RenderingMode = Draft.RenderingMode;
         _current.CornerScale = Math.Clamp(Draft.CornerScale, 0, 2);
         _current.UiScale = Math.Clamp(
@@ -1095,6 +1099,8 @@ public partial class SettingsViewModel : ObservableObject
         return new AppSettings
         {
             Theme = source.Theme,
+            Accent = source.Accent,
+            Motion = source.Motion,
             RenderingMode = source.RenderingMode,
             CornerScale = source.CornerScale,
             UiScale = source.UiScale,

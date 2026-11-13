@@ -26,9 +26,9 @@ public sealed class MemoryLimitTests
     }
 
     [Fact]
-    public void SoftwareRenderingIsTheDefault()
+    public void GpuRenderingIsTheDefault()
     {
-        Assert.Equal(RenderingModes.Software, new AppSettings().RenderingMode);
+        Assert.Equal(RenderingModes.Auto, new AppSettings().RenderingMode);
     }
 
     [Fact]

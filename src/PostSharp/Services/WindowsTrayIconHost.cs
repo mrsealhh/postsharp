@@ -21,6 +21,7 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
     private const int NifMessage = 0x00000001;
     private const int NifIcon = 0x00000002;
     private const int NifTip = 0x00000004;
+    private const int NifGuid = 0x00000020;
     private const int MfString = 0x00000000;
     private const int MfSeparator = 0x00000800;
     private const int TpmReturnCmd = 0x0100;
@@ -28,6 +29,7 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
     private const int IdiApplication = 32512;
 
     private readonly IReadOnlyList<TrayMenuEntry?> _menuEntries;
+    private readonly Guid _identity;
     private readonly string _toolTipText;
     private readonly WndProc _wndProc;
     private readonly IntPtr _instance;
@@ -35,13 +37,17 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
     private readonly IntPtr _window;
     private readonly IntPtr _icon;
     private readonly bool _ownsIcon;
-    private readonly int _iconId = 1;
     private bool _added;
     private bool _visible;
     private bool _disposed;
 
-    public WindowsTrayIconHost(string toolTipText, IReadOnlyList<TrayMenuEntry?> menuEntries)
+    public WindowsTrayIconHost(
+        string toolTipText,
+        IReadOnlyList<TrayMenuEntry?> menuEntries,
+        Guid identity
+    )
     {
+        _identity = identity;
         _toolTipText = toolTipText;
         _menuEntries = menuEntries;
         _instance = GetModuleHandle(null);
@@ -167,8 +173,9 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
         {
             cbSize = (uint)Marshal.SizeOf<NotifyIconData>(),
             hWnd = _window,
-            uID = _iconId,
-            uFlags = NifMessage | NifIcon | NifTip,
+            uID = 0,
+            uFlags = NifMessage | NifIcon | NifTip | NifGuid,
+            guidItem = _identity,
             uCallbackMessage = TrayMessage,
             hIcon = _icon,
             szTip = _toolTipText,
@@ -180,7 +187,8 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
         {
             cbSize = (uint)Marshal.SizeOf<NotifyIconIdentifier>(),
             hWnd = _window,
-            uID = (uint)_iconId,
+            uID = 0,
+            guidItem = _identity,
         };
         if (Shell_NotifyIconGetRect(ref identifier, out var rect) == 0)
         {

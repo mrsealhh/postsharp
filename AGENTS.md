@@ -21,6 +21,7 @@ csharpier format .
 - 交付标准：构建 **0 警告 0 错误**，且 `csharpier format .` 不再产生改动。
 - `AVALONIA_TELEMETRY_OPTOUT` 只用于受限/沙箱终端（否则 Avalonia 统计任务写日志会失败）；正常桌面终端可不设。
 - 界面外观有变化时，同步更新 `docs/` 下对应截图，并在 README「验证记录」补一行。
+- 本机验证构建时若已有 PostSharp 进程占用 `bin\Debug\PostSharp.exe`，直接结束该进程（`Stop-Process -Name PostSharp -Force`）后重建，不必等用户手动关闭；重建后可用桌面快捷方式重新启动。
 - 不新建测试工程、不加 CI 配置，除非明确要求。
 
 ## 代码格式化

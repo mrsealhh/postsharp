@@ -90,6 +90,15 @@ public sealed partial class PipelineCenterViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasGraph;
 
+    /// <summary>YAML 与流程图的排列：Stacked（上下）或 SideBySide（左右）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSideBySideLayout))]
+    private string _layoutMode = "SideBySide";
+
+    public bool IsSideBySideLayout => LayoutMode == "SideBySide";
+
+    public IReadOnlyList<string> LayoutModes { get; } = new[] { "Stacked", "SideBySide" };
+
     private bool _suppressDirty;
 
     public bool HasSelection => SelectedFile is not null;

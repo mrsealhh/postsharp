@@ -7,7 +7,44 @@
     x:Class="PostSharp.Views.PipelineCenterView"
     x:DataType="vm:PipelineCenterViewModel"
 >
-    <Grid ColumnDefinitions="300,12,*" Margin="0,6,0,0">
+    <UserControl.Styles>
+        <Style Selector="Border.templateCard">
+            <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}" />
+            <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusControl}" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Border.templateCard:pointerover">
+            <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceRaised}" />
+            <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Accent}" />
+        </Style>
+        <Style Selector="Border.templateCard.pressed">
+            <Setter Property="Background" Value="{arc:ArcDesignTokenResource AccentSubtle}" />
+            <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Accent}" />
+        </Style>
+    </UserControl.Styles>
+    <Grid Margin="0,6,0,0">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" MinWidth="220" MaxWidth="460" />
+            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="*" MinWidth="360" />
+        </Grid.ColumnDefinitions>
+        <GridSplitter
+            Grid.Column="1"
+            Width="12"
+            ResizeDirection="Columns"
+            ResizeBehavior="PreviousAndNext"
+            Cursor="SizeWestEast"
+            AutomationProperties.Name="调整流水线列表宽度"
+        >
+            <GridSplitter.Template>
+                <ControlTemplate>
+                    <Border Background="Transparent" />
+                </ControlTemplate>
+            </GridSplitter.Template>
+        </GridSplitter>
         <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
             <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
                 <TextBlock
@@ -116,41 +153,41 @@
                         FontWeight="Medium"
                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                     />
-                    <ItemsControl ItemsSource="{Binding Templates}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:PipelineTemplateItem">
-                                <Button
-                                    Margin="0,2"
-                                    Padding="8,6"
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Left"
-                                    Background="Transparent"
-                                    BorderThickness="0"
-                                    Command="{Binding $parent[UserControl].DataContext.ApplyTemplateCommand}"
-                                    CommandParameter="{Binding}"
-                                    AutomationProperties.Name="{Binding Name}"
-                                >
-                                    <StackPanel Spacing="2">
-                                        <TextBlock
-                                            Text="{Binding Name}"
-                                            FontSize="{arc:ArcDesignTokenResource TypeSM}"
-                                        />
-                                        <TextBlock
-                                            Text="{Binding Description}"
-                                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                                            Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                                            TextWrapping="Wrap"
-                                        />
-                                    </StackPanel>
-                                </Button>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <ScrollViewer MaxHeight="280">
+                        <ItemsControl ItemsSource="{Binding Templates}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PipelineTemplateItem">
+                                    <Border
+                                        Classes="templateCard"
+                                        Margin="0,2"
+                                        PointerPressed="OnTemplateClick"
+                                        ToolTip.Tip="{Binding Description}"
+                                        AutomationProperties.Name="{Binding Name}"
+                                    >
+                                        <StackPanel Spacing="2">
+                                            <TextBlock
+                                                Text="{Binding Name}"
+                                                FontSize="{arc:ArcDesignTokenResource TypeSM}"
+                                                FontWeight="Medium"
+                                                Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                            />
+                                            <TextBlock
+                                                Text="{Binding Description}"
+                                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                                Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                                                TextWrapping="Wrap"
+                                            />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
                 </StackPanel>
             </Border>
         </Grid>
 
-        <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*,6,*" RowSpacing="8">
+        <Grid Grid.Column="2" RowDefinitions="Auto,Auto,*" RowSpacing="8">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                 <TextBlock
                     Text="名称"
@@ -174,6 +211,7 @@
                     Variant="Secondary"
                     Command="{Binding SavePipelineCommand}"
                     IsEnabled="{Binding !IsBusy}"
+                    IsLoading="{Binding IsBusy}"
                     AutomationProperties.Name="保存流水线"
                 />
                 <arc:Button
@@ -206,99 +244,129 @@
                     Variant="Primary"
                     Command="{Binding RunPipelineCommand}"
                     IsEnabled="{Binding !IsBusy}"
+                    IsLoading="{Binding IsBusy}"
                     AutomationProperties.Name="运行流水线"
                 />
             </Grid>
 
-            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
-                <TextBlock
-                    Text="{Binding StatusText}"
-                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                    TextTrimming="CharacterEllipsis"
-                />
-                <TextBlock
-                    Text="未保存"
-                    IsVisible="{Binding HasUnsavedChanges}"
-                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                    Foreground="{arc:ArcDesignTokenResource Warning}"
-                />
-            </StackPanel>
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock
+                        Text="{Binding StatusText}"
+                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                        TextTrimming="CharacterEllipsis"
+                    />
+                    <TextBlock
+                        Text="未保存"
+                        IsVisible="{Binding HasUnsavedChanges}"
+                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                        Foreground="{arc:ArcDesignTokenResource Warning}"
+                    />
+                </StackPanel>
+                <arc:SegmentedControl
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    SelectedValue="{Binding LayoutMode, Mode=TwoWay}"
+                    AutomationProperties.Name="YAML 与流程图布局"
+                >
+                    <arc:SegmentedOption Value="Stacked" Label="上下" />
+                    <arc:SegmentedOption Value="SideBySide" Label="左右" />
+                </arc:SegmentedControl>
+            </Grid>
 
-            <arc:Textarea
+            <Grid
                 Grid.Row="2"
-                Text="{Binding YamlText, Mode=TwoWay}"
-                IsLabelVisible="False"
-                IsResizable="True"
-                MinHeight="160"
-                FontFamily="Consolas, monospace"
-                FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                Placeholder="在这里粘贴或编辑 YAML"
-                AutomationProperties.Name="流水线 YAML"
-            />
+                x:Name="PreviewLayout"
+                RowDefinitions="*,6,*"
+                ColumnDefinitions="0,0,0"
+            >
+                <Grid Grid.Row="0" x:Name="YamlHost">
+                    <arc:Textarea
+                        x:Name="YamlEditor"
+                        Text="{Binding YamlText, Mode=TwoWay}"
+                        IsLabelVisible="False"
+                        IsResizable="False"
+                        MinHeight="120"
+                        FontFamily="Consolas, monospace"
+                        FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                        Placeholder="在这里粘贴或编辑 YAML"
+                        AutomationProperties.Name="流水线 YAML"
+                    />
+                </Grid>
 
-            <GridSplitter
-                Grid.Row="3"
-                Height="6"
-                HorizontalAlignment="Stretch"
-                Background="{arc:ArcDesignTokenResource BorderSubtle}"
-                ResizeDirection="Rows"
-                AutomationProperties.Name="调整 YAML 与预览高度"
-            />
-
-            <Panel Grid.Row="4">
-                <TextBlock
-                    Text="点击「生成流程图」查看图形，或「运行」查看结果；拖动分隔条可调整编辑区高度。"
-                    IsVisible="{Binding !HasGraph}"
-                    Margin="12"
-                    TextWrapping="Wrap"
-                    FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                    Foreground="{arc:ArcDesignTokenResource TextMuted}"
-                />
-
-                <Border
-                    x:Name="GraphPanel"
-                    IsVisible="{Binding HasGraph}"
-                    Padding="2"
-                    Background="{arc:ArcDesignTokenResource SurfaceMuted}"
-                    CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
-                    ClipToBounds="True"
+                <GridSplitter
+                    x:Name="PreviewSplitter"
+                    Grid.Row="1"
+                    Height="6"
+                    HorizontalAlignment="Stretch"
+                    ResizeDirection="Rows"
+                    AutomationProperties.Name="调整 YAML 与预览大小"
                 >
-                    <Panel>
-                        <arc:WorkflowCanvas
-                            x:Name="GraphCanvas"
-                            IsEditable="False"
-                            AutoFit="Fit"
-                            MaxZoom="1"
-                            EdgeStyle="Bezier"
-                            BorderThickness="0"
-                            AutomationProperties.Name="流水线流程图"
-                        />
-                        <arc:WorkflowZoomControls
-                            Target="{Binding #GraphCanvas}"
-                            Margin="12"
-                            HorizontalAlignment="Left"
-                            VerticalAlignment="Bottom"
-                        />
-                    </Panel>
-                </Border>
+                    <GridSplitter.Template>
+                        <ControlTemplate>
+                            <Border Background="{arc:ArcDesignTokenResource BorderSubtle}" />
+                        </ControlTemplate>
+                    </GridSplitter.Template>
+                </GridSplitter>
 
-                <Border
-                    IsVisible="{Binding HasPreview}"
-                    Padding="10"
-                    Background="{arc:ArcDesignTokenResource SurfaceMuted}"
-                    CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
-                >
-                    <ScrollViewer>
-                        <SelectableTextBlock
-                            Text="{Binding PreviewText}"
-                            FontFamily="Consolas, monospace"
-                            FontSize="{arc:ArcDesignTokenResource TypeXS}"
-                            TextWrapping="Wrap"
+                <Panel Grid.Row="2" x:Name="GraphHost">
+                    <Border
+                        IsVisible="{Binding !HasGraph}"
+                        Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                        CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                    >
+                        <arc:EmptyState
+                            Title="还没有流程图"
+                            Description="点击「生成流程图」按当前 YAML 画出步骤和连线；也可以直接「运行」查看执行结果。拖动分隔条可调整上下比例。"
+                            VerticalAlignment="Center"
                         />
-                    </ScrollViewer>
-                </Border>
-            </Panel>
+                    </Border>
+
+                    <Border
+                        x:Name="GraphPanel"
+                        IsVisible="{Binding HasGraph}"
+                        Padding="2"
+                        Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                        CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                        ClipToBounds="True"
+                    >
+                        <Panel>
+                            <arc:WorkflowCanvas
+                                x:Name="GraphCanvas"
+                                IsEditable="False"
+                                AutoFit="Fit"
+                                MaxZoom="1"
+                                EdgeStyle="Bezier"
+                                BorderThickness="0"
+                                AutomationProperties.Name="流水线流程图"
+                            />
+                            <arc:WorkflowZoomControls
+                                Target="{Binding #GraphCanvas}"
+                                Margin="12"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Bottom"
+                            />
+                        </Panel>
+                    </Border>
+
+                    <Border
+                        IsVisible="{Binding HasPreview}"
+                        Padding="10"
+                        Background="{arc:ArcDesignTokenResource SurfaceMuted}"
+                        CornerRadius="{arc:ArcDesignTokenResource RadiusPanel}"
+                    >
+                        <ScrollViewer>
+                            <SelectableTextBlock
+                                Text="{Binding PreviewText}"
+                                FontFamily="Consolas, monospace"
+                                FontSize="{arc:ArcDesignTokenResource TypeXS}"
+                                TextWrapping="Wrap"
+                            />
+                        </ScrollViewer>
+                    </Border>
+                </Panel>
+            </Grid>
         </Grid>
     </Grid>
 </UserControl>

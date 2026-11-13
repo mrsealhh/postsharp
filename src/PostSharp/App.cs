@@ -13,6 +13,10 @@ namespace PostSharp;
 
 public partial class App : Application
 {
+    /// <summary>固定 GUID：重复启动时替换同一个托盘槽位，不会累积出多个图标。</summary>
+    private static readonly Guid MainTrayIdentity = new("b1f4a0d2-6c3e-4a5b-9f60-1d2c3b4a5e01");
+
+    private static readonly Guid ServiceTrayIdentity = new("b1f4a0d2-6c3e-4a5b-9f60-1d2c3b4a5e02");
     public static bool IsMcpService { get; set; }
 
     /// <summary>MCP-only process for containers/CI; no window or tray icon is created.</summary>
@@ -76,6 +80,11 @@ public partial class App : Application
                 _mainWindow = window;
                 window.Closing += OnMainWindowClosing;
                 CreateTrayIcon();
+                AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+                {
+                    RemoveTrayIcon(_trayIcon);
+                    RemoveTrayIcon(_serviceTrayIcon);
+                };
                 _viewModel.Settings.PropertyChanged += OnSettingsChanged;
                 desktop.MainWindow = window;
             }
@@ -97,6 +106,7 @@ public partial class App : Application
         }
 
         _trayIcon = CreateTrayHost(
+            MainTrayIdentity,
             "PostSharp · 左键打开主页面，右键显示菜单",
             [
                 new TrayMenuEntry(
@@ -127,6 +137,7 @@ public partial class App : Application
     }
 
     private ITrayIconHost CreateTrayHost(
+        Guid identity,
         string toolTipText,
         IReadOnlyList<TrayMenuEntry?> menuEntries
     )
@@ -135,7 +146,7 @@ public partial class App : Application
         {
             try
             {
-                return new WindowsTrayIconHost(toolTipText, menuEntries);
+                return new WindowsTrayIconHost(toolTipText, menuEntries, identity);
             }
             catch (Exception exception)
             {
@@ -348,6 +359,7 @@ public partial class App : Application
         }
 
         _serviceTrayIcon = CreateTrayHost(
+            ServiceTrayIdentity,
             "PostSharp · 后台服务 · 右键显示菜单",
             [
                 new TrayMenuEntry(
