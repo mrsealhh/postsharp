@@ -51,7 +51,15 @@ internal static class Program
         );
         if (!singleInstance.IsAcquired)
         {
-            Log.Information("已有 PostSharp 实例运行，本次启动直接退出");
+            if (!isMcpService && AppActivation.TryActivateRunningInstance())
+            {
+                Log.Information("已有 PostSharp 实例运行，已请求显示主窗口");
+            }
+            else
+            {
+                Log.Information("已有 PostSharp 实例运行，本次启动直接退出");
+            }
+
             AppLog.Shutdown();
             return;
         }

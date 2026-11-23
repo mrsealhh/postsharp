@@ -7,6 +7,9 @@ namespace PostSharp.Services;
 /// A Windows tray icon with a real Win32 popup menu. Avalonia's managed TrayPopupRoot is a separate
 /// window; when the icon lives in the Windows 11 overflow flyout it can be dismissed before it is
 /// visible. TrackPopupMenu is synchronous and works from the overflow, so the menu always appears.
+/// The icon is identified by this host's own message window instead of a fixed GUID: Windows keeps
+/// a killed process's GUID registration around until the shell is restarted, which makes every
+/// later NIM_ADD fail with E_FAIL and leaves the window hidden with no way back.
 /// </summary>
 internal sealed class WindowsTrayIconHost : ITrayIconHost
 {
@@ -21,7 +24,7 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
     private const int NifMessage = 0x00000001;
     private const int NifIcon = 0x00000002;
     private const int NifTip = 0x00000004;
-    private const int NifGuid = 0x00000020;
+    private const int TrayIconId = 1;
     private const int MfString = 0x00000000;
     private const int MfSeparator = 0x00000800;
     private const int TpmReturnCmd = 0x0100;
@@ -29,11 +32,11 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
     private const int IdiApplication = 32512;
 
     private readonly IReadOnlyList<TrayMenuEntry?> _menuEntries;
-    private readonly Guid _identity;
     private readonly string _toolTipText;
     private readonly WndProc _wndProc;
     private readonly IntPtr _instance;
     private readonly string _className;
+    private readonly uint _taskbarCreatedMessage;
     private readonly IntPtr _window;
     private readonly IntPtr _icon;
     private readonly bool _ownsIcon;
@@ -41,18 +44,14 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
     private bool _visible;
     private bool _disposed;
 
-    public WindowsTrayIconHost(
-        string toolTipText,
-        IReadOnlyList<TrayMenuEntry?> menuEntries,
-        Guid identity
-    )
+    public WindowsTrayIconHost(string toolTipText, IReadOnlyList<TrayMenuEntry?> menuEntries)
     {
-        _identity = identity;
         _toolTipText = toolTipText;
         _menuEntries = menuEntries;
         _instance = GetModuleHandle(null);
         _className = "PostSharpTray_" + Guid.NewGuid().ToString("N");
         _wndProc = WindowProc;
+        _taskbarCreatedMessage = RegisterWindowMessage("TaskbarCreated");
 
         var windowClass = new WndClassEx
         {
@@ -145,27 +144,43 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
 
     private void ApplyIcon()
     {
-        var data = CreateData();
-        if (_visible)
+        if (!_visible)
         {
-            var message = _added ? NimModify : NimAdd;
-            if (!Shell_NotifyIcon(message, ref data))
+            if (_added)
             {
-                Log.Warning("托盘图标添加失败 {Error}", Marshal.GetLastWin32Error());
-                _visible = false;
-                return;
+                var remove = CreateData();
+                Shell_NotifyIcon(NimDelete, ref remove);
+                _added = false;
             }
 
-            _added = true;
-            LogTrayBounds();
             return;
         }
 
-        if (_added)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            Shell_NotifyIcon(NimDelete, ref data);
-            _added = false;
+            var data = CreateData();
+            if (Shell_NotifyIcon(_added ? NimModify : NimAdd, ref data))
+            {
+                _added = true;
+                LogTrayBounds();
+                return;
+            }
+
+            var error = Marshal.GetLastWin32Error();
+            // A process that died without removing its icon can leave a registration behind,
+            // so delete first and let the next attempt take the slot again.
+            if (attempt == 0)
+            {
+                Shell_NotifyIcon(NimDelete, ref data);
+                _added = false;
+                continue;
+            }
+
+            Log.Warning("托盘图标添加失败 {Error} {Attempt}", error, attempt + 1);
+            Thread.Sleep(200);
         }
+
+        _visible = false;
     }
 
     private NotifyIconData CreateData() =>
@@ -173,9 +188,8 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
         {
             cbSize = (uint)Marshal.SizeOf<NotifyIconData>(),
             hWnd = _window,
-            uID = 0,
-            uFlags = NifMessage | NifIcon | NifTip | NifGuid,
-            guidItem = _identity,
+            uID = TrayIconId,
+            uFlags = NifMessage | NifIcon | NifTip,
             uCallbackMessage = TrayMessage,
             hIcon = _icon,
             szTip = _toolTipText,
@@ -187,8 +201,7 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
         {
             cbSize = (uint)Marshal.SizeOf<NotifyIconIdentifier>(),
             hWnd = _window,
-            uID = 0,
-            guidItem = _identity,
+            uID = TrayIconId,
         };
         if (Shell_NotifyIconGetRect(ref identifier, out var rect) == 0)
         {
@@ -204,6 +217,18 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
 
     private IntPtr WindowProc(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam)
     {
+        if (message == _taskbarCreatedMessage)
+        {
+            // Explorer restarted and dropped every notification icon; put ours back.
+            if (_visible)
+            {
+                _added = false;
+                ApplyIcon();
+            }
+
+            return IntPtr.Zero;
+        }
+
         if (message == TrayMessage)
         {
             var mouseMessage = (int)(lParam.ToInt64() & 0xFFFF);
@@ -365,6 +390,9 @@ internal sealed class WindowsTrayIconHost : ITrayIconHost
         public uint uID;
         public Guid guidItem;
     }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint RegisterWindowMessage(string message);
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

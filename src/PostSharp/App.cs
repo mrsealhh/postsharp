@@ -13,10 +13,6 @@ namespace PostSharp;
 
 public partial class App : Application
 {
-    /// <summary>固定 GUID：重复启动时替换同一个托盘槽位，不会累积出多个图标。</summary>
-    private static readonly Guid MainTrayIdentity = new("b1f4a0d2-6c3e-4a5b-9f60-1d2c3b4a5e01");
-
-    private static readonly Guid ServiceTrayIdentity = new("b1f4a0d2-6c3e-4a5b-9f60-1d2c3b4a5e02");
     public static bool IsMcpService { get; set; }
 
     /// <summary>MCP-only process for containers/CI; no window or tray icon is created.</summary>
@@ -26,6 +22,7 @@ public partial class App : Application
     private MainWindow? _mainWindow;
     private ITrayIconHost? _trayIcon;
     private ITrayIconHost? _serviceTrayIcon;
+    private AppActivation? _activation;
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private DispatcherTimer? _serviceStopTimer;
     private bool _allowExit;
@@ -80,10 +77,14 @@ public partial class App : Application
                 _mainWindow = window;
                 window.Closing += OnMainWindowClosing;
                 CreateTrayIcon();
+                WarnWhenTrayUnavailable();
+                _activation = AppActivation.Start(OnActivationRequested);
                 AppDomain.CurrentDomain.ProcessExit += (_, _) =>
                 {
                     RemoveTrayIcon(_trayIcon);
                     RemoveTrayIcon(_serviceTrayIcon);
+                    _activation?.Dispose();
+                    _activation = null;
                 };
                 _viewModel.Settings.PropertyChanged += OnSettingsChanged;
                 desktop.MainWindow = window;
@@ -106,7 +107,6 @@ public partial class App : Application
         }
 
         _trayIcon = CreateTrayHost(
-            MainTrayIdentity,
             "PostSharp · 左键打开主页面，右键显示菜单",
             [
                 new TrayMenuEntry(
@@ -132,12 +132,37 @@ public partial class App : Application
                 ),
             ]
         );
-        _trayIcon.IsVisible = _viewModel.Settings.McpServiceMode != McpServiceModes.Disabled;
-        Log.Information("托盘图标已创建 {Mode}", _viewModel.Settings.McpServiceMode);
+        if (_viewModel.Settings.McpServiceMode != McpServiceModes.Disabled)
+        {
+            _trayIcon.IsVisible = true;
+        }
+
+        Log.Information(
+            "托盘图标已创建 {Mode} {Visible}",
+            _viewModel.Settings.McpServiceMode,
+            _trayIcon.IsVisible
+        );
+    }
+
+    private void WarnWhenTrayUnavailable()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        if (
+            _viewModel.Settings.McpServiceMode != McpServiceModes.Disabled
+            && _trayIcon is { IsVisible: false }
+        )
+        {
+            _viewModel.DataNotice.Warn(
+                "系统托盘图标不可用，关闭窗口时会直接退出 PostSharp。请重启应用重试；如果仍然失败，可在设置中把 MCP 常驻方式改为「后台独立服务」。"
+            );
+        }
     }
 
     private ITrayIconHost CreateTrayHost(
-        Guid identity,
         string toolTipText,
         IReadOnlyList<TrayMenuEntry?> menuEntries
     )
@@ -146,7 +171,7 @@ public partial class App : Application
         {
             try
             {
-                return new WindowsTrayIconHost(toolTipText, menuEntries, identity);
+                return new WindowsTrayIconHost(toolTipText, menuEntries);
             }
             catch (Exception exception)
             {
@@ -155,6 +180,27 @@ public partial class App : Application
         }
 
         return new AvaloniaTrayIconHost(this, toolTipText, menuEntries);
+    }
+
+    /// <summary>Creates or re-shows the tray icon; false means Windows refused to register it.</summary>
+    private bool TryEnsureTrayIcon()
+    {
+        if (_trayIcon is null)
+        {
+            CreateTrayIcon();
+        }
+
+        if (_trayIcon is null)
+        {
+            return false;
+        }
+
+        if (!_trayIcon.IsVisible)
+        {
+            _trayIcon.IsVisible = true;
+        }
+
+        return _trayIcon.IsVisible;
     }
 
     private static void RemoveTrayIcon(ITrayIconHost? icon)
@@ -183,12 +229,18 @@ public partial class App : Application
         }
 
         var mode = _viewModel?.Settings.McpServiceMode ?? McpServiceModes.Disabled;
-        if (mode == McpServiceModes.Page)
+        if (mode == McpServiceModes.Page && TryEnsureTrayIcon())
         {
             e.Cancel = true;
-            HideToTray(showTrayIcon: true);
+            HideToTray();
             Log.Information("主窗口已隐藏，MCP 页面常驻服务继续运行");
             return;
+        }
+
+        if (mode == McpServiceModes.Page)
+        {
+            // Hiding a window that has no tray icon would leave a process with no way back.
+            Log.Warning("系统托盘不可用，关闭窗口时直接退出而不是隐藏");
         }
 
         _startBackgroundServiceOnExit = mode == McpServiceModes.Background;
@@ -200,6 +252,8 @@ public partial class App : Application
 
     private void OnDesktopExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
     {
+        _activation?.Dispose();
+        _activation = null;
         _serviceStopTimer?.Stop();
         RemoveTrayIcon(_trayIcon);
         _trayIcon = null;
@@ -271,10 +325,19 @@ public partial class App : Application
         }
 
         var mode = _viewModel?.Settings.McpServiceMode ?? McpServiceModes.Disabled;
-        _trayIcon.IsVisible = mode != McpServiceModes.Disabled;
-        Log.Information("托盘图标可见性已更新 {Mode} {Visible}", mode, _trayIcon.IsVisible);
-        if (mode != McpServiceModes.Page && _mainWindow is { IsVisible: false })
+        var visible = mode != McpServiceModes.Disabled;
+        if (_trayIcon.IsVisible != visible)
         {
+            _trayIcon.IsVisible = visible;
+        }
+
+        Log.Information("托盘图标可见性已更新 {Mode} {Visible}", mode, _trayIcon.IsVisible);
+        if (
+            _mainWindow is { IsVisible: false }
+            && (!_trayIcon.IsVisible || mode != McpServiceModes.Page)
+        )
+        {
+            // A hidden window without a working tray icon has no way back.
             ShowMainWindow(maximize: false);
         }
     }
@@ -291,10 +354,10 @@ public partial class App : Application
             return;
         }
 
-        HideToTray(showTrayIcon: false);
+        HideToTray();
     }
 
-    private void HideToTray(bool showTrayIcon)
+    private void HideToTray()
     {
         if (_mainWindow is not { } window)
         {
@@ -304,12 +367,30 @@ public partial class App : Application
         _wasMaximizedBeforeTray = window.WindowState == WindowState.Maximized;
         window.ShowInTaskbar = false;
         window.Hide();
-        if (showTrayIcon && _trayIcon is not null)
-        {
-            _trayIcon.IsVisible = true;
-        }
-
         Log.Information("主窗口已隐藏到托盘");
+    }
+
+    private void OnActivationRequested()
+    {
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                Log.Information("收到重复启动通知，显示主窗口");
+                if (_mainWindow is not { } window)
+                {
+                    return;
+                }
+
+                if (!window.IsVisible || window.WindowState == WindowState.Minimized)
+                {
+                    ShowMainWindow(maximize: false);
+                    return;
+                }
+
+                window.Activate();
+            },
+            DispatcherPriority.Background
+        );
     }
 
     private void ShowMainWindow(bool maximize)
@@ -351,6 +432,17 @@ public partial class App : Application
         _desktop?.Shutdown();
     }
 
+    /// <summary>Exits immediately for the updater instead of hiding the window to the tray.</summary>
+    public void ShutdownForUpdate()
+    {
+        _allowExit = true;
+        _startBackgroundServiceOnExit = false;
+        RemoveTrayIcon(_trayIcon);
+        _trayIcon = null;
+        Log.Information("用户确认安装更新，退出主程序");
+        _desktop?.Shutdown();
+    }
+
     private void CreateServiceTrayIcon()
     {
         if (_viewModel is null)
@@ -359,7 +451,6 @@ public partial class App : Application
         }
 
         _serviceTrayIcon = CreateTrayHost(
-            ServiceTrayIdentity,
             "PostSharp · 后台服务 · 右键显示菜单",
             [
                 new TrayMenuEntry(
@@ -374,7 +465,14 @@ public partial class App : Application
             ]
         );
         _serviceTrayIcon.IsVisible = true;
-        Log.Information("MCP 后台服务托盘图标已创建");
+        if (_serviceTrayIcon.IsVisible)
+        {
+            Log.Information("MCP 后台服务托盘图标已创建");
+        }
+        else
+        {
+            Log.Error("MCP 后台服务托盘图标创建失败，服务继续运行但没有托盘入口");
+        }
     }
 
     private void LaunchClient()

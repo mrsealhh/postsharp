@@ -2899,9 +2899,17 @@ public partial class MainWindowViewModel : ObservableObject, IImportHost
 
         IsUpdatePromptOpen = false;
         Log.Information("用户确认安装已下载更新，正在退出以安装新版本");
-        (
-            Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime
-        )?.Shutdown();
+        if (Application.Current is App app)
+        {
+            app.ShutdownForUpdate();
+        }
+        else
+        {
+            (
+                Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime
+            )?.Shutdown();
+        }
+
         await Task.CompletedTask;
     }
 
